@@ -63,7 +63,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             isAuthenticated: !!session?.user?.id,
         });
 
-        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
+        return withCacheControl(response, 'private, no-cache');
     } catch (error) {
         console.error('Error fetching video:', error);
         return apiErrors.internalError('Failed to fetch video');

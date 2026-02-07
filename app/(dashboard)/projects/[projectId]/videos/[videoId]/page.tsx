@@ -1187,7 +1187,7 @@ export default function VideoPage() {
       try {
         if (isMutatingRef.current) return;
 
-        const res = await fetch(`/api/projects/${projectId}/videos/${videoId}`);
+        const res = await fetch(`/api/projects/${projectId}/videos/${videoId}`, { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (!isMutatingRef.current) {

@@ -188,7 +188,7 @@ export default function WatchPage() {
   useEffect(() => {
     async function fetchVideo() {
       try {
-        const res = await fetch(`/api/watch/${videoId}`);
+        const res = await fetch(`/api/watch/${videoId}`, { cache: 'no-store' });
         if (!res.ok) {
           setError('Video not found or access denied');
           setLoading(false);
@@ -1140,7 +1140,7 @@ export default function WatchPage() {
       try {
         if (isMutatingRef.current) return;
 
-        const res = await fetch(`/api/watch/${videoId}`);
+        const res = await fetch(`/api/watch/${videoId}`, { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (!isMutatingRef.current) {

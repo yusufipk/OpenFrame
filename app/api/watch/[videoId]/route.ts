@@ -70,7 +70,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             canComment: isOwner || isMember || isPublic,
         });
 
-        return withCacheControl(response, 'public, s-maxage=60, stale-while-revalidate=300');
+        return withCacheControl(response, 'private, no-cache');
     } catch (error) {
         console.error('Error fetching video:', error);
         return apiErrors.internalError('Failed to fetch video');
