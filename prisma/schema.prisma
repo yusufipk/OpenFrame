@@ -23,11 +23,13 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  accounts      Account[]
-  sessions      Session[]
-  projects      Project[]
-  comments      Comment[]
-  memberships   ProjectMember[]
+  accounts           Account[]
+  sessions           Session[]
+  ownedWorkspaces    Workspace[]
+  workspaceMemberships WorkspaceMember[]
+  projects           Project[]
+  comments           Comment[]
+  projectMemberships ProjectMember[]
   
   @@map("users")
 }
@@ -76,6 +78,55 @@ model VerificationToken {
 // APPLICATION MODELS
 // ============================================
 
+// ---- Workspace ----
+
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  
+  // Ownership
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  members     WorkspaceMember[]
+  projects    Project[]
+  
+  @@index([ownerId])
+  @@index([slug])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String              @id @default(cuid())
+  role        WorkspaceMemberRole @default(COMMENTATOR)
+  
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime  @default(now())
+  
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+enum WorkspaceMemberRole {
+  ADMIN        // Full access: manage members, delete projects, etc.
+  COMMENTATOR  // Can view all projects and comment only
+}
+
+// ---- Project ----
+
 model Project {
   id          String   @id @default(cuid())
   name        String
@@ -89,6 +140,10 @@ model Project {
   ownerId     String
   owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   
+  // Workspace (required - every project belongs to a workspace)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
   // Timestamps
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -100,6 +155,7 @@ model Project {
   
   @@index([ownerId])
   @@index([slug])
+  @@index([workspaceId])
   @@map("projects")
 }
 
@@ -111,7 +167,7 @@ enum ProjectVisibility {
 
 model ProjectMember {
   id        String            @id @default(cuid())
-  role      ProjectMemberRole @default(VIEWER)
+  role      ProjectMemberRole @default(COMMENTATOR)
   
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -127,9 +183,8 @@ model ProjectMember {
 }
 
 enum ProjectMemberRole {
-  VIEWER     // Can view and comment
-  EDITOR     // Can add/edit videos
-  ADMIN      // Can manage members and settings
+  ADMIN        // Can manage members, settings, delete videos
+  COMMENTATOR  // Can view and comment only
 }
 
 model Video {

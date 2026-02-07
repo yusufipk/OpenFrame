@@ -64,7 +64,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Check project access (must be owner, admin, or editor)
+        // Check project access (must be owner or admin)
         const project = await db.project.findUnique({
             where: { id: projectId },
             include: { members: { where: { userId: session.user.id } } },
@@ -77,8 +77,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const isOwner = project.ownerId === session.user.id;
         const membership = project.members[0];
         const canEdit = isOwner ||
-            membership?.role === ProjectMemberRole.ADMIN ||
-            membership?.role === ProjectMemberRole.EDITOR;
+            membership?.role === ProjectMemberRole.ADMIN;
 
         if (!canEdit) {
             return NextResponse.json({ error: 'Access denied' }, { status: 403 });

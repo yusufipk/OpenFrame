@@ -1,22 +1,34 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Globe, Lock, UserPlus, FolderPlus } from 'lucide-react';
+import { ArrowLeft, Loader2, Globe, Lock, UserPlus, FolderPlus, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type Visibility = 'PRIVATE' | 'INVITE' | 'PUBLIC';
+
+interface Workspace {
+  id: string;
+  name: string;
+}
 
 const visibilityOptions: { value: Visibility; label: string; description: string; icon: React.ReactNode }[] = [
   {
     value: 'PRIVATE',
     label: 'Private',
-    description: 'Only you can access this project',
+    description: 'Only workspace members and project members can access',
     icon: <Lock className="h-5 w-5" />,
   },
   {
@@ -35,16 +47,47 @@ const visibilityOptions: { value: Visibility; label: string; description: string
 
 export default function NewProjectPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectedWorkspace = searchParams.get('workspace');
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     visibility: 'PRIVATE' as Visibility,
+    workspaceId: preselectedWorkspace || '',
   });
+
+  useEffect(() => {
+    async function fetchWorkspaces() {
+      try {
+        const res = await fetch('/api/workspaces');
+        if (res.ok) {
+          const data = await res.json();
+          setWorkspaces(data.workspaces);
+          // Auto-select if only one workspace and none preselected
+          if (!preselectedWorkspace && data.workspaces.length === 1) {
+            setFormData(prev => ({ ...prev, workspaceId: data.workspaces[0].id }));
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        setIsLoadingWorkspaces(false);
+      }
+    }
+    fetchWorkspaces();
+  }, [preselectedWorkspace]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.workspaceId) {
+      setError('Please select a workspace');
+      return;
+    }
     setIsLoading(true);
     setError('');
 
@@ -95,6 +138,46 @@ export default function NewProjectPage() {
           </CardHeader>
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Workspace selector */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Workspace</Label>
+                {isLoadingWorkspaces ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading workspaces...
+                  </div>
+                ) : workspaces.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-4 text-center">
+                    <Building2 className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground mb-2">
+                      You need a workspace first. Every project belongs to a workspace.
+                    </p>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/workspaces/new">Create Workspace</Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <Select
+                    value={formData.workspaceId}
+                    onValueChange={(v) => setFormData(prev => ({ ...prev, workspaceId: v }))}
+                  >
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder="Select a workspace" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workspaces.map((ws) => (
+                        <SelectItem key={ws.id} value={ws.id}>
+                          <span className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4" />
+                            {ws.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-sm font-medium">
                   Project Name
@@ -174,7 +257,7 @@ export default function NewProjectPage() {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
-                  disabled={isLoading || !formData.name.trim()}
+                  disabled={isLoading || !formData.name.trim() || !formData.workspaceId}
                   className="flex-1 h-11"
                 >
                   {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

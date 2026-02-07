@@ -9,6 +9,8 @@ import {
   Globe,
   Lock,
   UserPlus,
+  Users,
+  Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -61,6 +63,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const project = await db.project.findUnique({
     where: { id: projectId },
     include: {
+      workspace: { select: { id: true, name: true } },
       owner: { select: { id: true, name: true } },
       members: {
         where: { userId: session?.user?.id || '' },
@@ -91,7 +94,29 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const isMember = project.members.length > 0;
   const isPublicOrLink = project.visibility !== 'PRIVATE';
 
-  if (!isOwner && !isMember && !isPublicOrLink) {
+  // Check workspace membership
+  let isWorkspaceMember = false;
+  let workspaceRole: string | null = null;
+  if (session?.user?.id) {
+    const wsMember = await db.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId: project.workspaceId,
+          userId: session.user.id,
+        },
+      },
+    });
+    const ws = await db.workspace.findUnique({
+      where: { id: project.workspaceId },
+      select: { ownerId: true },
+    });
+    if (ws?.ownerId === session.user.id || wsMember) {
+      isWorkspaceMember = true;
+      workspaceRole = ws?.ownerId === session.user.id ? 'OWNER' : wsMember?.role || null;
+    }
+  }
+
+  if (!isOwner && !isMember && !isPublicOrLink && !isWorkspaceMember) {
     redirect('/dashboard');
   }
 
@@ -109,7 +134,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     };
   });
 
-  const canEdit = isOwner || project.members[0]?.role === 'ADMIN' || project.members[0]?.role === 'EDITOR';
+  const canEdit = isOwner || project.members[0]?.role === 'ADMIN' || workspaceRole === 'OWNER' || workspaceRole === 'ADMIN';
 
   return (
     <div className="px-6 lg:px-8 py-8 w-full">
@@ -134,9 +159,19 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               {project.visibility.toLowerCase()}
             </Badge>
           </div>
-          {project.description && (
-            <p className="text-muted-foreground">{project.description}</p>
-          )}
+          <div className="flex items-center gap-2">
+            {project.workspace && (
+              <Link href={`/workspaces/${project.workspace.id}`}>
+                <Badge variant="secondary" className="flex items-center gap-1 hover:bg-accent transition-colors">
+                  <Building2 className="h-3 w-3" />
+                  {project.workspace.name}
+                </Badge>
+              </Link>
+            )}
+            {project.description && (
+              <span className="text-muted-foreground">{project.description}</span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -147,12 +182,20 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
             </Link>
           </Button>
           {(isOwner || project.members[0]?.role === 'ADMIN') && (
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/projects/${projectId}/settings`}>
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Link>
-            </Button>
+            <>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/projects/${projectId}/members`}>
+                  <Users className="h-4 w-4 mr-2" />
+                  Members
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/projects/${projectId}/settings`}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Settings
+                </Link>
+              </Button>
+            </>
           )}
           {canEdit && (
             <Button size="sm" asChild>

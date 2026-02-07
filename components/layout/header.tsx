@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { 
   Video, 
   FolderOpen, 
+  Building2,
   Plus, 
   Settings, 
   LogOut, 
@@ -32,6 +33,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Projects', icon: FolderOpen },
+  { href: '/workspaces', label: 'Workspaces', icon: Building2 },
 ];
 
 interface HeaderProps {
@@ -151,7 +153,7 @@ export function Header({ user }: HeaderProps) {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/api/auth/signout">
+                  <Link href="/signout">
                     <LogOut className="h-4 w-4 mr-2" />
                     Sign out
                   </Link>

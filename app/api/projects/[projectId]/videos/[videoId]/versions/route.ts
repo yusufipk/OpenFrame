@@ -76,8 +76,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const isOwner = video.project.ownerId === session.user.id;
         const membership = video.project.members[0];
         const canEdit = isOwner ||
-            membership?.role === ProjectMemberRole.ADMIN ||
-            membership?.role === ProjectMemberRole.EDITOR;
+            membership?.role === ProjectMemberRole.ADMIN;
 
         if (!canEdit) {
             return NextResponse.json({ error: 'Access denied' }, { status: 403 });

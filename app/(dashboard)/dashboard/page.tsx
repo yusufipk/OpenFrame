@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { Plus, FolderOpen, Clock, Users, Globe, Lock, UserPlus } from 'lucide-react';
+import { Plus, FolderOpen, Clock, Users, Globe, Lock, UserPlus, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
+import { ProjectFilter } from './project-filter';
 
 function formatRelativeTime(date: Date): string {
   const now = new Date();
@@ -38,15 +39,26 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  // Fetch projects where user is owner or member
+  // Fetch projects where user is owner, member, or workspace member
   const projects = await db.project.findMany({
     where: {
       OR: [
         { ownerId: session.user.id },
         { members: { some: { userId: session.user.id } } },
+        {
+          workspace: {
+            OR: [
+              { ownerId: session.user.id },
+              { members: { some: { userId: session.user.id } } },
+            ],
+          },
+        },
       ],
     },
     include: {
+      workspace: {
+        select: { id: true, name: true },
+      },
       _count: {
         select: {
           videos: true,
@@ -57,79 +69,30 @@ export default async function DashboardPage() {
     orderBy: { updatedAt: 'desc' },
   });
 
+  // Build unique workspace list for filter
+  const workspaceMap = new Map<string, string>();
+  for (const project of projects) {
+    if (project.workspace) {
+      workspaceMap.set(project.workspace.id, project.workspace.name);
+    }
+  }
+  const workspaces = Array.from(workspaceMap, ([id, name]) => ({ id, name }));
+
+  const serializedProjects = projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    visibility: p.visibility,
+    updatedAt: p.updatedAt.toISOString(),
+    workspaceId: p.workspace?.id ?? null,
+    workspaceName: p.workspace?.name ?? null,
+    memberCount: p._count.members + 1,
+    videoCount: p._count.videos,
+  }));
+
   return (
     <div className="px-6 lg:px-8 py-8 w-full">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your video projects and collect feedback
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/projects/new">
-            <Plus className="h-4 w-4 mr-2" />
-            New Project
-          </Link>
-        </Button>
-      </div>
-
-      {/* Projects Grid */}
-      {projects.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <Link key={project.id} href={`/projects/${project.id}`}>
-              <Card className="h-full transition-colors hover:bg-accent/50 cursor-pointer">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="flex items-center gap-2">
-                      <FolderOpen className="h-5 w-5 text-primary" />
-                      {project.name}
-                    </CardTitle>
-                    <Badge variant="outline" className="flex items-center gap-1">
-                      <VisibilityIcon visibility={project.visibility} />
-                      {project.visibility.toLowerCase()}
-                    </Badge>
-                  </div>
-                  <CardDescription className="line-clamp-2">
-                    {project.description || 'No description'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" />
-                      {formatRelativeTime(project.updatedAt)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Users className="h-3.5 w-3.5" />
-                      {project._count.members + 1}
-                    </span>
-                    <span>{project._count.videos} videos</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      ) : (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <FolderOpen className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No projects yet</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              Create your first project to start collecting video feedback
-            </p>
-            <Button asChild>
-              <Link href="/projects/new">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Project
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      <ProjectFilter projects={serializedProjects} workspaces={workspaces} />
     </div>
   );
 }

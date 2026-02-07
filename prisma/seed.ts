@@ -1,4 +1,5 @@
-import { PrismaClient, ProjectVisibility, ProjectMemberRole, SharePermission } from '@prisma/client';
+import 'dotenv/config';
+import { PrismaClient, ProjectVisibility, ProjectMemberRole, SharePermission, WorkspaceMemberRole } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 
@@ -21,6 +22,8 @@ async function main() {
     await prisma.shareLink.deleteMany();
     await prisma.projectMember.deleteMany();
     await prisma.project.deleteMany();
+    await prisma.workspaceMember.deleteMany();
+    await prisma.workspace.deleteMany();
     await prisma.session.deleteMany();
     await prisma.account.deleteMany();
     await prisma.verificationToken.deleteMany();
@@ -57,7 +60,39 @@ async function main() {
 
     console.log('✓ Created 3 demo users');
 
-    // Create projects
+    // Create workspaces
+    const mainWorkspace = await prisma.workspace.create({
+        data: {
+            name: 'OpenFrame Studio',
+            slug: 'openframe-studio',
+            description: 'Main workspace for all video production projects',
+            ownerId: demoUser.id,
+            members: {
+                create: [
+                    { userId: collaborator.id, role: WorkspaceMemberRole.ADMIN },
+                    { userId: reviewer.id, role: WorkspaceMemberRole.COMMENTATOR },
+                ],
+            },
+        },
+    });
+
+    const clientWorkspace = await prisma.workspace.create({
+        data: {
+            name: 'XYZ Corp',
+            slug: 'xyz-corp',
+            description: 'Client workspace for XYZ Corporation projects',
+            ownerId: collaborator.id,
+            members: {
+                create: [
+                    { userId: demoUser.id, role: WorkspaceMemberRole.ADMIN },
+                ],
+            },
+        },
+    });
+
+    console.log('✓ Created 2 workspaces with members');
+
+    // Create projects (linked to workspace)
     const techProject = await prisma.project.create({
         data: {
             name: 'Tech Review Series',
@@ -65,10 +100,11 @@ async function main() {
             slug: 'tech-review-series',
             visibility: ProjectVisibility.PRIVATE,
             ownerId: demoUser.id,
+            workspaceId: mainWorkspace.id,
             members: {
                 create: [
-                    { userId: collaborator.id, role: ProjectMemberRole.EDITOR },
-                    { userId: reviewer.id, role: ProjectMemberRole.VIEWER },
+                    { userId: collaborator.id, role: ProjectMemberRole.ADMIN },
+                    { userId: reviewer.id, role: ProjectMemberRole.COMMENTATOR },
                 ],
             },
         },
@@ -81,6 +117,7 @@ async function main() {
             slug: 'programming-tutorials',
             visibility: ProjectVisibility.INVITE,
             ownerId: demoUser.id,
+            workspaceId: mainWorkspace.id,
         },
     });
 
@@ -91,6 +128,7 @@ async function main() {
             slug: 'xyz-corp-promo',
             visibility: ProjectVisibility.PRIVATE,
             ownerId: collaborator.id,
+            workspaceId: clientWorkspace.id,
             members: {
                 create: [{ userId: demoUser.id, role: ProjectMemberRole.ADMIN }],
             },
@@ -273,8 +311,8 @@ async function main() {
     console.log('\n✅ Seeding complete!\n');
     console.log('Demo accounts:');
     console.log('  - yusuf@openframe.dev (Owner)');
-    console.log('  - ahmet@example.com (Editor)');
-    console.log('  - elif@example.com (Viewer)');
+    console.log('  - ahmet@example.com (Admin)');
+    console.log('  - elif@example.com (Commentator)');
 }
 
 main()

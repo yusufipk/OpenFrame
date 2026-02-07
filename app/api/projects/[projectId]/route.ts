@@ -18,13 +18,29 @@ async function checkProjectAccess(projectId: string, userId: string) {
 
     const isOwner = project.ownerId === userId;
     const membership = project.members[0];
-    const role = isOwner ? 'OWNER' : membership?.role || null;
+    let role: string | null = isOwner ? 'OWNER' : membership?.role || null;
+
+    // Check workspace-level access if not already authorized
+    if (!isOwner && !membership) {
+        const wsMember = await db.workspaceMember.findUnique({
+            where: { workspaceId_userId: { workspaceId: project.workspaceId, userId } },
+        });
+        const wsOwner = await db.workspace.findUnique({
+            where: { id: project.workspaceId },
+            select: { ownerId: true },
+        });
+        if (wsOwner?.ownerId === userId) {
+            role = 'OWNER';
+        } else if (wsMember) {
+            role = wsMember.role; // ADMIN or COMMENTATOR from workspace
+        }
+    }
 
     return {
         project,
         role,
-        canEdit: isOwner || role === ProjectMemberRole.ADMIN || role === ProjectMemberRole.EDITOR,
-        canDelete: isOwner,
+        canEdit: isOwner || role === 'OWNER' || role === ProjectMemberRole.ADMIN,
+        canDelete: isOwner || role === 'OWNER',
     };
 }
 
@@ -66,7 +82,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const isOwner = session?.user?.id === project.ownerId;
         const isMember = project.members.some(m => m.userId === session?.user?.id);
 
-        if (!isPublic && !isOwner && !isMember) {
+        // Check workspace membership
+        let isWorkspaceMember = false;
+        if (!isPublic && !isOwner && !isMember && session?.user?.id) {
+            const wsMember = await db.workspaceMember.findUnique({
+                where: {
+                    workspaceId_userId: {
+                        workspaceId: project.workspaceId,
+                        userId: session.user.id,
+                    },
+                },
+            });
+            const wsOwner = await db.workspace.findUnique({
+                where: { id: project.workspaceId },
+                select: { ownerId: true },
+            });
+            isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
+        }
+
+        if (!isPublic && !isOwner && !isMember && !isWorkspaceMember) {
             return NextResponse.json({ error: 'Access denied' }, { status: 403 });
         }
 
