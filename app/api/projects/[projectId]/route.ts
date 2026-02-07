@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { ProjectMemberRole, ProjectVisibility } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { cleanupProjectVoiceFiles } from '@/lib/r2-cleanup';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -107,7 +107,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             return apiErrors.forbidden('Access denied');
         }
 
-        return successResponse(project);
+        const response = successResponse(project);
+        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
         console.error('Error fetching project:', error);
         return apiErrors.internalError('Failed to fetch project');
@@ -149,7 +150,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse(project);
+        const response = successResponse(project);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error updating project:', error);
         return apiErrors.internalError('Failed to update project');
@@ -184,7 +186,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
         await db.project.delete({ where: { id: projectId } });
 
-        return successResponse({ message: 'Project deleted' });
+        const response = successResponse({ message: 'Project deleted' });
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error deleting project:', error);
         return apiErrors.internalError('Failed to delete project');

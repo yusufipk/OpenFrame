@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { ProjectMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string; memberId: string }> };
 
@@ -52,7 +52,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse(member);
+        const response = successResponse(member);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error updating member role:', error);
         return apiErrors.internalError('Failed to update member role');
@@ -100,7 +101,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
         await db.projectMember.delete({ where: { id: memberId } });
 
-        return successResponse({ message: 'Member removed' });
+        const response = successResponse({ message: 'Member removed' });
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error removing member:', error);
         return apiErrors.internalError('Failed to remove member');

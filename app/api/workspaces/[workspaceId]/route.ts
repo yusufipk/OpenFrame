@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { cleanupWorkspaceVoiceFiles } from '@/lib/r2-cleanup';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ workspaceId: string }> };
 
@@ -71,7 +71,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             return apiErrors.forbidden('Access denied');
         }
 
-        return successResponse(workspace);
+        const response = successResponse(workspace);
+        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
         console.error('Error fetching workspace:', error);
         return apiErrors.internalError('Failed to fetch workspace');
@@ -112,7 +113,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse(workspace);
+        const response = successResponse(workspace);
+        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
         console.error('Error updating workspace:', error);
         return apiErrors.internalError('Failed to update workspace');
@@ -147,7 +149,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
         await db.workspace.delete({ where: { id: workspaceId } });
 
-        return successResponse({ message: 'Workspace deleted' });
+        const response = successResponse({ message: 'Workspace deleted' });
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error deleting workspace:', error);
         return apiErrors.internalError('Failed to delete workspace');

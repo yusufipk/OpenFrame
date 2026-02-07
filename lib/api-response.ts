@@ -126,6 +126,11 @@ export function successResponse<T>(
   return NextResponse.json(body, { status });
 }
 
+export function withCacheControl<T>(response: NextResponse<T>, value: string): NextResponse<T> {
+  response.headers.set('Cache-Control', value);
+  return response;
+}
+
 /**
  * Common error response helpers
  */

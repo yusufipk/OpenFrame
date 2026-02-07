@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import nodemailer from 'nodemailer';
 import { testEmailHtml } from '@/lib/notifications';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 // GET /api/settings/notifications — Fetch current notification preferences
 export async function GET() {
@@ -19,7 +19,7 @@ export async function GET() {
         });
 
         // Return defaults if no settings exist yet
-        return successResponse(
+        const response = successResponse(
             settings ?? {
                 telegramBotToken: null,
                 telegramChatId: null,
@@ -31,6 +31,8 @@ export async function GET() {
                 timezone: 'UTC',
             }
         );
+
+        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
         console.error('Error fetching notification settings:', error);
         return apiErrors.internalError('Failed to fetch settings');
@@ -90,7 +92,8 @@ export async function PUT(request: NextRequest) {
             },
         });
 
-        return successResponse(settings);
+        const response = successResponse(settings);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error updating notification settings:', error);
         return apiErrors.internalError('Failed to update settings');
@@ -140,7 +143,8 @@ export async function POST(request: NextRequest) {
                 return apiErrors.badRequest(`Telegram test failed: ${desc}`);
             }
 
-            return successResponse({ message: 'Test message sent to Telegram' });
+            const response = successResponse({ message: 'Test message sent to Telegram' });
+            return withCacheControl(response, 'private, no-store');
         }
 
         if (channel === 'email') {
@@ -183,7 +187,8 @@ export async function POST(request: NextRequest) {
                 return apiErrors.internalError('Failed to send test email — check SMTP settings');
             }
 
-            return successResponse({ message: `Test email sent to ${user.email}` });
+            const response = successResponse({ message: `Test email sent to ${user.email}` });
+            return withCacheControl(response, 'private, no-store');
         }
 
         return apiErrors.badRequest('Unknown channel');

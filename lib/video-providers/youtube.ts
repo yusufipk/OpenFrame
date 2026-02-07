@@ -1,4 +1,5 @@
 import type { VideoProvider, VideoMetadata, EmbedOptions, ThumbnailSize } from './types';
+import { getCachedMetadata, setCachedMetadata } from './metadata-cache';
 
 // YouTube URL patterns
 const YOUTUBE_PATTERNS = [
@@ -57,6 +58,9 @@ export const youtubeProvider: VideoProvider = {
   },
 
   async getMetadata(videoId: string): Promise<VideoMetadata> {
+    const cacheKey = `youtube:${videoId}`;
+    const cached = getCachedMetadata(cacheKey);
+    if (cached) return cached;
     // Using oEmbed API - no API key required
     // For production, you might want to use YouTube Data API for more data
     try {
@@ -70,18 +74,23 @@ export const youtubeProvider: VideoProvider = {
       
       const data = await response.json();
       
-      return {
+      const metadata: VideoMetadata = {
         title: data.title,
         thumbnailUrl: data.thumbnail_url,
         author: data.author_name,
         authorUrl: data.author_url,
       };
+
+      setCachedMetadata(cacheKey, metadata);
+      return metadata;
     } catch (error) {
       // Fallback with minimal data
-      return {
+      const fallback: VideoMetadata = {
         title: 'YouTube Video',
         thumbnailUrl: this.getThumbnailUrl(videoId, 'large'),
       };
+      setCachedMetadata(cacheKey, fallback);
+      return fallback;
     }
   },
 };

@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { WorkspaceMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ workspaceId: string }> };
 
@@ -49,7 +49,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             select: { id: true, name: true, image: true },
         });
 
-        return successResponse({ members, owner });
+        const response = successResponse({ members, owner });
+        return withCacheControl(response, 'private, max-age=60, stale-while-revalidate=120');
     } catch (error) {
         console.error('Error fetching workspace members:', error);
         return apiErrors.internalError('Failed to fetch members');
@@ -103,7 +104,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
 
         if (!userToInvite) {
-            return successResponse({ message: 'If the user exists, an invitation has been sent.' });
+            const response = successResponse({ message: 'If the user exists, an invitation has been sent.' });
+        return withCacheControl(response, 'private, no-store');
         }
 
         if (userToInvite.id === workspace.ownerId) {
@@ -130,7 +132,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse(member, 201);
+        const response = successResponse(member, 201);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error inviting workspace member:', error);
         return apiErrors.internalError('Failed to invite member');

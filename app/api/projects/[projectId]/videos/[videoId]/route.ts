@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { ProjectMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { cleanupVideoVoiceFiles } from '@/lib/r2-cleanup';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
@@ -57,10 +57,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             return apiErrors.forbidden('Access denied');
         }
 
-        return successResponse({
+        const response = successResponse({
             ...video,
             isAuthenticated: !!session?.user?.id,
         });
+
+        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
         console.error('Error fetching video:', error);
         return apiErrors.internalError('Failed to fetch video');
@@ -117,7 +119,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse(updatedVideo);
+        const response = successResponse(updatedVideo);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error updating video:', error);
         return apiErrors.internalError('Failed to update video');
@@ -162,7 +165,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
         await db.video.delete({ where: { id: videoId } });
 
-        return successResponse({ message: 'Video deleted' });
+        const response = successResponse({ message: 'Video deleted' });
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error deleting video:', error);
         return apiErrors.internalError('Failed to delete video');

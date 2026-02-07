@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { checkRateLimit, getClientIp, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
-import { apiErrors, successResponse, ErrorCode } from '@/lib/api-response';
+import { apiErrors, successResponse, ErrorCode, withCacheControl } from '@/lib/api-response';
 
 export async function POST(request: NextRequest) {
     try {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
             response.headers.set(key, value);
         });
 
-        return response;
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Registration error:', error);
         return apiErrors.internalError('Failed to create account');

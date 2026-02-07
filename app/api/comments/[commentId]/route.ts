@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ commentId: string }> };
 
@@ -56,7 +56,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         // Strip internal project data from response
         const { version: _version, ...commentData } = comment;
-        return successResponse(commentData);
+        const response = successResponse(commentData);
+        return withCacheControl(response, 'private, no-cache');
     } catch (error) {
         console.error('Error fetching comment:', error);
         return apiErrors.internalError('Failed to fetch comment');
@@ -137,7 +138,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse(updatedComment);
+        const response = successResponse(updatedComment);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error updating comment:', error);
         return apiErrors.internalError('Failed to update comment');
@@ -209,7 +211,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             }
         }
 
-        return successResponse({ message: 'Comment deleted' });
+        const response = successResponse({ message: 'Comment deleted' });
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error deleting comment:', error);
         return apiErrors.internalError('Failed to delete comment');

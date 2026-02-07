@@ -1,4 +1,5 @@
 import type { VideoProvider, VideoMetadata, EmbedOptions, ThumbnailSize } from './types';
+import { getCachedMetadata, setCachedMetadata } from './metadata-cache';
 
 // Vimeo URL patterns
 const VIMEO_PATTERNS = [
@@ -60,6 +61,9 @@ export const vimeoProvider: VideoProvider = {
   },
 
   async getMetadata(videoId: string): Promise<VideoMetadata> {
+    const cacheKey = `vimeo:${videoId}`;
+    const cached = getCachedMetadata(cacheKey);
+    if (cached) return cached;
     try {
       const response = await fetch(
         `https://vimeo.com/api/oembed.json?url=https://vimeo.com/${videoId}`
@@ -71,7 +75,7 @@ export const vimeoProvider: VideoProvider = {
       
       const data = await response.json();
       
-      return {
+      const metadata: VideoMetadata = {
         title: data.title,
         description: data.description,
         thumbnailUrl: data.thumbnail_url,
@@ -80,11 +84,16 @@ export const vimeoProvider: VideoProvider = {
         authorUrl: data.author_url,
         uploadDate: data.upload_date ? new Date(data.upload_date) : undefined,
       };
+
+      setCachedMetadata(cacheKey, metadata);
+      return metadata;
     } catch (error) {
-      return {
+      const fallback: VideoMetadata = {
         title: 'Vimeo Video',
         thumbnailUrl: this.getThumbnailUrl(videoId, 'large'),
       };
+      setCachedMetadata(cacheKey, fallback);
+      return fallback;
     }
   },
 };

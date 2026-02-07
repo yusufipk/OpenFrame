@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { ProjectVisibility } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 // GET /api/projects - List all projects for the authenticated user
 export async function GET(request: NextRequest) {
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
             }),
         ]);
 
-        return successResponse(
+        const response = successResponse(
             { projects },
             200,
             {
@@ -66,6 +66,8 @@ export async function GET(request: NextRequest) {
                 totalPages: Math.ceil(total / limit),
             }
         );
+
+        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
         console.error('Error fetching projects:', error);
         return apiErrors.internalError('Failed to fetch projects');
@@ -145,7 +147,8 @@ export async function POST(request: NextRequest) {
             },
         });
 
-        return successResponse(project, 201);
+        const response = successResponse(project, 201);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error creating project:', error);
         return apiErrors.internalError('Failed to create project');

@@ -3,7 +3,7 @@ import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav'];
@@ -59,7 +59,8 @@ export async function POST(request: Request) {
     // Return the URL through our proxy endpoint
     const voiceUrl = `/api/upload/audio/${filename}`;
 
-    return successResponse({ url: voiceUrl }, 201);
+    const response = successResponse({ url: voiceUrl }, 201);
+    return withCacheControl(response, 'private, no-store');
   } catch (error) {
     console.error('Error uploading audio:', error);
     return apiErrors.internalError('Failed to upload audio');

@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { ProjectMemberRole } from '@prisma/client';
 import { validateUrl, validateOptionalUrl } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
@@ -43,7 +43,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse({ versions });
+        const response = successResponse({ versions });
+        return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
         console.error('Error fetching versions:', error);
         return apiErrors.internalError('Failed to fetch versions');
@@ -133,7 +134,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             });
         });
 
-        return successResponse(version, 201);
+        const response = successResponse(version, 201);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error creating version:', error);
         return apiErrors.internalError('Failed to create version');

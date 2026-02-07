@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 // GET /api/workspaces - List all workspaces for the authenticated user
 export async function GET() {
@@ -28,7 +28,8 @@ export async function GET() {
             orderBy: { updatedAt: 'desc' },
         });
 
-        return successResponse({ workspaces });
+        const response = successResponse({ workspaces });
+        return withCacheControl(response, 'private, max-age=60, stale-while-revalidate=120');
     } catch (error) {
         console.error('Error fetching workspaces:', error);
         return apiErrors.internalError('Failed to fetch workspaces');
@@ -84,7 +85,8 @@ export async function POST(request: NextRequest) {
             },
         });
 
-        return successResponse(workspace, 201);
+        const response = successResponse(workspace, 201);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error creating workspace:', error);
         return apiErrors.internalError('Failed to create workspace');

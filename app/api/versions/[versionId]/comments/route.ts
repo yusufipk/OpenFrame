@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { validateOptionalUrl } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 
@@ -66,7 +66,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse({ comments });
+        const response = successResponse({ comments });
+        return withCacheControl(response, 'private, no-cache');
     } catch (error) {
         console.error('Error fetching comments:', error);
         return apiErrors.internalError('Failed to fetch comments');
@@ -215,7 +216,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             }
         }
 
-        return successResponse(comment, 201);
+        const response = successResponse(comment, 201);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error creating comment:', error);
         return apiErrors.internalError('Failed to create comment');

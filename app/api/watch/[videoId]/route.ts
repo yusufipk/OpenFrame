@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         // Include auth context so the client knows if the viewer is a guest
         const { project, ...videoData } = video;
-        return successResponse({
+        const response = successResponse({
             ...videoData,
             projectId: video.projectId,
             project: {
@@ -69,6 +69,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             isAuthenticated: !!session?.user?.id,
             canComment: isOwner || isMember || isPublic,
         });
+
+        return withCacheControl(response, 'public, s-maxage=60, stale-while-revalidate=300');
     } catch (error) {
         console.error('Error fetching video:', error);
         return apiErrors.internalError('Failed to fetch video');

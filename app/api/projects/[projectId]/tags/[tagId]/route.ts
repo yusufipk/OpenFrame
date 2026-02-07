@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string; tagId: string }> };
 
@@ -91,7 +91,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             data: updateData,
         });
 
-        return successResponse(tag);
+        const response = successResponse(tag);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error updating tag:', error);
         if ((error as { code?: string }).code === 'P2002') {
@@ -132,7 +133,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
         await db.commentTag.delete({ where: { id: tagId } });
 
-        return successResponse({ message: 'Tag deleted' });
+        const response = successResponse({ message: 'Tag deleted' });
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error deleting tag:', error);
         return apiErrors.internalError('Failed to delete tag');

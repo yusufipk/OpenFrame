@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
-import { apiErrors, successResponse } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -79,7 +79,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             });
         }
 
-        return successResponse(tags);
+        const response = successResponse(tags);
+        return withCacheControl(response, 'private, max-age=120, stale-while-revalidate=300');
     } catch (error) {
         console.error('Error fetching tags:', error);
         return apiErrors.internalError('Failed to fetch tags');
@@ -134,7 +135,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return successResponse(tag, 201);
+        const response = successResponse(tag, 201);
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error creating tag:', error);
         if ((error as { code?: string }).code === 'P2002') {
