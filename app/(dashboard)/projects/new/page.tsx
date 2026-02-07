@@ -67,7 +67,7 @@ export default function NewProjectPage() {
         const res = await fetch('/api/workspaces');
         if (res.ok) {
           const data = await res.json();
-          const workspacesData = data.workspaces || [];
+          const workspacesData = data.data.workspaces || [];
           setWorkspaces(workspacesData);
           // Auto-select if only one workspace and none preselected
           if (!preselectedWorkspace && workspacesData.length === 1) {
@@ -106,7 +106,7 @@ export default function NewProjectPage() {
         return;
       }
 
-      router.push(`/projects/${data.id}`);
+      router.push(`/projects/${data.data.id}`);
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {

@@ -79,7 +79,8 @@ export default function CompareVersionsPage() {
           setLoading(false);
           return;
         }
-        const data = await res.json();
+        const response = await res.json();
+        const data = response.data;
         setVideo(data);
 
         // Set initial versions from query params or defaults

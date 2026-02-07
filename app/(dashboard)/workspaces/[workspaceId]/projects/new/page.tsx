@@ -63,7 +63,7 @@ export default function NewWorkspaceProjectPage({ params }: { params: Promise<{ 
         return;
       }
 
-      router.push(`/projects/${data.id}`);
+      router.push(`/projects/${data.data.id}`);
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {

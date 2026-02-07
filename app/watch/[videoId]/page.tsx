@@ -222,7 +222,8 @@ export default function WatchPage() {
       try {
         const res = await fetch(`/api/projects/${projectId}/tags`);
         if (res.ok) {
-          const tags = await res.json();
+          const data = await res.json();
+          const tags = data.data || [];
           setAvailableTags(tags);
           // Auto-select first tag (Feedback) as default
           if (tags.length > 0 && !selectedTagId) {
@@ -1118,7 +1119,7 @@ export default function WatchPage() {
         const res = await fetch(`/api/watch/${videoId}`);
         if (res.ok) {
           const data = await res.json();
-          setVideo(data);
+          setVideo(data.data);
         }
       } catch { /* silent */ }
     }, 10000);

@@ -38,7 +38,7 @@ export default function NewWorkspacePage() {
         return;
       }
 
-      router.push(`/workspaces/${data.id}`);
+      router.push(`/workspaces/${data.data.id}`);
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {

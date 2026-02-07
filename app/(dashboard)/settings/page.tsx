@@ -102,9 +102,9 @@ export default function SettingsPage() {
         const res = await fetch('/api/settings/notifications');
         if (res.ok) {
           const data = await res.json();
-          setSettings(data);
-          setTelegramToken(data.telegramBotToken || '');
-          setTelegramChatId(data.telegramChatId || '');
+          setSettings(data.data);
+          setTelegramToken(data.data.telegramBotToken || '');
+          setTelegramChatId(data.data.telegramChatId || '');
         }
       } catch {
         console.error('Failed to fetch notification settings');
@@ -135,7 +135,7 @@ export default function SettingsPage() {
 
       if (res.ok) {
         const data = await res.json();
-        setSettings(data);
+        setSettings(data.data);
         showMessage('success', 'Settings saved');
       } else {
         const data = await res.json();
@@ -163,7 +163,7 @@ export default function SettingsPage() {
         });
         const data = await res.json();
         if (res.ok) {
-          showMessage('success', data.message);
+          showMessage('success', data.data.message);
         } else {
           showMessage('error', data.error || 'Test failed');
         }

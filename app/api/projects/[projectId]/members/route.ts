@@ -38,14 +38,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const members = await db.projectMember.findMany({
             where: { projectId },
             include: {
-                user: { select: { id: true, name: true, image: true } },
+                user: { select: { id: true, name: true, email: true, image: true } },
             },
             orderBy: { createdAt: 'asc' },
         });
 
         const owner = await db.user.findUnique({
             where: { id: project.ownerId },
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, email: true, image: true },
         });
 
         const response = successResponse({ members, owner });
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 role: memberRole as ProjectMemberRole,
             },
             include: {
-                user: { select: { id: true, name: true, image: true } },
+                user: { select: { id: true, name: true, email: true, image: true } },
             },
         });
 

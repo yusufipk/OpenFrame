@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const members = await db.workspaceMember.findMany({
             where: { workspaceId },
             include: {
-                user: { select: { id: true, name: true, image: true } },
+                user: { select: { id: true, name: true, email: true, image: true } },
             },
             orderBy: { createdAt: 'asc' },
         });
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         // Include the owner as well
         const owner = await db.user.findUnique({
             where: { id: workspace.ownerId },
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, email: true, image: true },
         });
 
         const response = successResponse({ members, owner });
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 role: memberRole as WorkspaceMemberRole,
             },
             include: {
-                user: { select: { id: true, name: true, image: true } },
+                user: { select: { id: true, name: true, email: true, image: true } },
             },
         });
 

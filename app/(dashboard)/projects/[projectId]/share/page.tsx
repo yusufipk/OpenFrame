@@ -45,9 +45,10 @@ export default function ProjectSharePage({ params }: ProjectSharePageProps) {
                     if (data.error) {
                         setError(data.error);
                     } else {
-                        setProjectName(data.name || '');
-                        setProjectVisibility(data.visibility || 'PRIVATE');
-                        setMembers(data.members || []);
+                        const project = data.data;
+                        setProjectName(project.name || '');
+                        setProjectVisibility(project.visibility || 'PRIVATE');
+                        setMembers(project.members || []);
                     }
                 })
                 .catch(() => setError('Failed to load project'))

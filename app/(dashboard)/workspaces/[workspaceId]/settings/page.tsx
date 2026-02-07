@@ -40,10 +40,11 @@ export default function WorkspaceSettingsPage() {
         return;
       }
       const data = await res.json();
-      setWorkspace(data);
+      const workspace = data.data;
+      setWorkspace(workspace);
       setFormData({
-        name: data.name,
-        description: data.description || '',
+        name: workspace.name,
+        description: workspace.description || '',
       });
     } catch {
       setError('Failed to load workspace');

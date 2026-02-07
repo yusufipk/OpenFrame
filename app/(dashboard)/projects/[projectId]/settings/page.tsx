@@ -89,10 +89,11 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
                     if (data.error) {
                         setError(data.error);
                     } else {
+                        const project = data.data;
                         setFormData({
-                            name: data.name || '',
-                            description: data.description || '',
-                            visibility: data.visibility || 'PRIVATE',
+                            name: project.name || '',
+                            description: project.description || '',
+                            visibility: project.visibility || 'PRIVATE',
                         });
                     }
                 })
@@ -103,8 +104,8 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
             fetch(`/api/projects/${id}/tags`)
                 .then((res) => res.json())
                 .then((data) => {
-                    if (Array.isArray(data)) {
-                        setTags(data);
+                    if (Array.isArray(data.data)) {
+                        setTags(data.data);
                     }
                 })
                 .catch(() => { /* Silent fail - tags are optional */ });
@@ -150,7 +151,8 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
                 body: JSON.stringify({ name: newTagName.trim(), color: newTagColor }),
             });
             if (res.ok) {
-                const newTag = await res.json();
+                const data = await res.json();
+                const newTag = data.data;
                 setTags([...tags, newTag]);
                 setNewTagName('');
                 setNewTagColor('#3B82F6');
@@ -171,7 +173,8 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
                 body: JSON.stringify({ name: editTagName.trim(), color: editTagColor }),
             });
             if (res.ok) {
-                const updated = await res.json();
+                const data = await res.json();
+                const updated = data.data;
                 setTags(tags.map((t) => (t.id === tagId ? updated : t)));
                 setEditingTagId(null);
             }

@@ -68,8 +68,8 @@ export default function ProjectMembersPage() {
         return;
       }
       const data = await res.json();
-      setMembers(data.members);
-      setOwner(data.owner);
+      setMembers(data.data.members);
+      setOwner(data.data.owner);
     } catch {
       setError('Failed to load members');
     } finally {
