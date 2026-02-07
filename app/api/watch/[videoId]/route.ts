@@ -26,10 +26,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                             where: { parentId: null },
                             include: {
                                 author: { select: { id: true, name: true, image: true } },
+                                tag: { select: { id: true, name: true, color: true } },
                                 replies: {
                                     orderBy: { createdAt: 'asc' },
                                     include: {
                                         author: { select: { id: true, name: true, image: true } },
+                                        tag: { select: { id: true, name: true, color: true } },
                                     },
                                 },
                             },

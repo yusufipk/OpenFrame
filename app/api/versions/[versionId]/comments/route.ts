@@ -54,10 +54,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             orderBy: { timestamp: 'asc' },
             include: {
                 author: { select: { id: true, name: true, image: true } },
+                tag: { select: { id: true, name: true, color: true } },
                 replies: {
                     orderBy: { createdAt: 'asc' },
                     include: {
                         author: { select: { id: true, name: true, image: true } },
+                        tag: { select: { id: true, name: true, color: true } },
                     },
                 },
             },
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
 
         const body = await request.json();
-        const { content, timestamp, timestampEnd, parentId, voiceUrl, voiceDuration, guestName, guestEmail } = body;
+        const { content, timestamp, timestampEnd, parentId, voiceUrl, voiceDuration, guestName, guestEmail, tagId } = body;
 
         // Validate required fields
         if (timestamp === undefined || timestamp === null) {
@@ -173,13 +175,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 authorId: session?.user?.id || null,
                 guestName: isGuest ? guestName : null,
                 guestEmail: isGuest ? guestEmail : null,
+                tagId: tagId || null,
                 versionId,
             },
             include: {
                 author: { select: { id: true, name: true, image: true } },
+                tag: { select: { id: true, name: true, color: true } },
                 replies: {
                     include: {
                         author: { select: { id: true, name: true, image: true } },
+                        tag: { select: { id: true, name: true, color: true } },
                     },
                 },
             },

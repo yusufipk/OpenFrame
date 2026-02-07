@@ -30,6 +30,7 @@ import {
   Trash2,
   X,
   ArrowUpRight,
+  Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -50,6 +51,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -69,6 +71,12 @@ interface Version {
   _count: { comments: number };
 }
 
+interface CommentTag {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface Comment {
   id: string;
   content: string | null;
@@ -79,6 +87,7 @@ interface Comment {
   createdAt: string;
   author: { id: string; name: string | null; image: string | null } | null;
   guestName: string | null;
+  tag: CommentTag | null;
   replies: {
     id: string;
     content: string | null;
@@ -87,6 +96,7 @@ interface Comment {
     createdAt: string;
     author: { id: string; name: string | null; image: string | null } | null;
     guestName: string | null;
+    tag: CommentTag | null;
   }[];
 }
 
@@ -184,6 +194,10 @@ export default function VideoPage() {
   const [newVersionUrlError, setNewVersionUrlError] = useState('');
   const [isCreatingVersion, setIsCreatingVersion] = useState(false);
 
+  // Comment tags state
+  const [availableTags, setAvailableTags] = useState<CommentTag[]>([]);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+
   // Fetch video data
   useEffect(() => {
     async function fetchVideo() {
@@ -211,6 +225,26 @@ export default function VideoPage() {
   const comments = activeVersion?.comments || [];
   const filteredComments = comments.filter((c) => showResolved || !c.isResolved);
   const duration = videoDuration || activeVersion?.duration || 0;
+
+  // Fetch tags for the project
+  useEffect(() => {
+    async function fetchTags() {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/tags`);
+        if (res.ok) {
+          const tags = await res.json();
+          setAvailableTags(tags);
+          // Auto-select first tag (Feedback) as default
+          if (tags.length > 0 && !selectedTagId) {
+            setSelectedTagId(tags[0].id);
+          }
+        }
+      } catch {
+        // Silent fail - tags are optional
+      }
+    }
+    fetchTags();
+  }, [projectId]);
 
   // Load YouTube iframe API script once
   useEffect(() => {
@@ -286,6 +320,125 @@ export default function VideoPage() {
 
     return () => clearInterval(interval);
   }, [isReady, isDragging]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      switch (e.code) {
+        case 'Space':
+        case 'KeyK':
+          e.preventDefault();
+          if (playerRef.current) {
+            if (isPlaying) {
+              playerRef.current.pauseVideo();
+            } else {
+              playerRef.current.playVideo();
+            }
+          }
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.max(0, currentTime - 5);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.min(duration, currentTime + 5);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          {
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex < speeds.length - 1) {
+              const newSpeed = speeds[currentIndex + 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          {
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex > 0) {
+              const newSpeed = speeds[currentIndex - 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'Comma': // < key (Shift+,)
+          if (e.shiftKey) {
+            e.preventDefault();
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex > 0) {
+              const newSpeed = speeds[currentIndex - 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'Period': // > key (Shift+.)
+          if (e.shiftKey) {
+            e.preventDefault();
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex < speeds.length - 1) {
+              const newSpeed = speeds[currentIndex + 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'KeyM':
+          e.preventDefault();
+          if (playerRef.current) {
+            if (isMuted) {
+              playerRef.current.unMute();
+            } else {
+              playerRef.current.mute();
+            }
+            setIsMuted(!isMuted);
+          }
+          break;
+        case 'KeyJ':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.max(0, currentTime - 10);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+        case 'KeyL':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.min(duration, currentTime + 10);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, currentTime, duration, isMuted, playbackSpeed]);
 
   const handlePlayPause = useCallback(() => {
     if (!playerRef.current) return;
@@ -381,6 +534,7 @@ export default function VideoPage() {
           timestamp: selectedTimestamp ?? currentTime,
           ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
           ...(isGuest && guestName && { guestName }),
+          ...(selectedTagId && { tagId: selectedTagId }),
         }),
       });
 
@@ -399,13 +553,14 @@ export default function VideoPage() {
         });
         setCommentText('');
         setSelectedTimestamp(null);
+        setSelectedTagId(null);
       }
     } catch (err) {
       console.error('Failed to add comment:', err);
     } finally {
       setIsSubmittingComment(false);
     }
-  }, [commentText, currentTime, selectedTimestamp, activeVersion, activeVersionId, isGuest, guestName]);
+  }, [commentText, currentTime, selectedTimestamp, activeVersion, activeVersionId, isGuest, guestName, selectedTagId]);
 
   // Voice recording handlers
   const startRecording = useCallback(async () => {
@@ -610,11 +765,11 @@ export default function VideoPage() {
               versions: prev.versions.map((v) =>
                 v.id === activeVersionId
                   ? {
-                      ...v,
-                      comments: v.comments.map((c) =>
-                        c.id === commentId ? { ...c, isResolved: !c.isResolved } : c
-                      ),
-                    }
+                    ...v,
+                    comments: v.comments.map((c) =>
+                      c.id === commentId ? { ...c, isResolved: !c.isResolved } : c
+                    ),
+                  }
                   : v
               ),
             };
@@ -653,13 +808,13 @@ export default function VideoPage() {
             versions: prev.versions.map((v) =>
               v.id === activeVersionId
                 ? {
-                    ...v,
-                    comments: v.comments.map((c) =>
-                      c.id === parentId
-                        ? { ...c, replies: [...c.replies, newReply] }
-                        : c
-                    ),
-                  }
+                  ...v,
+                  comments: v.comments.map((c) =>
+                    c.id === parentId
+                      ? { ...c, replies: [...c.replies, newReply] }
+                      : c
+                  ),
+                }
                 : v
             ),
           };
@@ -761,17 +916,17 @@ export default function VideoPage() {
             versions: prev.versions.map((v) =>
               v.id === activeVersionId
                 ? {
-                    ...v,
-                    comments: v.comments.map((c) => {
-                      if (c.id === commentId) return { ...c, content: editText.trim() };
-                      return {
-                        ...c,
-                        replies: c.replies.map((r) =>
-                          r.id === commentId ? { ...r, content: editText.trim() } : r
-                        ),
-                      };
-                    }),
-                  }
+                  ...v,
+                  comments: v.comments.map((c) => {
+                    if (c.id === commentId) return { ...c, content: editText.trim() };
+                    return {
+                      ...c,
+                      replies: c.replies.map((r) =>
+                        r.id === commentId ? { ...r, content: editText.trim() } : r
+                      ),
+                    };
+                  }),
+                }
                 : v
             ),
           };
@@ -799,14 +954,14 @@ export default function VideoPage() {
             versions: prev.versions.map((v) =>
               v.id === activeVersionId
                 ? {
-                    ...v,
-                    comments: v.comments
-                      .filter((c) => c.id !== commentId)
-                      .map((c) => ({
-                        ...c,
-                        replies: c.replies.filter((r) => r.id !== commentId),
-                      })),
-                  }
+                  ...v,
+                  comments: v.comments
+                    .filter((c) => c.id !== commentId)
+                    .map((c) => ({
+                      ...c,
+                      replies: c.replies.filter((r) => r.id !== commentId),
+                    })),
+                }
                 : v
             ),
           };
@@ -993,14 +1148,14 @@ export default function VideoPage() {
                   </Button>
                 </DialogTrigger>
 
-              {video.versions.length >= 2 && (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/projects/${projectId}/videos/${videoId}/compare`}>
-                    <GitCompareArrows className="h-4 w-4 mr-1" />
-                    Compare
-                  </Link>
-                </Button>
-              )}
+                {video.versions.length >= 2 && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/projects/${projectId}/videos/${videoId}/compare`}>
+                      <GitCompareArrows className="h-4 w-4 mr-1" />
+                      Compare
+                    </Link>
+                  </Button>
+                )}
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Add New Version</DialogTitle>
@@ -1176,21 +1331,24 @@ export default function VideoPage() {
               />
 
               {/* Comment markers */}
-              {comments.map((comment) => (
-                <button
-                  key={comment.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSeekToTimestamp(comment.timestamp);
-                  }}
-                  className={cn(
-                    'absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-transform hover:scale-150 z-10',
-                    comment.isResolved ? 'bg-green-500' : 'bg-cyan-400'
-                  )}
-                  style={{ left: `calc(${duration > 0 ? (comment.timestamp / duration) * 100 : 0}% - 6px)` }}
-                  title={`${formatTime(comment.timestamp)} - ${comment.content?.substring(0, 30)}...`}
-                />
-              ))}
+              {comments.map((comment) => {
+                const markerColor = comment.tag?.color || (comment.isResolved ? '#22C55E' : '#22D3EE');
+                return (
+                  <button
+                    key={comment.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSeekToTimestamp(comment.timestamp);
+                    }}
+                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-transform hover:scale-150 z-10"
+                    style={{
+                      left: `calc(${duration > 0 ? (comment.timestamp / duration) * 100 : 0}% - 6px)`,
+                      backgroundColor: markerColor,
+                    }}
+                    title={`${formatTime(comment.timestamp)}${comment.tag ? ` [${comment.tag.name}]` : ''} - ${comment.content?.substring(0, 30) || '(voice note)'}...`}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1241,6 +1399,14 @@ export default function VideoPage() {
                             </AvatarFallback>
                           </Avatar>
                           <span className="text-sm font-medium">{authorName}</span>
+                          {comment.tag && (
+                            <span
+                              className="text-[10px] font-medium px-2 py-0.5 rounded-full text-white"
+                              style={{ backgroundColor: comment.tag.color }}
+                            >
+                              {comment.tag.name}
+                            </span>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1">
@@ -1802,6 +1968,45 @@ export default function VideoPage() {
                     >
                       <Mic className="h-4 w-4" />
                     </Button>
+                    {availableTags.length > 0 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant={selectedTagId ? 'default' : 'outline'}
+                            title="Select tag"
+                            style={selectedTagId ? {
+                              backgroundColor: availableTags.find(t => t.id === selectedTagId)?.color
+                            } : undefined}
+                          >
+                            <Tag className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {availableTags.map((tag) => (
+                            <DropdownMenuItem
+                              key={tag.id}
+                              onClick={() => setSelectedTagId(tag.id)}
+                              className="gap-2"
+                            >
+                              <span
+                                className="w-3 h-3 rounded-full shrink-0"
+                                style={{ backgroundColor: tag.color }}
+                              />
+                              {tag.name}
+                              {selectedTagId === tag.id && <span className="ml-auto">✓</span>}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem asChild>
+                            <Link href={`/projects/${projectId}/settings#comment-tags`} className="gap-2 text-muted-foreground">
+                              <Tag className="h-3 w-3" />
+                              Manage Tags
+                            </Link>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Cmd+Enter to submit</p>

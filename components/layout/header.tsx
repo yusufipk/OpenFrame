@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
@@ -10,7 +11,8 @@ import {
   Settings, 
   LogOut, 
   User,
-  Menu
+  Menu,
+  Keyboard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +25,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { KeyboardShortcutsModal } from '@/components/keyboard-shortcuts-modal';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -46,6 +49,7 @@ interface HeaderProps {
 
 export function Header({ user }: HeaderProps) {
   const pathname = usePathname();
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -151,6 +155,10 @@ export function Header({ user }: HeaderProps) {
                     Settings
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShortcutsOpen(true)}>
+                  <Keyboard className="h-4 w-4 mr-2" />
+                  Shortcuts
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <Link href="/signout">
@@ -170,6 +178,7 @@ export function Header({ user }: HeaderProps) {
           )}
         </div>
       </div>
+      <KeyboardShortcutsModal open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </header>
   );
 }

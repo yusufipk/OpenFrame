@@ -153,6 +153,7 @@ model Project {
   videos      Video[]
   members     ProjectMember[]
   shareLinks  ShareLink[]
+  commentTags CommentTag[]
   
   @@index([ownerId])
   @@index([slug])
@@ -279,6 +280,10 @@ model Comment {
   versionId     String
   version       VideoVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   
+  // Comment tag (colored category)
+  tagId         String?
+  tag           CommentTag? @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -287,7 +292,32 @@ model Comment {
   @@index([parentId])
   @@index([authorId])
   @@index([timestamp])
+  @@index([tagId])
   @@map("comments")
+}
+
+model CommentTag {
+  id        String   @id @default(cuid())
+  name      String   // e.g., "Feedback", "Technical", "Urgent"
+  color     String   // Hex color, e.g., "#3B82F6"
+  
+  // Project relation (tags are per-project)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Position for ordering in UI
+  position  Int      @default(0)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  comments  Comment[]
+  
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@map("comment_tags")
 }
 
 model ShareLink {

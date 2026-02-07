@@ -26,6 +26,7 @@ import {
   X,
   ArrowUpRight,
   User,
+  Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -55,6 +57,12 @@ interface Version {
   _count: { comments: number };
 }
 
+interface CommentTag {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface Comment {
   id: string;
   content: string | null;
@@ -65,6 +73,7 @@ interface Comment {
   createdAt: string;
   author: { id: string; name: string | null; image: string | null } | null;
   guestName: string | null;
+  tag: CommentTag | null;
   replies: {
     id: string;
     content: string | null;
@@ -73,6 +82,7 @@ interface Comment {
     createdAt: string;
     author: { id: string; name: string | null; image: string | null } | null;
     guestName: string | null;
+    tag: CommentTag | null;
   }[];
 }
 
@@ -97,6 +107,8 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
 export default function WatchPage() {
   const params = useParams();
   const videoId = params.videoId as string;
@@ -115,6 +127,7 @@ export default function WatchPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
 
   const [commentText, setCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
@@ -152,6 +165,10 @@ export default function WatchPage() {
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [guestName, setGuestName] = useState('');
   const [guestNameConfirmed, setGuestNameConfirmed] = useState(false);
+
+  // Tag state
+  const [availableTags, setAvailableTags] = useState<CommentTag[]>([]);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
 
   // Restore guest name from localStorage
   useEffect(() => {
@@ -191,6 +208,156 @@ export default function WatchPage() {
   const comments = activeVersion?.comments || [];
   const filteredComments = comments.filter((c) => showResolved || !c.isResolved);
   const duration = activeVersion?.duration || 300;
+
+  // Fetch tags for the project
+  useEffect(() => {
+    const projectId = video?.projectId;
+    if (!projectId) return;
+    async function fetchTags() {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/tags`);
+        if (res.ok) {
+          const tags = await res.json();
+          setAvailableTags(tags);
+          // Auto-select first tag (Feedback) as default
+          if (tags.length > 0 && !selectedTagId) {
+            setSelectedTagId(tags[0].id);
+          }
+        }
+      } catch {
+        // Silent fail - tags are optional
+      }
+    }
+    fetchTags();
+  }, [video?.projectId]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          if (playerRef.current) {
+            if (isPlaying) {
+              playerRef.current.pauseVideo();
+            } else {
+              playerRef.current.playVideo();
+            }
+          }
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.max(0, currentTime - 5);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.min(duration, currentTime + 5);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          {
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex < speeds.length - 1) {
+              const newSpeed = speeds[currentIndex + 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          {
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex > 0) {
+              const newSpeed = speeds[currentIndex - 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'Comma': // < key (Shift+,)
+          if (e.shiftKey) {
+            e.preventDefault();
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex > 0) {
+              const newSpeed = speeds[currentIndex - 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'Period': // > key (Shift+.)
+          if (e.shiftKey) {
+            e.preventDefault();
+            const speeds = SPEED_OPTIONS;
+            const currentIndex = speeds.indexOf(playbackSpeed);
+            if (currentIndex < speeds.length - 1) {
+              const newSpeed = speeds[currentIndex + 1];
+              setPlaybackSpeed(newSpeed);
+              playerRef.current?.setPlaybackRate(newSpeed);
+            }
+          }
+          break;
+        case 'KeyM':
+          e.preventDefault();
+          if (playerRef.current) {
+            if (isMuted) {
+              playerRef.current.unMute();
+            } else {
+              playerRef.current.mute();
+            }
+            setIsMuted(!isMuted);
+          }
+          break;
+        case 'KeyJ':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.max(0, currentTime - 10);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+        case 'KeyK':
+          e.preventDefault();
+          if (playerRef.current) {
+            if (isPlaying) {
+              playerRef.current.pauseVideo();
+            } else {
+              playerRef.current.playVideo();
+            }
+          }
+          break;
+        case 'KeyL':
+          e.preventDefault();
+          if (playerRef.current?.seekTo) {
+            const newTime = Math.min(duration, currentTime + 10);
+            playerRef.current.seekTo(newTime, true);
+            setCurrentTime(newTime);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, currentTime, duration, isMuted, playbackSpeed]);
 
   // Load YouTube iframe API
   useEffect(() => {
@@ -326,6 +493,7 @@ export default function WatchPage() {
           timestamp: selectedTimestamp ?? currentTime,
           ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
           ...(isGuest && guestName && { guestName }),
+          ...(selectedTagId && { tagId: selectedTagId }),
         }),
       });
 
@@ -344,13 +512,14 @@ export default function WatchPage() {
         });
         setCommentText('');
         setSelectedTimestamp(null);
+        setSelectedTagId(null);
       }
     } catch (err) {
       console.error('Failed to add comment:', err);
     } finally {
       setIsSubmittingComment(false);
     }
-  }, [commentText, currentTime, selectedTimestamp, activeVersion, activeVersionId, isGuest, guestName]);
+  }, [commentText, currentTime, selectedTimestamp, activeVersion, activeVersionId, isGuest, guestName, selectedTagId]);
 
   // Voice recording handlers
   const startRecording = useCallback(async () => {
@@ -1005,21 +1174,24 @@ export default function WatchPage() {
               />
 
               {/* Comment markers */}
-              {comments.map((comment) => (
-                <button
-                  key={comment.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSeekToTimestamp(comment.timestamp);
-                  }}
-                  className={cn(
-                    'absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-transform hover:scale-150 z-10',
-                    comment.isResolved ? 'bg-green-500' : 'bg-cyan-400'
-                  )}
-                  style={{ left: `calc(${(comment.timestamp / duration) * 100}% - 6px)` }}
-                  title={`${formatTime(comment.timestamp)} - ${comment.content?.substring(0, 30)}...`}
-                />
-              ))}
+              {comments.map((comment) => {
+                const markerColor = comment.tag?.color || (comment.isResolved ? '#22C55E' : '#22D3EE');
+                return (
+                  <button
+                    key={comment.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSeekToTimestamp(comment.timestamp);
+                    }}
+                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-transform hover:scale-150 z-10"
+                    style={{
+                      left: `calc(${(comment.timestamp / duration) * 100}% - 6px)`,
+                      backgroundColor: markerColor,
+                    }}
+                    title={`${formatTime(comment.timestamp)}${comment.tag ? ` [${comment.tag.name}]` : ''} - ${comment.content?.substring(0, 30) || '(voice note)'}...`}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1070,6 +1242,14 @@ export default function WatchPage() {
                             </AvatarFallback>
                           </Avatar>
                           <span className="text-sm font-medium">{authorName}</span>
+                          {comment.tag && (
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full text-white"
+                              style={{ backgroundColor: comment.tag.color }}
+                            >
+                              {comment.tag.name}
+                            </span>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1">
@@ -1631,6 +1811,45 @@ export default function WatchPage() {
                     >
                       <Mic className="h-4 w-4" />
                     </Button>
+                    {availableTags.length > 0 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant={selectedTagId ? 'default' : 'outline'}
+                            title="Select tag"
+                            style={selectedTagId ? {
+                              backgroundColor: availableTags.find(t => t.id === selectedTagId)?.color
+                            } : undefined}
+                          >
+                            <Tag className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {availableTags.map((tag) => (
+                            <DropdownMenuItem
+                              key={tag.id}
+                              onClick={() => setSelectedTagId(tag.id)}
+                              className="gap-2"
+                            >
+                              <span
+                                className="w-3 h-3 rounded-full shrink-0"
+                                style={{ backgroundColor: tag.color }}
+                              />
+                              {tag.name}
+                              {selectedTagId === tag.id && <span className="ml-auto">✓</span>}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem asChild>
+                            <Link href={`/projects/${video?.projectId}/settings#comment-tags`} className="gap-2 text-muted-foreground">
+                              <Tag className="h-3 w-3" />
+                              Manage Tags
+                            </Link>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Cmd+Enter to submit</p>

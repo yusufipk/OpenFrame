@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Globe, Lock, UserPlus, Trash2, AlertTriangle, Settings, Save } from 'lucide-react';
+import { ArrowLeft, Loader2, Globe, Lock, UserPlus, Trash2, AlertTriangle, Settings, Save, Tag, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,13 @@ interface ProjectSettingsPageProps {
     params: Promise<{ projectId: string }>;
 }
 
+interface CommentTag {
+    id: string;
+    name: string;
+    color: string;
+    position: number;
+}
+
 export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps) {
     const router = useRouter();
     const [projectId, setProjectId] = useState<string>('');
@@ -63,9 +70,19 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
         visibility: 'PRIVATE' as Visibility,
     });
 
+    // Tag management state
+    const [tags, setTags] = useState<CommentTag[]>([]);
+    const [newTagName, setNewTagName] = useState('');
+    const [newTagColor, setNewTagColor] = useState('#3B82F6');
+    const [isAddingTag, setIsAddingTag] = useState(false);
+    const [editingTagId, setEditingTagId] = useState<string | null>(null);
+    const [editTagName, setEditTagName] = useState('');
+    const [editTagColor, setEditTagColor] = useState('');
+
     useEffect(() => {
         params.then(({ projectId: id }) => {
             setProjectId(id);
+            // Fetch project data
             fetch(`/api/projects/${id}`)
                 .then((res) => res.json())
                 .then((data) => {
@@ -81,6 +98,16 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
                 })
                 .catch(() => setError('Failed to load project'))
                 .finally(() => setIsLoading(false));
+
+            // Fetch tags
+            fetch(`/api/projects/${id}/tags`)
+                .then((res) => res.json())
+                .then((data) => {
+                    if (Array.isArray(data)) {
+                        setTags(data);
+                    }
+                })
+                .catch(() => { /* Silent fail - tags are optional */ });
         });
     }, [params]);
 
@@ -110,6 +137,59 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
             setError('Something went wrong. Please try again.');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleAddTag = async () => {
+        if (!newTagName.trim()) return;
+        setIsAddingTag(true);
+        try {
+            const res = await fetch(`/api/projects/${projectId}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newTagName.trim(), color: newTagColor }),
+            });
+            if (res.ok) {
+                const newTag = await res.json();
+                setTags([...tags, newTag]);
+                setNewTagName('');
+                setNewTagColor('#3B82F6');
+            }
+        } catch {
+            // Silent fail
+        } finally {
+            setIsAddingTag(false);
+        }
+    };
+
+    const handleUpdateTag = async (tagId: string) => {
+        if (!editTagName.trim()) return;
+        try {
+            const res = await fetch(`/api/projects/${projectId}/tags/${tagId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: editTagName.trim(), color: editTagColor }),
+            });
+            if (res.ok) {
+                const updated = await res.json();
+                setTags(tags.map((t) => (t.id === tagId ? updated : t)));
+                setEditingTagId(null);
+            }
+        } catch {
+            // Silent fail
+        }
+    };
+
+    const handleDeleteTag = async (tagId: string) => {
+        try {
+            const res = await fetch(`/api/projects/${projectId}/tags/${tagId}`, {
+                method: 'DELETE',
+            });
+            if (res.ok) {
+                setTags(tags.filter((t) => t.id !== tagId));
+            }
+        } catch {
+            // Silent fail
         }
     };
 
@@ -214,13 +294,13 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
                                                 onClick={() => setFormData(prev => ({ ...prev, visibility: option.value }))}
                                                 disabled={isSaving}
                                                 className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${formData.visibility === option.value
-                                                        ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                                                        : 'border-border hover:border-border/80 hover:bg-accent/50'
+                                                    ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                                                    : 'border-border hover:border-border/80 hover:bg-accent/50'
                                                     }`}
                                             >
                                                 <div className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${formData.visibility === option.value
-                                                        ? 'bg-primary text-primary-foreground'
-                                                        : 'bg-muted text-muted-foreground'
+                                                    ? 'bg-primary text-primary-foreground'
+                                                    : 'bg-muted text-muted-foreground'
                                                     }`}>
                                                     {option.icon}
                                                 </div>
@@ -231,8 +311,8 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
                                                     </div>
                                                 </div>
                                                 <div className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${formData.visibility === option.value
-                                                        ? 'border-primary bg-primary'
-                                                        : 'border-muted-foreground/30'
+                                                    ? 'border-primary bg-primary'
+                                                    : 'border-muted-foreground/30'
                                                     }`}>
                                                     {formData.visibility === option.value && (
                                                         <div className="w-2 h-2 rounded-full bg-primary-foreground" />
@@ -261,6 +341,97 @@ export default function ProjectSettingsPage({ params }: ProjectSettingsPageProps
                                     Save Changes
                                 </Button>
                             </form>
+                        </CardContent>
+                    </Card>
+
+                    {/* Comment Tags */}
+                    <Card id="comment-tags" className="border-border/50 shadow-lg">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Tag className="h-5 w-5" />
+                                Comment Tags
+                            </CardTitle>
+                            <CardDescription>
+                                Customize tags for categorizing comments on videos
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {/* Existing tags */}
+                            <div className="space-y-2">
+                                {tags.map((tag) => (
+                                    <div key={tag.id} className="flex items-center gap-2 p-2 rounded-lg border bg-card">
+                                        {editingTagId === tag.id ? (
+                                            <>
+                                                <input
+                                                    type="color"
+                                                    value={editTagColor}
+                                                    onChange={(e) => setEditTagColor(e.target.value)}
+                                                    className="w-8 h-8 rounded cursor-pointer border-0"
+                                                />
+                                                <Input
+                                                    value={editTagName}
+                                                    onChange={(e) => setEditTagName(e.target.value)}
+                                                    className="flex-1 h-8"
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleUpdateTag(tag.id)}
+                                                />
+                                                <Button size="sm" variant="ghost" onClick={() => handleUpdateTag(tag.id)}>
+                                                    <Save className="h-4 w-4" />
+                                                </Button>
+                                                <Button size="sm" variant="ghost" onClick={() => setEditingTagId(null)}>
+                                                    <X className="h-4 w-4" />
+                                                </Button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div
+                                                    className="w-6 h-6 rounded-full shrink-0"
+                                                    style={{ backgroundColor: tag.color }}
+                                                />
+                                                <span className="flex-1 text-sm font-medium">{tag.name}</span>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => {
+                                                        setEditingTagId(tag.id);
+                                                        setEditTagName(tag.name);
+                                                        setEditTagColor(tag.color);
+                                                    }}
+                                                >
+                                                    Edit
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="text-destructive hover:text-destructive"
+                                                    onClick={() => handleDeleteTag(tag.id)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Add new tag */}
+                            <div className="flex items-center gap-2 pt-2 border-t">
+                                <input
+                                    type="color"
+                                    value={newTagColor}
+                                    onChange={(e) => setNewTagColor(e.target.value)}
+                                    className="w-8 h-8 rounded cursor-pointer border-0"
+                                />
+                                <Input
+                                    placeholder="New tag name..."
+                                    value={newTagName}
+                                    onChange={(e) => setNewTagName(e.target.value)}
+                                    className="flex-1 h-8"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+                                />
+                                <Button size="sm" onClick={handleAddTag} disabled={!newTagName.trim() || isAddingTag}>
+                                    {isAddingTag ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                                </Button>
+                            </div>
                         </CardContent>
                     </Card>
 

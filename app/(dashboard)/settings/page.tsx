@@ -267,37 +267,6 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Setup instructions:</p>
-            <ol className="list-decimal list-inside space-y-1 text-xs">
-              <li>
-                Open Telegram and message{' '}
-                <a
-                  href="https://t.me/BotFather"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-0.5"
-                >
-                  @BotFather <ExternalLink className="h-3 w-3" />
-                </a>
-              </li>
-              <li>Send <code className="px-1 py-0.5 bg-background rounded text-xs">/newbot</code> and follow the prompts to create a bot</li>
-              <li>Copy the <strong>Bot Token</strong> and paste it below</li>
-              <li>
-                Send a message to your new bot, then visit{' '}
-                <a
-                  href="https://api.telegram.org"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-0.5"
-                >
-                  api.telegram.org <ExternalLink className="h-3 w-3" />
-                </a>{' '}
-                <code className="px-1 py-0.5 bg-background rounded text-xs">/bot&lt;token&gt;/getUpdates</code> to find your <strong>Chat ID</strong>
-              </li>
-            </ol>
-          </div>
-
           <div className="space-y-3">
             <div>
               <Label htmlFor="telegram-token">Bot Token</Label>
