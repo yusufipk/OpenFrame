@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "bun run typecheck",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
