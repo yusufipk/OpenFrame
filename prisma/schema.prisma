@@ -104,9 +104,9 @@ model Project {
 }
 
 enum ProjectVisibility {
-  PRIVATE    // Only owner and members can access
-  LINK_ONLY  // Anyone with link can view
-  PUBLIC     // Listed publicly
+  PRIVATE    // Only owner can access
+  INVITE     // Owner + specifically invited members
+  PUBLIC     // Anyone with the link can access
 }
 
 model ProjectMember {

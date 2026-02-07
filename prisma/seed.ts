@@ -79,7 +79,7 @@ async function main() {
             name: 'Programming Tutorials',
             description: 'In-depth programming tutorials covering modern web development.',
             slug: 'programming-tutorials',
-            visibility: ProjectVisibility.LINK_ONLY,
+            visibility: ProjectVisibility.INVITE,
             ownerId: demoUser.id,
         },
     });

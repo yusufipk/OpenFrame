@@ -1,44 +1,61 @@
 import Link from 'next/link';
-import { Plus, FolderOpen, Clock, Users } from 'lucide-react';
+import { Plus, FolderOpen, Clock, Users, Globe, Lock, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-// import { auth } from '@/lib/auth';
-// import { redirect } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
+import { auth } from '@/lib/auth';
+import { redirect } from 'next/navigation';
+import { db } from '@/lib/db';
 
-// Placeholder data - will be replaced with real data from database
-const mockProjects = [
-  {
-    id: '1',
-    name: 'Product Demo v2',
-    description: 'New product walkthrough video for Q1 launch',
-    videoCount: 3,
-    lastUpdated: '2 hours ago',
-    memberCount: 4,
-  },
-  {
-    id: '2', 
-    name: 'Marketing Campaign',
-    description: 'Social media ads for summer campaign',
-    videoCount: 8,
-    lastUpdated: '1 day ago',
-    memberCount: 2,
-  },
-  {
-    id: '3',
-    name: 'Tutorial Series',
-    description: 'Getting started tutorials for new users',
-    videoCount: 12,
-    lastUpdated: '3 days ago',
-    memberCount: 1,
-  },
-];
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
+function VisibilityIcon({ visibility }: { visibility: string }) {
+  switch (visibility) {
+    case 'PUBLIC':
+      return <Globe className="h-3.5 w-3.5" />;
+    case 'INVITE':
+      return <UserPlus className="h-3.5 w-3.5" />;
+    default:
+      return <Lock className="h-3.5 w-3.5" />;
+  }
+}
 
 export default async function DashboardPage() {
-  // TODO: Uncomment when database is set up
-  // const session = await auth();
-  // if (!session) {
-  //   redirect('/login');
-  // }
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect('/login');
+  }
+
+  // Fetch projects where user is owner or member
+  const projects = await db.project.findMany({
+    where: {
+      OR: [
+        { ownerId: session.user.id },
+        { members: { some: { userId: session.user.id } } },
+      ],
+    },
+    include: {
+      _count: {
+        select: {
+          videos: true,
+          members: true,
+        },
+      },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
 
   return (
     <div className="px-6 lg:px-8 py-8 w-full">
@@ -59,31 +76,37 @@ export default async function DashboardPage() {
       </div>
 
       {/* Projects Grid */}
-      {mockProjects.length > 0 ? (
+      {projects.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockProjects.map((project) => (
+          {projects.map((project) => (
             <Link key={project.id} href={`/projects/${project.id}`}>
               <Card className="h-full transition-colors hover:bg-accent/50 cursor-pointer">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FolderOpen className="h-5 w-5 text-primary" />
-                    {project.name}
-                  </CardTitle>
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <FolderOpen className="h-5 w-5 text-primary" />
+                      {project.name}
+                    </CardTitle>
+                    <Badge variant="outline" className="flex items-center gap-1">
+                      <VisibilityIcon visibility={project.visibility} />
+                      {project.visibility.toLowerCase()}
+                    </Badge>
+                  </div>
                   <CardDescription className="line-clamp-2">
-                    {project.description}
+                    {project.description || 'No description'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3.5 w-3.5" />
-                      {project.lastUpdated}
+                      {formatRelativeTime(project.updatedAt)}
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="h-3.5 w-3.5" />
-                      {project.memberCount}
+                      {project._count.members + 1}
                     </span>
-                    <span>{project.videoCount} videos</span>
+                    <span>{project._count.videos} videos</span>
                   </div>
                 </CardContent>
               </Card>
