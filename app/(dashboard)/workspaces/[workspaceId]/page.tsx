@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 
 function VisibilityIcon({ visibility }: { visibility: string }) {
   switch (visibility) {
@@ -144,7 +145,9 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
       {/* Projects Grid */}
       {workspace.projects.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {workspace.projects.map((project) => (
+          {workspace.projects.map((project: Prisma.ProjectGetPayload<{
+            include: { _count: { select: { videos: true; members: true } } };
+          }>) => (
             <Link key={project.id} href={`/projects/${project.id}`}>
               <Card className="h-full transition-colors hover:bg-accent/50 cursor-pointer">
                 <CardHeader>
