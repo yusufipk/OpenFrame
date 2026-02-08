@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
-import { ProjectMemberRole } from '@prisma/client';
+import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { cleanupVideoVoiceFiles } from '@/lib/r2-cleanup';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -86,7 +86,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const video = await db.video.findFirst({
             where: { id: videoId, projectId },
             include: {
-                project: { include: { members: { where: { userId: session.user.id } } } },
+                project: {
+                    include: {
+                        members: { where: { userId: session.user.id } },
+                        workspace: {
+                            include: {
+                                members: { where: { userId: session.user.id } },
+                            },
+                        },
+                    },
+                },
             },
         });
 
@@ -96,8 +105,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
         const isOwner = video.project.ownerId === session.user.id;
         const membership = video.project.members[0];
+        const workspaceMembership = video.project.workspace.members[0];
         const canEdit = isOwner ||
-            membership?.role === ProjectMemberRole.ADMIN;
+            membership?.role === ProjectMemberRole.ADMIN ||
+            workspaceMembership?.role === WorkspaceMemberRole.ADMIN;
 
         if (!canEdit) {
             return apiErrors.forbidden('Access denied');
@@ -144,7 +155,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         const video = await db.video.findFirst({
             where: { id: videoId, projectId },
             include: {
-                project: { include: { members: { where: { userId: session.user.id } } } },
+                project: {
+                    include: {
+                        members: { where: { userId: session.user.id } },
+                        workspace: {
+                            include: {
+                                members: { where: { userId: session.user.id } },
+                            },
+                        },
+                    },
+                },
             },
         });
 
@@ -154,8 +174,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
         const isOwner = video.project.ownerId === session.user.id;
         const membership = video.project.members[0];
+        const workspaceMembership = video.project.workspace.members[0];
         // Destructive actions limited to OWNER and ADMIN only
-        const canDelete = isOwner || membership?.role === ProjectMemberRole.ADMIN;
+        const canDelete = isOwner ||
+            membership?.role === ProjectMemberRole.ADMIN ||
+            workspaceMembership?.role === WorkspaceMemberRole.ADMIN;
 
         if (!canDelete) {
             return apiErrors.forbidden('Only project owner or admin can delete videos');

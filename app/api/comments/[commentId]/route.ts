@@ -50,7 +50,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const isMember = project.members.length > 0;
         const isPublic = project.visibility === 'PUBLIC';
 
-        if (!isOwner && !isMember && !isPublic) {
+        // Check workspace membership for access
+        let isWorkspaceMember = false;
+        if (!isOwner && !isMember && !isPublic && session?.user?.id) {
+            const wsMember = await db.workspaceMember.findUnique({
+                where: {
+                    workspaceId_userId: {
+                        workspaceId: project.workspaceId,
+                        userId: session.user.id,
+                    },
+                },
+            });
+            const wsOwner = await db.workspace.findUnique({
+                where: { id: project.workspaceId },
+                select: { ownerId: true },
+            });
+            isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
+        }
+
+        if (!isOwner && !isMember && !isPublic && !isWorkspaceMember) {
             return apiErrors.forbidden('Access denied');
         }
 
@@ -105,6 +123,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const isAuthor = comment.authorId === session.user.id;
         const isMember = project.members.length > 0;
 
+        // Check workspace membership for resolve permissions
+        let isWorkspaceMember = false;
+        if (!isOwner && !isMember && session.user.id) {
+            const wsMember = await db.workspaceMember.findUnique({
+                where: {
+                    workspaceId_userId: {
+                        workspaceId: project.workspaceId,
+                        userId: session.user.id,
+                    },
+                },
+            });
+            const wsOwner = await db.workspace.findUnique({
+                where: { id: project.workspaceId },
+                select: { ownerId: true },
+            });
+            isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
+        }
+
         const body = await request.json();
         const { content, isResolved } = body;
 
@@ -113,8 +149,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             return apiErrors.forbidden('Only the author can edit comment content');
         }
 
-        // Owner, author, or members can resolve/unresolve
-        if (isResolved !== undefined && !isOwner && !isAuthor && !isMember) {
+        // Owner, author, members, or workspace members can resolve/unresolve
+        if (isResolved !== undefined && !isOwner && !isAuthor && !isMember && !isWorkspaceMember) {
             return apiErrors.forbidden('Access denied');
         }
 
@@ -165,7 +201,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
                 replies: { select: { voiceUrl: true } },
                 version: {
                     include: {
-                        video: { include: { project: true } },
+                        video: {
+                            include: {
+                                project: true,
+                            },
+                        },
                     },
                 },
             },
@@ -175,10 +215,29 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             return apiErrors.notFound('Comment');
         }
 
-        const isOwner = comment.version.video.project.ownerId === session.user.id;
+        const project = comment.version.video.project;
+        const isOwner = project.ownerId === session.user.id;
         const isAuthor = comment.authorId === session.user.id;
 
-        if (!isOwner && !isAuthor) {
+        // Check workspace membership for delete permissions
+        let isWorkspaceMember = false;
+        if (!isOwner && !isAuthor && session.user.id) {
+            const wsMember = await db.workspaceMember.findUnique({
+                where: {
+                    workspaceId_userId: {
+                        workspaceId: project.workspaceId,
+                        userId: session.user.id,
+                    },
+                },
+            });
+            const wsOwner = await db.workspace.findUnique({
+                where: { id: project.workspaceId },
+                select: { ownerId: true },
+            });
+            isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
+        }
+
+        if (!isOwner && !isAuthor && !isWorkspaceMember) {
             return apiErrors.forbidden('Only the author or project owner can delete this comment');
         }
 

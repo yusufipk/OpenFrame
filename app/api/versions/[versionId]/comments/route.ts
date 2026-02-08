@@ -39,7 +39,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const isMember = project.members.length > 0;
         const isPublic = project.visibility === 'PUBLIC';
 
-        if (!isOwner && !isMember && !isPublic) {
+        // Check workspace membership for access
+        let isWorkspaceMember = false;
+        if (!isOwner && !isMember && !isPublic && session?.user?.id) {
+            const wsMember = await db.workspaceMember.findUnique({
+                where: {
+                    workspaceId_userId: {
+                        workspaceId: project.workspaceId,
+                        userId: session.user.id,
+                    },
+                },
+            });
+            const wsOwner = await db.workspace.findUnique({
+                where: { id: project.workspaceId },
+                select: { ownerId: true },
+            });
+            isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
+        }
+
+        if (!isOwner && !isMember && !isPublic && !isWorkspaceMember) {
             return apiErrors.forbidden('Access denied');
         }
 
@@ -109,8 +127,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const hasCommentLink = project.shareLinks.length > 0;
         const isPublic = project.visibility === 'PUBLIC';
 
+        // Check workspace membership for comment access
+        let isWorkspaceMember = false;
+        if (!isOwner && !isMember && !isPublic && !hasCommentLink && session?.user?.id) {
+            const wsMember = await db.workspaceMember.findUnique({
+                where: {
+                    workspaceId_userId: {
+                        workspaceId: project.workspaceId,
+                        userId: session.user.id,
+                    },
+                },
+            });
+            const wsOwner = await db.workspace.findUnique({
+                where: { id: project.workspaceId },
+                select: { ownerId: true },
+            });
+            isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
+        }
+
         // Check if user can comment
-        const canComment = isOwner || isMember || isPublic || hasCommentLink;
+        const canComment = isOwner || isMember || isPublic || hasCommentLink || isWorkspaceMember;
         if (!canComment) {
             return apiErrors.forbidden('Access denied');
         }

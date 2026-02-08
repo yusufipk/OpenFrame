@@ -5,6 +5,33 @@ import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
+// Helper to check project access including workspace membership
+async function checkProjectAccess(project: { ownerId: string; workspaceId: string; visibility: string; members: { userId: string }[] }, userId: string | undefined) {
+    const isOwner = userId === project.ownerId;
+    const isMember = project.members.some(m => m.userId === userId);
+    const isPublic = project.visibility === 'PUBLIC';
+    
+    // Check workspace membership for access
+    let isWorkspaceMember = false;
+    if (!isOwner && !isMember && !isPublic && userId) {
+        const wsMember = await db.workspaceMember.findUnique({
+            where: {
+                workspaceId_userId: {
+                    workspaceId: project.workspaceId,
+                    userId: userId,
+                },
+            },
+        });
+        const wsOwner = await db.workspace.findUnique({
+            where: { id: project.workspaceId },
+            select: { ownerId: true },
+        });
+        isWorkspaceMember = !!wsMember || wsOwner?.ownerId === userId;
+    }
+    
+    return { isOwner, isMember, isPublic, isWorkspaceMember, hasAccess: isOwner || isMember || isPublic || isWorkspaceMember };
+}
+
 // GET /api/watch/[videoId] - Public watch endpoint (no projectId needed)
 export async function GET(request: NextRequest, { params }: RouteParams) {
     try {
@@ -47,12 +74,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             return apiErrors.notFound('Video');
         }
 
-        // Check access
-        const isOwner = session?.user?.id === video.project.ownerId;
-        const isMember = video.project.members.length > 0;
-        const isPublic = video.project.visibility === 'PUBLIC';
+        // Check access including workspace membership
+        const access = await checkProjectAccess(video.project, session?.user?.id);
 
-        if (!isOwner && !isMember && !isPublic) {
+        if (!access.hasAccess) {
             return apiErrors.forbidden('Access denied');
         }
 
@@ -67,7 +92,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                 visibility: project.visibility,
             },
             isAuthenticated: !!session?.user?.id,
-            canComment: isOwner || isMember || isPublic,
+            canComment: access.isOwner || access.isMember || access.isPublic || access.isWorkspaceMember,
         });
 
         return withCacheControl(response, 'private, no-cache');

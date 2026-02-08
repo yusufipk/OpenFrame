@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
-import { ProjectMemberRole } from '@prisma/client';
+import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { validateUrl, validateOptionalUrl } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -67,7 +67,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const video = await db.video.findFirst({
             where: { id: videoId, projectId },
             include: {
-                project: { include: { members: { where: { userId: session.user.id } } } },
+                project: {
+                    include: {
+                        members: { where: { userId: session.user.id } },
+                        workspace: {
+                            include: {
+                                members: { where: { userId: session.user.id } },
+                            },
+                        },
+                    },
+                },
                 versions: { orderBy: { versionNumber: 'desc' }, take: 1 },
             },
         });
@@ -78,8 +87,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         const isOwner = video.project.ownerId === session.user.id;
         const membership = video.project.members[0];
+        const workspaceMembership = video.project.workspace.members[0];
         const canEdit = isOwner ||
-            membership?.role === ProjectMemberRole.ADMIN;
+            membership?.role === ProjectMemberRole.ADMIN ||
+            workspaceMembership?.role === WorkspaceMemberRole.ADMIN;
 
         if (!canEdit) {
             return apiErrors.forbidden('Access denied');

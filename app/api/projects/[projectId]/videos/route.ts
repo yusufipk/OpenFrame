@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
-import { ProjectMemberRole } from '@prisma/client';
+import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { validateUrl, validateOptionalUrl } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
@@ -68,10 +68,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return apiErrors.unauthorized();
         }
 
-        // Check project access (must be owner or admin)
+        // Check project access (must be owner, project admin, or workspace admin)
         const project = await db.project.findUnique({
             where: { id: projectId },
-            include: { members: { where: { userId: session.user.id } } },
+            include: {
+                members: { where: { userId: session.user.id } },
+                workspace: {
+                    include: {
+                        members: { where: { userId: session.user.id } },
+                    },
+                },
+            },
         });
 
         if (!project) {
@@ -80,8 +87,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         const isOwner = project.ownerId === session.user.id;
         const membership = project.members[0];
+        const workspaceMembership = project.workspace.members[0];
         const canEdit = isOwner ||
-            membership?.role === ProjectMemberRole.ADMIN;
+            membership?.role === ProjectMemberRole.ADMIN ||
+            workspaceMembership?.role === WorkspaceMemberRole.ADMIN;
 
         if (!canEdit) {
             return apiErrors.forbidden('Access denied');
