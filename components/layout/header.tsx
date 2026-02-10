@@ -8,7 +8,7 @@ import {
   Video,
   FolderOpen,
   Building2,
-  Plus,
+
   Settings,
   LogOut,
   User,
@@ -119,18 +119,7 @@ export function Header({ user }: HeaderProps) {
 
         {/* Right side */}
         <div className="flex items-center gap-2 ml-auto">
-          <Button asChild size="sm" className="hidden sm:flex">
-            <Link href="/projects/new">
-              <Plus className="h-4 w-4 mr-1" />
-              New Project
-            </Link>
-          </Button>
 
-          <Button asChild size="icon" variant="ghost" className="sm:hidden">
-            <Link href="/projects/new">
-              <Plus className="h-5 w-5" />
-            </Link>
-          </Button>
 
           <ThemeToggle />
 
