@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ArrowLeft, Loader2, Link as LinkIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -177,10 +178,12 @@ export default function NewVideoPage() {
               <div className="space-y-2">
                 <Label>Preview</Label>
                 <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
-                  <img
+                  <Image
                     src={thumbnailUrl}
                     alt="Video thumbnail"
-                    className="object-cover w-full h-full"
+                    fill
+                    sizes="(max-width: 768px) 100vw, 600px"
+                    className="object-cover"
                   />
                 </div>
               </div>

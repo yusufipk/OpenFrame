@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { 
   Video, 
@@ -25,8 +26,12 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { KeyboardShortcutsModal } from '@/components/keyboard-shortcuts-modal';
 import { cn } from '@/lib/utils';
+
+const KeyboardShortcutsModal = dynamic(
+  () => import('@/components/keyboard-shortcuts-modal').then(mod => mod.KeyboardShortcutsModal),
+  { ssr: false }
+);
 
 interface NavItem {
   href: string;

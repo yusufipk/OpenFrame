@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
   Play,
@@ -178,10 +179,12 @@ export function VideoCard({ video, projectId }: VideoCardProps) {
         <Link href={`/projects/${projectId}/videos/${video.id}`}>
           {/* Thumbnail */}
           <div className="relative aspect-video bg-muted overflow-hidden">
-            <img
+            <Image
               src={video.thumbnailUrl}
               alt={video.title}
-              className="object-cover w-full h-full transition-transform group-hover:scale-105"
+              fill
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              className="object-cover transition-transform group-hover:scale-105"
             />
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <Play className="h-12 w-12 text-white" fill="white" />
