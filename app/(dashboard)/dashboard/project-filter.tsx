@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Plus, FolderOpen, Clock, Users, Globe, Lock, UserPlus, Building2 } from 'lucide-react';
+import { Plus, FolderOpen, Clock, Users, Globe, Lock, UserPlus, Building2, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -57,13 +57,27 @@ function VisibilityIcon({ visibility }: { visibility: string }) {
   }
 }
 
+type SortOrder = 'desc' | 'asc';
+
 export function ProjectFilter({ projects, workspaces }: ProjectFilterProps) {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>('all');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
-  const filtered =
-    selectedWorkspace === 'all'
-      ? projects
-      : projects.filter((p) => p.workspaceId === selectedWorkspace);
+  const filtered = useMemo(() => {
+    let result =
+      selectedWorkspace === 'all'
+        ? projects
+        : projects.filter((p) => p.workspaceId === selectedWorkspace);
+
+    // Sort by date
+    result = [...result].sort((a, b) => {
+      const dateA = new Date(a.updatedAt).getTime();
+      const dateB = new Date(b.updatedAt).getTime();
+      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+    });
+
+    return result;
+  }, [projects, selectedWorkspace, sortOrder]);
 
   return (
     <>
@@ -87,12 +101,32 @@ export function ProjectFilter({ projects, workspaces }: ProjectFilterProps) {
             </Select>
           )}
         </div>
-        <Button asChild>
-          <Link href="/projects/new">
-            <Plus className="h-4 w-4 mr-2" />
-            New Project
-          </Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+            className="flex items-center gap-2"
+          >
+            {sortOrder === 'desc' ? (
+              <>
+                <ArrowDown className="h-4 w-4" />
+                Newest first
+              </>
+            ) : (
+              <>
+                <ArrowUp className="h-4 w-4" />
+                Oldest first
+              </>
+            )}
+          </Button>
+          <Button asChild>
+            <Link href="/projects/new">
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Projects Grid */}
