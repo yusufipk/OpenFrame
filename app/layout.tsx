@@ -7,6 +7,8 @@ import "./globals.css";
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-sans',
+  display: 'swap',
+  preload: true,
 });
 
 export const metadata: Metadata = {

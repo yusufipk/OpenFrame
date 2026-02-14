@@ -64,14 +64,10 @@ export const youtubeProvider: VideoProvider = {
     // Using oEmbed API - no API key required
     // For production, you might want to use YouTube Data API for more data
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
       const response = await fetch(
         `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
-        { signal: controller.signal }
+        { signal: AbortSignal.timeout(5000) }
       );
-      clearTimeout(timeoutId);
       
       if (!response.ok) {
         throw new Error('Failed to fetch video metadata');

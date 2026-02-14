@@ -198,6 +198,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSavedProgressRef = useRef<number>(0);
+
+  // YouTube API loading state
+  const [isApiLoaded, setIsApiLoaded] = useState(false);
   const [progressFetchKey, setProgressFetchKey] = useState(0);
 
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -374,16 +377,30 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     fetchTags();
   }, [projectId]);
 
+  // Load YouTube API immediately on component mount (async, non-blocking)
   useEffect(() => {
-    if (window.YT) return;
+    // Already loaded
+    if (isApiLoaded) return;
+    
+    // Already in progress
+    if (window.YT) {
+      setIsApiLoaded(true);
+      return;
+    }
+    
     const tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
     const firstScriptTag = document.getElementsByTagName('script')[0];
     firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-  }, []);
+    
+    window.onYouTubeIframeAPIReady = () => {
+      setIsApiLoaded(true);
+    };
+  }, [isApiLoaded]);
 
   useEffect(() => {
     if (!activeVersion || activeVersion.providerId !== 'youtube') return;
+    if (!isApiLoaded) return;
 
     setIsReady(false);
     setCurrentTime(0);
@@ -428,7 +445,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       clearTimeout(timeout);
       window.onYouTubeIframeAPIReady = undefined;
     };
-  }, [activeVersionId]);
+  }, [activeVersionId, isApiLoaded]);
 
   // Save detected duration to DB if the version doesn't have one stored
   useEffect(() => {
