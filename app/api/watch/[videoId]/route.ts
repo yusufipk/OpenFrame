@@ -76,6 +76,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             },
             isAuthenticated: !!session?.user?.id,
             currentUserId: session?.user?.id || null,
+            currentUserName: session?.user?.name || null,
             canComment: access.hasAccess,
         });
 

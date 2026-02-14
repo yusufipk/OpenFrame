@@ -70,6 +70,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             ...video,
             isAuthenticated: !!session?.user?.id,
             currentUserId: session?.user?.id || null,
+            currentUserName: session?.user?.name || null,
         });
 
         return withCacheControl(response, 'private, no-cache');

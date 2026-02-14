@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { List } from 'react-window';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { toast } from 'sonner';
@@ -127,6 +128,7 @@ interface VideoData {
   versions: (Version & { comments: Comment[] })[];
   isAuthenticated: boolean;
   currentUserId: string | null;
+  currentUserName: string | null;
   canComment?: boolean;
 }
 
@@ -241,6 +243,16 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const projectId = propProjectId || video?.projectId;
 
   // Cursor idle detection: hide overlay when cursor idle for 3s while playing
+  // Memoize version selection handler to prevent recreating on each render
+  const handleVersionSelect = useCallback((versionId: string) => {
+    setActiveVersionId(versionId);
+  }, []);
+
+  // Memoize toggle show resolved handler
+  const handleToggleShowResolved = useCallback(() => {
+    setShowResolved(prev => !prev);
+  }, []);
+
   const handleVideoMouseMove = useCallback(() => {
     setCursorIdle(false);
     if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
@@ -260,8 +272,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     };
   }, []);
 
-  // Determine current user ID for permission checks
+  // Determine current user info for permission checks and comment display
   const currentUserId = video?.currentUserId || null;
+  const currentUserName = video?.currentUserName || null;
 
   const apiBasePath = mode === 'dashboard'
     ? `/api/projects/${propProjectId}/videos/${videoId}`
@@ -295,12 +308,52 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     fetchVideo();
   }, [apiBasePath, mode]);
 
-  const activeVersion = video?.versions?.find((v) => v.id === activeVersionId) ||
-    video?.versions?.find((v) => v.isActive) ||
-    video?.versions?.[0];
-  const comments = activeVersion?.comments || [];
-  const filteredComments = comments.filter((c) => showResolved || !c.isResolved);
-  const duration = videoDuration || activeVersion?.duration || 0;
+  // Memoize active version lookup to avoid recalculating on every render
+  const activeVersion = useMemo(() => {
+    return video?.versions?.find((v) => v.id === activeVersionId) ||
+      video?.versions?.find((v) => v.isActive) ||
+      video?.versions?.[0];
+  }, [video?.versions, activeVersionId]);
+
+  // Memoize comments array
+  const comments = useMemo(() => {
+    return activeVersion?.comments || [];
+  }, [activeVersion]);
+
+  // Memoize filtered comments to avoid filtering on every render
+  const filteredComments = useMemo(() => {
+    return comments.filter((c) => showResolved || !c.isResolved);
+  }, [comments, showResolved]);
+
+  // Memoize sorted comments to avoid sorting on every render
+  const sortedComments = useMemo(() => {
+    return [...filteredComments].sort((a, b) => a.timestamp - b.timestamp);
+  }, [filteredComments]);
+
+  // Memoize duration computation
+  const duration = useMemo(() => {
+    return videoDuration || activeVersion?.duration || 0;
+  }, [videoDuration, activeVersion?.duration]);
+
+  // Memoize embed URL calculation to avoid recalculating on every render
+  const embedUrl = useMemo(() => {
+    if (!activeVersion) return '';
+    if (activeVersion.providerId === 'youtube') {
+      return `https://www.youtube.com/embed/${activeVersion.videoId}?enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&disablekb=1`;
+    }
+    if (activeVersion.providerId === 'vimeo') {
+      return `https://player.vimeo.com/video/${activeVersion.videoId}`;
+    }
+    try {
+      const url = new URL(activeVersion.originalUrl);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return '';
+      }
+      return activeVersion.originalUrl;
+    } catch {
+      return '';
+    }
+  }, [activeVersion]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -734,7 +787,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       voiceDuration: voiceData?.duration ?? null,
       isResolved: false,
       createdAt: new Date().toISOString(),
-      author: isGuest ? null : { id: 'current-user', name: null, image: null },
+      author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
       guestName: isGuest ? guestName : null,
       tag: availableTags.find(t => t.id === selectedTagId) || null,
       replies: [],
@@ -1085,7 +1138,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       voiceUrl: voiceData?.url ?? null,
       voiceDuration: voiceData?.duration ?? null,
       createdAt: new Date().toISOString(),
-      author: isGuest ? null : { id: 'current-user', name: null, image: null },
+      author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
       guestName: isGuest ? guestName : null,
       tag: null,
     };
@@ -1352,11 +1405,16 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     }
   }, [activeVersionId, video]);
 
+  // Comment polling with Page Visibility API to pause when tab is hidden
   useEffect(() => {
     if (!activeVersion) return;
-    const interval = setInterval(async () => {
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let isPageVisible = true;
+
+    const poll = async () => {
       try {
-        if (isMutatingRef.current) return;
+        if (isMutatingRef.current || !isPageVisible) return;
 
         const res = await fetch(apiBasePath, { cache: 'no-store' });
         if (res.ok) {
@@ -1366,8 +1424,22 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           }
         }
       } catch { /* silent */ }
-    }, 10000);
-    return () => clearInterval(interval);
+    };
+
+    // Start polling
+    intervalId = setInterval(poll, 10000);
+
+    // Handle page visibility change
+    const handleVisibilityChange = () => {
+      isPageVisible = document.visibilityState === 'visible';
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [activeVersion, apiBasePath]);
 
   const handleNewVersionUrlChange = (url: string) => {
@@ -1472,23 +1544,6 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     }
   };
 
-  const getEmbedUrl = (version: Version) => {
-    if (version.providerId === 'youtube') {
-      return `https://www.youtube.com/embed/${version.videoId}?enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&disablekb=1`;
-    }
-    if (version.providerId === 'vimeo') {
-      return `https://player.vimeo.com/video/${version.videoId}`;
-    }
-    try {
-      const url = new URL(version.originalUrl);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        return '';
-      }
-      return version.originalUrl;
-    } catch {
-      return '';
-    }
-  };
 
   const containerHeight = 'h-screen';
   const backHref = mode === 'dashboard'
@@ -1630,8 +1685,6 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     );
   }
 
-  const embedUrl = getEmbedUrl(activeVersion);
-
   return (
     <div
       className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}
@@ -1671,7 +1724,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                   {video.versions.map((version) => (
                     <DropdownMenuItem
                       key={version.id}
-                      onClick={() => setActiveVersionId(version.id)}
+                      onClick={() => handleVersionSelect(version.id)}
                     >
                       <Badge
                         variant={version.id === activeVersionId ? 'default' : 'secondary'}
@@ -1988,7 +2041,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               <span className="font-medium">Comments</span>
               <Badge variant="secondary">{comments.length}</Badge>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowResolved(!showResolved)}>
+            <Button variant="ghost" size="sm" onClick={handleToggleShowResolved}>
               {showResolved ? 'Hide' : 'Show'} Resolved
             </Button>
           </div>
@@ -2001,9 +2054,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 <p className="text-sm">Be the first to leave feedback!</p>
               </div>
             ) : (
-              filteredComments
-                .sort((a, b) => a.timestamp - b.timestamp)
-                .map((comment) => {
+              sortedComments.map((comment) => {
                   const authorName =
                     comment.author?.name || comment.guestName || 'Anonymous';
                   const isEditing = editingCommentId === comment.id;
