@@ -36,7 +36,6 @@
     "nodemailer": "^8.0.1",
     "pg": "^8.18.0",
     "prisma": "^7.3.0",
-    "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-window": "^2.2.7",
