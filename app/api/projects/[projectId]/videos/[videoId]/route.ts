@@ -15,25 +15,37 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const session = await auth();
         const { projectId, videoId } = await params;
 
+        // Parse query params for pagination and options
+        const searchParams = request.nextUrl.searchParams;
+        const commentLimit = Math.min(parseInt(searchParams.get('commentLimit') || '50'), 100);
+        const commentOffset = parseInt(searchParams.get('commentOffset') || '0');
+        const includeReplies = searchParams.get('includeReplies') === 'true';
+
         const video = await db.video.findFirst({
             where: { id: videoId, projectId },
             include: {
                 project: true,
                 versions: {
+                    where: { isActive: true },
                     orderBy: { versionNumber: 'desc' },
+                    take: 1,
                     include: {
                         comments: {
                             orderBy: { timestamp: 'asc' },
+                            skip: commentOffset,
+                            take: commentLimit,
                             include: {
                                 author: { select: { id: true, name: true, image: true } },
                                 tag: { select: { id: true, name: true, color: true } },
-                                replies: {
-                                    orderBy: { createdAt: 'asc' },
-                                    include: {
-                                        author: { select: { id: true, name: true, image: true } },
-                                        tag: { select: { id: true, name: true, color: true } },
+                                ...(includeReplies ? {
+                                    replies: {
+                                        orderBy: { createdAt: 'asc' },
+                                        include: {
+                                            author: { select: { id: true, name: true, image: true } },
+                                            tag: { select: { id: true, name: true, color: true } },
+                                        },
                                     },
-                                },
+                                } : {}),
                             },
                             where: { parentId: null }, // Only top-level comments
                         },

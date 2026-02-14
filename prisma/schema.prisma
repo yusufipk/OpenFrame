@@ -31,6 +31,7 @@ model User {
   comments           Comment[]
   projectMemberships ProjectMember[]
   notificationSetting NotificationSetting?
+  watchProgress      WatchProgress[]
   
   @@map("users")
 }
@@ -158,6 +159,7 @@ model Project {
   @@index([ownerId])
   @@index([slug])
   @@index([workspaceId])
+  @@index([workspaceId, updatedAt(sort: Desc)])
   @@map("projects")
 }
 
@@ -239,9 +241,11 @@ model VideoVersion {
   
   // Relations
   comments        Comment[]
+  watchProgress   WatchProgress[]
   
   @@unique([videoParentId, versionNumber])
   @@index([videoParentId])
+  @@index([videoParentId, isActive])
   @@map("video_versions")
 }
 
@@ -293,6 +297,8 @@ model Comment {
   @@index([authorId])
   @@index([timestamp])
   @@index([tagId])
+  @@index([versionId, isResolved, timestamp])
+  @@index([versionId, parentId, createdAt])
   @@map("comments")
 }
 
@@ -345,6 +351,7 @@ model ShareLink {
   
   @@index([projectId])
   @@index([token])
+  @@index([token, expiresAt])
   @@map("share_links")
 }
 
@@ -384,6 +391,37 @@ model NotificationSetting {
   updatedAt  DateTime @updatedAt
 
   @@map("notification_settings")
+}
+
+// ============================================
+// WATCH PROGRESS
+// ============================================
+
+model WatchProgress {
+  id         String   @id @default(cuid())
+  
+  // User relation (optional for guest progress, though typically requires auth)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Video version relation
+  versionId  String
+  version    VideoVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  
+  // Progress data
+  progress   Float    // Current playback position in seconds
+  duration   Float    // Total video duration at time of save
+  percentage Float    // Progress as percentage (0-100)
+  
+  // Timestamps
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  
+  // One progress record per user per version
+  @@unique([userId, versionId])
+  @@index([userId])
+  @@index([versionId])
+  @@map("watch_progress")
 }
 
 // Rate limiting table (created as UNLOGGED via raw SQL migration)

@@ -52,6 +52,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     try {
         const session = await auth();
         const { projectId } = await params;
+        
+        // Parse pagination params
+        const searchParams = request.nextUrl.searchParams;
+        const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+        const offset = parseInt(searchParams.get('offset') || '0');
 
         const project = await db.project.findUnique({
             where: { id: projectId },
@@ -64,10 +69,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                 },
                 videos: {
                     orderBy: { position: 'asc' },
+                    skip: offset,
+                    take: limit,
                     include: {
                         versions: {
+                            where: { isActive: true },
                             orderBy: { versionNumber: 'desc' },
                             take: 1,
+                            select: {
+                                id: true,
+                                thumbnailUrl: true,
+                                duration: true,
+                                versionNumber: true,
+                                _count: { select: { comments: true } },
+                            },
                         },
                         _count: { select: { versions: true } },
                     },

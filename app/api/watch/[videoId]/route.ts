@@ -11,30 +11,39 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const session = await auth();
         const { videoId } = await params;
 
+        // Parse query params
+        const searchParams = request.nextUrl.searchParams;
+        const includeComments = searchParams.get('includeComments') === 'true';
+
         const video = await db.video.findUnique({
             where: { id: videoId },
             include: {
                 project: true,
                 versions: {
+                    where: { isActive: true },
                     orderBy: { versionNumber: 'desc' },
-                    include: {
-                        comments: {
-                            orderBy: { timestamp: 'asc' },
-                            where: { parentId: null },
-                            include: {
-                                author: { select: { id: true, name: true, image: true } },
-                                tag: { select: { id: true, name: true, color: true } },
-                                replies: {
-                                    orderBy: { createdAt: 'asc' },
-                                    include: {
-                                        author: { select: { id: true, name: true, image: true } },
-                                        tag: { select: { id: true, name: true, color: true } },
-                                    },
+                    take: 1,
+                    ...(includeComments ? {
+                        include: {
+                            comments: {
+                                orderBy: { timestamp: 'asc' },
+                                where: { parentId: null },
+                                include: {
+                                    author: { select: { id: true, name: true, image: true } },
+                                    tag: { select: { id: true, name: true, color: true } },
                                 },
                             },
+                            _count: { select: { comments: true } },
                         },
-                        _count: { select: { comments: true } },
-                    },
+                    } : {
+                        select: {
+                            id: true,
+                            thumbnailUrl: true,
+                            duration: true,
+                            versionNumber: true,
+                            _count: { select: { comments: true } },
+                        },
+                    }),
                 },
             },
         });

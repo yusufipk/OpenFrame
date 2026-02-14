@@ -63,13 +63,19 @@ export async function POST(request: NextRequest) {
             .replace(/\s+/g, '-')
             .replace(/-+/g, '-');
 
+        // Find all existing slugs with the same prefix in a single query
+        const existingWorkspaces = await db.workspace.findMany({
+            where: { slug: { startsWith: baseSlug } },
+            select: { slug: true },
+        });
+
+        // Generate unique slug from the results
+        const usedSlugs = new Set(existingWorkspaces.map(w => w.slug));
         let slug = baseSlug;
-        let attempts = 0;
-        while (attempts < 10) {
-            const existing = await db.workspace.findUnique({ where: { slug } });
-            if (!existing) break;
-            slug = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
-            attempts++;
+        let counter = 1;
+        while (usedSlugs.has(slug)) {
+            slug = `${baseSlug}-${counter}`;
+            counter++;
         }
 
         const workspace = await db.workspace.create({

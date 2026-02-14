@@ -105,14 +105,19 @@ export async function POST(request: NextRequest) {
             .replace(/\s+/g, '-')
             .replace(/-+/g, '-');
 
-        // Ensure uniqueness by appending random suffix if needed
+        // Find all existing slugs with the same prefix in a single query
+        const existingProjects = await db.project.findMany({
+            where: { slug: { startsWith: baseSlug } },
+            select: { slug: true },
+        });
+
+        // Generate unique slug from the results
+        const usedSlugs = new Set(existingProjects.map(p => p.slug));
         let slug = baseSlug;
-        let attempts = 0;
-        while (attempts < 10) {
-            const existing = await db.project.findUnique({ where: { slug } });
-            if (!existing) break;
-            slug = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
-            attempts++;
+        let counter = 1;
+        while (usedSlugs.has(slug)) {
+            slug = `${baseSlug}-${counter}`;
+            counter++;
         }
 
         // Verify user has access to the workspace

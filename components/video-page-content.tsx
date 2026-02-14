@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -155,6 +156,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const playerRef = useRef<YT.Player | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
   const [video, setVideo] = useState<VideoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -168,6 +170,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [cursorIdle, setCursorIdle] = useState(false);
   const cursorIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPathnameRef = useRef<string>(pathname);
 
   const [commentText, setCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
@@ -187,6 +190,13 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const voiceKnownDurationRef = useRef<number>(0);
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null);
   const [showResolved, setShowResolved] = useState(false);
+
+  // Watch progress state
+  const [savedProgress, setSavedProgress] = useState<number | null>(null);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastSavedProgressRef = useRef<number>(0);
+  const [progressFetchKey, setProgressFetchKey] = useState(0);
 
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -391,6 +401,116 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       };
     });
   }, [videoDuration, activeVersion?.id, activeVersion?.duration, propProjectId, videoId]);
+
+  // Load watch progress when video is loaded (authenticated users only)
+  const loadWatchProgress = useCallback(async (showPrompt = true) => {
+    if (!video?.isAuthenticated || !activeVersionId) return;
+
+    // Reset state
+    setSavedProgress(null);
+    setShowResumePrompt(false);
+
+    try {
+      // Use cache: 'no-store' to always fetch fresh data
+      const res = await fetch(`/api/watch/${videoId}/progress`, { cache: 'no-store' });
+      if (res.ok) {
+        const response = await res.json();
+        const progress = response.data?.progress || 0;
+        const percentage = response.data?.percentage || 0;
+        
+        // Only show resume prompt if progress is between 5% and 95%
+        if (showPrompt && percentage > 5 && percentage < 95) {
+          setSavedProgress(progress);
+          setShowResumePrompt(true);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading watch progress:', err);
+    }
+  }, [video?.isAuthenticated, activeVersionId, videoId]);
+
+  // Load progress on mount and when dependencies change
+  useEffect(() => {
+    loadWatchProgress();
+  }, [loadWatchProgress, progressFetchKey]);
+
+  // Refetch progress when pathname changes (user navigates back to this page)
+  useEffect(() => {
+    if (lastPathnameRef.current !== pathname) {
+      const previousPath = lastPathnameRef.current;
+      lastPathnameRef.current = pathname;
+      
+      // If we navigated away and came back to this video page, refetch progress
+      if (previousPath !== pathname) {
+        setProgressFetchKey(k => k + 1);
+      }
+    }
+  }, [pathname]);
+
+  // Save watch progress periodically while playing (authenticated users only)
+  useEffect(() => {
+    if (!video?.isAuthenticated || !isReady || !activeVersionId) return;
+
+    // Save progress every 5 seconds while playing
+    progressSaveTimerRef.current = setInterval(() => {
+      if (currentTime > 0 && Math.abs(currentTime - lastSavedProgressRef.current) >= 2) {
+        // Save to API
+        fetch(`/api/watch/${videoId}/progress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            progress: currentTime,
+            duration: videoDuration,
+            versionId: activeVersionId,
+          }),
+        }).catch((err) => console.error('Error saving watch progress:', err));
+        
+        lastSavedProgressRef.current = currentTime;
+      }
+    }, 5000);
+
+    return () => {
+      if (progressSaveTimerRef.current) {
+        clearInterval(progressSaveTimerRef.current);
+      }
+    };
+  }, [video?.isAuthenticated, isReady, currentTime, videoDuration, activeVersionId, videoId]);
+
+  // Save progress when user leaves the page
+  useEffect(() => {
+    if (!video?.isAuthenticated) return;
+
+    const saveProgressOnLeave = () => {
+      if (currentTime > 0 && navigator.sendBeacon) {
+        // Use sendBeacon for reliable save on page unload
+        const data = new Blob([JSON.stringify({
+          progress: currentTime,
+          duration: videoDuration,
+          versionId: activeVersionId,
+        })], { type: 'application/json' });
+        navigator.sendBeacon(`/api/watch/${videoId}/progress`, data);
+      }
+    };
+
+    window.addEventListener('beforeunload', saveProgressOnLeave);
+    return () => window.removeEventListener('beforeunload', saveProgressOnLeave);
+  }, [video?.isAuthenticated, currentTime, videoDuration, activeVersionId, videoId]);
+
+  // Resume playback from saved position
+  const handleResumeFromSaved = useCallback(() => {
+    if (savedProgress !== null && playerRef.current?.seekTo) {
+      playerRef.current.seekTo(savedProgress, true);
+      setCurrentTime(savedProgress);
+      setShowResumePrompt(false);
+      setSavedProgress(null);
+    }
+  }, [savedProgress]);
+
+  // Dismiss resume prompt
+  const handleDismissResume = useCallback(() => {
+    setShowResumePrompt(false);
+    setSavedProgress(null);
+  }, []);
 
   useEffect(() => {
     if (!isReady || !playerRef.current) return;
@@ -1720,6 +1840,44 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                   )}
                 </div>
               </div>
+
+              {/* Resume playback prompt */}
+              {showResumePrompt && savedProgress !== null && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10">
+                  <div className="bg-background/95 backdrop-blur-sm rounded-lg p-4 shadow-lg max-w-sm mx-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Clock className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">Continue watching?</p>
+                        <p className="text-xs text-muted-foreground">
+                          Resume from {formatTime(savedProgress)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={handleResumeFromSaved}
+                        className="flex-1"
+                      >
+                        <Play className="h-4 w-4 mr-1" />
+                        Resume
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleDismissResume}
+                        className="flex-1"
+                      >
+                        Start over
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

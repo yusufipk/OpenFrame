@@ -38,8 +38,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             orderBy: { position: 'asc' },
             include: {
                 versions: {
+                    where: { isActive: true },
                     orderBy: { versionNumber: 'desc' },
-                    include: {
+                    take: 1,
+                    select: {
+                        id: true,
+                        thumbnailUrl: true,
+                        duration: true,
+                        versionNumber: true,
                         _count: { select: { comments: true } },
                     },
                 },
