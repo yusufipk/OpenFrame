@@ -2,12 +2,17 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { rateLimit } from '@/lib/rate-limit';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
 // GET /api/watch/[videoId] - Public watch endpoint (no projectId needed)
 export async function GET(request: NextRequest, { params }: RouteParams) {
     try {
+        // Rate limit: 60 requests per minute per IP for public watch endpoint
+        const limited = await rateLimit(request, 'watch', { windowMs: 60 * 1000, maxRequests: 60 });
+        if (limited) return limited;
+
         const session = await auth();
         const { videoId } = await params;
 

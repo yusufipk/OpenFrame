@@ -160,6 +160,14 @@ export async function cleanupRateLimits(): Promise<void> {
     }
 }
 
+// Start cleanup interval when the module is loaded (for self-hosted servers)
+// Cleanup runs every 5 minutes to remove expired rate limit entries
+if (typeof setInterval !== 'undefined') {
+    setInterval(() => {
+        cleanupRateLimits().catch(console.error);
+    }, 5 * 60 * 1000);
+}
+
 /**
  * One-call rate limit check that returns a 429 NextResponse if blocked, or null if allowed.
  * Use at the top of any API handler:

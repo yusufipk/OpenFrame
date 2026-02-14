@@ -10,6 +10,15 @@ const ALLOWED_TYPES = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'au
 
 export async function POST(request: Request) {
   try {
+    // Check Content-Length header BEFORE loading the file
+    const contentLength = request.headers.get('content-length');
+    if (contentLength) {
+      const fileSize = parseInt(contentLength, 10);
+      if (isNaN(fileSize) || fileSize > MAX_FILE_SIZE) {
+        return apiErrors.badRequest('File too large. Maximum size is 10MB.');
+      }
+    }
+
     // Rate limit
     const limited = await rateLimit(request, 'voice-upload');
     if (limited) return limited;
@@ -27,6 +36,7 @@ export async function POST(request: Request) {
       return apiErrors.badRequest('No audio file provided');
     }
 
+    // Double-check file size (defense in depth - Content-Length can be spoofed)
     if (file.size > MAX_FILE_SIZE) {
       return apiErrors.badRequest('File too large. Maximum size is 10MB.');
     }

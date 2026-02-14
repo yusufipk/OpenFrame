@@ -65,9 +65,14 @@ export const vimeoProvider: VideoProvider = {
     const cached = getCachedMetadata(cacheKey);
     if (cached) return cached;
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
       const response = await fetch(
-        `https://vimeo.com/api/oembed.json?url=https://vimeo.com/${videoId}`
+        `https://vimeo.com/api/oembed.json?url=https://vimeo.com/${videoId}`,
+        { signal: controller.signal }
       );
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
         throw new Error('Failed to fetch video metadata');

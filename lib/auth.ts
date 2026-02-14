@@ -125,3 +125,33 @@ export async function checkProjectAccess(
     canDelete,
   };
 }
+
+// Helper to check workspace access
+export async function checkWorkspaceAccess(
+  workspace: { id: string; ownerId: string },
+  userId: string | undefined
+) {
+  const isOwner = userId === workspace.ownerId;
+
+  // Get workspace membership
+  const workspaceMember = userId
+    ? await db.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: workspace.id, userId } },
+      })
+    : null;
+  const isMember = !!workspaceMember;
+  const isAdmin = workspaceMember?.role === WorkspaceMemberRole.ADMIN;
+
+  const hasAccess = isOwner || isMember;
+  const canEdit = isOwner || isAdmin;
+  const canDelete = isOwner;
+
+  return {
+    isOwner,
+    isMember,
+    isAdmin,
+    hasAccess,
+    canEdit,
+    canDelete,
+  };
+}

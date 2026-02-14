@@ -2224,7 +2224,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                         )}
                       </div>
 
-                      {comment.replies.length > 0 && (
+                      {comment.replies && comment.replies.length > 0 && (
                         <div className="mt-3 pl-3 border-l-2 space-y-2">
                           {comment.replies.map((reply) => {
                             const replyAuthor =
