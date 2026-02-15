@@ -15,6 +15,7 @@ import {
   SkipForward,
   Gauge,
   MessageSquare,
+  MessageSquareOff,
   Mic,
   Send,
   Clock,
@@ -34,6 +35,8 @@ import {
   ArrowUpRight,
   Tag,
   User,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -199,6 +202,10 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSavedProgressRef = useRef<number>(0);
 
+  // Fullscreen state
+  const [isFullscreenMode, setIsFullscreenMode] = useState(false);
+  const [showComments, setShowComments] = useState(true);
+
   // YouTube API loading state
   const [isApiLoaded, setIsApiLoaded] = useState(false);
   const [progressFetchKey, setProgressFetchKey] = useState(0);
@@ -259,10 +266,17 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const handleVideoMouseMove = useCallback(() => {
     setCursorIdle(false);
     if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
-    cursorIdleTimerRef.current = setTimeout(() => {
-      setCursorIdle(true);
-    }, 3000);
-  }, []);
+    
+    // In fullscreen mode: hide header AND controls when cursor idle for 1s while playing
+    // Non-fullscreen: hide only the play overlay (existing behavior)
+    const shouldHideControls = isFullscreenMode;
+    
+    if (isPlaying || shouldHideControls) {
+      cursorIdleTimerRef.current = setTimeout(() => {
+        setCursorIdle(true);
+      }, 1000);
+    }
+  }, [isFullscreenMode, isPlaying]);
 
   const handleVideoMouseLeave = useCallback(() => {
     if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
@@ -569,6 +583,40 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     };
   }, [video?.isAuthenticated, isReady, currentTime, videoDuration, activeVersionId, videoId]);
 
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => {
+        setIsFullscreenMode(true);
+        setShowComments(false);
+      }).catch((err) => {
+        console.error('Fullscreen failed:', err);
+        toast.error('Unable to enter fullscreen mode');
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreenMode(false);
+        setShowComments(true);
+      }).catch((err) => {
+        console.error('Exit fullscreen failed:', err);
+        toast.error('Unable to exit fullscreen mode');
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!document.fullscreenElement;
+      setIsFullscreenMode(isCurrentlyFullscreen);
+      if (isCurrentlyFullscreen) {
+        setShowComments(false);
+      } else {
+        setShowComments(true);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   // Save progress when user leaves the page
   useEffect(() => {
     if (!video?.isAuthenticated) return;
@@ -754,12 +802,16 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
             setCurrentTime(newTime);
           }
           break;
+        case 'KeyF':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, currentTime, duration, isMuted, playbackSpeed]);
+  }, [isPlaying, currentTime, duration, isMuted, playbackSpeed, toggleFullscreen]);
 
   const handlePlayPause = useCallback(() => {
     if (!playerRef.current) return;
@@ -1621,8 +1673,8 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     return (
       <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
         <div className="flex-1 flex overflow-hidden min-h-0">
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <div className="shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50">
+        <div className={cn("flex-1 flex flex-col overflow-hidden min-h-0", isFullscreenMode && "relative")}>
+          <div className={cn("shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50", isFullscreenMode && cursorIdle && isPlaying && "opacity-0 pointer-events-none transition-opacity duration-300")}>
               <div className="flex items-center gap-3">
                 <Skeleton className="h-4 w-12" />
                 <Separator orientation="vertical" className="h-5" />
@@ -1637,7 +1689,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               </div>
             </div>
             <div className="flex-1 bg-black min-h-0" />
-            <div className="shrink-0 px-4 py-2 bg-background border-t">
+          <div className={cn("shrink-0 px-4 py-2 bg-background border-t", isFullscreenMode && cursorIdle && isPlaying && "opacity-0 pointer-events-none transition-opacity duration-300")}>
               <div className="flex items-center gap-1 mb-2">
                 <Skeleton className="h-8 w-8 rounded-md" />
                 <Skeleton className="h-8 w-8 rounded-md" />
@@ -1651,7 +1703,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               <Skeleton className="h-8 w-full rounded" />
             </div>
           </div>
-          <div className="w-80 shrink-0 border-l bg-card flex flex-col overflow-hidden">
+          <div className={cn("w-80 shrink-0 border-l bg-card flex flex-col overflow-hidden", isFullscreenMode && !showComments && "hidden")}>
             <div className="shrink-0 flex items-center justify-between p-4 border-b">
               <div className="flex items-center gap-2">
                 <Skeleton className="h-5 w-5" />
@@ -1759,8 +1811,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       onMouseLeave={() => isDragging && handleTimelineMouseUp()}
     >
       <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          <div className="shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50">
+        <div className={cn("flex-1 flex flex-col overflow-hidden min-h-0", isFullscreenMode && "relative")}>
+          <div className={cn(
+            "shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50",
+            isFullscreenMode ? "absolute top-0 left-0 right-0 z-50 transition-opacity duration-300" : "",
+            isFullscreenMode && cursorIdle && isPlaying && "opacity-0 pointer-events-none"
+          )}>
             <div className="flex items-center gap-3">
               <Link
                 href={backHref}
@@ -1928,13 +1984,14 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
             ref={videoContainerRef}
             className={cn(
               'flex-1 bg-black flex items-center justify-center relative cursor-pointer group min-h-0',
+              isFullscreenMode && "absolute inset-0",
               cursorIdle && isPlaying && 'cursor-none'
             )}
             onClick={handlePlayPause}
             onMouseMove={handleVideoMouseMove}
             onMouseLeave={handleVideoMouseLeave}
           >
-            <div className="relative w-full h-full">
+            <div className={cn("relative w-full h-full", isFullscreenMode && "absolute inset-0")}>
               <iframe
                 key={activeVersionId}
                 ref={iframeRef}
@@ -2001,7 +2058,11 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
             </div>
           </div>
 
-          <div className="shrink-0 px-4 py-2 bg-background border-t">
+          <div className={cn(
+            "shrink-0 px-4 py-2 bg-background border-t",
+            isFullscreenMode ? "absolute bottom-0 left-0 right-0 z-50 transition-opacity duration-300" : "",
+            isFullscreenMode && cursorIdle && isPlaying && "opacity-0 pointer-events-none"
+          )}>
             <div className="flex items-center gap-1 mb-2">
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePlayPause}>
                 {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
@@ -2060,6 +2121,28 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={toggleFullscreen}
+                  title={isFullscreenMode ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+                >
+                  {isFullscreenMode ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                </Button>
+
+                {isFullscreenMode && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setShowComments(!showComments)}
+                    title={showComments ? 'Hide comments' : 'Show comments'}
+                  >
+                    {showComments ? <MessageSquareOff className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -2101,7 +2184,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           </div>
         </div>
 
-        <div className="w-80 shrink-0 border-l bg-card flex flex-col overflow-hidden">
+        <div className={cn("w-80 shrink-0 border-l bg-card flex flex-col overflow-hidden", isFullscreenMode && !showComments && "hidden")}>
           <div className="shrink-0 flex items-center justify-between p-4 border-b">
             <div className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
