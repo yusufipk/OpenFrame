@@ -424,6 +424,26 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           },
           onStateChange: (event: YT.OnStateChangeEvent) => {
             setIsPlaying(event.data === YT.PlayerState.PLAYING);
+            
+            // Save progress immediately when video is paused
+            if (event.data === YT.PlayerState.PAUSED) {
+              // Get current time and duration directly from player instance, not from React state (which may be stale)
+              const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
+              const playerDuration = playerRef.current?.getDuration?.() || 0;
+              
+              if (video?.isAuthenticated && playerCurrentTime > 0 && activeVersionId) {
+                fetch(`/api/watch/${videoId}/progress`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    progress: playerCurrentTime,
+                    duration: playerDuration,
+                    versionId: activeVersionId,
+                  }),
+                }).catch((err) => console.error('Error saving watch progress on pause:', err));
+              }
+            }
+            
             if (event.data === YT.PlayerState.PLAYING) {
               const dur = event.target.getDuration();
               if (dur > 0) setVideoDuration(dur);
@@ -523,19 +543,22 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
     // Save progress every 5 seconds while playing
     progressSaveTimerRef.current = setInterval(() => {
-      if (currentTime > 0 && Math.abs(currentTime - lastSavedProgressRef.current) >= 2) {
-        // Save to API
+      const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
+      const playerDuration = playerRef.current?.getDuration?.() || 0;
+      
+      if (playerCurrentTime > 0 && Math.abs(playerCurrentTime - lastSavedProgressRef.current) >= 2) {
+        // Save to API - use player duration directly
         fetch(`/api/watch/${videoId}/progress`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            progress: currentTime,
-            duration: videoDuration,
+            progress: playerCurrentTime,
+            duration: playerDuration || videoDuration,
             versionId: activeVersionId,
           }),
         }).catch((err) => console.error('Error saving watch progress:', err));
         
-        lastSavedProgressRef.current = currentTime;
+        lastSavedProgressRef.current = playerCurrentTime;
       }
     }, 5000);
 
@@ -551,19 +574,46 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     if (!video?.isAuthenticated) return;
 
     const saveProgressOnLeave = () => {
-      if (currentTime > 0 && navigator.sendBeacon) {
+      // Get current time and duration directly from player instance
+      const playerCurrentTime = playerRef.current?.getCurrentTime?.() || currentTime;
+      const playerDuration = playerRef.current?.getDuration?.() || videoDuration;
+      
+      if (playerCurrentTime > 0 && navigator.sendBeacon) {
         // Use sendBeacon for reliable save on page unload
         const data = new Blob([JSON.stringify({
-          progress: currentTime,
-          duration: videoDuration,
+          progress: playerCurrentTime,
+          duration: playerDuration,
           versionId: activeVersionId,
         })], { type: 'application/json' });
         navigator.sendBeacon(`/api/watch/${videoId}/progress`, data);
       }
     };
 
+    // Save when tab becomes hidden (user switches tabs, minimizes, etc.)
+    const handleVisibilityChange = () => {
+      // Get current time and duration directly from player instance
+      const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
+      const playerDuration = playerRef.current?.getDuration?.() || videoDuration;
+      
+      if (document.visibilityState === 'hidden' && playerCurrentTime > 0 && activeVersionId) {
+        fetch(`/api/watch/${videoId}/progress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            progress: playerCurrentTime,
+            duration: playerDuration,
+            versionId: activeVersionId,
+          }),
+        }).catch((err) => console.error('Error saving watch progress on visibility change:', err));
+      }
+    };
+
     window.addEventListener('beforeunload', saveProgressOnLeave);
-    return () => window.removeEventListener('beforeunload', saveProgressOnLeave);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', saveProgressOnLeave);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [video?.isAuthenticated, currentTime, videoDuration, activeVersionId, videoId]);
 
   // Resume playback from saved position

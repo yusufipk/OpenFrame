@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { apiErrors, successResponse } from '@/lib/api-response';
+import { rateLimit } from '@/lib/rate-limit';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -69,6 +70,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // POST /api/watch/[videoId]/progress - Save watch progress for the current user
 export async function POST(request: NextRequest, { params }: RouteParams) {
     try {
+        // Rate limit watch progress updates (30 per minute to allow pause + periodic + visibility changes)
+        const limited = await rateLimit(request, 'watch-progress');
+        if (limited) return limited;
+        
         const session = await auth();
         
         if (!session?.user?.id) {

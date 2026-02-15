@@ -26,6 +26,9 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
     'create-version':   { windowMs: 60 * 1000, maxRequests: 10 },       // 10 per minute
     'create-workspace': { windowMs: 60 * 60 * 1000, maxRequests: 10 },  // 10 per hour
 
+    // Watch progress — allow frequent updates but prevent abuse
+    'watch-progress':   { windowMs: 60 * 1000, maxRequests: 30 },       // 30 per minute (pausing + periodic + visibility changes)
+
     // Member management
     'invite-member':  { windowMs: 60 * 60 * 1000, maxRequests: 30 },    // 30 per hour
     'manage-member':  { windowMs: 60 * 1000, maxRequests: 20 },         // 20 per minute
