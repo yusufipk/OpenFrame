@@ -2079,7 +2079,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 style={{ left: `calc(${duration > 0 ? (currentTime / duration) * 100 : 0}% - 2px)` }}
               />
 
-              {comments.map((comment) => {
+              {filteredComments.map((comment) => {
                 const markerColor = comment.tag?.color || (comment.isResolved ? '#22C55E' : '#22D3EE');
                 return (
                   <button
