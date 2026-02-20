@@ -83,12 +83,21 @@ export default async function HomePage() {
             </div>
           </div>
 
-          {/* Hero Image/Video Placeholder */}
+          {/* Hero Video */}
           <div className="max-w-6xl mx-auto mt-20 relative rounded-2xl border border-border/50 bg-card/50 shadow-2xl overflow-hidden aspect-video flex items-center justify-center group">
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-transparent opacity-50" />
-            <div className="flex flex-col items-center gap-4 text-muted-foreground transition-transform group-hover:scale-105 duration-500">
-              <Play className="h-16 w-16 opacity-50" />
-              <p className="font-medium text-sm tracking-widest uppercase">Product Demo Video</p>
+            <video
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="absolute inset-0 w-full h-full object-cover"
+            >
+              <source src="/hero-demo.mp4" type="video/mp4" />
+            </video>
+            <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-transparent opacity-50 pointer-events-none" />
+            <div className="relative z-10 flex flex-col items-center gap-4 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-all duration-500">
+              <Play className="h-16 w-16" />
+              <p className="font-medium text-sm tracking-widest uppercase">Preview</p>
             </div>
           </div>
         </section>
