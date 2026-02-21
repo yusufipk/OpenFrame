@@ -1879,7 +1879,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               <Skeleton className="h-8 w-full rounded" />
             </div>
           </div>
-          <div className={cn("w-80 shrink-0 border-l bg-card flex flex-col overflow-hidden", isFullscreenMode && !showComments && "hidden")}>
+          <div className={cn("hidden lg:flex w-80 shrink-0 border-l bg-card flex-col overflow-hidden", isFullscreenMode && !showComments && "hidden")}>
             <div className="shrink-0 flex items-center justify-between p-4 border-b">
               <div className="flex items-center gap-2">
                 <Skeleton className="h-5 w-5" />
@@ -1987,7 +1987,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       onMouseLeave={() => isDragging && handleTimelineMouseUp()}
     >
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
-        <div className={cn("flex-none lg:flex-1 w-full aspect-video lg:aspect-auto flex flex-col min-h-0", isFullscreenMode && "relative")}>
+        <div className={cn("flex-1 w-full flex flex-col min-h-0", isFullscreenMode && "relative")}>
           <div className={cn(
             "shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50",
             isFullscreenMode ? "absolute top-0 left-0 right-0 z-50 transition-opacity duration-300" : "",
@@ -2002,7 +2002,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 Back
               </Link>
               <Separator orientation="vertical" className="h-5" />
-              <div className="min-w-0">
+              <div className="hidden sm:block min-w-0">
                 <span className="text-sm font-medium">{video.title}</span>
                 <span className="text-xs text-muted-foreground ml-2">• {video.project.name}</span>
               </div>
@@ -2080,77 +2080,104 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
               {mode === 'dashboard' && (
                 <>
-                  <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <Plus className="h-4 w-4 mr-1" />
-                        New Version
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add New Version</DialogTitle>
-                        <DialogDescription>
-                          Upload a new version of this video. The new version will become active.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 mt-2">
-                        <div className="space-y-2">
-                          <Label>Video URL</Label>
-                          <div className="relative">
-                            <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <div className="hidden sm:flex items-center gap-2">
+                    <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Plus className="h-4 w-4 mr-1" />
+                          New Version
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add New Version</DialogTitle>
+                          <DialogDescription>
+                            Upload a new version of this video. The new version will become active.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 mt-2">
+                          <div className="space-y-2">
+                            <Label>Video URL</Label>
+                            <div className="relative">
+                              <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                placeholder="https://youtube.com/watch?v=..."
+                                value={newVersionUrl}
+                                onChange={(e) => handleNewVersionUrlChange(e.target.value)}
+                                className="pl-10"
+                                disabled={isCreatingVersion}
+                              />
+                            </div>
+                            {newVersionUrlError && (
+                              <p className="text-sm text-destructive flex items-center gap-1">
+                                <AlertCircle className="h-4 w-4" />
+                                {newVersionUrlError}
+                              </p>
+                            )}
+                            {newVersionSource && (
+                              <p className="text-sm text-green-600 flex items-center gap-1">
+                                <CheckCircle2 className="h-4 w-4" />
+                                {newVersionSource.providerId.charAt(0).toUpperCase() +
+                                  newVersionSource.providerId.slice(1)}{' '}
+                                video detected
+                              </p>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Version Label (optional)</Label>
                             <Input
-                              placeholder="https://youtube.com/watch?v=..."
-                              value={newVersionUrl}
-                              onChange={(e) => handleNewVersionUrlChange(e.target.value)}
-                              className="pl-10"
+                              placeholder="e.g. Final Cut, Review Round 2"
+                              value={newVersionLabel}
+                              onChange={(e) => setNewVersionLabel(e.target.value)}
                               disabled={isCreatingVersion}
                             />
                           </div>
-                          {newVersionUrlError && (
-                            <p className="text-sm text-destructive flex items-center gap-1">
-                              <AlertCircle className="h-4 w-4" />
-                              {newVersionUrlError}
-                            </p>
-                          )}
-                          {newVersionSource && (
-                            <p className="text-sm text-green-600 flex items-center gap-1">
-                              <CheckCircle2 className="h-4 w-4" />
-                              {newVersionSource.providerId.charAt(0).toUpperCase() +
-                                newVersionSource.providerId.slice(1)}{' '}
-                              video detected
-                            </p>
-                          )}
+                          <Button
+                            onClick={handleCreateVersion}
+                            disabled={!newVersionSource || isCreatingVersion}
+                            className="w-full"
+                          >
+                            {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            Add Version {video.versions.length + 1}
+                          </Button>
                         </div>
-                        <div className="space-y-2">
-                          <Label>Version Label (optional)</Label>
-                          <Input
-                            placeholder="e.g. Final Cut, Review Round 2"
-                            value={newVersionLabel}
-                            onChange={(e) => setNewVersionLabel(e.target.value)}
-                            disabled={isCreatingVersion}
-                          />
-                        </div>
-                        <Button
-                          onClick={handleCreateVersion}
-                          disabled={!newVersionSource || isCreatingVersion}
-                          className="w-full"
-                        >
-                          {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                          Add Version {video.versions.length + 1}
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                      </DialogContent>
+                    </Dialog>
 
-                  {video.versions.length >= 2 && (
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/projects/${propProjectId}/videos/${videoId}/compare`}>
-                        <GitCompareArrows className="h-4 w-4 mr-1" />
-                        Compare
-                      </Link>
-                    </Button>
-                  )}
+                    {video.versions.length >= 2 && (
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/projects/${propProjectId}/videos/${videoId}/compare`}>
+                          <GitCompareArrows className="h-4 w-4 mr-1" />
+                          Compare
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Mobile Actions Dropdown */}
+                  <div className="sm:hidden">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-8 w-8">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setShowVersionDialog(true)}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          New Version
+                        </DropdownMenuItem>
+                        {video.versions.length >= 2 && (
+                          <DropdownMenuItem asChild>
+                            <Link href={`/projects/${propProjectId}/videos/${videoId}/compare`}>
+                              <GitCompareArrows className="h-4 w-4 mr-2" />
+                              Compare
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </>
               )}
             </div>
@@ -2277,7 +2304,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
 
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs">
@@ -2308,7 +2335,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                   {isFullscreenMode ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
                 </Button>
 
-                {isFullscreenMode && (
+                {isFullscreenMode ? (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -2317,6 +2344,16 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                     title={showComments ? 'Hide comments' : 'Show comments'}
                   >
                     {showComments ? <MessageSquareOff className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 lg:hidden"
+                    onClick={() => setIsMobileCommentsOpen(true)}
+                    title="Show comments"
+                  >
+                    <MessageSquare className="h-4 w-4" />
                   </Button>
                 )}
               </div>
@@ -2360,13 +2397,24 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           </div>
         </div>
 
-        <div className={cn("w-full lg:w-80 shrink-0 border-t lg:border-t-0 lg:border-l bg-card flex flex-col overflow-hidden transition-[height] duration-300",
-          isFullscreenMode && !showComments ? "hidden" : "",
-          isMobileCommentsOpen ? "h-[500px] lg:h-auto" : "h-[60px] lg:h-auto"
+        {/* Mobile Backdrop */}
+        <div
+          className={cn(
+            "fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden transition-opacity duration-300",
+            isMobileCommentsOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+          )}
+          onClick={() => setIsMobileCommentsOpen(false)}
+        />
+
+        <div className={cn(
+          "bg-card flex flex-col overflow-hidden z-50",
+          "fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl transition-transform duration-300 transform",
+          isMobileCommentsOpen ? "translate-x-0" : "translate-x-full",
+          "lg:static lg:w-80 lg:shrink-0 lg:border-l lg:transition-none lg:translate-x-0 lg:shadow-none lg:z-auto",
+          isFullscreenMode && !showComments ? "hidden" : ""
         )}>
           <div
-            className="shrink-0 flex items-center justify-between p-4 border-b cursor-pointer lg:cursor-default"
-            onClick={() => setIsMobileCommentsOpen(!isMobileCommentsOpen)}
+            className="shrink-0 flex items-center justify-between p-4 border-b lg:cursor-default"
           >
             <div className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
@@ -2377,7 +2425,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleToggleShowResolved(); }}>
                 {showResolved ? 'Hide' : 'Show'} Resolved
               </Button>
-              <ChevronUp className={cn("h-4 w-4 transition-transform lg:hidden", isMobileCommentsOpen && "rotate-180")} />
+              <Button variant="ghost" size="icon" className="h-8 w-8 lg:hidden" onClick={() => setIsMobileCommentsOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
@@ -2443,7 +2493,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                                className="h-6 w-6"
                               >
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
@@ -2647,7 +2697,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-5 w-5 opacity-0 group-hover/reply:opacity-100 shrink-0"
+                                        className="h-5 w-5 shrink-0"
                                       >
                                         <MoreVertical className="h-3 w-3" />
                                       </Button>
@@ -3187,7 +3237,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
             )}
           </div>
         </div>
-      </div>
+      </div >
 
       <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
         <DialogContent
@@ -3248,6 +3298,6 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }
