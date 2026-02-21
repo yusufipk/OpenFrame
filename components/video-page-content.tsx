@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { parseVideoUrl, getThumbnailUrl, fetchVideoMetadata, type VideoSource } from '@/lib/video-providers';
+import { Linkify } from '@/components/linkify';
 
 interface Version {
   id: string;
@@ -2380,7 +2381,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                         </div>
                       </div>
                     ) : (
-                      comment.content && <p className="text-sm mb-2">{comment.content}</p>
+                      comment.content && <p className="text-sm mb-2"><Linkify>{comment.content}</Linkify></p>
                     )}
 
                     {comment.voiceUrl && (
@@ -2523,7 +2524,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                                   </div>
                                 </div>
                               ) : (
-                                reply.content && <p className="text-sm">{reply.content}</p>
+                                reply.content && <p className="text-sm"><Linkify>{reply.content}</Linkify></p>
                               )}
                               {reply.voiceUrl && (
                                 <div className="flex items-center gap-2 p-1.5 bg-muted rounded mt-1">
