@@ -16,12 +16,46 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const comment = await db.comment.findUnique({
             where: { id: commentId },
-            include: {
+            select: {
+                id: true,
+                content: true,
+                timestamp: true,
+                timestampEnd: true,
+                createdAt: true,
+                updatedAt: true,
+                isResolved: true,
+                resolvedAt: true,
+                voiceUrl: true,
+                voiceDuration: true,
+                imageUrl: true,
+                parentId: true,
+                authorId: true,
+                tagId: true,
+                versionId: true,
+                guestName: true,
                 author: { select: { id: true, name: true, image: true } },
+                tag: { select: { id: true, name: true, color: true } },
                 replies: {
                     orderBy: { createdAt: 'asc' },
-                    include: {
+                    select: {
+                        id: true,
+                        content: true,
+                        timestamp: true,
+                        timestampEnd: true,
+                        createdAt: true,
+                        updatedAt: true,
+                        isResolved: true,
+                        resolvedAt: true,
+                        voiceUrl: true,
+                        voiceDuration: true,
+                        imageUrl: true,
+                        parentId: true,
+                        authorId: true,
+                        tagId: true,
+                        versionId: true,
+                        guestName: true,
                         author: { select: { id: true, name: true, image: true } },
+                        tag: { select: { id: true, name: true, color: true } },
                     },
                 },
                 version: {
@@ -155,7 +189,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         }
 
         const updateData: Record<string, unknown> = {};
-        if (content !== undefined) updateData.content = content.trim();
+        if (content !== undefined && typeof content === 'string') updateData.content = content.trim();
         if (tagId !== undefined) updateData.tagId = tagId;
         if (isResolved !== undefined) {
             updateData.isResolved = isResolved;
@@ -201,7 +235,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         const comment = await db.comment.findUnique({
             where: { id: commentId },
             include: {
-                replies: { select: { voiceUrl: true } },
+                replies: { select: { voiceUrl: true, imageUrl: true } },
             },
         });
 
@@ -215,27 +249,37 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             return apiErrors.forbidden('You can only delete your own comments');
         }
 
-        // Collect all voice URLs to delete from R2 (comment + its replies)
-        const voiceUrls: string[] = [];
-        if (comment.voiceUrl) voiceUrls.push(comment.voiceUrl);
+        // Collect all media URLs to delete from R2 (comment + its replies)
+        const mediaUrls: string[] = [];
+        if (comment.voiceUrl) mediaUrls.push(comment.voiceUrl);
+        if (comment.imageUrl) mediaUrls.push(comment.imageUrl);
         for (const reply of comment.replies) {
-            if (reply.voiceUrl) voiceUrls.push(reply.voiceUrl);
+            if (reply.voiceUrl) mediaUrls.push(reply.voiceUrl);
+            if (reply.imageUrl) mediaUrls.push(reply.imageUrl);
         }
 
         await db.comment.delete({ where: { id: commentId } });
 
-        // Clean up audio files from R2 (best-effort, don't block on failure)
+        // Clean up media files from R2 (best-effort, don't block on failure)
         const AUDIO_PREFIX = '/api/upload/audio/';
-        for (const url of voiceUrls) {
+        const IMAGE_PREFIX = '/api/upload/image/';
+        for (const url of mediaUrls) {
             try {
                 // Extract filename using string parsing (safe against ReDoS)
-                const idx = url.indexOf(AUDIO_PREFIX);
-                const filename = idx !== -1 ? url.slice(idx + AUDIO_PREFIX.length) : null;
-                if (filename) {
+                let key: string | null = null;
+                if (url.includes(AUDIO_PREFIX)) {
+                    const filename = url.slice(url.indexOf(AUDIO_PREFIX) + AUDIO_PREFIX.length);
+                    if (filename) key = `voice/${filename}`;
+                } else if (url.includes(IMAGE_PREFIX)) {
+                    const filename = url.slice(url.indexOf(IMAGE_PREFIX) + IMAGE_PREFIX.length);
+                    if (filename) key = `images/${filename}`;
+                }
+
+                if (key) {
                     await r2Client.send(
                         new DeleteObjectCommand({
                             Bucket: R2_BUCKET_NAME,
-                            Key: `voice/${filename}`,
+                            Key: key,
                         })
                     );
                 }

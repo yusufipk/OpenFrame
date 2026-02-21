@@ -62,8 +62,8 @@ export async function GET(
 
     // Convert stream to Uint8Array
     const chunks: Uint8Array[] = [];
-    // @ts-expect-error - body is an iterable
-    for await (const chunk of body) {
+    const asyncIterable = body as AsyncIterable<Uint8Array>;
+    for await (const chunk of asyncIterable) {
       chunks.push(chunk);
     }
     const uint8Array = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));

@@ -2,103 +2,124 @@ import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { db } from '@/lib/db';
 
+/** The path prefix for images served by the upload API. */
+const IMAGE_PATH_PREFIX = '/api/upload/image/';
 /** The path prefix for audio URLs served by the upload API. */
 const AUDIO_PATH_PREFIX = '/api/upload/audio/';
 
 /**
- * Extract the R2 object key from a voice URL like /api/upload/audio/filename.webm.
+ * Extract the R2 object key from a media URL.
  * Uses string parsing instead of regex to avoid ReDoS risk on untrusted input.
  */
-function voiceUrlToKey(url: string): string | null {
-    const idx = url.indexOf(AUDIO_PATH_PREFIX);
-    if (idx === -1) return null;
-    const filename = url.slice(idx + AUDIO_PATH_PREFIX.length);
-    return filename ? `voice/${filename}` : null;
+function mediaUrlToKey(url: string): string | null {
+    if (url.includes(AUDIO_PATH_PREFIX)) {
+        const filename = url.slice(url.indexOf(AUDIO_PATH_PREFIX) + AUDIO_PATH_PREFIX.length);
+        return filename ? `voice/${filename}` : null;
+    } else if (url.includes(IMAGE_PATH_PREFIX)) {
+        const filename = url.slice(url.indexOf(IMAGE_PATH_PREFIX) + IMAGE_PATH_PREFIX.length);
+        return filename ? `images/${filename}` : null;
+    }
+    return null;
 }
 
 /**
- * Delete a list of voice files from R2 (best-effort, logs failures).
+ * Delete a list of media files from R2 (best-effort, logs failures).
  */
-async function deleteVoiceFiles(voiceUrls: string[]) {
-    for (const url of voiceUrls) {
+async function deleteMediaFiles(mediaUrls: string[]) {
+    for (const url of mediaUrls) {
         try {
-            const key = voiceUrlToKey(url);
+            const key = mediaUrlToKey(url);
             if (key) {
                 await r2Client.send(
                     new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key })
                 );
             }
         } catch (err) {
-            console.error('Failed to delete audio from R2:', err);
+            console.error('Failed to delete media from R2:', err);
         }
     }
 }
 
 /**
- * Collect all voice URLs from comments under a given video (all versions).
+ * Collect all media URLs from comments under a given video (all versions).
  */
-export async function collectVideoVoiceUrls(videoId: string): Promise<string[]> {
+export async function collectVideoMediaUrls(videoId: string): Promise<string[]> {
     const comments = await db.comment.findMany({
         where: {
-            voiceUrl: { not: null },
+            OR: [{ voiceUrl: { not: null } }, { imageUrl: { not: null } }],
             version: { videoParentId: videoId },
         },
-        select: { voiceUrl: true },
+        select: { voiceUrl: true, imageUrl: true },
     });
-    return comments.map((c: { voiceUrl: string | null }) => c.voiceUrl).filter(Boolean) as string[];
+    const urls: string[] = [];
+    comments.forEach(c => {
+        if (c.voiceUrl) urls.push(c.voiceUrl);
+        if (c.imageUrl) urls.push(c.imageUrl);
+    });
+    return urls;
 }
 
 /**
- * Collect all voice URLs from comments under all videos in a project.
+ * Collect all media URLs from comments under all videos in a project.
  */
-export async function collectProjectVoiceUrls(projectId: string): Promise<string[]> {
+export async function collectProjectMediaUrls(projectId: string): Promise<string[]> {
     const comments = await db.comment.findMany({
         where: {
-            voiceUrl: { not: null },
+            OR: [{ voiceUrl: { not: null } }, { imageUrl: { not: null } }],
             version: { video: { projectId } },
         },
-        select: { voiceUrl: true },
+        select: { voiceUrl: true, imageUrl: true },
     });
-    return comments.map((c: { voiceUrl: string | null }) => c.voiceUrl).filter(Boolean) as string[];
+    const urls: string[] = [];
+    comments.forEach(c => {
+        if (c.voiceUrl) urls.push(c.voiceUrl);
+        if (c.imageUrl) urls.push(c.imageUrl);
+    });
+    return urls;
 }
 
 /**
- * Collect all voice URLs from comments under all projects in a workspace.
+ * Collect all media URLs from comments under all projects in a workspace.
  */
-export async function collectWorkspaceVoiceUrls(workspaceId: string): Promise<string[]> {
+export async function collectWorkspaceMediaUrls(workspaceId: string): Promise<string[]> {
     const comments = await db.comment.findMany({
         where: {
-            voiceUrl: { not: null },
+            OR: [{ voiceUrl: { not: null } }, { imageUrl: { not: null } }],
             version: { video: { project: { workspaceId } } },
         },
-        select: { voiceUrl: true },
+        select: { voiceUrl: true, imageUrl: true },
     });
-    return comments.map((c: { voiceUrl: string | null }) => c.voiceUrl).filter(Boolean) as string[];
+    const urls: string[] = [];
+    comments.forEach(c => {
+        if (c.voiceUrl) urls.push(c.voiceUrl);
+        if (c.imageUrl) urls.push(c.imageUrl);
+    });
+    return urls;
 }
 
 /**
- * Delete all voice files for a video from R2.
+ * Delete all media files for a video from R2.
  * Call BEFORE deleting the video from the database (cascade would remove comment rows).
  */
-export async function cleanupVideoVoiceFiles(videoId: string) {
-    const urls = await collectVideoVoiceUrls(videoId);
-    await deleteVoiceFiles(urls);
+export async function cleanupVideoMediaFiles(videoId: string) {
+    const urls = await collectVideoMediaUrls(videoId);
+    await deleteMediaFiles(urls);
 }
 
 /**
- * Delete all voice files for a project from R2.
+ * Delete all media files for a project from R2.
  * Call BEFORE deleting the project from the database.
  */
-export async function cleanupProjectVoiceFiles(projectId: string) {
-    const urls = await collectProjectVoiceUrls(projectId);
-    await deleteVoiceFiles(urls);
+export async function cleanupProjectMediaFiles(projectId: string) {
+    const urls = await collectProjectMediaUrls(projectId);
+    await deleteMediaFiles(urls);
 }
 
 /**
- * Delete all voice files for a workspace from R2.
+ * Delete all media files for a workspace from R2.
  * Call BEFORE deleting the workspace from the database.
  */
-export async function cleanupWorkspaceVoiceFiles(workspaceId: string) {
-    const urls = await collectWorkspaceVoiceUrls(workspaceId);
-    await deleteVoiceFiles(urls);
+export async function cleanupWorkspaceMediaFiles(workspaceId: string) {
+    const urls = await collectWorkspaceMediaUrls(workspaceId);
+    await deleteMediaFiles(urls);
 }

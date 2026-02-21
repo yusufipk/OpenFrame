@@ -2,7 +2,8 @@ import { Metadata } from 'next';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
-import { getCachedUserVoiceStorage } from '@/lib/admin-stats';
+import { getCachedUserMediaStorage } from '@/lib/admin-stats';
+import { HardDrive } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -69,8 +70,8 @@ export default async function AdminUsersPage({
 
     const totalPages = Math.ceil(totalUsers / pageSize);
 
-    // Determine voice storage per user (Cached)
-    const userStorage = await getCachedUserVoiceStorage();
+    // Determine media storage per user (Cached)
+    const userStorage = await getCachedUserMediaStorage();
 
     return (
         <div className="flex-1 space-y-4 px-4 md:px-8">
@@ -95,7 +96,7 @@ export default async function AdminUsersPage({
                                     <TableHead className="text-center">Workspaces Owned</TableHead>
                                     <TableHead className="text-center">Projects Owned</TableHead>
                                     <TableHead className="text-center">Total Comments</TableHead>
-                                    <TableHead className="text-right">Voice Storage</TableHead>
+                                    <TableHead className="text-right">Media Storage</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -120,8 +121,17 @@ export default async function AdminUsersPage({
                                             <TableCell className="text-center">{user._count.ownedWorkspaces}</TableCell>
                                             <TableCell className="text-center">{user._count.projects}</TableCell>
                                             <TableCell className="text-center">{user._count.comments}</TableCell>
-                                            <TableCell className="text-right text-muted-foreground text-sm">
-                                                {formatBytes(userStorage[user.id] || 0)}
+                                            <TableCell className="text-right text-sm">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="font-medium text-foreground">{formatBytes(userStorage[user.id]?.total || 0)}</span>
+                                                    {(userStorage[user.id]?.voice > 0 || userStorage[user.id]?.image > 0) && (
+                                                        <span className="text-xs text-muted-foreground mt-0.5 whitespace-nowrap space-x-1">
+                                                            {userStorage[user.id]?.voice > 0 && <span>🎤 {formatBytes(userStorage[user.id]?.voice)}</span>}
+                                                            {userStorage[user.id]?.voice > 0 && userStorage[user.id]?.image > 0 && <span>•</span>}
+                                                            {userStorage[user.id]?.image > 0 && <span>🖼️ {formatBytes(userStorage[user.id]?.image)}</span>}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))

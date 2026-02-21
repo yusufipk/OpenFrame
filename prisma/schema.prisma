@@ -263,6 +263,9 @@ model Comment {
   voiceUrl      String?     // URL to voice recording file
   voiceDuration Float?      // Duration of voice recording in seconds
   
+  // Image attachment (optional)
+  imageUrl      String?     // URL to uploaded image file
+  
   // Threading
   parentId      String?
   parent        Comment?    @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)

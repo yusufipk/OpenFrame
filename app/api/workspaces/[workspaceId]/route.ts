@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
-import { cleanupWorkspaceVoiceFiles } from '@/lib/r2-cleanup';
+import { cleanupWorkspaceMediaFiles } from '@/lib/r2-cleanup';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ workspaceId: string }> };
@@ -145,7 +145,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         }
 
         // Clean up voice files from R2 before cascade delete removes comment rows
-        await cleanupWorkspaceVoiceFiles(workspaceId);
+        await cleanupWorkspaceMediaFiles(workspaceId);
 
         await db.workspace.delete({ where: { id: workspaceId } });
 

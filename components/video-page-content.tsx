@@ -38,6 +38,8 @@ import {
   User,
   Maximize,
   Minimize,
+  Image as ImageIcon,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -102,6 +104,7 @@ interface Comment {
   timestamp: number;
   voiceUrl: string | null;
   voiceDuration: number | null;
+  imageUrl: string | null;
   isResolved: boolean;
   createdAt: string;
   author: { id: string; name: string | null; image: string | null } | null;
@@ -112,6 +115,7 @@ interface Comment {
     content: string | null;
     voiceUrl: string | null;
     voiceDuration: number | null;
+    imageUrl: string | null;
     createdAt: string;
     author: { id: string; name: string | null; image: string | null } | null;
     guestName: string | null;
@@ -185,6 +189,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [imageBlob, setImageBlob] = useState<File | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [voiceProgress, setVoiceProgress] = useState(0);
   const [voiceCurrentTime, setVoiceCurrentTime] = useState(0);
@@ -220,6 +227,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [replyRecordingTime, setReplyRecordingTime] = useState(0);
   const [replyAudioBlob, setReplyAudioBlob] = useState<Blob | null>(null);
   const [isUploadingReplyAudio, setIsUploadingReplyAudio] = useState(false);
+  const [replyImageBlob, setReplyImageBlob] = useState<File | null>(null);
+  const [isUploadingReplyImage, setIsUploadingReplyImage] = useState(false);
+  const replyImageInputRef = useRef<HTMLInputElement>(null);
   const replyMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const replyAudioChunksRef = useRef<Blob[]>([]);
   const replyRecordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -229,6 +239,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const isMutatingRef = useRef(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const [guestName, setGuestName] = useState('');
   const [guestNameConfirmed, setGuestNameConfirmed] = useState(mode === 'dashboard');
@@ -893,17 +904,18 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     }
   }, [isDragging, currentTime, handleSeekToTimestamp]);
 
-  const handleAddComment = useCallback(async (voiceData?: { url: string; duration: number }) => {
-    if (!voiceData && !commentText.trim()) return;
+  const handleAddComment = useCallback(async (voiceData?: { url: string; duration: number }, imageData?: { url: string }) => {
+    if (!voiceData && !imageBlob && !commentText.trim()) return;
     if (!activeVersion) return;
 
     const tempId = `temp-${Date.now()}`;
     const optimisticComment: Comment = {
       id: tempId,
-      content: voiceData ? commentText.trim() || null : commentText,
+      content: (voiceData || imageBlob) ? commentText.trim() || null : commentText,
       timestamp: selectedTimestamp ?? currentTime,
       voiceUrl: voiceData?.url ?? null,
       voiceDuration: voiceData?.duration ?? null,
+      imageUrl: imageBlob ? URL.createObjectURL(imageBlob) : null,
       isResolved: false,
       createdAt: new Date().toISOString(),
       author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
@@ -928,18 +940,37 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     setSelectedTimestamp(null);
     setSelectedTagId(availableTags.length > 0 ? availableTags[0].id : null);
     setAudioBlob(null);
+    setImageBlob(null);
 
     setIsSubmittingComment(true);
     isMutatingRef.current = true;
 
     try {
+      let imageData: { url: string } | undefined;
+
+      if (imageBlob) {
+        setIsUploadingImage(true);
+        const imageFormData = new FormData();
+        imageFormData.append('image', imageBlob);
+
+        const imageRes = await fetch('/api/upload/image', {
+          method: 'POST',
+          body: imageFormData,
+        });
+
+        if (!imageRes.ok) throw new Error('Failed to upload image');
+        const imageDataResponse = await imageRes.json();
+        imageData = { url: imageDataResponse.data.url };
+      }
+
       const res = await fetch(`/api/versions/${activeVersion.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: voiceData ? commentText.trim() || null : commentText,
+          content: (voiceData || imageBlob) ? commentText.trim() || null : commentText,
           timestamp: selectedTimestamp ?? currentTime,
           ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
+          ...(imageData && { imageUrl: imageData.url }),
           ...(isGuest && guestName && { guestName }),
           ...(selectedTagId && { tagId: selectedTagId }),
         }),
@@ -988,9 +1019,55 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       toast.error('Failed to add comment');
     } finally {
       setIsSubmittingComment(false);
+      setIsUploadingImage(false);
       isMutatingRef.current = false;
     }
-  }, [commentText, currentTime, selectedTimestamp, activeVersion, activeVersionId, isGuest, guestName, selectedTagId, availableTags]);
+  }, [commentText, currentTime, selectedTimestamp, activeVersion, activeVersionId, isGuest, guestName, selectedTagId, availableTags, imageBlob]);
+
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>, isReply: boolean = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image must be less than 10MB');
+      return;
+    }
+
+    if (isReply) {
+      setReplyImageBlob(file);
+    } else {
+      setImageBlob(file);
+    }
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>, isReply: boolean = false) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          if (file.size > 10 * 1024 * 1024) {
+            toast.error('Image must be less than 10MB');
+            return;
+          }
+          if (isReply) {
+            setReplyImageBlob(file);
+          } else {
+            setImageBlob(file);
+          }
+          e.preventDefault();
+          break;
+        }
+      }
+    }
+  }, []);
 
   const startRecording = useCallback(async () => {
     try {
@@ -1174,6 +1251,46 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     };
   }, []);
 
+  const submitCommentWithMedia = useCallback(async () => {
+    if (!activeVersion) return;
+
+    // If we only have audio, handle it via submitVoiceComment for backwards compatibility conceptually
+    if (audioBlob && !imageBlob && !commentText.trim()) {
+      submitVoiceComment();
+      return;
+    }
+
+    if (audioBlob) setIsUploadingAudio(true);
+    if (imageBlob) setIsUploadingImage(true);
+
+    try {
+      let voiceData: { url: string; duration: number } | undefined;
+      let imageData: { url: string } | undefined;
+
+      if (audioBlob) {
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+        const uploadRes = await fetch('/api/upload/audio', { method: 'POST', body: formData });
+        if (!uploadRes.ok) throw new Error('Failed to upload audio');
+        const uploadData = await uploadRes.json();
+        voiceData = { url: uploadData.data.url, duration: recordingTime };
+      }
+
+      await handleAddComment(voiceData, imageData); // Image is uploaded inside handleAddComment for both text/image cases
+
+      setAudioBlob(null);
+      setRecordingTime(0);
+      setImageBlob(null);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    } catch (err) {
+      console.error('Failed to submit comment with media:', err);
+      toast.error('Failed to upload media');
+    } finally {
+      setIsUploadingAudio(false);
+      setIsUploadingImage(false);
+    }
+  }, [audioBlob, imageBlob, activeVersion, recordingTime, commentText, submitVoiceComment, handleAddComment]);
+
   const handleResolveComment = useCallback(
     async (commentId: string, currentlyResolved: boolean) => {
       isMutatingRef.current = true;
@@ -1245,17 +1362,18 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     [activeVersionId]
   );
 
-  const handleReplyComment = useCallback(async (parentId: string, voiceData?: { url: string; duration: number }) => {
-    if (!voiceData && !replyText.trim()) return;
+  const handleReplyComment = useCallback(async (parentId: string, voiceData?: { url: string; duration: number }, imageData?: { url: string }) => {
+    if (!voiceData && !replyImageBlob && !replyText.trim()) return;
     if (!activeVersion) return;
 
     const tempId = `temp-reply-${Date.now()}`;
     const parentComment = comments.find((c) => c.id === parentId);
     const optimisticReply = {
       id: tempId,
-      content: voiceData ? replyText.trim() || null : replyText,
+      content: (voiceData || replyImageBlob) ? replyText.trim() || null : replyText,
       voiceUrl: voiceData?.url ?? null,
       voiceDuration: voiceData?.duration ?? null,
+      imageUrl: replyImageBlob ? URL.createObjectURL(replyImageBlob) : null,
       createdAt: new Date().toISOString(),
       author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
       guestName: isGuest ? guestName : null,
@@ -1285,19 +1403,38 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     setReplyingTo(null);
     setReplyAudioBlob(null);
     setReplyRecordingTime(0);
+    setReplyImageBlob(null);
 
     setIsSubmittingReply(true);
     isMutatingRef.current = true;
 
     try {
+      let submittedImageData: { url: string } | undefined = imageData;
+
+      if (replyImageBlob && !imageData) {
+        setIsUploadingReplyImage(true);
+        const imageFormData = new FormData();
+        imageFormData.append('image', replyImageBlob);
+
+        const imageRes = await fetch('/api/upload/image', {
+          method: 'POST',
+          body: imageFormData,
+        });
+
+        if (!imageRes.ok) throw new Error('Failed to upload image reply');
+        const imageDataResponse = await imageRes.json();
+        submittedImageData = { url: imageDataResponse.data.url };
+      }
+
       const res = await fetch(`/api/versions/${activeVersion.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: voiceData ? replyText.trim() || null : replyText,
+          content: (voiceData || submittedImageData) ? replyText.trim() || null : replyText,
           timestamp: parentComment?.timestamp ?? currentTime,
           parentId,
           ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
+          ...(submittedImageData && { imageUrl: submittedImageData.url }),
           ...(isGuest && guestName && { guestName }),
         }),
       });
@@ -1366,9 +1503,10 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       toast.error('Failed to add reply');
     } finally {
       setIsSubmittingReply(false);
+      setIsUploadingReplyImage(false);
       isMutatingRef.current = false;
     }
-  }, [replyText, activeVersion, activeVersionId, comments, currentTime, isGuest, guestName]);
+  }, [replyText, activeVersion, activeVersionId, comments, currentTime, isGuest, guestName, replyImageBlob]);
 
   const startReplyRecording = useCallback(async () => {
     try {
@@ -1437,6 +1575,44 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     }
   }, [replyAudioBlob, activeVersion, replyRecordingTime, handleReplyComment]);
 
+  const submitReplyWithMedia = useCallback(async (parentId: string) => {
+    if (!activeVersion) return;
+
+    if (replyAudioBlob && !replyImageBlob && !replyText.trim()) {
+      submitVoiceReply(parentId);
+      return;
+    }
+
+    if (replyAudioBlob) setIsUploadingReplyAudio(true);
+    if (replyImageBlob) setIsUploadingReplyImage(true);
+
+    try {
+      let voiceData: { url: string; duration: number } | undefined;
+
+      if (replyAudioBlob) {
+        const formData = new FormData();
+        formData.append('audio', replyAudioBlob, 'recording.webm');
+        const uploadRes = await fetch('/api/upload/audio', { method: 'POST', body: formData });
+        if (!uploadRes.ok) throw new Error('Failed to upload audio reply');
+        const uploadData = await uploadRes.json();
+        voiceData = { url: uploadData.data.url, duration: replyRecordingTime };
+      }
+
+      await handleReplyComment(parentId, voiceData);
+
+      setReplyAudioBlob(null);
+      setReplyRecordingTime(0);
+      setReplyImageBlob(null);
+      if (replyImageInputRef.current) replyImageInputRef.current.value = '';
+    } catch (err) {
+      console.error('Failed to submit reply with media:', err);
+      toast.error('Failed to upload media');
+    } finally {
+      setIsUploadingReplyAudio(false);
+      setIsUploadingReplyImage(false);
+    }
+  }, [replyAudioBlob, replyImageBlob, activeVersion, replyRecordingTime, replyText, submitVoiceReply, handleReplyComment]);
+
   const handleEditComment = useCallback(async (commentId: string) => {
     if (!editText.trim()) return;
     setIsSubmittingEdit(true);
@@ -1502,7 +1678,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 .filter((c) => c.id !== commentId)
                 .map((c) => ({
                   ...c,
-                  replies: c.replies.filter((r) => r.id !== commentId),
+                  replies: c.replies?.filter((r) => r.id !== commentId) || [],
                 })),
             }
             : v
@@ -2381,7 +2557,18 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                         </div>
                       </div>
                     ) : (
-                      comment.content && <p className="text-sm mb-2"><Linkify>{comment.content}</Linkify></p>
+                      <div className="mb-2">
+                        {comment.content && <p className="text-sm mb-2"><Linkify>{comment.content}</Linkify></p>}
+                        {comment.imageUrl && (
+                          <div
+                            className="rounded-md overflow-hidden bg-muted mb-2 max-h-60 flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => setPreviewImage(comment.imageUrl)}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={comment.imageUrl} alt="Attachment" className="max-h-60 w-auto object-contain" />
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {comment.voiceUrl && (
@@ -2524,7 +2711,18 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                                   </div>
                                 </div>
                               ) : (
-                                reply.content && <p className="text-sm"><Linkify>{reply.content}</Linkify></p>
+                                <div className="mb-1">
+                                  {reply.content && <p className="text-sm"><Linkify>{reply.content}</Linkify></p>}
+                                  {reply.imageUrl && (
+                                    <div
+                                      className="rounded-md overflow-hidden bg-muted mt-2 max-h-40 flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+                                      onClick={() => setPreviewImage(reply.imageUrl)}
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={reply.imageUrl} alt="Attachment" className="max-h-40 w-auto object-contain" />
+                                    </div>
+                                  )}
+                                </div>
                               )}
                               {reply.voiceUrl && (
                                 <div className="flex items-center gap-2 p-1.5 bg-muted rounded mt-1">
@@ -2620,6 +2818,22 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                                 <X className="h-3 w-3" />
                               </Button>
                             </div>
+
+                            {replyImageBlob && (
+                              <div className="relative group rounded-md overflow-hidden bg-muted flex items-center justify-center h-20 mb-2">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={URL.createObjectURL(replyImageBlob)} alt="Preview" className="h-full object-contain" />
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Button size="icon" variant="destructive" className="h-6 w-6" onClick={() => {
+                                    setReplyImageBlob(null);
+                                    if (replyImageInputRef.current) replyImageInputRef.current.value = '';
+                                  }}>
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
                             <Textarea
                               value={replyText}
                               onChange={(e) => setReplyText(e.target.value)}
@@ -2627,20 +2841,34 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                               rows={1}
                               className="resize-none text-sm"
                             />
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 mt-2">
                               <Button
                                 size="sm"
-                                onClick={() => submitVoiceReply(comment.id)}
-                                disabled={isUploadingReplyAudio}
+                                onClick={() => submitReplyWithMedia(comment.id)}
+                                disabled={isUploadingReplyAudio || isUploadingReplyImage}
                                 className="h-7 text-xs"
                               >
-                                {isUploadingReplyAudio ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Send Voice Reply'}
+                                {isUploadingReplyAudio || isUploadingReplyImage ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Send Reply'}
                               </Button>
                               <Button size="sm" variant="ghost" onClick={cancelReplyRecording} className="h-7 text-xs">Cancel</Button>
                             </div>
                           </div>
                         ) : (
                           <>
+                            {replyImageBlob && (
+                              <div className="relative group rounded-md overflow-hidden bg-muted flex items-center justify-center h-20 mb-2">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={URL.createObjectURL(replyImageBlob)} alt="Preview" className="h-full object-contain" />
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Button size="icon" variant="destructive" className="h-6 w-6" onClick={() => {
+                                    setReplyImageBlob(null);
+                                    if (replyImageInputRef.current) replyImageInputRef.current.value = '';
+                                  }}>
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                             <div className="flex gap-1">
                               <Textarea
                                 value={replyText}
@@ -2658,6 +2886,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                                     setReplyText('');
                                   }
                                 }}
+                                onPaste={(e) => handlePaste(e, true)}
                               />
                               <Button
                                 size="icon"
@@ -2668,15 +2897,31 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                               >
                                 <Mic className="h-3 w-3" />
                               </Button>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                onClick={() => replyImageInputRef.current?.click()}
+                                title="Attach Image"
+                                className="h-8 w-8 shrink-0 self-end"
+                              >
+                                <ImageIcon className="h-3 w-3" />
+                              </Button>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                ref={replyImageInputRef}
+                                onChange={(e) => handleImageSelect(e, true)}
+                              />
                             </div>
                             <div className="flex gap-1 mt-1">
                               <Button
                                 size="sm"
                                 onClick={() => handleReplyComment(comment.id)}
-                                disabled={!replyText.trim() || isSubmittingReply}
+                                disabled={(!replyText.trim() && !replyImageBlob) || isSubmittingReply || isUploadingReplyImage}
                                 className="h-7 text-xs"
                               >
-                                {isSubmittingReply ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Reply'}
+                                {isSubmittingReply || isUploadingReplyImage ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Reply'}
                               </Button>
                               <Button
                                 size="sm"
@@ -2789,6 +3034,22 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
+
+                {imageBlob && (
+                  <div className="relative group rounded-md overflow-hidden bg-muted flex items-center justify-center max-h-40 mb-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={URL.createObjectURL(imageBlob)} alt="Preview" className="max-h-40 w-auto object-contain" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Button size="icon" variant="destructive" onClick={() => {
+                        setImageBlob(null);
+                        if (imageInputRef.current) imageInputRef.current.value = '';
+                      }}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <Textarea
                   placeholder="Add a note to your voice comment (optional)..."
                   value={commentText}
@@ -2798,14 +3059,14 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 />
                 <Button
                   size="sm"
-                  onClick={submitVoiceComment}
-                  disabled={isUploadingAudio}
+                  onClick={submitCommentWithMedia}
+                  disabled={isUploadingAudio || isUploadingImage}
                   className="w-full"
                 >
-                  {isUploadingAudio ? (
+                  {isUploadingAudio || isUploadingImage ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Uploading...
+                      Uploading Media...
                     </>
                   ) : (
                     <>
@@ -2817,6 +3078,20 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               </div>
             ) : (
               <>
+                {imageBlob && (
+                  <div className="relative group rounded-md overflow-hidden bg-muted flex items-center justify-center max-h-40 mb-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={URL.createObjectURL(imageBlob)} alt="Preview" className="max-h-40 w-auto object-contain" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Button size="icon" variant="destructive" onClick={() => {
+                        setImageBlob(null);
+                        if (imageInputRef.current) imageInputRef.current.value = '';
+                      }}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Textarea
                     placeholder="Add a comment..."
@@ -2829,14 +3104,15 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                         handleAddComment();
                       }
                     }}
+                    onPaste={(e) => handlePaste(e, false)}
                   />
                   <div className="flex flex-col gap-1">
                     <Button
                       size="icon"
                       onClick={() => handleAddComment()}
-                      disabled={!commentText.trim() || isSubmittingComment}
+                      disabled={(!commentText.trim() && !imageBlob) || isSubmittingComment || isUploadingImage}
                     >
-                      {isSubmittingComment ? (
+                      {isSubmittingComment || isUploadingImage ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <Send className="h-4 w-4" />
@@ -2850,6 +3126,21 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                     >
                       <Mic className="h-4 w-4" />
                     </Button>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={() => imageInputRef.current?.click()}
+                      title="Attach Image"
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      ref={imageInputRef}
+                      onChange={handleImageSelect}
+                    />
                     {availableTags.length > 0 && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -2897,6 +3188,66 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           </div>
         </div>
       </div>
+
+      <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-none sm:max-w-none w-screen h-screen max-h-screen p-0 overflow-hidden bg-black/90 border-none shadow-none flex flex-col items-center justify-center rounded-none"
+        >
+          <DialogTitle className="sr-only">Image Preview</DialogTitle>
+          <div className="absolute top-4 right-4 flex gap-3 z-50">
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-full bg-black/40 hover:bg-black/80 border-white/20 text-white h-10 w-10 backdrop-blur-md transition-all shrink-0"
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  const response = await fetch(previewImage!);
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = previewImage!.split('/').pop() || 'attachment.png';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  window.URL.revokeObjectURL(url);
+                } catch (error) {
+                  console.error('Failed to download image:', error);
+                  toast.error('Failed to download image');
+                }
+              }}
+            >
+              <Download className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-full bg-black/40 hover:bg-black/80 border-white/20 text-white h-10 w-10 backdrop-blur-md transition-all shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPreviewImage(null);
+              }}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <div
+            className="relative w-full h-full flex items-center justify-center p-4 cursor-zoom-out"
+            onClick={() => setPreviewImage(null)}
+          >
+            {previewImage && (
+              <img
+                src={previewImage}
+                alt="Preview"
+                className="max-w-[95vw] max-h-[90vh] object-contain rounded-md select-none cursor-default"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

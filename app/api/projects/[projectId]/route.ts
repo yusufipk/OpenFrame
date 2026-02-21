@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { ProjectMemberRole, ProjectVisibility } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
-import { cleanupProjectVoiceFiles } from '@/lib/r2-cleanup';
+import { cleanupProjectMediaFiles } from '@/lib/r2-cleanup';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
@@ -52,11 +52,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     try {
         const session = await auth();
         const { projectId } = await params;
-        
+
         // Parse pagination params
         const searchParams = request.nextUrl.searchParams;
         const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
-        const offset = parseInt(searchParams.get('offset') || '0');
+        const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'));
 
         const project = await db.project.findUnique({
             where: { id: projectId },
@@ -197,7 +197,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         }
 
         // Clean up voice files from R2 before cascade delete removes comment rows
-        await cleanupProjectVoiceFiles(projectId);
+        await cleanupProjectMediaFiles(projectId);
 
         await db.project.delete({ where: { id: projectId } });
 

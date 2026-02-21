@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
-import { cleanupVideoVoiceFiles } from '@/lib/r2-cleanup';
+import { cleanupVideoMediaFiles } from '@/lib/r2-cleanup';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         // Parse query params for pagination and options
         const searchParams = request.nextUrl.searchParams;
         const commentLimit = Math.min(parseInt(searchParams.get('commentLimit') || '50'), 100);
-        const commentOffset = parseInt(searchParams.get('commentOffset') || '0');
+        const commentOffset = Math.max(0, parseInt(searchParams.get('commentOffset') || '0'));
         const includeReplies = searchParams.get('includeReplies') === 'true';
 
         const video = await db.video.findFirst({
@@ -32,20 +32,54 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                             orderBy: { timestamp: 'asc' },
                             skip: commentOffset,
                             take: commentLimit,
-                            include: {
+                            select: {
+                                id: true,
+                                content: true,
+                                timestamp: true,
+                                timestampEnd: true,
+                                createdAt: true,
+                                updatedAt: true,
+                                isResolved: true,
+                                resolvedAt: true,
+                                voiceUrl: true,
+                                voiceDuration: true,
+                                imageUrl: true,
+                                parentId: true,
+                                authorId: true,
+                                tagId: true,
+                                versionId: true,
+                                guestName: true,
+                                // guestEmail excluded for privacy
                                 author: { select: { id: true, name: true, image: true } },
                                 tag: { select: { id: true, name: true, color: true } },
                                 ...(includeReplies ? {
                                     replies: {
                                         orderBy: { createdAt: 'asc' },
-                                        include: {
+                                        select: {
+                                            id: true,
+                                            content: true,
+                                            timestamp: true,
+                                            timestampEnd: true,
+                                            createdAt: true,
+                                            updatedAt: true,
+                                            isResolved: true,
+                                            resolvedAt: true,
+                                            voiceUrl: true,
+                                            voiceDuration: true,
+                                            imageUrl: true,
+                                            parentId: true,
+                                            authorId: true,
+                                            tagId: true,
+                                            versionId: true,
+                                            guestName: true,
+                                            // guestEmail excluded for privacy
                                             author: { select: { id: true, name: true, image: true } },
                                             tag: { select: { id: true, name: true, color: true } },
                                         },
                                     },
                                 } : {}),
                             },
-                            where: { parentId: null }, // Only top-level comments
+                            where: { parentId: null },
                         },
                         _count: { select: { comments: true } },
                     },
@@ -194,7 +228,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         }
 
         // Clean up voice files from R2 before cascade delete removes comment rows
-        await cleanupVideoVoiceFiles(videoId);
+        await cleanupVideoMediaFiles(videoId);
 
         await db.video.delete({ where: { id: videoId } });
 

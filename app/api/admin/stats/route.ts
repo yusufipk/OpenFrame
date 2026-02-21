@@ -17,6 +17,7 @@ export async function GET() {
             totalVideos,
             totalComments,
             totalVoiceComments,
+            totalImageComments,
         ] = await Promise.all([
             db.user.count(),
             db.project.count(),
@@ -25,6 +26,13 @@ export async function GET() {
             db.comment.count({
                 where: {
                     voiceUrl: {
+                        not: null,
+                    }
+                }
+            }),
+            db.comment.count({
+                where: {
+                    imageUrl: {
                         not: null,
                     }
                 }
@@ -40,6 +48,7 @@ export async function GET() {
             totalVideos,
             totalComments,
             totalVoiceComments,
+            totalImageComments,
             totalStorageBytes,
         });
     } catch (error) {

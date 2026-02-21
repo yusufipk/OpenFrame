@@ -71,12 +71,44 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                 ...(includeResolved ? {} : { isResolved: false }),
             },
             orderBy: { timestamp: 'asc' },
-            include: {
+            select: {
+                id: true,
+                content: true,
+                timestamp: true,
+                timestampEnd: true,
+                createdAt: true,
+                updatedAt: true,
+                isResolved: true,
+                resolvedAt: true,
+                voiceUrl: true,
+                voiceDuration: true,
+                imageUrl: true,
+                parentId: true,
+                authorId: true,
+                tagId: true,
+                versionId: true,
+                guestName: true,
                 author: { select: { id: true, name: true, image: true } },
                 tag: { select: { id: true, name: true, color: true } },
                 replies: {
                     orderBy: { createdAt: 'asc' },
-                    include: {
+                    select: {
+                        id: true,
+                        content: true,
+                        timestamp: true,
+                        timestampEnd: true,
+                        createdAt: true,
+                        updatedAt: true,
+                        isResolved: true,
+                        resolvedAt: true,
+                        voiceUrl: true,
+                        voiceDuration: true,
+                        imageUrl: true,
+                        parentId: true,
+                        authorId: true,
+                        tagId: true,
+                        versionId: true,
+                        guestName: true,
                         author: { select: { id: true, name: true, image: true } },
                         tag: { select: { id: true, name: true, color: true } },
                     },
@@ -152,15 +184,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
 
         const body = await request.json();
-        const { content, timestamp, timestampEnd, parentId, voiceUrl, voiceDuration, guestName, guestEmail, tagId } = body;
+        const { content, timestamp, timestampEnd, parentId, voiceUrl, voiceDuration, guestName, guestEmail, tagId, imageUrl } = body;
 
         // Validate required fields
         if (timestamp === undefined || timestamp === null) {
             return apiErrors.badRequest('Timestamp is required');
         }
 
-        if (!content && !voiceUrl) {
-            return apiErrors.badRequest('Either content or voice recording is required');
+        const parsedTimestamp = parseFloat(timestamp);
+        if (isNaN(parsedTimestamp)) {
+            return apiErrors.badRequest('Timestamp must be a valid number');
+        }
+
+        if (!content && !voiceUrl && !imageUrl) {
+            return apiErrors.badRequest('Either content, a voice recording, or an image attachment is required');
         }
 
         // If replying, verify parent exists in same version
@@ -187,14 +224,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             }
         }
 
+        if (imageUrl && !imageUrl.startsWith('/api/')) {
+            const imageUrlError = validateOptionalUrl(imageUrl, 'Image URL');
+            if (imageUrlError) {
+                return apiErrors.badRequest(imageUrlError);
+            }
+        }
+
         const comment = await db.comment.create({
             data: {
                 content: content?.trim() || null,
-                timestamp: parseFloat(timestamp),
+                timestamp: parsedTimestamp,
                 timestampEnd: timestampEnd ? parseFloat(timestampEnd) : null,
                 parentId: parentId || null,
                 voiceUrl: voiceUrl || null,
                 voiceDuration: voiceDuration || null,
+                imageUrl: imageUrl || null,
                 authorId: session?.user?.id || null,
                 guestName: isGuest ? guestName : null,
                 guestEmail: isGuest ? guestEmail : null,
@@ -234,7 +279,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                     projectName: project.name,
                     videoTitle,
                     replyAuthor: commentAuthorName,
-                    replyText: content?.trim() || '(voice note)',
+                    replyText: content?.trim() || (imageUrl ? '(image attachment)' : '(voice note)'),
                     parentAuthor: parentComment?.author?.name || parentComment?.guestName || 'Someone',
                     timestamp: ts,
                     url: `${baseUrl}/watch/${version.video.id}`,
@@ -245,7 +290,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                     projectName: project.name,
                     videoTitle,
                     commentAuthor: commentAuthorName,
-                    commentText: content?.trim() || '(voice note)',
+                    commentText: content?.trim() || (imageUrl ? '(image attachment)' : '(voice note)'),
                     timestamp: ts,
                     url: `${baseUrl}/watch/${version.video.id}`,
                 }).catch((err) => console.error('Notification failed:', err));
