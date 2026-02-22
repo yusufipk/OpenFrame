@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import { Button } from '@/components/ui/button';
-import { Undo2, Trash2, Minus, Plus } from 'lucide-react';
+import { Undo2, Trash2, Minus, Plus, X } from 'lucide-react';
 
 export interface AnnotationStroke {
     points: { x: number; y: number }[];
@@ -176,7 +176,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
         return (
             <div
                 ref={containerRef}
-                className="absolute inset-0 z-20 cursor-pointer"
+                className="absolute inset-0 z-[60] cursor-pointer"
                 onClick={handleViewClick}
                 title="Click to dismiss annotation"
             >
@@ -191,7 +191,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
     return (
         <div
             ref={containerRef}
-            className="absolute inset-0 z-20"
+            className="absolute inset-0 z-[60]"
             onClick={(e) => e.stopPropagation()}
         >
             <canvas
@@ -207,7 +207,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
             />
 
             {/* Toolbar */}
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-30">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]">
                 {/* Colors */}
                 <div className="flex items-center justify-center flex-wrap gap-1.5">
                     {COLORS.map(c => (
@@ -248,6 +248,13 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
                         <Trash2 className="h-4 w-4" />
                     </Button>
                 </div>
+
+                <div className="hidden sm:block w-px h-6 bg-border mx-1" />
+
+                {/* Close */}
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCancel} title="Close annotation tool">
+                    <X className="h-4 w-4" />
+                </Button>
             </div>
         </div>
     );

@@ -3257,7 +3257,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                     <span className="text-xs text-violet-400 font-medium">Annotation attached</span>
                     <button
                       className="ml-auto text-xs text-muted-foreground hover:text-destructive transition-colors"
-                      onClick={() => setAnnotationStrokes(null)}
+                      onClick={() => { setAnnotationStrokes(null); setIsAnnotating(false); }}
                     >
                       Remove
                     </button>
