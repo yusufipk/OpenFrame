@@ -124,3 +124,20 @@
     @apply bg-background text-foreground;
   }
 }
+
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0.03;
+  filter: url(#openframe-noise);
+  mix-blend-mode: soft-light;
+}
+
+.noise-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--foreground);
+}
