@@ -29,6 +29,10 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
     // Watch progress — allow frequent updates but prevent abuse
     'watch-progress':   { windowMs: 60 * 1000, maxRequests: 30 },       // 30 per minute (pausing + periodic + visibility changes)
 
+    // Downloads — strict enough to limit upstream probing/cost abuse
+    'video-download':         { windowMs: 60 * 1000, maxRequests: 8 },  // 8 per minute
+    'video-download-prepare': { windowMs: 60 * 1000, maxRequests: 5 },  // 5 per minute
+
     // Member management
     'invite-member':  { windowMs: 60 * 60 * 1000, maxRequests: 30 },    // 30 per hour
     'manage-member':  { windowMs: 60 * 1000, maxRequests: 20 },         // 20 per minute

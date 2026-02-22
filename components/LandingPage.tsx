@@ -878,6 +878,10 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>Download uploaded original files as-is</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
                     <span>Instant Webhook (Telegram/Email) Setup</span>
                   </li>
                 </ul>

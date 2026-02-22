@@ -238,6 +238,8 @@ interface BunnyQualityOption {
 }
 
 type BunnyPlaybackState = 'none' | 'processing' | 'error';
+type BunnyDownloadPreference = 'original' | 'compressed';
+type DownloadTarget = BunnyDownloadPreference | 'direct';
 
 export type VideoPageMode = 'dashboard' | 'watch';
 
@@ -300,7 +302,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [showResolved, setShowResolved] = useState(false);
   const [isExportingCsv, setIsExportingCsv] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [isDownloadingVideo, setIsDownloadingVideo] = useState(false);
+  const [activeDownloadTarget, setActiveDownloadTarget] = useState<DownloadTarget | null>(null);
 
   // Watch progress state
   const [savedProgress, setSavedProgress] = useState<number | null>(null);
@@ -542,6 +544,8 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       video?.versions?.[0];
   }, [video?.versions, activeVersionId]);
 
+  const isDownloadingVideo = activeDownloadTarget !== null;
+
   const isVideoDownloadAvailable = useMemo(() => {
     if (!activeVersion) return false;
     if (activeVersion.providerId === 'bunny') return true;
@@ -549,31 +553,35 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     return !!getSafeDirectDownloadUrl(activeVersion.originalUrl);
   }, [activeVersion]);
 
-  const handleDownloadVideo = useCallback(async () => {
+  const handleDownloadVideo = useCallback(async (preference: BunnyDownloadPreference = 'compressed') => {
     if (!activeVersion || !video || isDownloadingVideo) return;
     if (activeVersion.providerId !== 'bunny' && activeVersion.providerId !== 'direct') {
       toast.error('This video source does not support direct download');
       return;
     }
 
-    setIsDownloadingVideo(true);
+    const target: DownloadTarget = activeVersion.providerId === 'bunny' ? preference : 'direct';
+    setActiveDownloadTarget(target);
     try {
       let downloadUrl: string | null = null;
 
       if (activeVersion.providerId === 'bunny') {
-        const prepareRes = await fetch(`/api/versions/${activeVersion.id}/download?prepare=1`, {
+        const prepareRes = await fetch(`/api/versions/${activeVersion.id}/download?source=${preference}&prepare=1`, {
           cache: 'no-store',
         });
+
         if (!prepareRes.ok) {
-          throw new Error('Failed to prepare download');
+          const prepareBody = await prepareRes.json().catch(() => null);
+          const fallbackError = preference === 'original'
+            ? 'Original file is not available for this video'
+            : 'Compressed file is not available for this video';
+          const errorMessage = typeof prepareBody?.error === 'string'
+            ? prepareBody.error
+            : fallbackError;
+          throw new Error(errorMessage);
         }
 
-        const prepareBody = await prepareRes.json().catch(() => null);
-        const quality = Number(prepareBody?.data?.quality);
-        const qualityQuery = Number.isFinite(quality) && quality > 0
-          ? `?quality=${quality}`
-          : '';
-        downloadUrl = `/api/versions/${activeVersion.id}/download${qualityQuery}`;
+        downloadUrl = `/api/versions/${activeVersion.id}/download?source=${preference}`;
       } else {
         downloadUrl = getSafeDirectDownloadUrl(activeVersion.originalUrl);
         if (!downloadUrl) {
@@ -589,7 +597,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       const baseName = sanitizeDownloadFileName(`${video.title} ${versionLabel}`) || 'video';
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `${baseName}.mp4`;
+      if (activeVersion.providerId === 'direct') {
+        a.download = `${baseName}.mp4`;
+      }
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -597,11 +607,13 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       console.error('Failed to start video download:', error);
       if (error instanceof Error && error.message === 'Direct download URL is not allowed') {
         toast.error('This direct download host is not allowed');
+      } else if (error instanceof Error && error.message) {
+        toast.error(error.message);
       } else {
         toast.error('Failed to start download');
       }
     } finally {
-      setIsDownloadingVideo(false);
+      setActiveDownloadTarget(null);
     }
   }, [activeVersion, isDownloadingVideo, video]);
 
@@ -2800,23 +2812,77 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 </AlertDialogContent>
               </AlertDialog>
 
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  'transition-opacity duration-300',
-                  isDownloadingVideo && 'opacity-50 pointer-events-none'
-                )}
-                onClick={handleDownloadVideo}
-                disabled={!isVideoDownloadAvailable || isDownloadingVideo}
-              >
-                {isDownloadingVideo ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4 mr-1" />
-                )}
-                Download
-              </Button>
+              {activeVersion?.providerId === 'bunny' ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        'transition-opacity duration-300',
+                        isDownloadingVideo && 'opacity-50 pointer-events-none'
+                      )}
+                      disabled={!isVideoDownloadAvailable || isDownloadingVideo}
+                    >
+                      {isDownloadingVideo ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-1" />
+                      )}
+                      Download
+                      <ChevronDown className="h-4 w-4 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        void handleDownloadVideo('original');
+                      }}
+                      disabled={!isVideoDownloadAvailable || isDownloadingVideo}
+                    >
+                      {activeDownloadTarget === 'original' ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      Download Original
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        void handleDownloadVideo('compressed');
+                      }}
+                      disabled={!isVideoDownloadAvailable || isDownloadingVideo}
+                    >
+                      {activeDownloadTarget === 'compressed' ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      Download Compressed
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'transition-opacity duration-300',
+                    isDownloadingVideo && 'opacity-50 pointer-events-none'
+                  )}
+                  onClick={() => void handleDownloadVideo()}
+                  disabled={!isVideoDownloadAvailable || isDownloadingVideo}
+                >
+                  {isDownloadingVideo ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-1" />
+                  )}
+                  Download
+                </Button>
+              )}
 
               {mode === 'dashboard' && (
                 <>
@@ -2961,20 +3027,53 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            void handleDownloadVideo();
-                          }}
-                          disabled={!isVideoDownloadAvailable || isDownloadingVideo}
-                        >
-                          {isDownloadingVideo ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4 mr-2" />
-                          )}
-                          Download
-                        </DropdownMenuItem>
+                        {activeVersion?.providerId === 'bunny' ? (
+                          <>
+                            <DropdownMenuItem
+                              onSelect={(event) => {
+                                event.preventDefault();
+                                void handleDownloadVideo('original');
+                              }}
+                              disabled={!isVideoDownloadAvailable || isDownloadingVideo}
+                            >
+                              {activeDownloadTarget === 'original' ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4 mr-2" />
+                              )}
+                              Download Original
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={(event) => {
+                                event.preventDefault();
+                                void handleDownloadVideo('compressed');
+                              }}
+                              disabled={!isVideoDownloadAvailable || isDownloadingVideo}
+                            >
+                              {activeDownloadTarget === 'compressed' ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4 mr-2" />
+                              )}
+                              Download Compressed
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <DropdownMenuItem
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              void handleDownloadVideo();
+                            }}
+                            disabled={!isVideoDownloadAvailable || isDownloadingVideo}
+                          >
+                            {isDownloadingVideo ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4 mr-2" />
+                            )}
+                            Download
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onSelect={() => setShowVersionDialog(true)}>
                           <Plus className="h-4 w-4 mr-2" />
                           New Version
