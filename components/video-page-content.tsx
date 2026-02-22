@@ -78,6 +78,9 @@ import { cn } from '@/lib/utils';
 import { parseVideoUrl, getThumbnailUrl, fetchVideoMetadata, type VideoSource } from '@/lib/video-providers';
 import { AnnotationCanvas, type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
 import { Linkify } from '@/components/linkify';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import * as tus from 'tus-js-client';
+import { UploadCloud, FileVideo } from 'lucide-react';
 
 interface Version {
   id: string;
@@ -97,6 +100,21 @@ interface CommentTag {
   id: string;
   name: string;
   color: string;
+}
+
+interface PlayerAdapter {
+  playVideo: () => void;
+  pauseVideo: () => void;
+  seekTo: (time: number, allowSeekAhead?: boolean) => void;
+  mute: () => void;
+  unMute: () => void;
+  isMuted: () => boolean;
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  getPlayerState: () => number;
+  setPlaybackRate: (rate: number) => void;
+  destroy: () => void;
+  off?: (event: string) => void;
 }
 
 interface Comment {
@@ -167,7 +185,7 @@ interface VideoPageContentProps {
 
 export function VideoPageContent({ mode, videoId, projectId: propProjectId }: VideoPageContentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const playerRef = useRef<YT.Player | null>(null);
+  const playerRef = useRef<YT.Player | PlayerAdapter | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
@@ -277,6 +295,11 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [newVersionSource, setNewVersionSource] = useState<VideoSource | null>(null);
   const [newVersionUrlError, setNewVersionUrlError] = useState('');
   const [isCreatingVersion, setIsCreatingVersion] = useState(false);
+
+  const [newVersionMode, setNewVersionMode] = useState<'url' | 'file'>('url');
+  const [newVersionFile, setNewVersionFile] = useState<File | null>(null);
+  const [newVersionUploadProgress, setNewVersionUploadProgress] = useState(0);
+  const [newVersionUploadStatus, setNewVersionUploadStatus] = useState('');
 
   const [availableTags, setAvailableTags] = useState<CommentTag[]>([]);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
@@ -389,6 +412,11 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     if (activeVersion.providerId === 'youtube') {
       return `https://www.youtube.com/embed/${activeVersion.videoId}?enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&disablekb=1`;
     }
+    if (activeVersion.providerId === 'bunny') {
+      // Force /embed/ endpoint to ensure player.js integration works correctly and hide native controls
+      const url = activeVersion.originalUrl.replace('/play/', '/embed/');
+      return `${url}${url.includes('?') ? '&' : '?'}autoplay=false&controls=false`;
+    }
     try {
       const url = new URL(activeVersion.originalUrl);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -441,8 +469,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   }, [isApiLoaded]);
 
   useEffect(() => {
-    if (!activeVersion || activeVersion.providerId !== 'youtube') return;
-    if (!isApiLoaded) return;
+    if (!activeVersion) return;
+    const isYoutube = activeVersion.providerId === 'youtube';
+    const isBunny = activeVersion.providerId === 'bunny';
+
+    if (isYoutube && !isApiLoaded) return;
+    if (!isYoutube && !isBunny) return;
 
     setIsReady(false);
     setCurrentTime(0);
@@ -451,63 +483,159 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     setPlaybackSpeed(1);
 
     if (playerRef.current) {
-      try { playerRef.current.destroy(); } catch { /* ignore */ }
+      if (isYoutube) {
+        try { playerRef.current.destroy(); } catch { /* ignore */ }
+      } else if (isBunny && 'off' in playerRef.current) {
+        try {
+          (playerRef.current as PlayerAdapter).off?.('ready');
+          (playerRef.current as PlayerAdapter).off?.('play');
+          (playerRef.current as PlayerAdapter).off?.('pause');
+          (playerRef.current as PlayerAdapter).off?.('timeupdate');
+        } catch { /* ignore */ }
+      }
       playerRef.current = null;
     }
 
     const initPlayer = () => {
       if (!iframeRef.current) return;
-      playerRef.current = new YT.Player(iframeRef.current, {
-        events: {
-          onReady: (event: YT.PlayerEvent) => {
-            setIsReady(true);
-            const dur = event.target.getDuration();
-            if (dur > 0) setVideoDuration(dur);
+
+      if (isYoutube) {
+        playerRef.current = new YT.Player(iframeRef.current, {
+          events: {
+            onReady: (event: YT.PlayerEvent) => {
+              setIsReady(true);
+              const dur = event.target.getDuration();
+              if (dur > 0) setVideoDuration(dur);
+            },
+            onStateChange: (event: YT.OnStateChangeEvent) => {
+              setIsPlaying(event.data === YT.PlayerState.PLAYING);
+
+              if (event.data === YT.PlayerState.PAUSED) {
+                const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
+                const playerDuration = playerRef.current?.getDuration?.() || 0;
+
+                if (video?.isAuthenticated && playerCurrentTime > 0 && activeVersionId) {
+                  fetch(`/api/watch/${videoId}/progress`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      progress: playerCurrentTime,
+                      duration: playerDuration,
+                      versionId: activeVersionId,
+                    }),
+                  }).catch((err) => console.error('Error saving watch progress on pause:', err));
+                }
+              }
+
+              if (event.data === YT.PlayerState.PLAYING) {
+                const dur = event.target.getDuration();
+                if (dur > 0) setVideoDuration(dur);
+              }
+            },
           },
-          onStateChange: (event: YT.OnStateChangeEvent) => {
-            setIsPlaying(event.data === YT.PlayerState.PLAYING);
+        });
+      } else if (isBunny) {
+        // dynamically require player.js to avoid SSR window errors
+        const playerjs = require('player.js');
+        const player = new playerjs.Player(iframeRef.current);
+        playerRef.current = player;
 
-            // Save progress immediately when video is paused
-            if (event.data === YT.PlayerState.PAUSED) {
-              // Get current time and duration directly from player instance, not from React state (which may be stale)
-              const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
-              const playerDuration = playerRef.current?.getDuration?.() || 0;
+        player.on('ready', () => {
+          setIsReady(true);
+          player.getDuration((duration: number) => {
+            if (duration > 0) setVideoDuration(duration);
+          });
+        });
 
-              if (video?.isAuthenticated && playerCurrentTime > 0 && activeVersionId) {
+        player.on('play', () => {
+          setIsPlaying(true);
+          player.getDuration((duration: number) => {
+            if (duration > 0) setVideoDuration(duration);
+          });
+        });
+
+        player.on('pause', () => {
+          setIsPlaying(false);
+          player.getCurrentTime((currentTime: number) => {
+            player.getDuration((duration: number) => {
+              if (video?.isAuthenticated && currentTime > 0 && activeVersionId) {
                 fetch(`/api/watch/${videoId}/progress`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                    progress: playerCurrentTime,
-                    duration: playerDuration,
+                    progress: currentTime,
+                    duration: duration,
                     versionId: activeVersionId,
                   }),
-                }).catch((err) => console.error('Error saving watch progress on pause:', err));
+                }).catch(console.error);
               }
-            }
+            });
+          });
+        });
 
-            if (event.data === YT.PlayerState.PLAYING) {
-              const dur = event.target.getDuration();
-              if (dur > 0) setVideoDuration(dur);
-            }
+        let cachedTime = 0;
+        let cachedDuration = videoDuration || 0;
+
+        player.on('timeupdate', (data: { seconds: number, duration: number }) => {
+          cachedTime = data.seconds;
+          if (data.duration > 0 && data.duration !== cachedDuration) {
+            cachedDuration = data.duration;
+            setVideoDuration(data.duration);
+          }
+          if (!isDragging) {
+            setCurrentTime(data.seconds);
+          }
+        });
+
+        playerRef.current = {
+          playVideo: () => player.play(),
+          pauseVideo: () => player.pause(),
+          seekTo: (time: number) => { player.setCurrentTime(time); },
+          mute: () => player.mute(),
+          unMute: () => player.unmute(),
+          isMuted: () => false,
+          getCurrentTime: () => cachedTime,
+          getDuration: () => cachedDuration,
+          getPlayerState: () => window.YT?.PlayerState?.PLAYING || 1,
+          setPlaybackRate: (rate: number) => {
+            try {
+              if (player && typeof player.setPlaybackRate === 'function') {
+                player.setPlaybackRate(rate);
+              }
+            } catch (e) { console.error('Error setting playback rate on Bunny Stream', e); }
           },
-        },
-      });
+          destroy: () => {
+            try {
+              player.off('ready');
+              player.off('play');
+              player.off('pause');
+              player.off('timeupdate');
+            } catch { }
+          },
+          off: (event: string) => player.off(event)
+        };
+      }
     };
 
     const timeout = setTimeout(() => {
-      if (window.YT?.Player) {
+      if (isYoutube) {
+        if (window.YT?.Player) {
+          initPlayer();
+        } else {
+          window.onYouTubeIframeAPIReady = initPlayer;
+        }
+      } else if (isBunny) {
         initPlayer();
-      } else {
-        window.onYouTubeIframeAPIReady = initPlayer;
       }
     }, 100);
 
     return () => {
       clearTimeout(timeout);
-      window.onYouTubeIframeAPIReady = undefined;
+      if (isYoutube) {
+        window.onYouTubeIframeAPIReady = undefined;
+      }
     };
-  }, [activeVersionId, isApiLoaded]);
+  }, [activeVersionId, isApiLoaded, video?.isAuthenticated, videoId]);
 
   // Save detected duration to DB if the version doesn't have one stored
   useEffect(() => {
@@ -585,22 +713,26 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
     // Save progress every 5 seconds while playing
     progressSaveTimerRef.current = setInterval(() => {
-      const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
-      const playerDuration = playerRef.current?.getDuration?.() || 0;
+      const isYoutube = activeVersion?.providerId === 'youtube';
+      const isBunny = activeVersion?.providerId === 'bunny';
 
-      if (playerCurrentTime > 0 && Math.abs(playerCurrentTime - lastSavedProgressRef.current) >= 2) {
-        // Save to API - use player duration directly
-        fetch(`/api/watch/${videoId}/progress`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            progress: playerCurrentTime,
-            duration: playerDuration || videoDuration,
-            versionId: activeVersionId,
-          }),
-        }).catch((err) => console.error('Error saving watch progress:', err));
+      const save = (playerCurrentTime: number, playerDuration: number) => {
+        if (playerCurrentTime > 0 && Math.abs(playerCurrentTime - lastSavedProgressRef.current) >= 2) {
+          fetch(`/api/watch/${videoId}/progress`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              progress: playerCurrentTime,
+              duration: playerDuration || videoDuration,
+              versionId: activeVersionId,
+            }),
+          }).catch((err) => console.error('Error saving watch progress:', err));
+          lastSavedProgressRef.current = playerCurrentTime;
+        }
+      };
 
-        lastSavedProgressRef.current = playerCurrentTime;
+      if (playerRef.current?.getCurrentTime) {
+        save(playerRef.current.getCurrentTime(), playerRef.current.getDuration?.() || videoDuration);
       }
     }, 5000);
 
@@ -692,15 +824,16 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     };
   }, [video?.isAuthenticated, currentTime, videoDuration, activeVersionId, videoId]);
 
-  // Resume playback from saved position
   const handleResumeFromSaved = useCallback(() => {
-    if (savedProgress !== null && playerRef.current?.seekTo) {
-      playerRef.current.seekTo(savedProgress, true);
+    if (savedProgress !== null && playerRef.current) {
+      if (playerRef.current.seekTo) {
+        playerRef.current.seekTo(savedProgress, true);
+      }
       setCurrentTime(savedProgress);
       setShowResumePrompt(false);
       setSavedProgress(null);
     }
-  }, [savedProgress]);
+  }, [savedProgress, activeVersion?.providerId]);
 
   // Dismiss resume prompt
   const handleDismissResume = useCallback(() => {
@@ -712,13 +845,15 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     if (!isReady || !playerRef.current) return;
 
     const interval = setInterval(() => {
-      if (playerRef.current?.getCurrentTime && !isDragging) {
-        setCurrentTime(playerRef.current.getCurrentTime());
+      if (!isDragging && playerRef.current) {
+        if (playerRef.current.getCurrentTime) {
+          setCurrentTime(playerRef.current.getCurrentTime());
+        }
       }
     }, 250);
 
     return () => clearInterval(interval);
-  }, [isReady, isDragging]);
+  }, [isReady, isDragging, activeVersion?.providerId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -741,17 +876,21 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          if (playerRef.current?.seekTo) {
+          if (playerRef.current) {
             const newTime = Math.max(0, currentTime - 5);
-            playerRef.current.seekTo(newTime, true);
+            if (playerRef.current.seekTo) {
+              playerRef.current.seekTo(newTime, true);
+            }
             setCurrentTime(newTime);
           }
           break;
         case 'ArrowRight':
           e.preventDefault();
-          if (playerRef.current?.seekTo) {
+          if (playerRef.current) {
             const newTime = Math.min(duration, currentTime + 5);
-            playerRef.current.seekTo(newTime, true);
+            if (playerRef.current.seekTo) {
+              playerRef.current.seekTo(newTime, true);
+            }
             setCurrentTime(newTime);
           }
           break;
@@ -1820,23 +1959,90 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   };
 
   const handleCreateVersion = async () => {
-    if (!newVersionSource || !propProjectId) return;
+    if (!propProjectId) return;
     setIsCreatingVersion(true);
+    setNewVersionUploadStatus('');
+    setNewVersionUploadProgress(0);
 
     try {
-      const meta = await fetchVideoMetadata(newVersionSource);
-      const thumbnailUrl = getThumbnailUrl(newVersionSource, 'large');
+      let finalVideoUrl = '';
+      let finalProviderId = '';
+      let finalProviderVideoId = '';
+      let finalThumbnailUrl: string | null = null;
+      let finalDuration: number | null = null;
+
+      if (newVersionMode === 'url') {
+        if (!newVersionSource) throw new Error('Invalid URL');
+        const meta = await fetchVideoMetadata(newVersionSource);
+        finalVideoUrl = newVersionSource.originalUrl;
+        finalProviderId = newVersionSource.providerId;
+        finalProviderVideoId = newVersionSource.videoId;
+        finalThumbnailUrl = getThumbnailUrl(newVersionSource, 'large');
+        finalDuration = meta?.duration || null;
+      } else {
+        if (!newVersionFile) throw new Error('No file selected');
+        let title = newVersionFile.name;
+        if (newVersionLabel.trim()) {
+          title = newVersionLabel.trim();
+        } else {
+          title = title.replace(/\.[^/.]+$/, '');
+        }
+
+        setNewVersionUploadStatus('Initializing upload...');
+        const initRes = await fetch(`/api/projects/${propProjectId}/videos/bunny-init`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title })
+        });
+
+        if (!initRes.ok) throw new Error('Failed to initialize upload');
+        const { data: { videoId, libraryId, signature, expirationTime } } = await initRes.json();
+
+        await new Promise((resolve, reject) => {
+          setNewVersionUploadStatus('Uploading video...');
+          const upload = new tus.Upload(newVersionFile, {
+            endpoint: 'https://video.bunnycdn.com/tusupload',
+            retryDelays: [0, 3000, 5000, 10000, 20000],
+            headers: {
+              AuthorizationSignature: signature,
+              AuthorizationExpire: expirationTime.toString(),
+              VideoId: videoId,
+              LibraryId: libraryId,
+            },
+            metadata: {
+              filetype: newVersionFile.type,
+              title: title,
+            },
+            onError: (error) => reject(new Error('Upload failed: ' + error.message)),
+            onProgress: (bytesUploaded, bytesTotal) => {
+              const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(1);
+              setNewVersionUploadProgress(Number(percentage));
+              setNewVersionUploadStatus(`Uploading... ${percentage}%`);
+            },
+            onSuccess: () => {
+              setNewVersionUploadStatus('Processing video...');
+              resolve(true);
+            },
+          });
+          upload.start();
+        });
+
+        finalVideoUrl = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`;
+        finalProviderId = 'bunny';
+        finalProviderVideoId = videoId;
+        finalThumbnailUrl = `https://vz-965f4f4a-fc1.b-cdn.net/${videoId}/thumbnail.jpg`;
+      }
 
       const res = await fetch(`/api/projects/${propProjectId}/videos/${videoId}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoUrl: newVersionSource.originalUrl,
-          providerId: newVersionSource.providerId,
-          providerVideoId: newVersionSource.videoId,
+          videoUrl: finalVideoUrl,
+          providerId: finalProviderId,
+          providerVideoId: finalProviderVideoId,
           versionLabel: newVersionLabel.trim() || null,
-          thumbnailUrl,
-          duration: meta?.duration || null,
+          thumbnailUrl: finalThumbnailUrl,
+          duration: finalDuration,
           setActive: true,
         }),
       });
@@ -1860,9 +2066,13 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
         setNewVersionUrl('');
         setNewVersionLabel('');
         setNewVersionSource(null);
+        setNewVersionFile(null);
+        setNewVersionUploadStatus('');
       }
     } catch (err) {
-      console.error('Failed to create version:', err);
+      const errorObj = err as Error;
+      console.error('Failed to create version:', errorObj);
+      toast.error(errorObj.message || 'Failed to create version');
     } finally {
       setIsCreatingVersion(false);
     }
@@ -2162,33 +2372,78 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                           </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 mt-2">
-                          <div className="space-y-2">
-                            <Label>Video URL</Label>
-                            <div className="relative">
-                              <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                placeholder="https://youtube.com/watch?v=..."
-                                value={newVersionUrl}
-                                onChange={(e) => handleNewVersionUrlChange(e.target.value)}
-                                className="pl-10"
-                                disabled={isCreatingVersion}
-                              />
+                          <Tabs value={newVersionMode} onValueChange={(v) => setNewVersionMode(v as 'url' | 'file')} className="mb-2">
+                            <TabsList className="grid w-full grid-cols-2">
+                              <TabsTrigger value="url">Link URL</TabsTrigger>
+                              <TabsTrigger value="file">Upload File</TabsTrigger>
+                            </TabsList>
+                          </Tabs>
+
+                          {newVersionMode === 'url' ? (
+                            <div className="space-y-2">
+                              <Label>Video URL</Label>
+                              <div className="relative">
+                                <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  placeholder="https://youtube.com/watch?v=..."
+                                  value={newVersionUrl}
+                                  onChange={(e) => handleNewVersionUrlChange(e.target.value)}
+                                  className="pl-10"
+                                  disabled={isCreatingVersion}
+                                />
+                              </div>
+                              {newVersionUrlError && (
+                                <p className="text-sm text-destructive flex items-center gap-1">
+                                  <AlertCircle className="h-4 w-4" />
+                                  {newVersionUrlError}
+                                </p>
+                              )}
+                              {newVersionSource && (
+                                <p className="text-sm text-green-600 flex items-center gap-1">
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  {newVersionSource.providerId.charAt(0).toUpperCase() +
+                                    newVersionSource.providerId.slice(1)}{' '}
+                                  video detected
+                                </p>
+                              )}
                             </div>
-                            {newVersionUrlError && (
-                              <p className="text-sm text-destructive flex items-center gap-1">
-                                <AlertCircle className="h-4 w-4" />
-                                {newVersionUrlError}
-                              </p>
-                            )}
-                            {newVersionSource && (
-                              <p className="text-sm text-green-600 flex items-center gap-1">
-                                <CheckCircle2 className="h-4 w-4" />
-                                {newVersionSource.providerId.charAt(0).toUpperCase() +
-                                  newVersionSource.providerId.slice(1)}{' '}
-                                video detected
-                              </p>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <Label htmlFor="versionFile">Video File</Label>
+                              <div className="flex items-center justify-center w-full">
+                                <label htmlFor="versionFile" className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors ${newVersionFile ? 'border-primary' : 'border-border'}`}>
+                                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                    {newVersionFile ? (
+                                      <>
+                                        <FileVideo className="w-8 h-8 mb-2 text-primary" />
+                                        <p className="mb-1 text-sm text-foreground font-medium truncate max-w-[200px]">{newVersionFile.name}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {(newVersionFile.size / (1024 * 1024)).toFixed(2)} MB
+                                        </p>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <UploadCloud className="w-8 h-8 mb-2 text-muted-foreground" />
+                                        <p className="mb-1 text-sm text-muted-foreground">
+                                          <span className="font-semibold">Click to upload</span> or drag and drop
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">MP4, WebM, or OGG</p>
+                                      </>
+                                    )}
+                                  </div>
+                                  <input id="versionFile" type="file" accept="video/*" className="hidden" onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file && file.type.startsWith('video/')) {
+                                      setNewVersionFile(file);
+                                    } else {
+                                      toast.error('Please select a valid video file');
+                                    }
+                                  }} disabled={isCreatingVersion} />
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
                           <div className="space-y-2">
                             <Label>Version Label (optional)</Label>
                             <Input
@@ -2198,9 +2453,21 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                               disabled={isCreatingVersion}
                             />
                           </div>
+
+                          {newVersionUploadStatus && (
+                            <div className="space-y-2">
+                              <p className="text-sm text-muted-foreground">{newVersionUploadStatus}</p>
+                              {newVersionUploadProgress > 0 && newVersionUploadProgress < 100 && (
+                                <div className="w-full bg-secondary rounded-full h-2">
+                                  <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${newVersionUploadProgress}%` }}></div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           <Button
                             onClick={handleCreateVersion}
-                            disabled={!newVersionSource || isCreatingVersion}
+                            disabled={(newVersionMode === 'url' && !newVersionSource) || (newVersionMode === 'file' && !newVersionFile) || isCreatingVersion}
                             className="w-full"
                           >
                             {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -2267,7 +2534,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 key={activeVersionId}
                 ref={iframeRef}
                 src={embedUrl}
-                className="absolute inset-0 w-full h-full pointer-events-none"
+                width="100%"
+                height="100%"
+                className="absolute inset-0 w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
@@ -2280,11 +2549,11 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                     : 'opacity-100'
                 )}
               >
-                <div className="w-16 h-16 rounded-full bg-black/60 flex items-center justify-center">
+                <div className="w-16 h-16 rounded-full bg-black/60 flex items-center justify-center relative z-10">
                   {isPlaying ? (
-                    <Pause className="h-8 w-8 text-white" />
+                    <Pause className="h-8 w-8 text-white relative right-[-1px]" />
                   ) : (
-                    <Play className="h-8 w-8 text-white ml-1" />
+                    <Play className="h-8 w-8 text-white relative left-[2px]" />
                   )}
                 </div>
               </div>

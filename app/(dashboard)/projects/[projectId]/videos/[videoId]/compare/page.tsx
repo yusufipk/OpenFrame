@@ -43,6 +43,20 @@ interface Version {
   _count: { comments: number };
 }
 
+interface PlayerAdapter {
+  playVideo: () => void;
+  pauseVideo: () => void;
+  seekTo: (time: number, allowSeekAhead?: boolean) => void;
+  mute: () => void;
+  unMute: () => void;
+  isMuted: () => boolean;
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  getPlayerState: () => number;
+  setPlaybackRate?: (rate: number) => void;
+  destroy: () => void;
+}
+
 interface Comment {
   id: string;
   content: string | null;
@@ -96,8 +110,8 @@ export default function CompareVersionsPage() {
   const [isDragging, setIsDragging] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  // Map of versionId -> YT.Player
-  const playersRef = useRef<Map<string, YT.Player>>(new Map());
+  // Map of versionId -> YT.Player or Custom Adapter
+  const playersRef = useRef<Map<string, YT.Player | PlayerAdapter>>(new Map());
   const rafRef = useRef<number | null>(null);
 
   // Comments state per panel
@@ -219,7 +233,7 @@ export default function CompareVersionsPage() {
   }, [isDragging]);
 
   // Register/unregister players
-  const registerPlayer = useCallback((versionId: string, player: YT.Player) => {
+  const registerPlayer = useCallback((versionId: string, player: YT.Player | PlayerAdapter) => {
     playersRef.current.set(versionId, player);
   }, []);
 
@@ -319,7 +333,7 @@ export default function CompareVersionsPage() {
           e.preventDefault();
           players.forEach((p) => {
             try {
-              if (p.isMuted()) { p.unMute(); } else { p.mute(); }
+              if (p.isMuted?.()) { p.unMute?.(); } else { p.mute?.(); }
             } catch { /* */ }
           });
           break;
@@ -552,6 +566,13 @@ export default function CompareVersionsPage() {
                     onRegister={registerPlayer}
                     onUnregister={unregisterPlayer}
                   />
+                ) : version.providerId === 'bunny' ? (
+                  <BunnyPanel
+                    key={versionId}
+                    version={version}
+                    onRegister={registerPlayer}
+                    onUnregister={unregisterPlayer}
+                  />
                 ) : (
                   <iframe
                     src={version.originalUrl}
@@ -766,4 +787,98 @@ function YouTubePanel({
   }, [version.id, version.videoId, isApiLoaded, onRegister, onUnregister]);
 
   return <div ref={containerRef} className="w-full h-full pointer-events-none" />;
+}
+
+// Isolated Bunny Steam player component per panel filtering Player.js to YouTube wrapper interface
+function BunnyPanel({
+  version,
+  onRegister,
+  onUnregister,
+}: {
+  version: Version;
+  onRegister: (versionId: string, player: YT.Player | PlayerAdapter) => void;
+  onUnregister: (versionId: string) => void;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (!iframeRef.current) return;
+    const playerjs = require('player.js');
+    const player = new playerjs.Player(iframeRef.current);
+
+    let cachedTime = 0;
+    let cachedDuration = 0;
+    let isPlaying = false;
+    let isMuted = false;
+
+    player.on('ready', () => {
+      player.getDuration((d: number) => { cachedDuration = d; });
+
+      const adapter = {
+        playVideo: () => player.play(),
+        pauseVideo: () => player.pause(),
+        seekTo: (time: number) => { cachedTime = time; player.setCurrentTime(time); },
+        mute: () => { isMuted = true; player.mute(); },
+        unMute: () => { isMuted = false; player.unmute(); },
+        isMuted: () => isMuted,
+        getCurrentTime: () => cachedTime,
+        getDuration: () => cachedDuration,
+        getPlayerState: () => isPlaying ? window.YT?.PlayerState?.PLAYING : window.YT?.PlayerState?.PAUSED,
+        setPlaybackRate: (rate: number) => {
+          try {
+            if (player && typeof player.setPlaybackRate === 'function') {
+              player.setPlaybackRate(rate);
+            }
+          } catch (e) {
+            console.error('Failed to set playback rate', e);
+          }
+        },
+        destroy: () => {
+          try {
+            player.off('ready');
+            player.off('timeupdate');
+            player.off('play');
+            player.off('pause');
+            player.off('ended');
+          } catch { }
+        }
+      };
+
+      onRegister(version.id, adapter);
+    });
+
+    player.on('timeupdate', (data: { seconds: number }) => { cachedTime = data.seconds; });
+    player.on('play', () => { isPlaying = true; });
+    player.on('pause', () => { isPlaying = false; });
+    player.on('ended', () => { isPlaying = false; });
+
+    return () => {
+      onUnregister(version.id);
+      try {
+        player.off('ready');
+        player.off('timeupdate');
+        player.off('play');
+        player.off('pause');
+        player.off('ended');
+      } catch { }
+    };
+  }, [version.id, onRegister, onUnregister]);
+
+  const src = version.originalUrl.replace('/play/', '/embed/');
+  const embedSrc = `${src}${src.includes('?') ? '&' : '?'}autoplay=false&controls=false`;
+
+  return (
+    <div className="relative w-full h-full group">
+      <iframe
+        ref={iframeRef}
+        src={embedSrc}
+        width="100%"
+        height="100%"
+        className="w-full h-full pointer-events-none border-0"
+        style={{ pointerEvents: 'none' }}
+        allow="accelerometer; autoplay; encrypted-media; gyroscope;"
+        allowFullScreen
+      />
+    </div>
+  )
 }

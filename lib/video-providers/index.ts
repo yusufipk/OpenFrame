@@ -2,6 +2,7 @@
 
 import { youtubeProvider } from './youtube';
 import { directProvider } from './direct';
+import { bunnyProvider } from './bunny';
 import type { VideoProvider, VideoSource, VideoMetadata, VideoProviderType } from './types';
 
 // Export types
@@ -11,6 +12,7 @@ export * from './types';
 const providers: VideoProvider[] = [
   youtubeProvider,
   directProvider,
+  bunnyProvider,
 ];
 
 // Provider lookup map for quick access
@@ -49,17 +51,17 @@ export function getAllProviders(): VideoProvider[] {
  */
 export function parseVideoUrl(url: string): VideoSource | null {
   const provider = detectProvider(url);
-  
+
   if (!provider) {
     return null;
   }
-  
+
   const videoId = provider.extractVideoId(url);
-  
+
   if (!videoId) {
     return null;
   }
-  
+
   return {
     providerId: provider.id as VideoProviderType,
     videoId,
@@ -72,11 +74,11 @@ export function parseVideoUrl(url: string): VideoSource | null {
  */
 export async function fetchVideoMetadata(source: VideoSource): Promise<VideoMetadata | null> {
   const provider = getProvider(source.providerId);
-  
+
   if (!provider) {
     return null;
   }
-  
+
   try {
     return await provider.getMetadata(source.videoId);
   } catch (error) {
@@ -90,11 +92,11 @@ export async function fetchVideoMetadata(source: VideoSource): Promise<VideoMeta
  */
 export function getEmbedUrl(source: VideoSource, options?: Parameters<VideoProvider['getEmbedUrl']>[1]): string | null {
   const provider = getProvider(source.providerId);
-  
+
   if (!provider) {
     return null;
   }
-  
+
   return provider.getEmbedUrl(source.videoId, options);
 }
 
@@ -103,11 +105,11 @@ export function getEmbedUrl(source: VideoSource, options?: Parameters<VideoProvi
  */
 export function getThumbnailUrl(source: VideoSource, size?: Parameters<VideoProvider['getThumbnailUrl']>[1]): string | null {
   const provider = getProvider(source.providerId);
-  
+
   if (!provider) {
     return null;
   }
-  
+
   return provider.getThumbnailUrl(source.videoId, size);
 }
 

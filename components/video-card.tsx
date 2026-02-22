@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
   Play,
@@ -60,6 +59,8 @@ interface VideoCardProps {
 
 export function VideoCard({ video, projectId }: VideoCardProps) {
   const router = useRouter();
+  const [imgError, setImgError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   // Edit dialog
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -181,18 +182,33 @@ export function VideoCard({ video, projectId }: VideoCardProps) {
         <Link href={`/projects/${projectId}/videos/${video.id}`}>
           {/* Thumbnail */}
           <div className="relative aspect-video bg-muted overflow-hidden">
-            <Image
-              src={video.thumbnailUrl}
-              alt={video.title}
-              fill
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-              className="object-cover transition-transform group-hover:scale-105"
-              placeholder="blur"
-              blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMCwsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAIAAoDASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAUH/8QAIhAAAQMDBQADAAAAAAAAAAAAAQIDBAAFEQYSITFBE1FR/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAYEQADAQEAAAAAAAAAAAAAAAAAAQIhMf/aAAwDAQACEQMRAD8Adu3bgZt8NqM2y6sNJCQTjJ+dKz/9k="
-            />
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <Play className="h-12 w-12 text-white" fill="white" />
-            </div>
+            {imgError ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/80">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
+                <span className="text-xs text-muted-foreground font-medium">Processing...</span>
+              </div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`${video.thumbnailUrl?.replace('vz-thumbnail.b-cdn.net', 'vz-965f4f4a-fc1.b-cdn.net')}${retryKey ? `?t=${retryKey}` : ''}`}
+                alt={video.title}
+                className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105"
+                onError={(e) => {
+                  console.error('Thumbnail failed to load. Tried:', (e.target as HTMLImageElement).currentSrc);
+                  setImgError(true);
+                  // Check again after 10 seconds in case Bunny is still processing
+                  setTimeout(() => {
+                    setRetryKey(Date.now());
+                    setImgError(false);
+                  }, 10000);
+                }}
+              />
+            )}
+            {!imgError && (
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Play className="h-12 w-12 text-white" fill="white" />
+              </div>
+            )}
             <Badge className="absolute bottom-2 right-2 bg-black/70">{video.duration}</Badge>
           </div>
         </Link>

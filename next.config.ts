@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'img.youtube.com' },
       { protocol: 'https', hostname: 'i.ytimg.com' },
       { protocol: 'https', hostname: 'images.unsplash.com' },
+      { protocol: 'https', hostname: 'vz-thumbnail.b-cdn.net' },
+      { protocol: 'https', hostname: 'vz-965f4f4a-fc1.b-cdn.net' },
     ],
     formats: ['image/avif', 'image/webp'],
   },
