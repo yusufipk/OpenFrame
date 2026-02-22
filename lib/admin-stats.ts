@@ -11,6 +11,10 @@ interface BunnyStorageStats {
     byVideoId: Record<string, number>;
 }
 
+function bigintToNumber(value: bigint): number {
+    return value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value);
+}
+
 function getBunnyConfig(): { apiKey: string; libraryId: string } {
     const apiKey = process.env.BUNNY_STREAM_API_KEY;
     const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || process.env.NEXT_PUBLIC_BUNNY_STREAM_LIBRARY_ID;
@@ -235,5 +239,31 @@ export const getCachedUserMediaStorage = unstable_cache(
         return userStorage;
     },
     ['admin-user-media-storage'],
+    { revalidate: STORAGE_CACHE_SECONDS }
+);
+
+export const getCachedUserDownloadEgress = unstable_cache(
+    async () => {
+        const perUserDownloadEgress: Record<string, number> = {};
+        try {
+            const grouped = await db.downloadEgressEvent.groupBy({
+                by: ['billedUserId'],
+                _sum: {
+                    estimatedBytes: true,
+                },
+            });
+
+            for (const row of grouped) {
+                perUserDownloadEgress[row.billedUserId] = row._sum.estimatedBytes
+                    ? bigintToNumber(row._sum.estimatedBytes)
+                    : 0;
+            }
+        } catch (err) {
+            console.error('Failed to calculate per-user download egress:', err);
+        }
+
+        return perUserDownloadEgress;
+    },
+    ['admin-user-download-egress'],
     { revalidate: STORAGE_CACHE_SECONDS }
 );

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import {
     getCachedBunnyStorageStats,
     getCachedUserBunnyStorage,
+    getCachedUserDownloadEgress,
     getCachedUserMediaStorage
 } from '@/lib/admin-stats';
 import { Film, HardDrive } from 'lucide-react';
@@ -33,6 +34,7 @@ type SortBy =
     | 'projectsOwned'
     | 'totalComments'
     | 'bunnyUpload'
+    | 'downloadEgress'
     | 'mediaStorage';
 
 type SortDirection = 'asc' | 'desc';
@@ -45,6 +47,7 @@ const SORTABLE_COLUMNS: SortBy[] = [
     'projectsOwned',
     'totalComments',
     'bunnyUpload',
+    'downloadEgress',
     'mediaStorage',
 ];
 
@@ -90,7 +93,7 @@ export default async function AdminUsersPage({
             ? resolvedSearchParams.sortDirection
             : getDefaultSortDirection(sortBy);
 
-    const [users, userStorage, userBunnyStorage, bunnyStorageStats] = await Promise.all([
+    const [users, userStorage, userBunnyStorage, userDownloadEgress, bunnyStorageStats] = await Promise.all([
         db.user.findMany({
             orderBy: { createdAt: 'desc' },
             select: {
@@ -118,6 +121,7 @@ export default async function AdminUsersPage({
         }),
         getCachedUserMediaStorage(),
         getCachedUserBunnyStorage(),
+        getCachedUserDownloadEgress(),
         getCachedBunnyStorageStats(),
     ]);
 
@@ -128,6 +132,7 @@ export default async function AdminUsersPage({
             0
         ),
         bunnyUploadBytes: userBunnyStorage[user.id] || 0,
+        downloadEgressBytes: userDownloadEgress[user.id] || 0,
         mediaStorageBytes: userStorage[user.id]?.total || 0,
     }));
 
@@ -150,6 +155,8 @@ export default async function AdminUsersPage({
             comparison = a._count.comments - b._count.comments;
         } else if (sortBy === 'bunnyUpload') {
             comparison = a.bunnyUploadBytes - b.bunnyUploadBytes;
+        } else if (sortBy === 'downloadEgress') {
+            comparison = a.downloadEgressBytes - b.downloadEgressBytes;
         } else if (sortBy === 'mediaStorage') {
             comparison = a.mediaStorageBytes - b.mediaStorageBytes;
         }
@@ -193,7 +200,7 @@ export default async function AdminUsersPage({
     };
 
     return (
-        <div className="flex-1 space-y-4 px-4 md:px-8">
+        <div className="flex-1 space-y-4">
             <div className="flex items-center justify-between space-y-2">
                 <h2 className="text-3xl font-bold tracking-tight">Users</h2>
             </div>
@@ -276,6 +283,12 @@ export default async function AdminUsersPage({
                                         </Link>
                                     </TableHead>
                                     <TableHead className="text-right">
+                                        <Link href={buildSortHref('downloadEgress')} className="inline-flex items-center justify-end gap-1 hover:underline">
+                                            Download Egress (Est.)
+                                            <span className="text-xs">{getSortIndicator('downloadEgress', sortBy, sortDirection)}</span>
+                                        </Link>
+                                    </TableHead>
+                                    <TableHead className="text-right">
                                         <Link href={buildSortHref('mediaStorage')} className="inline-flex items-center justify-end gap-1 hover:underline">
                                             Media Storage
                                             <span className="text-xs">{getSortIndicator('mediaStorage', sortBy, sortDirection)}</span>
@@ -286,7 +299,7 @@ export default async function AdminUsersPage({
                             <TableBody>
                                 {paginatedUsers.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="h-24 text-center">
+                                        <TableCell colSpan={9} className="h-24 text-center">
                                             No users found.
                                         </TableCell>
                                     </TableRow>
@@ -308,6 +321,9 @@ export default async function AdminUsersPage({
                                             <TableCell className="text-center">{user._count.comments}</TableCell>
                                             <TableCell className="text-right text-sm font-medium">
                                                 {formatBytes(user.bunnyUploadBytes)}
+                                            </TableCell>
+                                            <TableCell className="text-right text-sm font-medium">
+                                                {formatBytes(user.downloadEgressBytes)}
                                             </TableCell>
                                             <TableCell className="text-right text-sm">
                                                 <div className="flex flex-col items-end">

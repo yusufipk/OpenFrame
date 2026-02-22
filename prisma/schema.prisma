@@ -36,6 +36,30 @@ model User {
   @@map("users")
 }
 
+enum DownloadEgressSource {
+  ORIGINAL
+  COMPRESSED
+}
+
+model DownloadEgressEvent {
+  id               String               @id @default(cuid())
+  versionId        String
+  videoId          String
+  projectId        String
+  workspaceId      String
+  billedUserId     String
+  downloaderUserId String?
+  source           DownloadEgressSource
+  quality          Int?
+  estimatedBytes   BigInt               @default(0)
+  createdAt        DateTime             @default(now())
+
+  @@index([billedUserId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([versionId, createdAt])
+  @@map("download_egress_events")
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String

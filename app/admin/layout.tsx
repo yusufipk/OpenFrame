@@ -18,7 +18,7 @@ export default async function AdminLayout({
     return (
         <div className="relative flex min-h-screen flex-col">
             <Header user={session.user} />
-            <div className="container mx-auto px-4 md:px-8 flex-1 items-start md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
+            <div className="w-full px-4 md:px-8 flex-1 items-start md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
                 {/* Mobile Nav */}
                 <div className="md:hidden py-4 border-b mb-4">
                     <nav className="flex items-center gap-4 overflow-x-auto">

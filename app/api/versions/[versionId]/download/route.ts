@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
+import { DownloadEgressSource } from '@prisma/client';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 type BunnyDownloadSourcePreference = 'auto' | 'original' | 'compressed';
@@ -304,6 +305,19 @@ function resolveSafeDownloadMetadata(
   };
 }
 
+function parseEstimatedBytes(contentLengthHeader: string | null): bigint {
+  if (!contentLengthHeader) return BigInt(0);
+  const normalized = contentLengthHeader.trim();
+  if (!/^\d+$/.test(normalized)) return BigInt(0);
+
+  try {
+    const parsed = BigInt(normalized);
+    return parsed > BigInt(0) ? parsed : BigInt(0);
+  } catch {
+    return BigInt(0);
+  }
+}
+
 // GET /api/versions/[versionId]/download
 export async function GET(request: Request, { params }: RouteParams) {
   try {
@@ -328,7 +342,16 @@ export async function GET(request: Request, { params }: RouteParams) {
       include: {
         video: {
           include: {
-            project: true,
+            project: {
+              include: {
+                workspace: {
+                  select: {
+                    id: true,
+                    ownerId: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -414,6 +437,24 @@ export async function GET(request: Request, { params }: RouteParams) {
 
     const contentLength = upstream.headers.get('content-length');
     if (contentLength) response.headers.set('Content-Length', contentLength);
+
+    try {
+      await db.downloadEgressEvent.create({
+        data: {
+          versionId: version.id,
+          videoId: version.video.id,
+          projectId: version.video.project.id,
+          workspaceId: version.video.project.workspace.id,
+          billedUserId: version.video.project.workspace.ownerId,
+          downloaderUserId: session?.user?.id ?? null,
+          source: source.sourceType === 'original' ? DownloadEgressSource.ORIGINAL : DownloadEgressSource.COMPRESSED,
+          quality: source.quality,
+          estimatedBytes: parseEstimatedBytes(contentLength),
+        },
+      });
+    } catch (egressError) {
+      console.error('Failed to record download egress event:', egressError);
+    }
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
