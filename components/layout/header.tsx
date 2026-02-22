@@ -59,7 +59,7 @@ export function Header({ user }: HeaderProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Hide header on video player pages — they use full viewport with their own back button
-  const isVideoPage = /\/videos\/[^/]+$/.test(pathname) || pathname.startsWith('/watch/');
+  const isVideoPage = /\/videos\/[^/]+($|\/compare)/.test(pathname) || pathname.startsWith('/watch/');
   if (isVideoPage) return null;
 
   return (

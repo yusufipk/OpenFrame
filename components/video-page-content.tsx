@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { List } from 'react-window';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -255,6 +255,11 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
   const [guestName, setGuestName] = useState('');
   const [guestNameConfirmed, setGuestNameConfirmed] = useState(mode === 'dashboard');
+
+  // Compare dialog state
+  const [showCompareDialog, setShowCompareDialog] = useState(false);
+  const [selectedCompareVersions, setSelectedCompareVersions] = useState<Set<string>>(new Set());
+  const router = useRouter();
 
   useEffect(() => {
     const saved = localStorage.getItem('openframe_guest_name');
@@ -2206,11 +2211,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                     </Dialog>
 
                     {video.versions.length >= 2 && (
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/projects/${propProjectId}/videos/${videoId}/compare`}>
-                          <GitCompareArrows className="h-4 w-4 mr-1" />
-                          Compare
-                        </Link>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setSelectedCompareVersions(new Set(activeVersionId ? [activeVersionId] : []));
+                        setShowCompareDialog(true);
+                      }}>
+                        <GitCompareArrows className="h-4 w-4 mr-1" />
+                        Compare
                       </Button>
                     )}
                   </div>
@@ -2229,11 +2235,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                           New Version
                         </DropdownMenuItem>
                         {video.versions.length >= 2 && (
-                          <DropdownMenuItem asChild>
-                            <Link href={`/projects/${propProjectId}/videos/${videoId}/compare`}>
-                              <GitCompareArrows className="h-4 w-4 mr-2" />
-                              Compare
-                            </Link>
+                          <DropdownMenuItem onSelect={() => {
+                            setSelectedCompareVersions(new Set(activeVersionId ? [activeVersionId] : []));
+                            setShowCompareDialog(true);
+                          }}>
+                            <GitCompareArrows className="h-4 w-4 mr-2" />
+                            Compare
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -3447,6 +3454,83 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               />
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Compare Version Selection Dialog */}
+      <Dialog open={showCompareDialog} onOpenChange={setShowCompareDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Select Versions to Compare</DialogTitle>
+            <DialogDescription>
+              Choose 2 or more versions to compare side by side.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
+            {video.versions
+              .slice()
+              .sort((a, b) => a.versionNumber - b.versionNumber)
+              .map((v) => {
+                const isSelected = selectedCompareVersions.has(v.id);
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors',
+                      isSelected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:bg-accent/50'
+                    )}
+                    onClick={() => {
+                      setSelectedCompareVersions((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(v.id)) {
+                          next.delete(v.id);
+                        } else {
+                          next.add(v.id);
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    <div
+                      className={cn(
+                        'h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors',
+                        isSelected
+                          ? 'bg-primary border-primary text-primary-foreground'
+                          : 'border-muted-foreground/40'
+                      )}
+                    >
+                      {isSelected && (
+                        <CheckCircle2 className="h-3 w-3" />
+                      )}
+                    </div>
+                    <Badge variant="secondary">v{v.versionNumber}</Badge>
+                    <span className="text-sm font-medium truncate">
+                      {v.versionLabel || `Version ${v.versionNumber}`}
+                    </span>
+                    <span className="ml-auto text-xs text-muted-foreground shrink-0">
+                      {v._count.comments} comments
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+          <Button
+            className="w-full mt-2"
+            disabled={selectedCompareVersions.size < 2}
+            onClick={() => {
+              const ids = Array.from(selectedCompareVersions).join(',');
+              setShowCompareDialog(false);
+              router.push(
+                `/projects/${propProjectId}/videos/${videoId}/compare?versions=${ids}`
+              );
+            }}
+          >
+            <GitCompareArrows className="h-4 w-4 mr-2" />
+            Compare {selectedCompareVersions.size} Versions
+          </Button>
         </DialogContent>
       </Dialog>
     </div >
