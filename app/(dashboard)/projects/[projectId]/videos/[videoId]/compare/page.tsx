@@ -89,6 +89,15 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+const isSafeUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 export default function CompareVersionsPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -573,14 +582,14 @@ export default function CompareVersionsPage() {
                     onRegister={registerPlayer}
                     onUnregister={unregisterPlayer}
                   />
-                ) : (
+                ) : isSafeUrl(version.originalUrl) ? (
                   <iframe
                     src={version.originalUrl}
                     className="w-full h-full pointer-events-none"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                   />
-                )}
+                ) : null}
 
                 {/* Play/pause overlay */}
                 <div
