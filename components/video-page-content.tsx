@@ -40,6 +40,7 @@ import {
   Image as ImageIcon,
   Download,
   FileText,
+  Share2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -386,6 +387,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   }, [mode]);
 
   const isGuest = video ? !video.isAuthenticated : false;
+  const canInitializePlayer = mode !== 'watch' || !isGuest || guestNameConfirmed;
 
   const [showVersionDialog, setShowVersionDialog] = useState(false);
   const [newVersionUrl, setNewVersionUrl] = useState('');
@@ -505,7 +507,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
   const apiBasePath = mode === 'dashboard'
     ? `/api/projects/${propProjectId}/videos/${videoId}`
-    : `/api/watch/${videoId}`;
+    : `/api/watch/${videoId}?includeComments=true`;
 
   useEffect(() => {
     async function fetchVideo() {
@@ -641,7 +643,10 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const embedUrl = useMemo(() => {
     if (!activeVersion) return '';
     if (activeVersion.providerId === 'youtube') {
-      return `https://www.youtube.com/embed/${activeVersion.videoId}?enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&disablekb=1`;
+      const base = `https://www.youtube.com/embed/${activeVersion.videoId}?enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&disablekb=1`;
+      if (typeof window === 'undefined') return base;
+      const origin = window.location.origin;
+      return `${base}&origin=${encodeURIComponent(origin)}`;
     }
     if (activeVersion.providerId === 'bunny') {
       return `https://${BUNNY_PULL_ZONE_HOSTNAME}/${activeVersion.videoId}/playlist.m3u8`;
@@ -703,6 +708,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   }, [isApiLoaded]);
 
   useEffect(() => {
+    if (!canInitializePlayer) return;
     if (!activeProviderId) return;
     const isYoutube = activeProviderId === 'youtube';
     const isBunny = activeProviderId === 'bunny';
@@ -1041,7 +1047,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
         bunnyRetryTimerRef.current = null;
       }
     };
-  }, [activeProviderId, activeVersionId, embedUrl, isApiLoaded, video?.isAuthenticated, videoId]);
+  }, [activeProviderId, activeVersionId, embedUrl, isApiLoaded, video?.isAuthenticated, videoId, canInitializePlayer]);
 
   // Save detected duration to DB if the version doesn't have one stored
   useEffect(() => {
@@ -2884,6 +2890,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
               {mode === 'dashboard' && (
                 <>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
+                      <Share2 className="h-4 w-4 mr-1" />
+                      Share Video
+                    </Link>
+                  </Button>
                   <div className="hidden sm:flex items-center gap-2">
                     <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
                       <DialogTrigger asChild>
@@ -3138,6 +3150,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                   width="100%"
                   height="100%"
                   className="absolute inset-0 w-full h-full border-0"
+                  referrerPolicy="origin-when-cross-origin"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 />

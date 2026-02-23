@@ -233,6 +233,7 @@ model Video {
   
   // Relations
   versions    VideoVersion[]
+  shareLinks  ShareLink[]
   
   @@index([projectId])
   @@map("videos")
@@ -363,14 +364,14 @@ model ShareLink {
   // What is being shared
   projectId   String
   project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  videoId     String?
+  video       Video?          @relation(fields: [videoId], references: [id], onDelete: Cascade)
   
   // Permissions
   permission  SharePermission @default(VIEW)
   
   // Optional restrictions
   expiresAt   DateTime?       // Link expiration
-  maxUses     Int?            // Maximum number of uses
-  useCount    Int             @default(0)
   passwordHash String?        // Bcrypt hash of optional password protection
   
   // Settings
@@ -380,6 +381,9 @@ model ShareLink {
   createdAt   DateTime        @default(now())
   
   @@index([projectId])
+  @@index([videoId])
+  @@index([projectId, videoId])
+  @@unique([projectId, videoId, permission])
   @@index([token])
   @@index([token, expiresAt])
   @@map("share_links")

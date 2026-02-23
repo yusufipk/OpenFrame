@@ -19,6 +19,7 @@ bun run dev              # Start Next.js dev server
 bun run build            # Build for production (runs typecheck first)
 bun run typecheck        # Run TypeScript type checking only
 bun run lint             # Run ESLint
+bun run check            # typecheck + lint you should run this one
 bun test                 # Run all tests
 bun test path/to/test.ts # Run specific test file
 ```
@@ -38,6 +39,7 @@ bun run db:setup         # Full DB setup: generate + push + extras
 - **Always use bun** - Never use npm or pnpm.
 - Pre-build runs typecheck automatically via `prebuild` script.
 - Post-install runs `prisma generate` automatically.
+- Do not run dev server. Assume already running.
 
 ---
 
@@ -121,21 +123,6 @@ async function createProject(data: CreateProjectInput) {
 }
 ```
 
-### Validation
-
-- Use Zod for runtime validation
-- Create reusable validation schemas
-- Validate at API boundaries (server actions, API routes)
-
-```typescript
-import { z } from 'zod'
-export const createProjectSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-  visibility: z.enum(['PUBLIC', 'PRIVATE']),
-})
-```
-
 ### Database (Prisma)
 
 - Use Prisma client from `@/lib/db`
@@ -180,7 +167,6 @@ prisma/           # Database schema
 
 ## Additional Guidelines
 
-1. **Run typecheck before committing** - `bun run typecheck` must pass
-2. **Run lint before committing** - `bun run lint` must pass
-3. **Environment variables** - Copy `.env.example` to `.env`
-4. **Database changes** - After modifying Prisma schema, run `bun run db:generate`
+1. **Run check before committing** - `bun run check` must pass
+2. **Environment variables** - Copy `.env.example` to `.env`
+3. **Database changes** - After modifying Prisma schema, run `bun run db:generate`

@@ -4,6 +4,8 @@ import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { validateShareLinkAccess } from '@/lib/share-links';
+import { getShareSessionFromRequest } from '@/lib/share-session';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 const SAFE_IMAGE_PATH = /^\/api\/upload\/image\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
@@ -36,6 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         }
 
         const project = version.video.project;
+        const shareSession = getShareSessionFromRequest(request, version.video.id);
         const isOwner = session?.user?.id === project.ownerId;
         const isMember = project.members.length > 0;
         const isPublic = project.visibility === 'PUBLIC';
@@ -58,7 +61,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
         }
 
-        if (!isOwner && !isMember && !isPublic && !isWorkspaceMember) {
+        const shareAccess = shareSession
+            ? await validateShareLinkAccess({
+                token: shareSession.token,
+                projectId: project.id,
+                videoId: version.video.id,
+                requiredPermission: 'VIEW',
+                passwordVerified: shareSession.passwordVerified,
+            })
+            : { hasAccess: false, requiresPassword: false };
+
+        if (!isOwner && !isMember && !isPublic && !isWorkspaceMember && !shareAccess.hasAccess) {
             return apiErrors.forbidden('Access denied');
         }
 
@@ -144,7 +157,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                         project: {
                             include: {
                                 members: { where: { userId: session?.user?.id || '' } },
-                                shareLinks: { where: { permission: 'COMMENT' } },
                             },
                         },
                     },
@@ -157,14 +169,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
 
         const project = version.video.project;
+        const shareSession = getShareSessionFromRequest(request, version.video.id);
         const isOwner = session?.user?.id === project.ownerId;
         const isMember = project.members.length > 0;
-        const hasCommentLink = project.shareLinks.length > 0;
         const isPublic = project.visibility === 'PUBLIC';
 
         // Check workspace membership for comment access
         let isWorkspaceMember = false;
-        if (!isOwner && !isMember && !isPublic && !hasCommentLink && session?.user?.id) {
+        if (!isOwner && !isMember && !isPublic && session?.user?.id) {
             const wsMember = await db.workspaceMember.findUnique({
                 where: {
                     workspaceId_userId: {
@@ -180,8 +192,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             isWorkspaceMember = !!wsMember || wsOwner?.ownerId === session.user.id;
         }
 
+        const shareAccess = shareSession
+            ? await validateShareLinkAccess({
+                token: shareSession.token,
+                projectId: project.id,
+                videoId: version.video.id,
+                requiredPermission: 'COMMENT',
+                passwordVerified: shareSession.passwordVerified,
+            })
+            : { hasAccess: false, canComment: false, allowGuests: false, requiresPassword: false };
+
         // Check if user can comment
-        const canComment = isOwner || isMember || isPublic || hasCommentLink || isWorkspaceMember;
+        const canComment = isOwner || isMember || isPublic || isWorkspaceMember || shareAccess.canComment;
         if (!canComment) {
             return apiErrors.forbidden('Access denied');
         }
@@ -215,6 +237,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         // Guest comment validation
         const isGuest = !session?.user?.id;
+        if (isGuest && shareAccess.hasAccess && !shareAccess.allowGuests) {
+            return apiErrors.forbidden('This share link requires sign in to comment');
+        }
         if (isGuest && !guestName) {
             return apiErrors.badRequest('Guest name is required for guest comments');
         }

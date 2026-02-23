@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   creator: seoConfig.name,
   publisher: seoConfig.name,
   category: "technology",
-  referrer: "origin-when-cross-origin",
+  referrer: "no-referrer",
   alternates: {
     canonical: "/",
   },

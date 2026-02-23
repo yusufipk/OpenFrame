@@ -12,6 +12,10 @@ import {
   Link as LinkIcon,
   AlertCircle,
   CheckCircle2,
+  Share2,
+  Pencil,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -245,16 +249,25 @@ export function VideoCard({ video, projectId, onDeleted }: VideoCardProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link href={`/projects/${projectId}/videos/${video.id}/share`}>
+                    <Share2 className="mr-2 h-4 w-4" />
+                    Share
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setShowEditDialog(true)}>
+                  <Pencil className="mr-2 h-4 w-4" />
                   Edit
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setShowVersionDialog(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
                   Add Version
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive"
                   onSelect={() => setShowDeleteDialog(true)}
                 >
+                  <Trash2 className="mr-2 h-4 w-4" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>

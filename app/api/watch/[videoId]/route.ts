@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
+import { validateShareLinkAccess } from '@/lib/share-links';
+import { getShareSessionFromRequest } from '@/lib/share-session';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -31,9 +33,50 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                             comments: {
                                 orderBy: { timestamp: 'asc' },
                                 where: { parentId: null },
-                                include: {
+                                select: {
+                                    id: true,
+                                    content: true,
+                                    timestamp: true,
+                                    timestampEnd: true,
+                                    createdAt: true,
+                                    updatedAt: true,
+                                    isResolved: true,
+                                    resolvedAt: true,
+                                    voiceUrl: true,
+                                    voiceDuration: true,
+                                    imageUrl: true,
+                                    annotationData: true,
+                                    parentId: true,
+                                    authorId: true,
+                                    tagId: true,
+                                    versionId: true,
+                                    guestName: true,
                                     author: { select: { id: true, name: true, image: true } },
                                     tag: { select: { id: true, name: true, color: true } },
+                                    replies: {
+                                        orderBy: { createdAt: 'asc' },
+                                        select: {
+                                            id: true,
+                                            content: true,
+                                            timestamp: true,
+                                            timestampEnd: true,
+                                            createdAt: true,
+                                            updatedAt: true,
+                                            isResolved: true,
+                                            resolvedAt: true,
+                                            voiceUrl: true,
+                                            voiceDuration: true,
+                                            imageUrl: true,
+                                            annotationData: true,
+                                            parentId: true,
+                                            authorId: true,
+                                            tagId: true,
+                                            versionId: true,
+                                            guestName: true,
+                                            author: { select: { id: true, name: true, image: true } },
+                                            tag: { select: { id: true, name: true, color: true } },
+                                        },
+                                    },
                                 },
                             },
                             _count: { select: { comments: true } },
@@ -57,13 +100,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         // Check access including workspace membership
         const access = await checkProjectAccess(video.project, session?.user?.id);
+        const shareSession = getShareSessionFromRequest(request, video.id);
+        const shareAccess = shareSession
+            ? await validateShareLinkAccess({
+                token: shareSession.token,
+                projectId: video.projectId,
+                videoId: video.id,
+                requiredPermission: 'VIEW',
+                passwordVerified: shareSession.passwordVerified,
+            })
+            : { hasAccess: false, canComment: false, allowGuests: false, requiresPassword: false };
 
-        if (!access.hasAccess) {
+        if (!access.hasAccess && !shareAccess.hasAccess) {
             return apiErrors.forbidden('Access denied');
         }
 
         // Include auth context so the client knows if the viewer is a guest
         const { project, ...videoData } = video;
+        const canCommentWithMembership = access.hasAccess;
+        const canCommentWithShareLink = shareAccess.canComment && (session?.user?.id ? true : shareAccess.allowGuests);
         const response = successResponse({
             ...videoData,
             projectId: video.projectId,
@@ -75,7 +130,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             isAuthenticated: !!session?.user?.id,
             currentUserId: session?.user?.id || null,
             currentUserName: session?.user?.name || null,
-            canComment: access.hasAccess,
+            canComment: canCommentWithMembership || canCommentWithShareLink,
         });
 
         return withCacheControl(response, 'private, no-cache');

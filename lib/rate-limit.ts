@@ -17,6 +17,8 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
     // Auth — strict to prevent brute force / credential stuffing
     register:       { windowMs: 60 * 60 * 1000, maxRequests: 5 },       // 5 per hour
     login:          { windowMs: 15 * 60 * 1000, maxRequests: 10 },      // 10 per 15 min
+    'share-unlock': { windowMs: 15 * 60 * 1000, maxRequests: 20 },      // 20 per 15 min per IP
+    'share-unlock-token': { windowMs: 15 * 60 * 1000, maxRequests: 8 }, // 8 per 15 min per IP+token
 
     // Content creation — moderate limits
     comment:        { windowMs: 60 * 1000, maxRequests: 15 },           // 15 per minute
