@@ -8,6 +8,7 @@ import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { getGuestIdentityFromRequest } from '@/lib/guest-identity';
+import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 
 type RouteParams = { params: Promise<{ commentId: string }> };
 
@@ -156,7 +157,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const userId = session?.user?.id ?? null;
         const isOwner = userId === project.ownerId;
         const isAuthor = !!userId && comment.authorId === userId;
-        const isMember = !!userId && project.members.some((member) => member.userId === userId);
+        const projectMembership = userId
+            ? project.members.find((member) => member.userId === userId) ?? null
+            : null;
+        const isProjectAdmin = projectMembership?.role === ProjectMemberRole.ADMIN;
         const guestIdentityId = !userId ? getGuestIdentityFromRequest(request) : null;
         const isGuestAuthor = !userId
             && !comment.authorId
@@ -164,9 +168,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             && guestIdentityId === comment.guestIdentityId;
         const canEditOwnContent = isAuthor || isGuestAuthor;
 
-        // Check workspace membership for resolve permissions
-        let isWorkspaceMember = false;
-        if (!isOwner && !isMember && userId) {
+        // Check workspace role for resolve permissions.
+        let workspaceRole: WorkspaceMemberRole | 'OWNER' | null = null;
+        if (!isOwner && userId) {
             const wsMember = await db.workspaceMember.findUnique({
                 where: {
                     workspaceId_userId: {
@@ -179,8 +183,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                 where: { id: project.workspaceId },
                 select: { ownerId: true },
             });
-            isWorkspaceMember = !!wsMember || wsOwner?.ownerId === userId;
+            if (wsOwner?.ownerId === userId) {
+                workspaceRole = 'OWNER';
+            } else if (wsMember) {
+                workspaceRole = wsMember.role;
+            }
         }
+        const isWorkspaceAdmin = workspaceRole === 'OWNER' || workspaceRole === WorkspaceMemberRole.ADMIN;
+        const canResolveComment = isOwner || isProjectAdmin || isWorkspaceAdmin;
 
         if (!userId && !isGuestAuthor) {
             const shareSession = getShareSessionFromRequest(request, comment.version.video.id);
@@ -205,8 +215,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         }
 
         // Owner, author, members, or workspace members can resolve/unresolve
-        if (isResolved !== undefined && !isOwner && !canEditOwnContent && !isMember && !isWorkspaceMember) {
-            return apiErrors.forbidden('Access denied');
+        if (isResolved !== undefined && !canResolveComment) {
+            return apiErrors.forbidden('Only admins can resolve comments');
         }
 
         const updateData: Record<string, unknown> = {};

@@ -108,6 +108,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             currentUserName: session?.user?.name || null,
             canDownload: access.hasAccess,
             canManageTags: access.canEdit,
+            canResolveComments: access.canEdit,
         });
 
         return withCacheControl(response, 'private, no-cache');

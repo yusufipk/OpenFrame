@@ -167,6 +167,7 @@ interface VideoData {
   canComment?: boolean;
   canDownload?: boolean;
   canManageTags?: boolean;
+  canResolveComments?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -511,6 +512,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   // Determine current user info for permission checks and comment display
   const currentUserId = video?.currentUserId || null;
   const currentUserName = video?.currentUserName || null;
+  const canResolveComments = !!video?.canResolveComments;
 
   const apiBasePath = mode === 'dashboard'
     ? `/api/projects/${propProjectId}/videos/${videoId}`
@@ -1959,6 +1961,11 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
   const handleResolveComment = useCallback(
     async (commentId: string, currentlyResolved: boolean) => {
+      if (!video?.canResolveComments) {
+        toast.error('Only admins can resolve comments');
+        return;
+      }
+
       isMutatingRef.current = true;
       setVideo((prev) => {
         if (!prev) return prev;
@@ -2025,7 +2032,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
         isMutatingRef.current = false;
       }
     },
-    [activeVersionId]
+    [activeVersionId, video?.canResolveComments]
   );
 
   const handleReplyComment = useCallback(async (parentId: string, voiceData?: { url: string; duration: number }, imageData?: { url: string }) => {
@@ -3605,20 +3612,22 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                           {formatTime(comment.timestamp)}
                           <ArrowUpRight className="h-3 w-3" />
                         </button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() =>
-                            handleResolveComment(comment.id, comment.isResolved)
-                          }
-                        >
-                          {comment.isResolved ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <Circle className="h-4 w-4" />
-                          )}
-                        </Button>
+                        {canResolveComments && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() =>
+                              handleResolveComment(comment.id, comment.isResolved)
+                            }
+                          >
+                            {comment.isResolved ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <Circle className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                         {canManageComment && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

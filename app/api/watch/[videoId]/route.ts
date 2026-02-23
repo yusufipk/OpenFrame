@@ -191,6 +191,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             canComment: canCommentWithMembership || canCommentWithShareLink,
             canDownload: canDownloadWithMembership || canDownloadWithShareLink,
             canManageTags: access.canEdit,
+            canResolveComments: access.canEdit,
         });
 
         return withCacheControl(response, 'private, no-cache');
