@@ -16,7 +16,11 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:setup": "bun run db:generate && bun run db:push && bun run db:extras",
-    "db:extras": "bun run scripts/db-extras.ts"
+    "db:extras": "bun run scripts/db-extras.ts",
+    "r2:cleanup-orphans:dry": "bun run scripts/r2-orphan-cleanup.ts --dry-run",
+    "r2:cleanup-orphans": "bun run scripts/r2-orphan-cleanup.ts",
+    "bunny:cleanup-orphans:dry": "bun run scripts/bunny-orphan-cleanup.ts --dry-run",
+    "bunny:cleanup-orphans": "bun run scripts/bunny-orphan-cleanup.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",

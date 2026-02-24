@@ -77,17 +77,19 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = db;
 }
 
+export async function disconnectDb(): Promise<void> {
+  if (globalForPool.pgPool) {
+    await globalForPool.pgPool.end();
+    globalForPool.pgPool = undefined;
+  }
+  await db.$disconnect();
+}
+
 // Graceful shutdown handler
 async function shutdown() {
   console.log('Shutting down database connections...');
-  
-  if (globalForPool.pgPool) {
-    await globalForPool.pgPool.end();
-    console.log('Database pool closed');
-  }
-  
-  await db.$disconnect();
-  console.log('Prisma client disconnected');
+  await disconnectDb();
+  console.log('Database connections closed');
 }
 
 // Register shutdown handlers
