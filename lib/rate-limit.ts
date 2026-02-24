@@ -1,6 +1,12 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
+const RATE_LIMIT_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
+const globalForRateLimitCleanup = globalThis as unknown as {
+    rateLimitCleanupIntervalStarted?: boolean;
+};
+
 interface RateLimitConfig {
     windowMs: number;      // Time window in milliseconds
     maxRequests: number;   // Max requests per window
@@ -172,12 +178,15 @@ export async function cleanupRateLimits(): Promise<void> {
     }
 }
 
-// Start cleanup interval when the module is loaded (for self-hosted servers)
-// Cleanup runs every 5 minutes to remove expired rate limit entries
-if (typeof setInterval !== 'undefined') {
-    setInterval(() => {
+// Start cleanup interval once per process to avoid duplicate scheduling on module reload.
+if (!globalForRateLimitCleanup.rateLimitCleanupIntervalStarted && typeof setInterval !== 'undefined') {
+    const interval = setInterval(() => {
         cleanupRateLimits().catch(console.error);
-    }, 5 * 60 * 1000);
+    }, RATE_LIMIT_CLEANUP_INTERVAL_MS);
+
+    // Avoid keeping Node.js process alive because of housekeeping timers.
+    interval.unref?.();
+    globalForRateLimitCleanup.rateLimitCleanupIntervalStarted = true;
 }
 
 /**

@@ -10,6 +10,8 @@ const globalForPool = globalThis as unknown as {
   pgPool: Pool | undefined;
 };
 
+const isDbPoolDebugEnabled = process.env.DB_POOL_DEBUG === 'true';
+
 function createPool(connectionString: string): Pool {
   // Prevent multiple pools from being created during development (Next.js hot reload)
   if (globalForPool.pgPool) {
@@ -31,13 +33,15 @@ function createPool(connectionString: string): Pool {
     // Don't crash the app on unexpected pool errors
   });
 
-  pool.on('connect', () => {
-    console.debug('New database connection established');
-  });
+  if (isDbPoolDebugEnabled) {
+    pool.on('connect', () => {
+      console.debug('New database connection established');
+    });
 
-  pool.on('acquire', () => {
-    console.debug('Connection acquired from pool');
-  });
+    pool.on('acquire', () => {
+      console.debug('Connection acquired from pool');
+    });
+  }
 
   // Store pool globally to prevent multiple instances during development
   if (process.env.NODE_ENV !== 'production') {
