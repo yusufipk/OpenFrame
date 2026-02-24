@@ -808,10 +808,10 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
         <section id="pricing" className="scroll-mt-20 border-b border-border px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
           <div className="mx-auto w-full max-w-[1200px]">
             <div data-reveal className="mb-10 space-y-4">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Deploy self-hosted, or run fully managed.</h2>
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Deploy it yourself - or let us run it for you.</h2>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <article data-reveal className="flex h-full flex-col border border-border bg-card p-7">
                 <div className="mb-8 space-y-4">
                   <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">For the builders.</p>
@@ -857,6 +857,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                   </p>
                   <h3 className="text-2xl font-semibold">Hosted Cloud</h3>
                   <p className="font-mono text-3xl text-primary">$10 / month</p>
+                  <p className="text-sm text-muted-foreground">For fast, collaborative video review.</p>
                 </div>
 
                 <ul className="relative mb-10 space-y-3 text-sm text-foreground">
@@ -874,7 +875,11 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>100 GB of direct video upload storage (+$5 per next 100 GB)</span>
+                    <span>200 GB video storage included</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>+100 GB for $5</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
@@ -883,6 +888,18 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                   <li className="flex items-start gap-2">
                     <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
                     <span>Instant Webhook (Telegram/Email) Setup</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>No per-seat pricing</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>Unlimited reviewers</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>Keep control of your files</span>
                   </li>
                 </ul>
 
@@ -893,10 +910,28 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 >
                   <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary-foreground/10 transition-transform duration-300 group-hover:translate-x-0" />
                   <span className="relative z-10 inline-flex items-center gap-2">
-                    {isLoggedIn ? 'Go to Dashboard' : 'Start Now'}
+                    {isLoggedIn ? 'Launch workspace' : 'Start using OpenFrame'}
                     <MoveRight className="h-4 w-4" />
                   </span>
                 </Link>
+              </article>
+
+              <article data-reveal className="flex h-full flex-col border border-border bg-card p-7">
+                <div className="mb-8 space-y-4">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Studio & Agency</p>
+                  <h3 className="text-2xl font-semibold">Scaling beyond standard limits?</h3>
+                  <p className="text-sm text-muted-foreground">
+                    We provide custom capacity, performance tuning, and priority support for high-volume production teams.
+                  </p>
+                </div>
+
+                <a href="mailto:hello@openframe.so" data-magnetic className={secondaryButtonClass}>
+                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
+                  <span className="relative z-10 inline-flex items-center gap-2">
+                    Contact us
+                    <MoveRight className="h-4 w-4" />
+                  </span>
+                </a>
               </article>
             </div>
           </div>
