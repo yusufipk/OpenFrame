@@ -88,37 +88,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return apiErrors.badRequest('Invalid progress value');
         }
 
-        // Get the video version
-        let targetVersionId = versionId;
-        
-        if (!targetVersionId) {
-            const video = await db.video.findUnique({
-                where: { id: videoId },
-                include: {
-                    project: true,
-                    versions: {
-                        where: { isActive: true },
-                        take: 1,
-                    },
+        if (versionId !== undefined && typeof versionId !== 'string') {
+            return apiErrors.badRequest('Invalid versionId');
+        }
+
+        // Always load the requested video and validate access before writing progress.
+        // If versionId is provided, verify it belongs to this video; otherwise resolve active version.
+        const video = await db.video.findUnique({
+            where: { id: videoId },
+            include: {
+                project: true,
+                versions: {
+                    where: versionId ? { id: versionId } : { isActive: true },
+                    take: 1,
                 },
-            });
+            },
+        });
 
-            if (!video) {
-                return apiErrors.notFound('Video');
-            }
+        if (!video) {
+            return apiErrors.notFound('Video');
+        }
 
-            // Check access including workspace membership
-            const access = await checkProjectAccess(video.project, session?.user?.id);
+        const access = await checkProjectAccess(video.project, session?.user?.id);
+        if (!access.hasAccess) {
+            return apiErrors.forbidden('Access denied');
+        }
 
-            if (!access.hasAccess) {
-                return apiErrors.forbidden('Access denied');
-            }
-
-            const activeVersion = video.versions[0];
-            if (!activeVersion) {
-                return apiErrors.notFound('Video version');
-            }
-            targetVersionId = activeVersion.id;
+        const targetVersion = video.versions[0];
+        if (!targetVersion) {
+            return apiErrors.notFound('Video version');
         }
 
         // Calculate percentage
@@ -130,7 +128,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             where: {
                 userId_versionId: {
                     userId: session.user.id,
-                    versionId: targetVersionId,
+                    versionId: targetVersion.id,
                 },
             },
             update: {
@@ -140,7 +138,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
             create: {
                 userId: session.user.id,
-                versionId: targetVersionId,
+                versionId: targetVersion.id,
                 progress,
                 duration: safeDuration,
                 percentage,
