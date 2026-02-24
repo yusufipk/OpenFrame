@@ -122,28 +122,54 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Calculate percentage
         const safeDuration = duration || 0;
         const percentage = safeDuration > 0 ? Math.min(100, (progress / safeDuration) * 100) : 0;
+        const tinyProgressDelta = 0.5;
+        const tinyDurationDelta = 1;
 
-        // Upsert watch progress
-        const watchProgress = await db.watchProgress.upsert({
+        const existingWatchProgress = await db.watchProgress.findUnique({
             where: {
                 userId_versionId: {
                     userId: session.user.id,
                     versionId: targetVersion.id,
                 },
             },
-            update: {
-                progress,
-                duration: safeDuration,
-                percentage,
-            },
-            create: {
-                userId: session.user.id,
-                versionId: targetVersion.id,
-                progress,
-                duration: safeDuration,
-                percentage,
-            },
         });
+
+        if (existingWatchProgress) {
+            const progressDiff = Math.abs(existingWatchProgress.progress - progress);
+            const durationDiff = Math.abs(existingWatchProgress.duration - safeDuration);
+            if (progressDiff < tinyProgressDelta && durationDiff < tinyDurationDelta) {
+                return successResponse({
+                    success: true,
+                    progress: existingWatchProgress.progress,
+                    percentage: existingWatchProgress.percentage,
+                    skipped: true,
+                });
+            }
+        }
+
+        const watchProgress = existingWatchProgress
+            ? await db.watchProgress.update({
+                where: {
+                    userId_versionId: {
+                        userId: session.user.id,
+                        versionId: targetVersion.id,
+                    },
+                },
+                data: {
+                    progress,
+                    duration: safeDuration,
+                    percentage,
+                },
+            })
+            : await db.watchProgress.create({
+                data: {
+                    userId: session.user.id,
+                    versionId: targetVersion.id,
+                    progress,
+                    duration: safeDuration,
+                    percentage,
+                },
+            });
 
         return successResponse({
             success: true,

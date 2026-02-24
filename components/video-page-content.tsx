@@ -314,6 +314,9 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const [savedProgress, setSavedProgress] = useState<number | null>(null);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressWriteInFlightRef = useRef(false);
+  const pendingProgressPayloadRef = useRef<{ progress: number; duration: number; force: boolean } | null>(null);
   const lastSavedProgressRef = useRef<number>(0);
   const bunnyRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -794,6 +797,108 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     };
   }, [isApiLoaded]);
 
+  const flushScheduledWatchProgress = useCallback(async () => {
+    if (!video?.isAuthenticated || !activeVersionId || progressWriteInFlightRef.current) return;
+
+    const nextPayload = pendingProgressPayloadRef.current;
+    if (!nextPayload) return;
+
+    if (!nextPayload.force && Math.abs(nextPayload.progress - lastSavedProgressRef.current) < 2) {
+      pendingProgressPayloadRef.current = null;
+      return;
+    }
+
+    pendingProgressPayloadRef.current = null;
+    progressWriteInFlightRef.current = true;
+
+    try {
+      const response = await fetch(`/api/watch/${videoId}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          progress: nextPayload.progress,
+          duration: nextPayload.duration,
+          versionId: activeVersionId,
+        }),
+      });
+      if (response.ok) {
+        lastSavedProgressRef.current = nextPayload.progress;
+      }
+    } catch (err) {
+      console.error('Error saving watch progress:', err);
+    } finally {
+      progressWriteInFlightRef.current = false;
+      if (pendingProgressPayloadRef.current) {
+        void flushScheduledWatchProgress();
+      }
+    }
+  }, [video?.isAuthenticated, activeVersionId, videoId]);
+
+  const scheduleWatchProgressSave = useCallback((input: {
+    progress: number;
+    duration?: number;
+    immediate?: boolean;
+    force?: boolean;
+  }) => {
+    if (!video?.isAuthenticated || !activeVersionId) return;
+
+    const progress = Math.max(0, input.progress);
+    if (progress <= 0) return;
+
+    const duration = Math.max(0, input.duration ?? videoDuration ?? 0);
+    const force = input.force ?? false;
+
+    if (!force && Math.abs(progress - lastSavedProgressRef.current) < 2) {
+      return;
+    }
+
+    const existingPayload = pendingProgressPayloadRef.current;
+    pendingProgressPayloadRef.current = existingPayload
+      ? {
+          progress: Math.max(existingPayload.progress, progress),
+          duration: Math.max(existingPayload.duration, duration),
+          force: existingPayload.force || force,
+        }
+      : { progress, duration, force };
+
+    if (input.immediate) {
+      if (progressDebounceTimerRef.current) {
+        clearTimeout(progressDebounceTimerRef.current);
+        progressDebounceTimerRef.current = null;
+      }
+      void flushScheduledWatchProgress();
+      return;
+    }
+
+    if (progressDebounceTimerRef.current) {
+      clearTimeout(progressDebounceTimerRef.current);
+    }
+
+    progressDebounceTimerRef.current = setTimeout(() => {
+      progressDebounceTimerRef.current = null;
+      void flushScheduledWatchProgress();
+    }, 800);
+  }, [video?.isAuthenticated, activeVersionId, videoDuration, flushScheduledWatchProgress]);
+
+  useEffect(() => {
+    return () => {
+      if (progressDebounceTimerRef.current) {
+        clearTimeout(progressDebounceTimerRef.current);
+        progressDebounceTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    lastSavedProgressRef.current = 0;
+    pendingProgressPayloadRef.current = null;
+    progressWriteInFlightRef.current = false;
+    if (progressDebounceTimerRef.current) {
+      clearTimeout(progressDebounceTimerRef.current);
+      progressDebounceTimerRef.current = null;
+    }
+  }, [videoId, activeVersionId]);
+
   useEffect(() => {
     if (!canInitializePlayer) return;
     if (!activeProviderId) return;
@@ -843,18 +948,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
               if (event.data === YT.PlayerState.PAUSED) {
                 const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
                 const playerDuration = playerRef.current?.getDuration?.() || 0;
-
-                if (video?.isAuthenticated && playerCurrentTime > 0 && activeVersionId) {
-                  fetch(`/api/watch/${videoId}/progress`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      progress: playerCurrentTime,
-                      duration: playerDuration,
-                      versionId: activeVersionId,
-                    }),
-                  }).catch((err) => console.error('Error saving watch progress on pause:', err));
-                }
+                scheduleWatchProgressSave({
+                  progress: playerCurrentTime,
+                  duration: playerDuration,
+                  immediate: true,
+                  force: true,
+                });
               }
 
               if (event.data === YT.PlayerState.PLAYING) {
@@ -918,17 +1017,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
         const saveProgress = () => {
           const current = videoEl.currentTime || 0;
           const duration = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : cachedDuration;
-          if (video?.isAuthenticated && current > 0 && activeVersionId) {
-            fetch(`/api/watch/${videoId}/progress`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                progress: current,
-                duration,
-                versionId: activeVersionId,
-              }),
-            }).catch((err) => console.error('Error saving watch progress on pause:', err));
-          }
+          scheduleWatchProgressSave({
+            progress: current,
+            duration,
+            immediate: true,
+            force: true,
+          });
         };
 
         const onLoadedMetadata = () => {
@@ -1134,7 +1228,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
         bunnyRetryTimerRef.current = null;
       }
     };
-  }, [activeProviderId, activeVersionId, embedUrl, isApiLoaded, video?.isAuthenticated, videoId, canInitializePlayer]);
+  }, [activeProviderId, activeVersionId, embedUrl, isApiLoaded, video?.isAuthenticated, videoId, canInitializePlayer, scheduleWatchProgressSave]);
 
   // Save detected duration to DB if the version doesn't have one stored
   useEffect(() => {
@@ -1212,32 +1306,21 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
 
     // Save progress every 5 seconds while playing
     progressSaveTimerRef.current = setInterval(() => {
-      const save = (playerCurrentTime: number, playerDuration: number) => {
-        if (playerCurrentTime > 0 && Math.abs(playerCurrentTime - lastSavedProgressRef.current) >= 2) {
-          fetch(`/api/watch/${videoId}/progress`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              progress: playerCurrentTime,
-              duration: playerDuration || videoDuration,
-              versionId: activeVersionId,
-            }),
-          }).catch((err) => console.error('Error saving watch progress:', err));
-          lastSavedProgressRef.current = playerCurrentTime;
-        }
-      };
-
       if (playerRef.current?.getCurrentTime) {
-        save(playerRef.current.getCurrentTime(), playerRef.current.getDuration?.() || videoDuration);
+        scheduleWatchProgressSave({
+          progress: playerRef.current.getCurrentTime(),
+          duration: playerRef.current.getDuration?.() || videoDuration,
+        });
       }
     }, 5000);
 
     return () => {
       if (progressSaveTimerRef.current) {
         clearInterval(progressSaveTimerRef.current);
+        progressSaveTimerRef.current = null;
       }
     };
-  }, [video?.isAuthenticated, isReady, currentTime, videoDuration, activeVersionId, videoId]);
+  }, [video?.isAuthenticated, isReady, videoDuration, activeVersionId, scheduleWatchProgressSave]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -1281,12 +1364,19 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       // Get current time and duration directly from player instance
       const playerCurrentTime = playerRef.current?.getCurrentTime?.() || currentTime;
       const playerDuration = playerRef.current?.getDuration?.() || videoDuration;
+      const pendingPayload = pendingProgressPayloadRef.current;
+      const finalProgress = Math.max(playerCurrentTime, pendingPayload?.progress ?? 0);
+      const finalDuration = Math.max(playerDuration, pendingPayload?.duration ?? 0);
 
-      if (playerCurrentTime > 0 && navigator.sendBeacon) {
+      if (finalProgress > 0 && navigator.sendBeacon && activeVersionId) {
+        if (progressDebounceTimerRef.current) {
+          clearTimeout(progressDebounceTimerRef.current);
+          progressDebounceTimerRef.current = null;
+        }
         // Use sendBeacon for reliable save on page unload
         const data = new Blob([JSON.stringify({
-          progress: playerCurrentTime,
-          duration: playerDuration,
+          progress: finalProgress,
+          duration: finalDuration,
           versionId: activeVersionId,
         })], { type: 'application/json' });
         navigator.sendBeacon(`/api/watch/${videoId}/progress`, data);
@@ -1299,16 +1389,13 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
       const playerDuration = playerRef.current?.getDuration?.() || videoDuration;
 
-      if (document.visibilityState === 'hidden' && playerCurrentTime > 0 && activeVersionId) {
-        fetch(`/api/watch/${videoId}/progress`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            progress: playerCurrentTime,
-            duration: playerDuration,
-            versionId: activeVersionId,
-          }),
-        }).catch((err) => console.error('Error saving watch progress on visibility change:', err));
+      if (document.visibilityState === 'hidden') {
+        scheduleWatchProgressSave({
+          progress: playerCurrentTime,
+          duration: playerDuration,
+          immediate: true,
+          force: true,
+        });
       }
     };
 
@@ -1318,7 +1405,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       window.removeEventListener('beforeunload', saveProgressOnLeave);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [video?.isAuthenticated, currentTime, videoDuration, activeVersionId, videoId]);
+  }, [video?.isAuthenticated, currentTime, videoDuration, activeVersionId, videoId, scheduleWatchProgressSave]);
 
   const handleResumeFromSaved = useCallback(() => {
     if (savedProgress !== null && playerRef.current) {
