@@ -362,7 +362,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             : !!viewerGuestIdentityId
             && !!comment.guestIdentityId
             && comment.guestIdentityId === viewerGuestIdentityId;
-        const { guestIdentityId: _guestIdentityId, ...commentData } = comment;
+        const commentData = Object.fromEntries(
+            Object.entries(comment).filter(([key]) => key !== 'guestIdentityId')
+        );
 
         const response = successResponse({
             ...commentData,

@@ -243,7 +243,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             },
         });
 
-        const { guestIdentityId: _updatedGuestIdentityId, ...updatedCommentData } = updatedComment;
+        const updatedCommentData = Object.fromEntries(
+            Object.entries(updatedComment).filter(([key]) => key !== 'guestIdentityId')
+        );
         const response = successResponse({
             ...updatedCommentData,
             canEdit: canEditOwnContent,
@@ -255,7 +257,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                     && !reply.authorId
                     && !!reply.guestIdentityId
                     && reply.guestIdentityId === guestIdentityId;
-                const { guestIdentityId: _replyGuestIdentityId, ...replyData } = reply;
+                const replyData = Object.fromEntries(
+                    Object.entries(reply).filter(([key]) => key !== 'guestIdentityId')
+                );
                 return {
                     ...replyData,
                     canEdit: canEditReply,

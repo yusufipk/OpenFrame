@@ -3551,12 +3551,12 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                disabled={!activeVersion || isExportingCsv || isExportingPdf}
+                disabled={!activeVersion || isGuest || isExportingCsv || isExportingPdf}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleExportComments('csv');
                 }}
-                title="Download comments as CSV"
+                title={isGuest ? 'CSV export requires an authenticated account' : 'Download comments as CSV'}
               >
                 {isExportingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               </Button>

@@ -138,12 +138,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                         && !!comment.guestIdentityId
                         && comment.guestIdentityId === viewerGuestIdentityId;
                     const canDeleteComment = canEditComment || isProjectOwner;
-                    const {
-                        authorId: _commentAuthorId,
-                        guestIdentityId: _commentGuestIdentityId,
-                        replies,
-                        ...commentData
-                    } = comment;
+                    const replies = comment.replies;
+                    const commentData = Object.fromEntries(
+                        Object.entries(comment).filter(
+                            ([key]) => key !== 'authorId' && key !== 'guestIdentityId' && key !== 'replies'
+                        )
+                    );
 
                     return {
                         ...commentData,
@@ -156,11 +156,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                                 && !!reply.guestIdentityId
                                 && reply.guestIdentityId === viewerGuestIdentityId;
                             const canDeleteReply = canEditReply || isProjectOwner;
-                            const {
-                                authorId: _replyAuthorId,
-                                guestIdentityId: _replyGuestIdentityId,
-                                ...replyData
-                            } = reply;
+                            const replyData = Object.fromEntries(
+                                Object.entries(reply).filter(
+                                    ([key]) => key !== 'authorId' && key !== 'guestIdentityId'
+                                )
+                            );
                             return {
                                 ...replyData,
                                 canEdit: canEditReply,
