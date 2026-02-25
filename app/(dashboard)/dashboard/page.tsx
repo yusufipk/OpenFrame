@@ -49,6 +49,16 @@ export default async function DashboardPage({
         distinct: ['workspaceId']
     });
 
+    const creatableWorkspaces = await db.workspace.count({
+        where: {
+            OR: [
+                { ownerId: session.user.id },
+                { members: { some: { userId: session.user.id, role: 'ADMIN' } } },
+            ],
+        },
+    });
+    const canCreateProjects = creatableWorkspaces > 0;
+
     const workspaceMap = new Map<string, string>();
     for (const project of accessibleProjects) {
         if (project.workspace) {
@@ -105,6 +115,7 @@ export default async function DashboardPage({
             serializedProjects={serializedProjects}
             workspaces={workspaces}
             totalPages={totalPages}
+            canCreateProjects={canCreateProjects}
         />
     );
 }

@@ -29,6 +29,7 @@ export async function GET() {
                 onNewVersion: true,
                 onNewComment: true,
                 onNewReply: true,
+                onApprovalEvents: true,
                 timezone: 'UTC',
             }
         );
@@ -61,6 +62,7 @@ export async function PUT(request: NextRequest) {
             onNewVersion,
             onNewComment,
             onNewReply,
+            onApprovalEvents,
             timezone,
         } = body;
 
@@ -81,6 +83,7 @@ export async function PUT(request: NextRequest) {
                 onNewVersion: onNewVersion ?? true,
                 onNewComment: onNewComment ?? true,
                 onNewReply: onNewReply ?? true,
+                onApprovalEvents: onApprovalEvents ?? true,
                 timezone: timezone || 'UTC',
             },
             update: {
@@ -92,6 +95,7 @@ export async function PUT(request: NextRequest) {
                 onNewVersion: onNewVersion ?? true,
                 onNewComment: onNewComment ?? true,
                 onNewReply: onNewReply ?? true,
+                onApprovalEvents: onApprovalEvents ?? true,
                 timezone: timezone || 'UTC',
             },
         });

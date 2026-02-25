@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ChevronDown, GitCompareArrows, MoreVertical, Plus, Share2, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, GitCompareArrows, ListChecks, MoreVertical, Plus, Share2, ShieldCheck, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { DownloadControls, DownloadMenuItems } from '@/components/video-page/download-controls';
+import { DownloadMenuItems } from '@/components/video-page/download-controls';
 import { VersionDeleteDialog } from '@/components/video-page/version-delete-dialog';
 import { VersionActionsDialog } from '@/components/video-page/version-actions-dialog';
 import type { BunnyDownloadPreference, DownloadTarget, Version } from '@/components/video-page/types';
@@ -60,6 +60,10 @@ interface VideoPageHeaderProps {
   isCreatingVersion: boolean;
   onCreateVersion: () => void;
   onOpenCompare: () => void;
+  canRequestApproval: boolean;
+  hasPendingApprovalRequest: boolean;
+  onOpenApprovalRequest: () => void;
+  onOpenApprovalsPanel: () => void;
 }
 
 export const VideoPageHeader = memo(function VideoPageHeader({
@@ -102,29 +106,34 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   isCreatingVersion,
   onCreateVersion,
   onOpenCompare,
+  canRequestApproval,
+  hasPendingApprovalRequest,
+  onOpenApprovalRequest,
+  onOpenApprovalsPanel,
 }: VideoPageHeaderProps) {
   return (
     <div className={cn(
-      'shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50',
+      'shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50 gap-3',
       isFullscreenMode ? 'absolute top-0 left-0 right-0 z-50 transition-opacity duration-300' : '',
       isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
     )}>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
         <Link
           href={backHref}
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back
         </Link>
-        <Separator orientation="vertical" className="h-5" />
-        <div className="hidden sm:block min-w-0">
-          <span className="text-sm font-medium">{title}</span>
-          <span className="text-xs text-muted-foreground ml-2">• {projectName}</span>
+        <Separator orientation="vertical" className="h-5 shrink-0" />
+        <div className="hidden sm:flex min-w-0 items-center gap-2">
+          <span className="text-sm font-medium truncate">{title}</span>
+          <span className="text-xs text-muted-foreground shrink-0">•</span>
+          <span className="text-xs text-muted-foreground truncate">{projectName}</span>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 shrink-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm">
@@ -175,24 +184,29 @@ export const VideoPageHeader = memo(function VideoPageHeader({
           onDelete={onDeleteVersion}
         />
 
-        <DownloadControls
-          activeVersion={activeVersion}
-          videoCanDownload={videoCanDownload}
-          isDownloading={isDownloadingVideo}
-          activeDownloadTarget={activeDownloadTarget}
-          onDownload={onDownload}
-        />
-
         {mode === 'dashboard' && (
           <>
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
-                <Share2 className="h-4 w-4 mr-1" />
-                Share Video
-              </Link>
+            <Button variant="outline" size="sm" onClick={() => setShowVersionDialog(true)} className="hidden sm:inline-flex">
+              <Plus className="h-4 w-4 mr-1" />
+              New Version
             </Button>
 
-            <div className="hidden sm:flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onOpenApprovalsPanel} className="hidden sm:inline-flex">
+              <ListChecks className="h-4 w-4 mr-1" />
+              Approvals
+              {hasPendingApprovalRequest ? (
+                <Badge variant="default" className="ml-2 hidden xl:inline-flex">Pending</Badge>
+              ) : null}
+            </Button>
+
+            {versions.length >= 2 && (
+              <Button variant="outline" size="sm" onClick={onOpenCompare} className="hidden sm:inline-flex">
+                <GitCompareArrows className="h-4 w-4 mr-1" />
+                Compare
+              </Button>
+            )}
+
+            <div className="hidden">
               <VersionActionsDialog
                 open={showVersionDialog}
                 onOpenChange={setShowVersionDialog}
@@ -212,16 +226,9 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                 versionsCount={versions.length}
                 onCreateVersion={onCreateVersion}
               />
-
-              {versions.length >= 2 && (
-                <Button variant="outline" size="sm" onClick={onOpenCompare}>
-                  <GitCompareArrows className="h-4 w-4 mr-1" />
-                  Compare
-                </Button>
-              )}
             </div>
 
-            <div className="sm:hidden">
+            <div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="icon" className="h-8 w-8">
@@ -229,6 +236,20 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem asChild>
+                    <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Share Video
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={onOpenApprovalRequest}
+                    disabled={!canRequestApproval}
+                  >
+                    <ShieldCheck className="h-4 w-4 mr-2" />
+                    Request Approval
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DownloadMenuItems
                     activeVersion={activeVersion}
                     videoCanDownload={videoCanDownload}
@@ -236,16 +257,6 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                     activeDownloadTarget={activeDownloadTarget}
                     onDownload={onDownload}
                   />
-                  <DropdownMenuItem onSelect={() => setShowVersionDialog(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Version
-                  </DropdownMenuItem>
-                  {versions.length >= 2 && (
-                    <DropdownMenuItem onSelect={onOpenCompare}>
-                      <GitCompareArrows className="h-4 w-4 mr-2" />
-                      Compare
-                    </DropdownMenuItem>
-                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

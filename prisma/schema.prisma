@@ -33,6 +33,10 @@ model User {
   notificationSetting NotificationSetting?
   watchProgress      WatchProgress[]
   feedbackEntries    UserFeedback[]
+  requestedApprovalRequests ApprovalRequest[] @relation("ApprovalRequestsRequestedBy")
+  canceledApprovalRequests  ApprovalRequest[] @relation("ApprovalRequestsCanceledBy")
+  approvalDecisions         ApprovalDecision[]
+  sentInvitations           Invitation[] @relation("InvitationsSentBy")
   
   @@map("users")
 }
@@ -143,6 +147,7 @@ model Workspace {
   // Relations
   members     WorkspaceMember[]
   projects    Project[]
+  invitations Invitation[]
   
   @@index([ownerId])
   @@index([slug])
@@ -199,6 +204,7 @@ model Project {
   members     ProjectMember[]
   shareLinks  ShareLink[]
   commentTags CommentTag[]
+  invitations Invitation[]
   
   @@index([ownerId])
   @@index([slug])
@@ -233,6 +239,50 @@ model ProjectMember {
 enum ProjectMemberRole {
   ADMIN        // Can manage members, settings, delete videos
   COMMENTATOR  // Can view and comment only
+}
+
+enum InvitationScope {
+  WORKSPACE
+  PROJECT
+}
+
+enum InvitationRole {
+  ADMIN
+  COMMENTATOR
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  CANCELED
+  EXPIRED
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  token       String           @unique
+  email       String
+  scope       InvitationScope
+  role        InvitationRole
+  status      InvitationStatus @default(PENDING)
+
+  workspaceId String?
+  workspace   Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  invitedById String
+  invitedBy   User             @relation("InvitationsSentBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  acceptedAt  DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([email, status, expiresAt])
+  @@index([workspaceId, status, createdAt(sort: Desc)])
+  @@index([projectId, status, createdAt(sort: Desc)])
+  @@map("invitations")
 }
 
 model Video {
@@ -287,6 +337,7 @@ model VideoVersion {
   // Relations
   comments        Comment[]
   watchProgress   WatchProgress[]
+  approvalRequests ApprovalRequest[]
   
   @@unique([videoParentId, versionNumber])
   @@index([videoParentId])
@@ -452,6 +503,58 @@ enum SharePermission {
   COMMENT    // Can view and comment
 }
 
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+enum ApprovalDecisionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ApprovalRequest {
+  id           String                @id @default(cuid())
+  versionId    String
+  version      VideoVersion          @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  requestedById String
+  requestedBy  User                  @relation("ApprovalRequestsRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  message      String?               @db.Text
+  status       ApprovalRequestStatus @default(PENDING)
+  resolvedAt   DateTime?
+  canceledAt   DateTime?
+  canceledById String?
+  canceledBy   User?                 @relation("ApprovalRequestsCanceledBy", fields: [canceledById], references: [id], onDelete: SetNull)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  decisions ApprovalDecision[]
+
+  @@index([versionId, status, createdAt(sort: Desc)])
+  @@index([requestedById, createdAt(sort: Desc)])
+  @@map("approval_requests")
+}
+
+model ApprovalDecision {
+  id         String                 @id @default(cuid())
+  requestId  String
+  request    ApprovalRequest        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approverId String
+  approver   User                   @relation(fields: [approverId], references: [id], onDelete: Cascade)
+  status     ApprovalDecisionStatus @default(PENDING)
+  note       String?                @db.Text
+  respondedAt DateTime?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  @@unique([requestId, approverId])
+  @@index([approverId, status])
+  @@map("approval_decisions")
+}
+
 // ============================================
 // NOTIFICATION SETTINGS
 // ============================================
@@ -475,6 +578,7 @@ model NotificationSetting {
   onNewVersion      Boolean   @default(true)
   onNewComment      Boolean   @default(true)
   onNewReply        Boolean   @default(true)
+  onApprovalEvents  Boolean   @default(true)
 
   // User timezone for notification timestamps (IANA timezone identifier)
   timezone          String    @default("UTC")

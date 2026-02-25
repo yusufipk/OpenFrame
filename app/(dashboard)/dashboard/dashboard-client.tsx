@@ -18,15 +18,17 @@ interface DashboardClientProps {
   serializedProjects: SerializedProject[];
   workspaces: { id: string; name: string }[];
   totalPages: number;
+  canCreateProjects: boolean;
 }
 
-export function DashboardClient({ serializedProjects, workspaces, totalPages }: DashboardClientProps) {
+export function DashboardClient({ serializedProjects, workspaces, totalPages, canCreateProjects }: DashboardClientProps) {
   return (
     <div className="px-6 lg:px-8 py-8 w-full">
       <ProjectFilter
         projects={serializedProjects}
         workspaces={workspaces}
         totalPages={totalPages}
+        canCreateProjects={canCreateProjects}
       />
     </div>
   );

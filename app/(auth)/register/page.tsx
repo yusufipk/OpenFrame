@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Video, Loader2, KeyRound, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,10 @@ import { Label } from '@/components/ui/label';
 
 export default function RegisterPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const invitationToken = useMemo(() => searchParams.get('invitationToken') || '', [searchParams]);
+    const invitedEmail = useMemo(() => searchParams.get('email') || '', [searchParams]);
+    const isInvitationFlow = invitationToken.length > 0;
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [formData, setFormData] = useState({
@@ -20,6 +24,14 @@ export default function RegisterPage() {
         confirmPassword: '',
         inviteCode: '',
     });
+
+    useEffect(() => {
+        if (!invitedEmail) return;
+        setFormData((prev) => ({
+            ...prev,
+            email: invitedEmail,
+        }));
+    }, [invitedEmail]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({
@@ -55,7 +67,8 @@ export default function RegisterPage() {
                     name: formData.name,
                     email: formData.email,
                     password: formData.password,
-                    inviteCode: formData.inviteCode,
+                    inviteCode: formData.inviteCode || undefined,
+                    invitationToken: invitationToken || undefined,
                 }),
             });
 
@@ -97,28 +110,36 @@ export default function RegisterPage() {
                     <CardContent>
                         <form onSubmit={handleRegister} className="space-y-4">
                             {/* Invite Code - First and prominent */}
-                            <div className="space-y-2">
-                                <Label htmlFor="inviteCode" className="flex items-center gap-2">
-                                    <KeyRound className="h-4 w-4 text-amber-500" />
-                                    Invite Code
-                                </Label>
-                                <Input
-                                    id="inviteCode"
-                                    name="inviteCode"
-                                    type="text"
-                                    placeholder="Enter your invite code"
-                                    value={formData.inviteCode}
-                                    onChange={handleChange}
-                                    required
-                                    disabled={isLoading}
-                                    className="border-amber-500/30 focus:border-amber-500"
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    An invite code is required to create an account
-                                </p>
-                            </div>
+                            {isInvitationFlow ? (
+                                <div className="p-3 rounded-md bg-primary/10 text-sm">
+                                    You are registering via an invitation link.
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="inviteCode" className="flex items-center gap-2">
+                                            <KeyRound className="h-4 w-4 text-amber-500" />
+                                            Invite Code
+                                        </Label>
+                                        <Input
+                                            id="inviteCode"
+                                            name="inviteCode"
+                                            type="text"
+                                            placeholder="Enter your invite code"
+                                            value={formData.inviteCode}
+                                            onChange={handleChange}
+                                            required
+                                            disabled={isLoading}
+                                            className="border-amber-500/30 focus:border-amber-500"
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            An invite code is required to create an account
+                                        </p>
+                                    </div>
 
-                            <div className="h-px bg-border my-4" />
+                                    <div className="h-px bg-border my-4" />
+                                </>
+                            )}
 
                             <div className="space-y-2">
                                 <Label htmlFor="name">Full Name</Label>

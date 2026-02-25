@@ -125,6 +125,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             canDownload: access.hasAccess,
             canManageTags: access.canEdit,
             canResolveComments: access.canEdit,
+            canRequestApproval: access.canEdit,
         });
 
         return withCacheControl(response, 'private, no-cache');

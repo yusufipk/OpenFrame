@@ -143,12 +143,14 @@ export function ProjectContentClient({
               </>
             )}
           </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/projects/${projectId}/share`}>
-              <Share2 className="h-4 w-4 mr-2" />
-              Share
-            </Link>
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/projects/${projectId}/share`}>
+                <Share2 className="h-4 w-4 mr-2" />
+                Share
+              </Link>
+            </Button>
+          )}
           {(isOwner || project.members[0]?.role === 'ADMIN') && (
             <>
               <Button variant="outline" size="sm" asChild>

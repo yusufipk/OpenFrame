@@ -18,6 +18,46 @@ export interface CommentTag {
   color: string;
 }
 
+export interface ApprovalDecision {
+  id: string;
+  approverId: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  note: string | null;
+  respondedAt: string | null;
+  createdAt: string;
+  approver: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  };
+}
+
+export interface ApprovalRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED';
+  requestedById: string;
+  message: string | null;
+  resolvedAt: string | null;
+  canceledAt: string | null;
+  canceledById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requestedBy: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  };
+  canceledBy: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  } | null;
+  decisions: ApprovalDecision[];
+}
+
 export interface CommentReply {
   id: string;
   content: string | null;
@@ -70,6 +110,7 @@ export interface VideoData {
   canDownload?: boolean;
   canManageTags?: boolean;
   canResolveComments?: boolean;
+  canRequestApproval?: boolean;
 }
 
 export interface BunnyQualityOption {

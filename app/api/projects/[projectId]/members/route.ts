@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
-import { ProjectMemberRole } from '@prisma/client';
+import { InvitationRole, ProjectMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
+import { buildInvitationUrl, createOrRefreshInvitation, sendInvitationEmail } from '@/lib/invitations';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
@@ -30,26 +31,51 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const isOwner = project.ownerId === session.user.id;
         const isMember = project.members.length > 0;
+        const isAdmin = project.members[0]?.role === ProjectMemberRole.ADMIN;
 
         if (!isOwner && !isMember) {
             return apiErrors.forbidden('Access denied');
         }
 
-        const members = await db.projectMember.findMany({
-            where: { projectId },
-            include: {
-                user: { select: { id: true, name: true, email: true, image: true } },
-            },
-            orderBy: { createdAt: 'asc' },
-        });
+        const now = new Date();
+        const canViewPendingInvitations = isOwner || isAdmin;
+        const [members, owner, pendingInvitations] = await Promise.all([
+            db.projectMember.findMany({
+                where: { projectId },
+                include: {
+                    user: { select: { id: true, name: true, email: true, image: true } },
+                },
+                orderBy: { createdAt: 'asc' },
+            }),
+            db.user.findUnique({
+                where: { id: project.ownerId },
+                select: { id: true, name: true, email: true, image: true },
+            }),
+            canViewPendingInvitations
+                ? db.invitation.findMany({
+                    where: {
+                        projectId,
+                        scope: 'PROJECT',
+                        status: 'PENDING',
+                        expiresAt: { gt: now },
+                    },
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true,
+                        createdAt: true,
+                        expiresAt: true,
+                        invitedBy: {
+                            select: { id: true, name: true, email: true },
+                        },
+                    },
+                    orderBy: { createdAt: 'desc' },
+                })
+                : Promise.resolve([]),
+        ]);
 
-        const owner = await db.user.findUnique({
-            where: { id: project.ownerId },
-            select: { id: true, name: true, email: true, image: true },
-        });
-
-        const response = successResponse({ members, owner });
-        return withCacheControl(response, 'private, max-age=60, stale-while-revalidate=120');
+        const response = successResponse({ members, owner, pendingInvitations });
+        return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error fetching project members:', error);
         return apiErrors.internalError('Failed to fetch members');
@@ -93,45 +119,55 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return apiErrors.badRequest('Email is required');
         }
 
+        const normalizedEmail = email.toLowerCase().trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(normalizedEmail)) {
+            return apiErrors.validationError('Invalid email format');
+        }
+
         // Validate role
         const validRoles = ['ADMIN', 'COMMENTATOR'];
         const memberRole = validRoles.includes(role) ? role : 'COMMENTATOR';
 
-        // Find user by email
+        // If this email belongs to an existing user, validate owner/member conflicts.
         const userToInvite = await db.user.findUnique({
-            where: { email: email.toLowerCase().trim() },
+            where: { email: normalizedEmail },
+            select: { id: true },
         });
 
-        if (!userToInvite) {
-            const response = successResponse({ message: 'If the user exists, an invitation has been sent.' });
-        return withCacheControl(response, 'private, no-store');
-        }
-
-        if (userToInvite.id === project.ownerId) {
+        if (userToInvite?.id === project.ownerId) {
             return apiErrors.badRequest('Cannot invite the project owner as a member');
         }
 
-        // Check if already a member
-        const existingMember = await db.projectMember.findUnique({
-            where: { projectId_userId: { projectId, userId: userToInvite.id } },
-        });
+        if (userToInvite) {
+            const existingMember = await db.projectMember.findUnique({
+                where: { projectId_userId: { projectId, userId: userToInvite.id } },
+            });
 
-        if (existingMember) {
-            return apiErrors.conflict('User is already a member of this project');
+            if (existingMember) {
+                return apiErrors.conflict('User is already a member of this project');
+            }
         }
 
-        const member = await db.projectMember.create({
-            data: {
-                projectId,
-                userId: userToInvite.id,
-                role: memberRole as ProjectMemberRole,
-            },
-            include: {
-                user: { select: { id: true, name: true, email: true, image: true } },
-            },
+        const invitation = await createOrRefreshInvitation({
+            email: normalizedEmail,
+            scope: 'PROJECT',
+            role: memberRole as InvitationRole,
+            invitedById: session.user.id,
+            projectId,
         });
 
-        const response = successResponse(member, 201);
+        const invitationUrl = buildInvitationUrl(invitation.token, normalizedEmail);
+        void sendInvitationEmail({
+            to: normalizedEmail,
+            inviterName: session.user.name || 'A team member',
+            role: invitation.role,
+            scope: invitation.scope,
+            targetName: project.name,
+            invitationUrl,
+        });
+
+        const response = successResponse({ message: 'Invitation email sent.' });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
         console.error('Error inviting project member:', error);

@@ -31,6 +31,7 @@ interface ProjectFilterProps {
   projects: SerializedProject[];
   workspaces: { id: string; name: string }[];
   totalPages: number;
+  canCreateProjects: boolean;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -61,7 +62,7 @@ function VisibilityIcon({ visibility }: { visibility: string }) {
 
 type SortOrder = 'desc' | 'asc';
 
-export function ProjectFilter({ projects, workspaces, totalPages }: ProjectFilterProps) {
+export function ProjectFilter({ projects, workspaces, totalPages, canCreateProjects }: ProjectFilterProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -138,12 +139,14 @@ export function ProjectFilter({ projects, workspaces, totalPages }: ProjectFilte
               </>
             )}
           </Button>
-          <Button asChild>
-            <Link href="/projects/new">
-              <Plus className="h-4 w-4 mr-2" />
-              New Project
-            </Link>
-          </Button>
+          {canCreateProjects && (
+            <Button asChild>
+              <Link href="/projects/new">
+                <Plus className="h-4 w-4 mr-2" />
+                New Project
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -205,12 +208,14 @@ export function ProjectFilter({ projects, workspaces, totalPages }: ProjectFilte
                 ? 'Create your first project to start collecting video feedback'
                 : 'Create a project in this workspace to get started'}
             </p>
-            <Button asChild>
-              <Link href="/projects/new">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Project
-              </Link>
-            </Button>
+            {canCreateProjects && (
+              <Button asChild>
+                <Link href="/projects/new">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Project
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

@@ -105,18 +105,7 @@ async function getR2StorageSnapshot(): Promise<R2StorageSnapshot> {
         return globalForAdminStats.adminR2StorageSnapshot;
     }
 
-    if (!globalForAdminStats.adminR2StorageSnapshotPromise) {
-        globalForAdminStats.adminR2StorageSnapshotPromise = buildR2StorageSnapshot()
-            .then((snapshot) => {
-                globalForAdminStats.adminR2StorageSnapshot = snapshot;
-                return snapshot;
-            })
-            .finally(() => {
-                globalForAdminStats.adminR2StorageSnapshotPromise = undefined;
-            });
-    }
-
-    return globalForAdminStats.adminR2StorageSnapshotPromise;
+    return Promise.reject(new Error('R2 storage snapshot is not available. Trigger a manual refresh from admin dashboard.'));
 }
 
 export async function refreshR2StorageSnapshot(): Promise<string> {

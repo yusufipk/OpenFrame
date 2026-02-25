@@ -29,6 +29,7 @@ interface NotificationSettings {
   onNewVersion: boolean;
   onNewComment: boolean;
   onNewReply: boolean;
+  onApprovalEvents: boolean;
   timezone: string;
 }
 
@@ -87,6 +88,7 @@ export default function SettingsPage() {
     onNewVersion: true,
     onNewComment: true,
     onNewReply: true,
+    onApprovalEvents: true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   });
   const [loading, setLoading] = useState(true);
@@ -282,6 +284,14 @@ export default function SettingsPage() {
             }
             label="New Reply"
             description="When someone replies to a comment thread"
+          />
+          <ToggleButton
+            enabled={settings.onApprovalEvents}
+            onToggle={() =>
+              setSettings((s) => ({ ...s, onApprovalEvents: !s.onApprovalEvents }))
+            }
+            label="Approval Workflow"
+            description="When approval requests are created, responded to, or finalized"
           />
         </CardContent>
       </Card>

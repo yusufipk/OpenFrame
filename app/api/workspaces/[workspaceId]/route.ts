@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { cleanupWorkspaceMediaFiles } from '@/lib/r2-cleanup';
+import { cleanupBunnyStreamVideos } from '@/lib/bunny-stream-cleanup';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
 type RouteParams = { params: Promise<{ workspaceId: string }> };
@@ -163,6 +164,22 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         if (!isOwner) {
             return apiErrors.forbidden('Only the workspace owner can delete it');
         }
+
+        // Delete Bunny provider videos first to avoid orphaned external assets.
+        const workspaceVersionRefs = await db.videoVersion.findMany({
+            where: {
+                video: {
+                    project: {
+                        workspaceId,
+                    },
+                },
+            },
+            select: {
+                providerId: true,
+                videoId: true,
+            },
+        });
+        await cleanupBunnyStreamVideos(workspaceVersionRefs);
 
         // Clean up voice files from R2 before cascade delete removes comment rows
         await cleanupWorkspaceMediaFiles(workspaceId);

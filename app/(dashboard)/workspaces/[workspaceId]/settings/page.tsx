@@ -10,6 +10,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface WorkspaceData {
   id: string;
@@ -31,6 +42,7 @@ export default function WorkspaceSettingsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [formData, setFormData] = useState({ name: '', description: '' });
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
   const fetchWorkspace = useCallback(async () => {
     try {
@@ -85,8 +97,8 @@ export default function WorkspaceSettingsPage() {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure? This will NOT delete the projects inside, but they will be unlinked from this workspace.')) return;
-    if (!confirm('This action cannot be undone. Type the workspace name to confirm.')) return;
+    if (!workspace) return;
+    if (deleteConfirmation !== workspace.name) return;
 
     setIsDeleting(true);
     try {
@@ -203,23 +215,52 @@ export default function WorkspaceSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            variant="destructive"
-            onClick={handleDelete}
-            disabled={isDeleting}
-          >
-            {isDeleting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Deleting...
-              </>
-            ) : (
-              <>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive">
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete Workspace
-              </>
-            )}
-          </Button>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete &quot;{workspace.name}&quot;?</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-4">
+                    <p>
+                      This will permanently delete this workspace and everything inside it
+                      (projects, videos, comments, images, and voice notes). This action cannot be undone.
+                    </p>
+                    <div className="space-y-2">
+                      <Label htmlFor="delete-workspace-confirm">
+                        Type <strong className="text-foreground">{workspace.name}</strong> to confirm
+                      </Label>
+                      <Input
+                        id="delete-workspace-confirm"
+                        value={deleteConfirmation}
+                        onChange={(e) => setDeleteConfirmation(e.target.value)}
+                        placeholder="Workspace name"
+                        className="h-11"
+                      />
+                    </div>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setDeleteConfirmation('')}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDelete}
+                  disabled={deleteConfirmation !== workspace.name || isDeleting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Delete Workspace
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
     </div>

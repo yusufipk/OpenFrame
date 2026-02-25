@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
+import { acceptInvitationTokenForUser, getValidInvitationByToken } from '@/lib/invitations';
 import { checkRateLimit, getClientIp, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 
@@ -16,27 +17,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { name, email, password, inviteCode } = body;
-
-        // Validate invite code using constant-time comparison to prevent timing attacks
-        const validInviteCode = process.env.INVITE_CODE;
-        if (!validInviteCode || !inviteCode) {
-            return apiErrors.forbidden('Invalid invite code');
-        }
-
-        // Constant-time comparison
-        const { timingSafeEqual } = await import('crypto');
-        const validBuffer = Buffer.from(validInviteCode);
-        const providedBuffer = Buffer.from(String(inviteCode));
-
-        // Ensure same length for comparison (prevents length-based timing leak)
-        const isValidLength = validBuffer.length === providedBuffer.length;
-        const compareBuffer = isValidLength ? providedBuffer : validBuffer;
-        const isValidCode = isValidLength && timingSafeEqual(validBuffer, compareBuffer);
-
-        if (!isValidCode) {
-            return apiErrors.forbidden('Invalid invite code');
-        }
+        const { name, email, password, inviteCode, invitationToken } = body;
 
         // Validate required fields
         if (!name || typeof name !== 'string' || name.trim().length < 2) {
@@ -46,11 +27,48 @@ export async function POST(request: NextRequest) {
         if (!email || typeof email !== 'string') {
             return apiErrors.badRequest('Email is required');
         }
+        const normalizedEmail = email.toLowerCase().trim();
 
         // Basic email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
+        if (!emailRegex.test(normalizedEmail)) {
             return apiErrors.validationError('Invalid email format');
+        }
+
+        // Allow registration via a valid invitation token OR global invite code.
+        let invitationIsValid = false;
+        let validatedInvitationToken: string | null = null;
+        if (typeof invitationToken === 'string' && invitationToken.trim()) {
+            const normalizedToken = invitationToken.trim();
+            const invitation = await getValidInvitationByToken(normalizedToken);
+            if (invitation && invitation.email === normalizedEmail) {
+                invitationIsValid = true;
+                validatedInvitationToken = normalizedToken;
+            } else {
+                return apiErrors.forbidden('Invalid or expired invitation token');
+            }
+        }
+
+        if (!invitationIsValid) {
+            // Validate invite code using constant-time comparison to prevent timing attacks
+            const validInviteCode = process.env.INVITE_CODE;
+            if (!validInviteCode || !inviteCode) {
+                return apiErrors.forbidden('Invalid invite code');
+            }
+
+            // Constant-time comparison
+            const { timingSafeEqual } = await import('crypto');
+            const validBuffer = Buffer.from(validInviteCode);
+            const providedBuffer = Buffer.from(String(inviteCode));
+
+            // Ensure same length for comparison (prevents length-based timing leak)
+            const isValidLength = validBuffer.length === providedBuffer.length;
+            const compareBuffer = isValidLength ? providedBuffer : validBuffer;
+            const isValidCode = isValidLength && timingSafeEqual(validBuffer, compareBuffer);
+
+            if (!isValidCode) {
+                return apiErrors.forbidden('Invalid invite code');
+            }
         }
 
         if (!password || typeof password !== 'string' || password.length < 8) {
@@ -59,7 +77,7 @@ export async function POST(request: NextRequest) {
 
         // Check if email already exists
         const existingUser = await db.user.findUnique({
-            where: { email: email.toLowerCase() },
+            where: { email: normalizedEmail },
         });
 
         if (existingUser) {
@@ -73,7 +91,7 @@ export async function POST(request: NextRequest) {
         const user = await db.user.create({
             data: {
                 name: name.trim(),
-                email: email.toLowerCase(),
+                email: normalizedEmail,
                 password: hashedPassword,
             },
             select: {
@@ -83,6 +101,18 @@ export async function POST(request: NextRequest) {
                 createdAt: true,
             },
         });
+
+        if (validatedInvitationToken) {
+            const result = await acceptInvitationTokenForUser({
+                token: validatedInvitationToken,
+                userId: user.id,
+                email: normalizedEmail,
+            });
+            if (result !== 'accepted') {
+                await db.user.delete({ where: { id: user.id } });
+                return apiErrors.conflict('Invitation could not be accepted. Please request a new invitation.');
+            }
+        }
 
         const response = successResponse(
             { message: 'Account created successfully', user },

@@ -10,6 +10,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { signIn } from 'next-auth/react';
 
+function getSafeCallbackUrl(value: string | null): string {
+  if (!value) return '/dashboard';
+  try {
+    const baseOrigin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
+    const parsed = new URL(value, baseOrigin);
+    if (parsed.origin !== baseOrigin) return '/dashboard';
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return '/dashboard';
+  }
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -18,6 +30,7 @@ function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const callbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
 
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
@@ -35,6 +48,7 @@ function LoginForm() {
         email,
         password,
         redirect: false,
+        callbackUrl,
       });
 
       if (result?.error) {
@@ -42,7 +56,8 @@ function LoginForm() {
         return;
       }
 
-      router.push('/dashboard');
+      const destination = getSafeCallbackUrl(result?.url || callbackUrl);
+      router.push(destination);
       router.refresh();
     } catch {
       setError('Something went wrong. Please try again.');

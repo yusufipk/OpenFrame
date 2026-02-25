@@ -23,6 +23,8 @@ import { useDownloadActions } from '@/components/video-page/hooks/use-download-a
 import { useVersionDurationSync } from '@/components/video-page/hooks/use-version-duration-sync';
 import { CommentComposer } from '@/components/video-page/comment-composer';
 import { CommentsPane } from '@/components/video-page/comments-pane';
+import { ApprovalRequestDialog } from '@/components/video-page/approval-request-dialog';
+import { ApprovalRequestsPanel } from '@/components/video-page/approval-requests-panel';
 import type {
   CommentMarker,
   PlayerAdapter,
@@ -31,6 +33,7 @@ import type {
   VideoPageComposerActions,
   VideoPageHeaderActions,
 } from '@/components/video-page/types';
+import { useApprovals } from '@/components/video-page/hooks/use-approvals';
 
 function formatTime(seconds: number): string {
   const totalSeconds = Math.floor(seconds);
@@ -111,6 +114,8 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   // Compare dialog state
   const [showCompareDialog, setShowCompareDialog] = useState(false);
   const [selectedCompareVersions, setSelectedCompareVersions] = useState<Set<string>>(new Set());
+  const [showApprovalRequestDialog, setShowApprovalRequestDialog] = useState(false);
+  const [showApprovalsPanel, setShowApprovalsPanel] = useState(false);
   const router = useRouter();
 
   const {
@@ -185,6 +190,29 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   const currentUserId = video?.currentUserId || null;
   const currentUserName = video?.currentUserName || null;
   const canResolveComments = !!video?.canResolveComments;
+  const canRequestApproval = !!video?.canRequestApproval;
+
+  const {
+    requests: approvalRequests,
+    candidates: approvalCandidates,
+    isLoadingRequests: isLoadingApprovals,
+    isLoadingCandidates: isLoadingApprovalCandidates,
+    isSubmittingRequest: isSubmittingApprovalRequest,
+    isSubmittingDecision: isSubmittingApprovalDecision,
+    isCancelingRequest: isCancelingApprovalRequest,
+    activePendingRequest,
+    error: approvalError,
+    setError: setApprovalError,
+    fetchRequests: fetchApprovalRequests,
+    fetchCandidates: fetchApprovalCandidates,
+    createRequest: createApprovalRequest,
+    submitDecision: submitApprovalDecision,
+    cancelRequest: cancelApprovalRequest,
+  } = useApprovals({
+    projectId,
+    activeVersionId,
+    currentUserId,
+  });
 
   // Memoize active version lookup to avoid recalculating on every render
   const activeVersion = useMemo(() => {
@@ -324,6 +352,16 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     return qualityOptions.find((option) => option.level === selectedQualityLevel)?.label ?? 'Auto';
   }, [qualityOptions, selectedQualityLevel]);
 
+  useEffect(() => {
+    if (!activeVersionId || mode !== 'dashboard') return;
+    void fetchApprovalRequests();
+  }, [activeVersionId, fetchApprovalRequests, mode]);
+
+  useEffect(() => {
+    if (!showApprovalRequestDialog || mode !== 'dashboard') return;
+    void fetchApprovalCandidates();
+  }, [fetchApprovalCandidates, mode, showApprovalRequestDialog]);
+
   const {
     commentText,
     setCommentText,
@@ -461,6 +499,17 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     setSelectedCompareVersions(new Set(activeVersionId ? [activeVersionId] : []));
     setShowCompareDialog(true);
   }, [activeVersionId]);
+
+  const handleOpenApprovalRequestDialog = useCallback(() => {
+    setApprovalError('');
+    setShowApprovalRequestDialog(true);
+  }, [setApprovalError]);
+
+  const handleOpenApprovalsPanel = useCallback(() => {
+    setApprovalError('');
+    setShowApprovalsPanel(true);
+    void fetchApprovalRequests();
+  }, [fetchApprovalRequests, setApprovalError]);
 
   const toggleCompareVersion = useCallback((versionId: string) => {
     setSelectedCompareVersions((prev) => {
@@ -605,6 +654,10 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
             isCreatingVersion={isCreatingVersion}
             onCreateVersion={headerActions.onCreateVersion}
             onOpenCompare={headerActions.onOpenCompare}
+            canRequestApproval={canRequestApproval}
+            hasPendingApprovalRequest={!!activePendingRequest}
+            onOpenApprovalRequest={handleOpenApprovalRequestDialog}
+            onOpenApprovalsPanel={handleOpenApprovalsPanel}
           />
 
           <PlayerCore
@@ -782,6 +835,37 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
         onToggleVersion={compareActions.onToggleVersion}
         onCompare={compareActions.onCompare}
       />
+
+      {mode === 'dashboard' ? (
+        <>
+          <ApprovalRequestDialog
+            open={showApprovalRequestDialog}
+            onOpenChange={setShowApprovalRequestDialog}
+            candidates={approvalCandidates}
+            currentUserId={currentUserId}
+            activePendingRequest={activePendingRequest}
+            isLoadingCandidates={isLoadingApprovalCandidates}
+            isSubmittingRequest={isSubmittingApprovalRequest}
+            error={approvalError}
+            onRefreshCandidates={fetchApprovalCandidates}
+            onCreateRequest={createApprovalRequest}
+          />
+          <ApprovalRequestsPanel
+            open={showApprovalsPanel}
+            onOpenChange={setShowApprovalsPanel}
+            requests={approvalRequests}
+            currentUserId={currentUserId}
+            canRequestApproval={canRequestApproval}
+            isLoadingRequests={isLoadingApprovals}
+            isSubmittingDecision={isSubmittingApprovalDecision}
+            isCancelingRequest={isCancelingApprovalRequest}
+            error={approvalError}
+            onRefresh={fetchApprovalRequests}
+            onSubmitDecision={submitApprovalDecision}
+            onCancelRequest={cancelApprovalRequest}
+          />
+        </>
+      ) : null}
     </div >
   );
 }
