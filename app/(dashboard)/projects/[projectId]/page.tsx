@@ -93,6 +93,9 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   }
 
   if (!isOwner && !isMember && !isPublic && !isWorkspaceMember) {
+    if (!session?.user?.id) {
+      redirect('/login');
+    }
     redirect('/dashboard');
   }
 

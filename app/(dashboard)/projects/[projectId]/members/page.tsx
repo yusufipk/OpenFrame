@@ -1,11 +1,17 @@
-'use client';
-
-import { useParams } from 'next/navigation';
 import { MembersManagementPage } from '@/components/members-management-page';
+import { requireProjectAccessOrRedirect } from '@/lib/route-access';
 
-export default function ProjectMembersPage() {
-  const params = useParams();
-  const projectId = params.projectId as string;
+interface ProjectMembersPageProps {
+  params: Promise<{ projectId: string }>;
+}
+
+export default async function ProjectMembersPage({ params }: ProjectMembersPageProps) {
+  const { projectId } = await params;
+
+  await requireProjectAccessOrRedirect({
+    projectId,
+    intent: 'manage',
+  });
 
   return (
     <MembersManagementPage
@@ -20,7 +26,6 @@ export default function ProjectMembersPage() {
           <strong>Commentator</strong> - can view and comment only.
         </>
       }
-      forbiddenRedirect="/dashboard"
     />
   );
 }

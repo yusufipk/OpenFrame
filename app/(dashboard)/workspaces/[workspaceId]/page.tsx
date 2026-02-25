@@ -95,7 +95,7 @@ export default async function WorkspacePage({ params, searchParams }: WorkspaceP
   const isAdmin = isOwner || membership?.role === 'ADMIN';
 
   if (!isOwner && !isMember) {
-    redirect('/workspaces');
+    redirect('/dashboard');
   }
 
   const totalPages = Math.ceil(workspace._count.projects / pageSize);

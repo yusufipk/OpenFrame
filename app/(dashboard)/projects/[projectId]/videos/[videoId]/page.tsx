@@ -1,18 +1,22 @@
-'use client';
-
-import { useParams } from 'next/navigation';
 import { VideoPageContent } from '@/components/video-page-content';
+import { auth } from '@/lib/auth';
+import { requireVideoProjectAccessOrRedirect } from '@/lib/route-access';
 
-export default function VideoPage() {
-  const params = useParams();
-  const projectId = params.projectId as string;
-  const videoId = params.videoId as string;
+interface VideoPageProps {
+  params: Promise<{ projectId: string; videoId: string }>;
+}
 
-  return (
-    <VideoPageContent
-      mode="dashboard"
-      videoId={videoId}
-      projectId={projectId}
-    />
-  );
+export default async function VideoPage({ params }: VideoPageProps) {
+  const { projectId, videoId } = await params;
+  const session = await auth();
+
+  await requireVideoProjectAccessOrRedirect({
+    projectId,
+    videoId,
+    userId: session?.user?.id,
+    intent: 'view',
+    allowPublicView: true,
+  });
+
+  return <VideoPageContent mode="dashboard" videoId={videoId} projectId={projectId} />;
 }

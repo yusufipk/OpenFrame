@@ -68,7 +68,6 @@ interface MembersManagementPageProps {
   title: string;
   subtitle: string;
   membersDescription: ReactNode;
-  forbiddenRedirect: string;
 }
 
 export function MembersManagementPage({
@@ -78,7 +77,6 @@ export function MembersManagementPage({
   title,
   subtitle,
   membersDescription,
-  forbiddenRedirect,
 }: MembersManagementPageProps) {
   const router = useRouter();
 
@@ -99,7 +97,14 @@ export function MembersManagementPage({
         cache: 'no-store',
       });
       if (!res.ok) {
-        if (res.status === 403) router.push(forbiddenRedirect);
+        if (res.status === 401) {
+          router.push('/login');
+          return;
+        }
+        if (res.status === 403) {
+          router.push('/dashboard');
+          return;
+        }
         return;
       }
       const data = await res.json();
@@ -111,7 +116,7 @@ export function MembersManagementPage({
     } finally {
       setIsLoading(false);
     }
-  }, [apiBasePath, forbiddenRedirect, router]);
+  }, [apiBasePath, router]);
 
   useEffect(() => {
     fetchMembers();

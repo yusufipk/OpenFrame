@@ -1,11 +1,17 @@
-'use client';
-
-import { useParams } from 'next/navigation';
 import { MembersManagementPage } from '@/components/members-management-page';
+import { requireWorkspaceAccessOrRedirect } from '@/lib/route-access';
 
-export default function WorkspaceMembersPage() {
-  const params = useParams();
-  const workspaceId = params.workspaceId as string;
+interface WorkspaceMembersPageProps {
+  params: Promise<{ workspaceId: string }>;
+}
+
+export default async function WorkspaceMembersPage({ params }: WorkspaceMembersPageProps) {
+  const { workspaceId } = await params;
+
+  await requireWorkspaceAccessOrRedirect({
+    workspaceId,
+    intent: 'manage',
+  });
 
   return (
     <MembersManagementPage
@@ -15,7 +21,6 @@ export default function WorkspaceMembersPage() {
       title="Members"
       subtitle="Manage who has access to this workspace and all its projects"
       membersDescription="Admins can manage projects and members. Commentators can view and comment only."
-      forbiddenRedirect="/workspaces"
     />
   );
 }
