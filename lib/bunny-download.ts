@@ -1,3 +1,5 @@
+import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
+
 type BunnyDownloadSourcePreference = 'auto' | 'original' | 'compressed';
 
 export type BunnyDownloadSource = {
@@ -6,7 +8,6 @@ export type BunnyDownloadSource = {
   url: string;
 };
 
-const DEFAULT_BUNNY_CDN_HOSTNAME = 'vz-965f4f4a-fc1.b-cdn.net';
 const BUNNY_DOWNLOAD_FALLBACK_HEIGHTS = [2160, 1440, 1080, 720, 480, 360, 240];
 const BUNNY_ALLOWED_QUALITIES = new Set(BUNNY_DOWNLOAD_FALLBACK_HEIGHTS);
 const BUNNY_MAX_PROBE_CANDIDATES = 4;
@@ -20,16 +21,8 @@ type BunnyDownloadSourceCacheRecord = {
 
 const bunnyDownloadSourceCache = new Map<string, BunnyDownloadSourceCacheRecord>();
 
-export function resolveBunnyCdnHostname(): string {
-  const raw = process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL;
-  if (!raw) return DEFAULT_BUNNY_CDN_HOSTNAME;
-
-  try {
-    const parsed = new URL(raw);
-    return parsed.hostname || DEFAULT_BUNNY_CDN_HOSTNAME;
-  } catch {
-    return raw.replace(/^https?:\/\//, '').replace(/\/+$/, '') || DEFAULT_BUNNY_CDN_HOSTNAME;
-  }
+export function resolveBunnyCdnHostname(): string | null {
+  return resolveServerBunnyCdnHostname();
 }
 
 export async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
@@ -63,7 +56,9 @@ async function isRemoteFileAvailable(url: string): Promise<boolean> {
 }
 
 function buildBunnyOriginalUrl(videoId: string): string {
-  return `https://${resolveBunnyCdnHostname()}/${videoId}/original`;
+  const hostname = resolveBunnyCdnHostname();
+  if (!hostname) return '';
+  return `https://${hostname}/${videoId}/original`;
 }
 
 function extractHeightFromBunnyMp4Url(url: string): number | null {
@@ -75,6 +70,7 @@ function extractHeightFromBunnyMp4Url(url: string): number | null {
 
 async function resolveHighestBunnyMp4Url(videoId: string): Promise<string> {
   const hostname = resolveBunnyCdnHostname();
+  if (!hostname) return '';
   const playlistUrl = `https://${hostname}/${videoId}/playlist.m3u8`;
 
   let playlistHeights: number[] = [];
@@ -106,6 +102,7 @@ async function resolveHighestBunnyMp4Url(videoId: string): Promise<string> {
 
 async function resolveBunnyOriginalSource(videoId: string): Promise<BunnyDownloadSource | null> {
   const originalUrl = buildBunnyOriginalUrl(videoId);
+  if (!originalUrl) return null;
   if (await isRemoteFileAvailable(originalUrl)) {
     return {
       sourceType: 'original',
@@ -118,8 +115,17 @@ async function resolveBunnyOriginalSource(videoId: string): Promise<BunnyDownloa
 }
 
 async function resolveBunnyCompressedSource(videoId: string, requestedQuality: number | null): Promise<BunnyDownloadSource> {
+  const hostname = resolveBunnyCdnHostname();
+  if (!hostname) {
+    return {
+      sourceType: 'compressed',
+      quality: null,
+      url: '',
+    };
+  }
+
   if (typeof requestedQuality === 'number' && Number.isFinite(requestedQuality) && requestedQuality > 0) {
-    const requestedUrl = `https://${resolveBunnyCdnHostname()}/${videoId}/play_${requestedQuality}p.mp4`;
+    const requestedUrl = `https://${hostname}/${videoId}/play_${requestedQuality}p.mp4`;
     if (await isRemoteFileAvailable(requestedUrl)) {
       return {
         sourceType: 'compressed',
@@ -130,6 +136,13 @@ async function resolveBunnyCompressedSource(videoId: string, requestedQuality: n
   }
 
   const fallbackUrl = await resolveHighestBunnyMp4Url(videoId);
+  if (!fallbackUrl) {
+    return {
+      sourceType: 'compressed',
+      quality: null,
+      url: '',
+    };
+  }
   return {
     sourceType: 'compressed',
     quality: extractHeightFromBunnyMp4Url(fallbackUrl),
@@ -163,6 +176,8 @@ export async function resolveBunnyDownloadSource(
   requestedQuality: number | null,
   preference: BunnyDownloadSourcePreference
 ): Promise<BunnyDownloadSource | null> {
+  if (!resolveBunnyCdnHostname()) return null;
+
   const now = Date.now();
   const cacheKey = buildSourceCacheKey(videoId, requestedQuality, preference);
   const cached = getCachedSource(cacheKey, now);

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import * as tus from 'tus-js-client';
 import { parseVideoUrl, getThumbnailUrl, fetchVideoMetadata, type VideoSource } from '@/lib/video-providers';
 import type { VersionActionsConfig, VideoData } from '@/components/video-page/types';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 interface UseVersionActionsParams extends VersionActionsConfig {
   setVideo: Dispatch<SetStateAction<VideoData | null>>;
@@ -33,6 +34,7 @@ export function useVersionActions({
   const [showDeleteVersionDialog, setShowDeleteVersionDialog] = useState(false);
   const [versionToDelete, setVersionToDelete] = useState<string | null>(null);
   const [isDeletingVersion, setIsDeletingVersion] = useState(false);
+  const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
 
   const handleNewVersionUrlChange = (url: string) => {
     setNewVersionUrl(url);
@@ -126,7 +128,9 @@ export function useVersionActions({
         finalVideoUrl = `https://iframe.mediadelivery.net/embed/${libraryId}/${bunnyVideoId}`;
         finalProviderId = 'bunny';
         finalProviderVideoId = bunnyVideoId;
-        finalThumbnailUrl = `https://vz-965f4f4a-fc1.b-cdn.net/${bunnyVideoId}/thumbnail.jpg`;
+        finalThumbnailUrl = bunnyCdnHostname
+          ? `https://${bunnyCdnHostname}/${bunnyVideoId}/thumbnail.jpg`
+          : null;
       }
 
       const res = await fetch(`/api/projects/${projectId}/videos/${videoId}/versions`, {

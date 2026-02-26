@@ -20,6 +20,7 @@ import { BunnyPreviewPlayer, type BunnyPreviewPlayerHandle } from '@/components/
 import { AssetListSection } from '@/components/video-page/asset-list-section';
 import type { VideoAsset } from '@/components/video-page/types';
 import { extractPastedImageFile, validateImageFile } from '@/components/video-page/image-upload-utils';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 interface AssetsPaneProps {
   videoId: string;
@@ -82,6 +83,7 @@ export const AssetsPane = memo(function AssetsPane({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewImageTitle, setPreviewImageTitle] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<VideoAsset | null>(null);
+  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
   const [focusedAssetId, setFocusedAssetId] = useState<string | null>(null);
   const bunnyPreviewPlayerRef = useRef<BunnyPreviewPlayerHandle | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -369,7 +371,9 @@ export const AssetsPane = memo(function AssetsPane({
       });
 
       const sourceUrl = `https://iframe.mediadelivery.net/embed/${initData.libraryId}/${initData.videoId}`;
-      const thumbnailUrl = `https://vz-965f4f4a-fc1.b-cdn.net/${initData.videoId}/thumbnail.jpg`;
+      const thumbnailUrl = bunnyCdnHostname
+        ? `https://${bunnyCdnHostname}/${initData.videoId}/thumbnail.jpg`
+        : undefined;
       const createdAsset = await createAsset({
         provider: 'BUNNY',
         sourceUrl,

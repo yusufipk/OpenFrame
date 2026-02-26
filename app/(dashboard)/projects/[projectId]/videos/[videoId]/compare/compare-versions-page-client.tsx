@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Hls from 'hls.js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -28,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { cn } from '@/lib/utils';
 
 interface Version {
@@ -98,8 +99,6 @@ const isSafeUrl = (url: string) => {
     return false;
   }
 };
-
-const BUNNY_PULL_ZONE_HOSTNAME = 'vz-965f4f4a-fc1.b-cdn.net';
 
 export default function CompareVersionsPageClient({ projectId, videoId }: { projectId: string; videoId: string }) {
   const searchParams = useSearchParams();
@@ -867,6 +866,7 @@ function BunnyPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
   const [portraitFrameWidth, setPortraitFrameWidth] = useState<number>(0);
   const [isPortraitSource, setIsPortraitSource] = useState(false);
 
@@ -980,8 +980,11 @@ function BunnyPanel({
     const onPlay = () => { isPlaying = true; };
     const onPause = () => { isPlaying = false; };
     const onEnded = () => { isPlaying = false; };
-    const hlsUrl = `https://${BUNNY_PULL_ZONE_HOSTNAME}/${version.videoId}/playlist.m3u8`;
-    const originalUrl = `https://${BUNNY_PULL_ZONE_HOSTNAME}/${version.videoId}/original`;
+    if (!bunnyCdnHostname) {
+      return;
+    }
+    const hlsUrl = `https://${bunnyCdnHostname}/${version.videoId}/playlist.m3u8`;
+    const originalUrl = `https://${bunnyCdnHostname}/${version.videoId}/original`;
     const activateOriginalFallback = (): void => {
       sourceMode = 'original';
       clearRetryTimer();
@@ -1088,7 +1091,7 @@ function BunnyPanel({
       onUnregister(version.id);
       adapter.destroy();
     };
-  }, [version.id, version.videoId, onRegister, onUnregister]);
+  }, [version.id, version.videoId, onRegister, onUnregister, bunnyCdnHostname]);
 
   return (
     <div ref={panelRef} className="relative w-full h-full group flex items-center justify-center bg-black">

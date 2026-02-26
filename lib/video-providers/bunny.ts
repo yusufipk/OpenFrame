@@ -1,5 +1,6 @@
 import type { VideoProvider, VideoMetadata, EmbedOptions } from './types';
 import { getCachedMetadata, setCachedMetadata } from './metadata-cache';
+import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 // Bunny Stream URL patterns
 // e.g. https://iframe.mediadelivery.net/play/libraryId/videoId
@@ -44,11 +45,9 @@ export const bunnyProvider: VideoProvider = {
     },
 
     getThumbnailUrl(videoId: string): string {
-        // Bunny stream thumbnails: https://vz-uuid.b-cdn.net/{videoId}/thumbnail.jpg
-        // Since we don't have the b-cdn pull zone readily available in pure abstract,
-        // we should rely on fetching metadata for actual thumbnails, OR construct via API
-        // Actually, Bunny's public thumbnail format is:
-        return `https://vz-965f4f4a-fc1.b-cdn.net/${videoId}/thumbnail.jpg`; // Fallback approximate
+        const bunnyCdnHostname = resolveServerBunnyCdnHostname();
+        if (!bunnyCdnHostname) return '';
+        return `https://${bunnyCdnHostname}/${videoId}/thumbnail.jpg`;
     },
 
     async getMetadata(videoId: string): Promise<VideoMetadata> {

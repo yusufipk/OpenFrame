@@ -3,8 +3,7 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import type { BunnyDownloadPreference, Comment, DownloadTarget, Version, VideoData } from '@/components/video-page/types';
-
-const BUNNY_PULL_ZONE_HOSTNAME = 'vz-965f4f4a-fc1.b-cdn.net';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 function sanitizeDownloadFileName(value: string): string {
   return value
@@ -14,17 +13,9 @@ function sanitizeDownloadFileName(value: string): string {
 }
 
 function getAllowedHosts() {
+  const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
   return [
-    BUNNY_PULL_ZONE_HOSTNAME,
-    ...(process.env.NEXT_PUBLIC_BUNNY_CDN_URL
-      ? (() => {
-          try {
-            return [new URL(process.env.NEXT_PUBLIC_BUNNY_CDN_URL).hostname];
-          } catch {
-            return [process.env.NEXT_PUBLIC_BUNNY_CDN_URL.replace(/^https?:\/\//, '').replace(/\/+$/, '')];
-          }
-        })()
-      : []),
+    ...(bunnyCdnHostname ? [bunnyCdnHostname] : []),
     ...(process.env.NEXT_PUBLIC_DIRECT_DOWNLOAD_ALLOWED_HOSTS ?? '').split(','),
   ]
     .map((host) => host.trim().toLowerCase())

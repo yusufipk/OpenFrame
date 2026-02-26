@@ -12,10 +12,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { parseVideoUrl, fetchVideoMetadata, getThumbnailUrl, type VideoSource } from '@/lib/video-providers';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import * as tus from 'tus-js-client';
 
 export default function NewVideoPageClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
 
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingMeta, setIsFetchingMeta] = useState(false);
@@ -301,7 +303,9 @@ export default function NewVideoPageClient({ projectId }: { projectId: string })
         finalVideoId = bunnyData.videoId;
         // Bunny will generate thumbnails automatically after processing.
         // We'll just provide the standard CDN thumbnail URL format as fallback.
-        finalThumbnailUrl = `https://vz-thumbnail.b-cdn.net/${bunnyData.videoId}/thumbnail.jpg`;
+        finalThumbnailUrl = bunnyCdnHostname
+          ? `https://${bunnyCdnHostname}/${bunnyData.videoId}/thumbnail.jpg`
+          : null;
       }
 
       // Final POST to our database

@@ -11,6 +11,7 @@ import { deriveGuestUploadContext, verifyGuestUploadToken } from '@/lib/guest-up
 import { ensureGuestIdentityFromRequest, setGuestIdentityCookie } from '@/lib/guest-identity';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { validateUrl, validateOptionalUrl } from '@/lib/validation';
+import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
 import {
   SAFE_BUNNY_VIDEO_ID,
   SAFE_IMAGE_PROXY_PATH,
@@ -26,11 +27,6 @@ type RouteParams = { params: Promise<{ videoId: string }> };
 const UNATTACHED_UPLOAD_TTL_MS = 15 * 60 * 1000;
 const ASSET_LIST_DEFAULT_LIMIT = 40;
 const ASSET_LIST_MAX_LIMIT = 100;
-const BUNNY_ALLOWED_THUMBNAIL_HOSTS = new Set([
-  'iframe.mediadelivery.net',
-  'video.bunnycdn.com',
-  'vz-965f4f4a-fc1.b-cdn.net',
-]);
 const YOUTUBE_TITLE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 type AssetWithViewerFields = {
@@ -62,10 +58,19 @@ type YouTubeTitleCacheRecord = {
 const youtubeTitleCache = new Map<string, YouTubeTitleCacheRecord>();
 
 function isAllowedBunnyMediaUrl(url: string): boolean {
+  const allowedHosts = new Set<string>([
+    'iframe.mediadelivery.net',
+    'video.bunnycdn.com',
+  ]);
+  const bunnyCdnHostname = resolveServerBunnyCdnHostname();
+  if (bunnyCdnHostname) {
+    allowedHosts.add(bunnyCdnHostname);
+  }
+
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') return false;
-    return BUNNY_ALLOWED_THUMBNAIL_HOSTS.has(parsed.hostname);
+    return allowedHosts.has(parsed.hostname);
   } catch {
     return false;
   }
@@ -330,7 +335,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       displayName = sanitizeAssetDisplayName(requestedDisplayName, `Bunny ${providerVideoId}`);
       if (!thumbnailUrl) {
-        thumbnailUrl = `https://vz-965f4f4a-fc1.b-cdn.net/${providerVideoId}/thumbnail.jpg`;
+        const bunnyCdnHostname = resolveServerBunnyCdnHostname();
+        if (bunnyCdnHostname) {
+          thumbnailUrl = `https://${bunnyCdnHostname}/${providerVideoId}/thumbnail.jpg`;
+        }
       }
       kind = 'VIDEO';
     }

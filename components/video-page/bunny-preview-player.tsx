@@ -11,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { cn } from '@/lib/utils';
 import type { BunnyPlaybackState, BunnyQualityOption } from '@/components/video-page/types';
 
@@ -27,17 +28,6 @@ export interface BunnyPreviewPlayerHandle {
 }
 
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-
-function resolveBunnyCdnHostname(): string | null {
-  const configured = process.env.NEXT_PUBLIC_BUNNY_CDN_URL;
-  if (!configured) return null;
-  try {
-    const parsed = new URL(configured);
-    return parsed.hostname || null;
-  } catch {
-    return configured.replace(/^https?:\/\//, '').replace(/\/+$/, '') || null;
-  }
-}
 
 function formatTime(value: number): string {
   if (!Number.isFinite(value) || value < 0) return '0:00';
@@ -78,7 +68,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
   const [selectedQualityLevel, setSelectedQualityLevel] = useState<number>(-1);
   const [bunnySourcePreference, setBunnySourcePreference] = useState<'auto' | 'original'>('auto');
   const [bunnyPlaybackState, setBunnyPlaybackState] = useState<BunnyPlaybackState>('none');
-  const bunnyCdnHostname = useMemo(() => resolveBunnyCdnHostname(), []);
+  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
 
   const playlistUrl = useMemo(() => {
     if (!providerVideoId || !bunnyCdnHostname) return null;

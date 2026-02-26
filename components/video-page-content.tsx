@@ -36,6 +36,7 @@ import type {
 } from '@/components/video-page/types';
 import { useApprovals } from '@/components/video-page/hooks/use-approvals';
 import { useVideoAssets } from '@/components/video-page/hooks/use-video-assets';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 function formatTime(seconds: number): string {
   const totalSeconds = Math.floor(seconds);
@@ -59,7 +60,6 @@ function formatBunnyQualityLabel(level: { height?: number; bitrate?: number }, i
 }
 
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-const BUNNY_PULL_ZONE_HOSTNAME = 'vz-965f4f4a-fc1.b-cdn.net';
 
 export type VideoPageMode = 'dashboard' | 'watch';
 
@@ -255,6 +255,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   }, [video?.versions, activeVersionId]);
   const activeProviderId = activeVersion?.providerId;
   const activeVersionDuration = activeVersion?.duration;
+  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
   const embedUrl = useMemo(() => {
     if (!activeVersion) return '';
     if (activeVersion.providerId === 'youtube') {
@@ -264,7 +265,8 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
       return `${base}&origin=${encodeURIComponent(origin)}`;
     }
     if (activeVersion.providerId === 'bunny') {
-      return `https://${BUNNY_PULL_ZONE_HOSTNAME}/${activeVersion.videoId}/playlist.m3u8`;
+      if (!bunnyCdnHostname) return '';
+      return `https://${bunnyCdnHostname}/${activeVersion.videoId}/playlist.m3u8`;
     }
     try {
       const url = new URL(activeVersion.originalUrl);
@@ -275,7 +277,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     } catch {
       return '';
     }
-  }, [activeVersion]);
+  }, [activeVersion, bunnyCdnHostname]);
 
   const {
     isReady,

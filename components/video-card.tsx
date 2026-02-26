@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -47,6 +47,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { parseVideoUrl, fetchVideoMetadata, getThumbnailUrl, type VideoSource } from '@/lib/video-providers';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 interface VideoCardProps {
   video: {
@@ -86,6 +87,20 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
   // Delete dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
+  const resolvedThumbnailUrl = useMemo(() => {
+    if (!video.thumbnailUrl) return '';
+    try {
+      const parsed = new URL(video.thumbnailUrl);
+      if (parsed.hostname === 'vz-thumbnail.b-cdn.net' && bunnyCdnHostname) {
+        parsed.hostname = bunnyCdnHostname;
+        return parsed.toString();
+      }
+      return parsed.toString();
+    } catch {
+      return video.thumbnailUrl;
+    }
+  }, [video.thumbnailUrl, bunnyCdnHostname]);
 
   const handleEdit = async () => {
     setIsSaving(true);
@@ -199,20 +214,26 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
                   <span className="text-[11px] text-muted-foreground/90">Video may already be playable</span>
                 </div>
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={`${video.thumbnailUrl?.replace('vz-thumbnail.b-cdn.net', 'vz-965f4f4a-fc1.b-cdn.net')}${retryKey ? `?t=${retryKey}` : ''}`}
-                  alt={video.title}
-                  className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105"
-                  onError={() => {
-                    setImgError(true);
-                    // Check again after 10 seconds in case Bunny is still processing
-                    setTimeout(() => {
-                      setRetryKey(Date.now());
-                      setImgError(false);
-                    }, 10000);
-                  }}
-                />
+                resolvedThumbnailUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`${resolvedThumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`}
+                    alt={video.title}
+                    className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105"
+                    onError={() => {
+                      setImgError(true);
+                      // Check again after 10 seconds in case Bunny is still processing
+                      setTimeout(() => {
+                        setRetryKey(Date.now());
+                        setImgError(false);
+                      }, 10000);
+                    }}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-muted/80 text-xs text-muted-foreground font-medium">
+                    Thumbnail unavailable
+                  </div>
+                )
               )}
               {!imgError && (
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

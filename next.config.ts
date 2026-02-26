@@ -1,14 +1,29 @@
 import type { NextConfig } from "next";
+import type { RemotePattern } from "next/dist/shared/lib/image-config";
+
+function resolveBunnyCdnHostname(): string | null {
+  const raw = process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL;
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return parsed.hostname || null;
+  } catch {
+    return raw.replace(/^https?:\/\//, '').replace(/\/+$/, '') || null;
+  }
+}
+
+const bunnyCdnHostname = resolveBunnyCdnHostname();
+const remotePatterns: RemotePattern[] = [
+  { protocol: 'https', hostname: 'img.youtube.com' },
+  { protocol: 'https', hostname: 'i.ytimg.com' },
+  { protocol: 'https', hostname: 'images.unsplash.com' },
+  { protocol: 'https', hostname: 'vz-thumbnail.b-cdn.net' },
+  ...(bunnyCdnHostname ? [{ protocol: 'https' as const, hostname: bunnyCdnHostname }] : []),
+];
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: 'img.youtube.com' },
-      { protocol: 'https', hostname: 'i.ytimg.com' },
-      { protocol: 'https', hostname: 'images.unsplash.com' },
-      { protocol: 'https', hostname: 'vz-thumbnail.b-cdn.net' },
-      { protocol: 'https', hostname: 'vz-965f4f4a-fc1.b-cdn.net' },
-    ],
+    remotePatterns,
     formats: ['image/avif', 'image/webp'],
   },
   experimental: {

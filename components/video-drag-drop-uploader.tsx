@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 type ProjectOption = {
   id: string;
@@ -89,6 +90,7 @@ export function VideoDragDropUploader({
   const hasLoadedProjectsRef = useRef(false);
 
   const needsProjectSelection = !fixedProjectId;
+  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
 
   const projectsById = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project.name]));
@@ -296,7 +298,9 @@ export function VideoDragDropUploader({
           videoUrl: `https://iframe.mediadelivery.net/embed/${initPayload.data.libraryId}/${initPayload.data.videoId}`,
           providerId: 'bunny',
           videoId: initPayload.data.videoId,
-          thumbnailUrl: `https://vz-thumbnail.b-cdn.net/${initPayload.data.videoId}/thumbnail.jpg`,
+          thumbnailUrl: bunnyCdnHostname
+            ? `https://${bunnyCdnHostname}/${initPayload.data.videoId}/thumbnail.jpg`
+            : null,
           duration: null,
           uploadToken,
         }),
@@ -341,7 +345,7 @@ export function VideoDragDropUploader({
       setIsUploading(false);
       toast.error(error instanceof Error ? error.message : 'Failed to upload video');
     }
-  }, [cleanupUploadState, projectsById, router]);
+  }, [bunnyCdnHostname, cleanupUploadState, projectsById, router]);
 
   const handleDropFile = useCallback((file: File) => {
     if (!canUpload) {
