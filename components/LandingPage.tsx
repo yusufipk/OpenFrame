@@ -23,7 +23,10 @@ import {
   ArrowRight,
   XCircle,
   ArrowDown,
-  CheckCircle
+  CheckCircle,
+  Upload,
+  Share2,
+  Check
 } from 'lucide-react';
 
 
@@ -96,18 +99,6 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
         duration: 1,
         stagger: 0.15,
         ease: 'power4.out',
-      });
-
-      gsap.from('[data-reveal]', {
-        y: 30,
-        opacity: 0,
-        duration: 0.9,
-        stagger: 0.1,
-        ease: 'power3.out',
-        scrollTrigger: {
-          trigger: '[data-reveal]',
-          start: 'top 85%',
-        },
       });
 
       // Voice Notes Waveform Animation
@@ -266,7 +257,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
         {/* 2) PROBLEM BLOCK */}
         <section className="border-y border-border bg-card/10 px-4 py-16 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mx-auto max-w-4xl">
+            <div className="mx-auto max-w-4xl">
               <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Feedback chaos looks like this:</h2>
               <ul className="mt-8 space-y-4 text-base text-muted-foreground md:text-lg">
                 <li className="flex items-start gap-3">
@@ -296,29 +287,41 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
         </section>
 
         {/* 3) HOW IT WORKS */}
-        <section className="border-b border-border bg-background px-4 py-16 sm:px-6 lg:px-8">
+        <section className="border-b border-border bg-background px-4 py-20 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-10 text-center">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">From upload to approval - in one flow.</h2>
+            <div className="mb-16 text-center">
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">From upload to approval — in one flow.</h2>
             </div>
-            <div className="flex flex-col md:flex-row items-center gap-4 relative">
-              {['Upload a cut', 'Share a review link', 'Get timestamped feedback', 'Mark approved and move on'].map((step, idx, arr) => (
-                <div key={step} className="contents">
-                  <div data-reveal className="flex-1 w-full border border-border bg-card/20 p-6 text-center text-sm font-medium text-foreground md:text-base relative z-10 transition-colors hover:border-primary/30">
-                    <div className="mb-4 flex h-8 w-8 mx-auto items-center justify-center bg-secondary text-muted-foreground font-mono text-xs">
-                      {idx + 1}
+
+            <div className="grid gap-4 md:grid-cols-4 relative">
+              {[
+                { label: 'Upload a cut', icon: Upload },
+                { label: 'Share a review link', icon: Share2 },
+                { label: 'Get timestamped feedback', icon: MessageSquare },
+                { label: 'Mark approved and move on', icon: Check }
+              ].map((step, idx, arr) => (
+                <div key={step.label} className="group relative flex flex-col items-center">
+                  <div className="flex flex-col items-center justify-center w-full min-h-[100px] md:aspect-[4/3] border border-border bg-card/20 px-4 py-6 md:p-6 text-center relative z-10 transition-all duration-300 group-hover:border-primary/40 group-hover:bg-card/40">
+                    <div className="mb-4 flex h-8 w-8 md:h-10 md:w-10 items-center justify-center bg-secondary/50 text-primary border border-border/50 transition-colors group-hover:bg-primary/10">
+                      <step.icon className="h-4 w-4 md:h-5 md:w-5" />
                     </div>
-                    {step}
+                    <p className="text-sm font-medium text-foreground md:text-base leading-tight">
+                      {step.label}
+                    </p>
+                    <div className="absolute top-3 right-3 font-mono text-[10px] text-muted-foreground/30">
+                      0{idx + 1}
+                    </div>
                   </div>
+
                   {idx < arr.length - 1 && (
-                    <>
-                      <div className="hidden md:block text-muted-foreground/30 flex-shrink-0">
-                        <MoveRight className="h-6 w-6" />
-                      </div>
-                      <div className="block md:hidden text-muted-foreground/30 flex-shrink-0 py-2">
-                        <ArrowDown className="h-6 w-6" />
-                      </div>
-                    </>
+                    <div className="hidden md:flex absolute top-1/2 -right-4 -translate-y-1/2 z-20 items-center justify-center text-muted-foreground/20">
+                      <MoveRight className="h-5 w-5" />
+                    </div>
+                  )}
+                  {idx < arr.length - 1 && (
+                    <div className="md:hidden flex py-4 text-muted-foreground/20">
+                      <ArrowDown className="h-5 w-5" />
+                    </div>
                   )}
                 </div>
               ))}
