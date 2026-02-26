@@ -195,7 +195,8 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
               {imgError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/80">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
-                  <span className="text-xs text-muted-foreground font-medium">Processing...</span>
+                  <span className="text-xs text-muted-foreground font-medium">Processing thumbnail...</span>
+                  <span className="text-[11px] text-muted-foreground/90">Video may already be playable</span>
                 </div>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element

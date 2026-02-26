@@ -15,7 +15,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:setup": "bun run db:generate && bun run db:push && bun run db:migrate",
+    "db:setup": "bun run db:generate && bun run db:migrate",
     "r2:cleanup-orphans:dry": "bun run scripts/r2-orphan-cleanup.ts --dry-run",
     "r2:cleanup-orphans": "bun run scripts/r2-orphan-cleanup.ts",
     "bunny:cleanup-orphans:dry": "bun run scripts/bunny-orphan-cleanup.ts --dry-run",

@@ -3,7 +3,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import * as tus from 'tus-js-client';
 import { toast } from 'sonner';
-import { Download, FileVideo, Image as ImageIcon, Loader2, UploadCloud, X, Youtube } from 'lucide-react';
+import { Download, FileVideo, Image as ImageIcon, Loader2, Play, UploadCloud, X, Youtube } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -76,7 +76,9 @@ export const AssetsPane = memo(function AssetsPane({
   const [isUploadingBunny, setIsUploadingBunny] = useState(false);
   const [bunnyProgress, setBunnyProgress] = useState(0);
   const [bunnyProcessingByAssetId, setBunnyProcessingByAssetId] = useState<Record<string, boolean>>({});
+  const [bunnyReadyByAssetId, setBunnyReadyByAssetId] = useState<Record<string, boolean>>({});
   const [bunnyThumbnailRetryKeyByAssetId, setBunnyThumbnailRetryKeyByAssetId] = useState<Record<string, number>>({});
+  const [bunnyThumbnailLoadErrorByAssetId, setBunnyThumbnailLoadErrorByAssetId] = useState<Record<string, boolean>>({});
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewImageTitle, setPreviewImageTitle] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<VideoAsset | null>(null);
@@ -216,6 +218,12 @@ export const AssetsPane = memo(function AssetsPane({
       window.removeEventListener('message', onMessage);
     };
   }, [selectedAsset]);
+
+  useEffect(() => {
+    if (!selectedAsset || selectedAsset.provider !== 'BUNNY') return;
+    if (bunnyReadyByAssetId[selectedAsset.id]) return;
+    setBunnyProcessingByAssetId((prev) => (prev[selectedAsset.id] ? prev : { ...prev, [selectedAsset.id]: true }));
+  }, [bunnyReadyByAssetId, selectedAsset]);
 
   const handleImageUpload = async (file: File) => {
     if (!file) return;
@@ -373,6 +381,8 @@ export const AssetsPane = memo(function AssetsPane({
       if (!createdAsset) {
         throw new Error('Failed to finalize Bunny asset');
       }
+      setBunnyReadyByAssetId((prev) => ({ ...prev, [createdAsset.id]: false }));
+      setBunnyProcessingByAssetId((prev) => ({ ...prev, [createdAsset.id]: true }));
       if (bunnyInputRef.current) bunnyInputRef.current.value = '';
       setBunnyTitle('');
     } catch (error) {
@@ -392,11 +402,23 @@ export const AssetsPane = memo(function AssetsPane({
   };
 
   const handleBunnyThumbnailError = (assetId: string) => {
-    setBunnyProcessingByAssetId((prev) => ({ ...prev, [assetId]: true }));
+    const alreadyReady = !!bunnyReadyByAssetId[assetId];
+    setBunnyThumbnailLoadErrorByAssetId((prev) => ({ ...prev, [assetId]: true }));
+    if (!alreadyReady) {
+      setBunnyProcessingByAssetId((prev) => (prev[assetId] ? prev : { ...prev, [assetId]: true }));
+      setBunnyReadyByAssetId((prev) => ({ ...prev, [assetId]: false }));
+    }
     window.setTimeout(() => {
       setBunnyThumbnailRetryKeyByAssetId((prev) => ({ ...prev, [assetId]: Date.now() }));
-      setBunnyProcessingByAssetId((prev) => ({ ...prev, [assetId]: false }));
+      setBunnyThumbnailLoadErrorByAssetId((prev) => ({ ...prev, [assetId]: false }));
     }, 10000);
+  };
+
+  const handleBunnyThumbnailLoad = (assetId: string) => {
+    setBunnyThumbnailLoadErrorByAssetId((prev) => {
+      if (!prev[assetId]) return prev;
+      return { ...prev, [assetId]: false };
+    });
   };
 
   const renderAssetPreview = (asset: VideoAsset) => {
@@ -429,25 +451,36 @@ export const AssetsPane = memo(function AssetsPane({
 
     const retryKey = bunnyThumbnailRetryKeyByAssetId[asset.id] || 0;
     const isProcessing = !!bunnyProcessingByAssetId[asset.id];
+    const isReadyToPlay = !!bunnyReadyByAssetId[asset.id];
+    const hasThumbnailLoadError = !!bunnyThumbnailLoadErrorByAssetId[asset.id];
     const thumbnailSrc = asset.thumbnailUrl ? `${asset.thumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}` : null;
+    const showThumbnailImage = !!thumbnailSrc && !hasThumbnailLoadError;
 
     return (
       <div className="h-24 w-36 rounded border overflow-hidden bg-muted relative flex items-center justify-center">
-        {thumbnailSrc ? (
+        {showThumbnailImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={thumbnailSrc}
-            alt={asset.displayName}
+            alt=""
             className="h-full w-full object-cover"
+            onLoad={() => handleBunnyThumbnailLoad(asset.id)}
             onError={() => handleBunnyThumbnailError(asset.id)}
           />
+        ) : isReadyToPlay ? (
+          <div className="h-full w-full bg-black/60 flex flex-col items-center justify-center gap-1">
+            <Play className="h-4 w-4 text-emerald-300" />
+            <span className="text-[10px] text-emerald-100 font-medium">Ready to play</span>
+          </div>
         ) : (
           <FileVideo className="h-6 w-6 text-muted-foreground" />
         )}
-        {isProcessing && (
+        {isProcessing && !isReadyToPlay && (
           <div className="absolute inset-0 bg-black/65 flex flex-col items-center justify-center gap-1">
             <Loader2 className="h-4 w-4 animate-spin text-white" />
-            <span className="text-[10px] text-white/90 font-medium">Processing...</span>
+            <span className="text-[10px] text-white/90 font-medium">
+              Processing...
+            </span>
           </div>
         )}
       </div>
@@ -455,11 +488,6 @@ export const AssetsPane = memo(function AssetsPane({
   };
 
   const handleOpenAsset = (asset: VideoAsset) => {
-    const isBunnyProcessing = asset.provider === 'BUNNY' && !!bunnyProcessingByAssetId[asset.id];
-    if (isBunnyProcessing) {
-      toast.info('This Bunny asset is still processing.');
-      return;
-    }
     if (asset.kind === 'IMAGE') {
       if (!asset.sourceUrl) {
         toast.error('Preview is unavailable for this asset');
@@ -469,8 +497,16 @@ export const AssetsPane = memo(function AssetsPane({
       setPreviewImageTitle(asset.displayName);
       return;
     }
+    if (asset.provider === 'BUNNY' && !bunnyReadyByAssetId[asset.id]) {
+      setBunnyProcessingByAssetId((prev) => (prev[asset.id] ? prev : { ...prev, [asset.id]: true }));
+    }
     setSelectedAsset(asset);
   };
+
+  const selectedBunnyAssetId = selectedAsset?.provider === 'BUNNY' ? selectedAsset.id : null;
+  const isSelectedBunnyProcessing = selectedBunnyAssetId
+    ? !!bunnyProcessingByAssetId[selectedBunnyAssetId] && !bunnyReadyByAssetId[selectedBunnyAssetId]
+    : false;
 
   return (
     <div className="space-y-4" onPaste={handleImagePaste}>
@@ -608,6 +644,7 @@ export const AssetsPane = memo(function AssetsPane({
         isLoadingAssets={isLoadingAssets}
         focusedAssetId={focusedAssetId}
         bunnyProcessingByAssetId={bunnyProcessingByAssetId}
+        bunnyReadyByAssetId={bunnyReadyByAssetId}
         activeDownloadAssetId={activeDownloadAssetId}
         activeDeleteAssetId={activeDeleteAssetId}
         canDownloadAssets={canDownloadAssets}
@@ -678,7 +715,7 @@ export const AssetsPane = memo(function AssetsPane({
                       aria-label="Download Bunny video"
                       disabled={
                         activeDownloadAssetId === selectedAsset.id
-                        || !!bunnyProcessingByAssetId[selectedAsset.id]
+                        || isSelectedBunnyProcessing
                       }
                     >
                       {activeDownloadAssetId === selectedAsset.id ? (
@@ -729,7 +766,12 @@ export const AssetsPane = memo(function AssetsPane({
                 <BunnyPreviewPlayer
                   ref={bunnyPreviewPlayerRef}
                   providerVideoId={selectedAsset.providerVideoId}
-                  isProcessing={!!bunnyProcessingByAssetId[selectedAsset.id]}
+                  isProcessing={isSelectedBunnyProcessing}
+                  onReadyToPlay={() => {
+                    if (!selectedBunnyAssetId) return;
+                    setBunnyReadyByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: true }));
+                    setBunnyProcessingByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: false }));
+                  }}
                 />
               )
             ) : null}

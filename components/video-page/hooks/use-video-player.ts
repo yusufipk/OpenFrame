@@ -66,6 +66,7 @@ export function useVideoPlayer({
   const [selectedQualityLevel, setSelectedQualityLevel] = useState<number>(-1);
   const [bunnySourcePreference, setBunnySourcePreference] = useState<'auto' | 'original'>('auto');
   const pendingHlsQualityRef = useRef<number | null>(null);
+  const bunnySourceSwitchResumeRef = useRef<{ time: number; wasPlaying: boolean } | null>(null);
   const previousVersionKeyRef = useRef<string | null>(null);
   const [isBunnyPortraitSource, setIsBunnyPortraitSource] = useState(false);
   const [bunnyPortraitFrameWidth, setBunnyPortraitFrameWidth] = useState<number>(0);
@@ -270,6 +271,7 @@ export function useVideoPlayer({
             hlsRef.current = null;
           }
           hlsInstance = null;
+          setSelectedQualityLevel(-2);
           setBunnyPlaybackState('processing');
           setIsReady(false);
           retryOriginalLoad();
@@ -297,11 +299,29 @@ export function useVideoPlayer({
         const onLoadedMetadata = () => {
           if (destroyed) return;
           clearRetryTimer();
+          if (sourceMode === 'original') {
+            setSelectedQualityLevel(-2);
+          }
           setBunnyPlaybackState(sourceMode === 'original' ? 'processing' : 'none');
           if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
             setIsBunnyPortraitSource(videoEl.videoHeight > videoEl.videoWidth);
           }
           setIsReady(true);
+          const resumeState = bunnySourceSwitchResumeRef.current;
+          if (resumeState) {
+            const knownDuration = Number.isFinite(videoEl.duration) && videoEl.duration > 0
+              ? videoEl.duration
+              : cachedDuration;
+            const targetTime = knownDuration > 0
+              ? Math.min(Math.max(0, resumeState.time), Math.max(0, knownDuration - 0.01))
+              : Math.max(0, resumeState.time);
+            videoEl.currentTime = targetTime;
+            setCurrentTime(targetTime);
+            bunnySourceSwitchResumeRef.current = null;
+            if (resumeState.wasPlaying) {
+              videoEl.play().catch((err) => console.error('Error resuming Bunny video after source switch:', err));
+            }
+          }
           syncDuration();
         };
 
@@ -776,6 +796,21 @@ export function useVideoPlayer({
   );
 
   const handleQualityChange = useCallback((level: number) => {
+    const shouldCaptureSourceSwitch = (
+      activeProviderId === 'bunny'
+      && ((level === -2 && bunnySourcePreference !== 'original')
+        || (level !== -2 && bunnySourcePreference === 'original'))
+    );
+
+    if (shouldCaptureSourceSwitch) {
+      const fallbackCurrentTime = videoRef.current?.currentTime ?? 0;
+      const current = playerRef.current?.getCurrentTime?.() ?? fallbackCurrentTime;
+      bunnySourceSwitchResumeRef.current = {
+        time: Number.isFinite(current) ? Math.max(0, current) : 0,
+        wasPlaying: isPlaying,
+      };
+    }
+
     if (level === -2) {
       pendingHlsQualityRef.current = null;
       setBunnySourcePreference('original');
@@ -802,7 +837,7 @@ export function useVideoPlayer({
     hls.currentLevel = level;
     hls.nextLevel = level;
     setSelectedQualityLevel(level);
-  }, [hlsRef]);
+  }, [activeProviderId, bunnySourcePreference, hlsRef, isPlaying, playerRef, videoRef]);
 
   const handleTimelineClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
