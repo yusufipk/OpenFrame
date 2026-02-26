@@ -740,7 +740,11 @@ export function useVideoPlayer({
     }
   }, [isPlaying, playerRef]);
 
-  const handleSeekToTimestamp = useCallback((timestamp: number, annotation?: string | null) => {
+  const handleSeekToTimestamp = useCallback((
+    timestamp: number,
+    annotation?: string | null,
+    options?: { pauseAfterSeek?: boolean }
+  ) => {
     setCurrentTime(timestamp);
     if (playerRef.current?.seekTo) {
       const playerState = playerRef.current.getPlayerState?.();
@@ -751,7 +755,9 @@ export function useVideoPlayer({
         : isPlaying;
 
       playerRef.current.seekTo(timestamp, true);
-      if (wasPlayingBeforeSeek) {
+      if (options?.pauseAfterSeek) {
+        playerRef.current.pauseVideo();
+      } else if (wasPlayingBeforeSeek) {
         playerRef.current.playVideo();
       } else {
         playerRef.current.pauseVideo();

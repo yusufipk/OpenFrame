@@ -34,7 +34,11 @@ interface CommentsPaneProps {
   handleExportComments: (format: 'csv' | 'pdf') => void;
   canResolveComments: boolean;
   handleResolveComment: (commentId: string, currentlyResolved: boolean) => void;
-  handleSeekToTimestamp: (timestamp: number, annotation?: string | null) => void;
+  handleSeekToTimestamp: (
+    timestamp: number,
+    annotation?: string | null,
+    options?: { pauseAfterSeek?: boolean }
+  ) => void;
   currentUserId: string | null;
   projectOwnerId: string;
   editingCommentId: string | null;
@@ -294,7 +298,7 @@ export const CommentsPane = memo(function CommentsPane({
 
                     <div className="flex items-center gap-1 shrink-0">
                       <button
-                        onClick={() => handleSeekToTimestamp(comment.timestamp, comment.annotationData)}
+                        onClick={() => handleSeekToTimestamp(comment.timestamp, comment.annotationData, { pauseAfterSeek: true })}
                         className="flex items-center gap-1 text-xs text-primary hover:underline px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
                         title="Jump to this timestamp"
                       >

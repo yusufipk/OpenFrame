@@ -5,24 +5,27 @@ import Link from 'next/link';
 import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import {
-  CheckSquare,
-  Clock3,
-  FileVideo,
-  GitBranch,
-  Github,
-  GitMerge,
-  Grid3X3,
-  Layers3,
-  MessageSquare,
-  MessageSquareDot,
-  Mic,
-  MoveRight,
-  PenTool,
-  Play,
-  Upload,
   Video,
-  Waves,
+  MoveRight,
+  Play,
+  Mic,
+  PenTool,
+  Keyboard,
+  BellRing,
+  FolderOpen,
+  FileDown,
+  History,
+  Smartphone,
+  Link as LinkIcon,
+  CheckSquare,
+  MessageSquare,
+  Github,
+  ArrowRight,
+  XCircle,
+  ArrowDown,
+  CheckCircle
 } from 'lucide-react';
+
 
 interface LandingPageProps {
   isLoggedIn: boolean;
@@ -31,229 +34,113 @@ interface LandingPageProps {
 const controlButtonClass =
   'group relative isolate inline-flex h-8 items-center justify-center overflow-hidden border border-border bg-background px-2.5 text-[11px] font-medium text-foreground transition-colors duration-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:h-9 sm:px-4 sm:text-xs';
 
-const primaryButtonClass =
-  'group relative isolate inline-flex h-10 items-center justify-center overflow-hidden border border-primary bg-primary px-4 text-[11px] font-medium text-primary-foreground transition-transform duration-300 hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:h-11 sm:px-5 sm:text-xs';
+const coreWorkflowFeatures = [
+  {
+    title: 'Version Compare',
+    description: 'Compare any two versions side-by-side on a single timeline.',
+    icon: History,
+  },
+  {
+    title: 'Asset Management',
+    description: 'Keep images and supplementary videos grouped perfectly per cut.',
+    icon: FolderOpen,
+  },
+  {
+    title: 'Version History',
+    description: 'Infinite versioning. Toggle between V1 and V10 without losing where you are.',
+    icon: History,
+  },
+  {
+    title: 'Approval Workflow',
+    description: 'Assign specific team members or clients to review and sign off on a cut. Get an exact \"Approved\" status.',
+    icon: CheckCircle,
+  },
+];
 
-const secondaryButtonClass =
-  'group relative isolate inline-flex h-10 items-center justify-center overflow-hidden border border-border bg-background px-4 text-[11px] font-medium text-foreground transition-colors duration-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:h-11 sm:px-5 sm:text-xs';
-
-const workflowProofItems = [
+const workflowAcceleratorFeatures = [
   {
-    step: '01',
-    title: 'Upload Or Import',
-    description: 'Drop MP4 files or import YouTube links into one project timeline.',
-    kind: 'upload',
+    title: 'Keyboard Shortcuts',
+    description: 'J, K, L, Space, and M controls for professional editing workflows.',
+    icon: Keyboard,
   },
   {
-    step: '02',
-    title: 'Comment At Timestamp',
-    description: 'Text and voice notes are attached to exact moments on the timeline.',
-    kind: 'comment',
+    title: 'PDF/CSV Exports',
+    description: 'Turn video comments into a professional feedback report in one click.',
+    icon: FileDown,
   },
   {
-    step: '03',
-    title: 'Ship Next Version',
-    description: 'Upload a new cut while preserving feedback history and review context.',
-    kind: 'version',
-  },
-] as const;
-
-const useCaseRails = [
-  {
-    title: 'Agency Teams',
-    label: 'CLIENT REVIEW',
-    description: 'Share guest links and collect timestamped approvals without account friction.',
-    image:
-      'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1200&q=80',
+    title: 'Real-time Webhooks',
+    description: 'Get instant Telegram or Slack alerts the second a comment is dropped.',
+    icon: BellRing,
   },
   {
-    title: 'Solo Editors',
-    label: 'PERSONAL QC',
-    description: 'Freelance editors can share review links with clients and close notes without account friction.',
-    image:
-      'https://images.unsplash.com/photo-1627244714766-94dab62ed964?q=80&w=765&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
+    title: 'Mobile-Optimized Review',
+    description: 'Touch-optimized player for clients reviewing cuts on the move.',
+    icon: Smartphone,
   },
-  {
-    title: 'Internal Teams',
-    label: 'CAMPAIGN OPS',
-    description: 'Coordinate editors, PMs, and stakeholders across one shared workspace.',
-    image:
-      'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80',
-  },
-] as const;
-
-function formatTime(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `00:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
+];
 
 export function LandingPage({ isLoggedIn }: LandingPageProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const navbarRef = useRef<HTMLElement | null>(null);
-  const timelineCounterRef = useRef<HTMLSpanElement | null>(null);
-  const heroAnnotationCircleRef = useRef<SVGCircleElement | null>(null);
-  const featureAnnotationCircleRef = useRef<SVGCircleElement | null>(null);
+  const hostedCtaHref = isLoggedIn ? '/dashboard' : '/register';
 
   useEffect(() => {
     const cleanupHandlers: Array<() => void> = [];
 
     const ctx = gsap.context(() => {
+      // General Reveal Animations
       gsap.from('[data-hero-copy]', {
-        y: 30,
+        y: 40,
         opacity: 0,
-        duration: 0.9,
-        stagger: 0.12,
-        ease: 'power3.out',
+        duration: 1,
+        stagger: 0.15,
+        ease: 'power4.out',
       });
 
       gsap.from('[data-reveal]', {
-        y: 24,
+        y: 30,
         opacity: 0,
-        duration: 0.8,
-        stagger: 0.08,
+        duration: 0.9,
+        stagger: 0.1,
         ease: 'power3.out',
+        scrollTrigger: {
+          trigger: '[data-reveal]',
+          start: 'top 85%',
+        },
       });
 
-      gsap.to('.hero-float-card', {
-        y: -14,
-        duration: 2.6,
-        stagger: 0.2,
-        yoyo: true,
-        repeat: -1,
-        ease: 'power3.out',
-      });
-
-      const timelineCounter = timelineCounterRef.current;
-
-      if (timelineCounter) {
-        const playhead = { seconds: 83 };
-
-        gsap.to(playhead, {
-          seconds: 224,
-          duration: 12,
-          repeat: -1,
-          ease: 'none',
-          onUpdate: () => {
-            timelineCounter.textContent = formatTime(Math.floor(playhead.seconds));
-          },
-        });
-      }
-
-      const timelineDrops = gsap.utils.toArray<HTMLElement>('.timeline-drop');
-
-      timelineDrops.forEach((drop, index) => {
-        const timeline = gsap.timeline({ repeat: -1, delay: index * 0.35 });
-
-        timeline
-          .fromTo(
-            drop,
-            { y: -18, opacity: 0 },
-            { y: 0, opacity: 1, duration: 0.8, ease: 'power3.out' }
-          )
-          .to(drop, { opacity: 0, duration: 0.35, ease: 'power3.out' }, '+=0.5');
-      });
-
+      // Voice Notes Waveform Animation
       const waveformBars = gsap.utils.toArray<HTMLElement>('.voice-bar');
-
       waveformBars.forEach((bar, index) => {
         gsap.set(bar, { transformOrigin: 'center bottom' });
         gsap.to(bar, {
-          scaleY: gsap.utils.random(0.35, 1.45),
-          duration: gsap.utils.random(0.45, 0.9),
+          scaleY: gsap.utils.random(0.3, 1.5),
+          duration: gsap.utils.random(0.4, 0.8),
           repeat: -1,
           yoyo: true,
-          delay: index * 0.03,
-          ease: 'power3.out',
+          delay: index * 0.05,
+          ease: 'power2.inOut',
         });
       });
 
-      gsap.fromTo(
-        '.voice-scan',
-        { width: '0%' },
-        {
-          width: '100%',
-          duration: 2.4,
-          repeat: -1,
-          yoyo: true,
-          ease: 'power3.out',
-        }
-      );
-
-      const animateStroke = (shape: SVGCircleElement | null, duration: number) => {
-        if (!shape) return;
-
-        const shapeLength = shape.getTotalLength();
-
-        gsap.set(shape, {
-          strokeDasharray: shapeLength,
-          strokeDashoffset: shapeLength,
-        });
-
-        gsap.to(shape, {
-          strokeDashoffset: 0,
-          duration,
-          repeat: -1,
-          yoyo: true,
-          repeatDelay: 0.6,
-          ease: 'power3.out',
-        });
-      };
-
-      animateStroke(heroAnnotationCircleRef.current, 2.4);
-      animateStroke(featureAnnotationCircleRef.current, 2.1);
-
+      // Navbar Scroll Effect
       const nav = navbarRef.current;
-
       if (nav) {
         const updateNavbar = () => {
-          const hasScrolled = window.scrollY > 12;
-
+          const hasScrolled = window.scrollY > 20;
           gsap.to(nav, {
-            backgroundColor: hasScrolled
-              ? 'color-mix(in oklab, var(--background) 80%, transparent)'
-              : 'transparent',
-            backdropFilter: hasScrolled ? 'blur(12px)' : 'blur(0px)',
+            backgroundColor: hasScrolled ? 'color-mix(in oklab, var(--background) 85%, transparent)' : 'transparent',
+            backdropFilter: hasScrolled ? 'blur(16px)' : 'blur(0px)',
+            borderBottomColor: hasScrolled ? 'var(--border)' : 'transparent',
             duration: 0.3,
             overwrite: 'auto',
-            ease: 'power3.out',
           });
         };
-
         updateNavbar();
         window.addEventListener('scroll', updateNavbar, { passive: true });
         cleanupHandlers.push(() => window.removeEventListener('scroll', updateNavbar));
       }
-
-      const magneticItems = gsap.utils.toArray<HTMLElement>('[data-magnetic]');
-
-      magneticItems.forEach((item) => {
-        const xTo = gsap.quickTo(item, 'x', { duration: 0.35, ease: 'power3.out' });
-        const yTo = gsap.quickTo(item, 'y', { duration: 0.35, ease: 'power3.out' });
-
-        const onMove = (event: MouseEvent) => {
-          const bounds = item.getBoundingClientRect();
-          const x = event.clientX - (bounds.left + bounds.width / 2);
-          const y = event.clientY - (bounds.top + bounds.height / 2);
-
-          xTo((x / bounds.width) * 10);
-          yTo((y / bounds.height) * 10);
-        };
-
-        const onLeave = () => {
-          xTo(0);
-          yTo(0);
-        };
-
-        item.addEventListener('mousemove', onMove);
-        item.addEventListener('mouseleave', onLeave);
-
-        cleanupHandlers.push(() => {
-          item.removeEventListener('mousemove', onMove);
-          item.removeEventListener('mouseleave', onLeave);
-        });
-      });
     }, rootRef);
 
     return () => {
@@ -264,57 +151,45 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
 
   return (
     <div ref={rootRef} className="min-h-screen overflow-x-hidden bg-background text-foreground font-sans selection:bg-primary/20">
-      <header ref={navbarRef} className="fixed inset-x-0 top-0 z-50 border-b border-border bg-transparent">
+      {/* Header */}
+      <header ref={navbarRef} className="fixed inset-x-0 top-0 z-50 border-b border-transparent bg-transparent transition-colors duration-300">
         <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center justify-between px-4 sm:h-16 sm:px-6 lg:px-10">
-          <Link
-            href="/"
-            data-magnetic
-            className="group relative isolate inline-flex items-center gap-2 overflow-hidden border border-border bg-background px-3 py-2"
-          >
+          <Link href="/" className="group relative isolate inline-flex items-center gap-2 overflow-hidden border border-border bg-background px-3 py-2">
             <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
             <Video className="relative z-10 h-4 w-4 text-primary" />
             <span className="relative z-10 text-xs font-semibold tracking-[0.12em]">OPENFRAME</span>
           </Link>
 
-          <nav className="hidden items-center gap-6 text-xs font-medium uppercase tracking-[0.14em] md:flex">
+          <nav className="hidden items-center gap-6 text-[11px] font-medium uppercase tracking-[0.14em] md:flex">
             <Link className="text-muted-foreground transition-colors hover:text-foreground" href="#features">
               Features
             </Link>
             <Link className="text-muted-foreground transition-colors hover:text-foreground" href="#pricing">
               Pricing
             </Link>
+            <a className="text-muted-foreground transition-colors hover:text-foreground" href="https://github.com/yusufipk/OpenFrame" target="_blank" rel="noreferrer">
+              GitHub
+            </a>
           </nav>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-2">
             {isLoggedIn ? (
-              <>
-                <Link href="/dashboard" data-magnetic className={controlButtonClass}>
-                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10 inline-flex items-center gap-1.5 sm:gap-2">
-                    <span className="sm:hidden">Dashboard</span>
-                    <span className="hidden sm:inline">Go to Dashboard</span>
-                    <MoveRight className="h-3.5 w-3.5" />
-                  </span>
-                </Link>
-                <div className="hidden sm:block">
-                  <Link href="/dashboard" data-magnetic className={controlButtonClass}>
-                    <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                    <span className="relative z-10">Workspace</span>
-                  </Link>
-                </div>
-              </>
+              <Link href="/dashboard" className={controlButtonClass}>
+                <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
+                <span className="relative z-10 inline-flex items-center gap-2">
+                  Dashboard
+                  <MoveRight className="h-3.5 w-3.5" />
+                </span>
+              </Link>
             ) : (
               <>
-                <Link href="/login" data-magnetic className={controlButtonClass}>
-                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10">Login</span>
+                <Link href="/login" className="text-xs font-medium text-muted-foreground hover:text-foreground hidden sm:block mr-4">
+                  Log in
                 </Link>
-                <div className="hidden sm:block">
-                  <Link href="/register" data-magnetic className={controlButtonClass}>
-                    <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                    <span className="relative z-10">Get Started</span>
-                  </Link>
-                </div>
+                <Link href="/register" className={controlButtonClass}>
+                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
+                  <span className="relative z-10">Get Started Free</span>
+                </Link>
               </>
             )}
           </div>
@@ -322,675 +197,481 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
       </header>
 
       <main className="relative">
-        <section className="min-h-screen border-b border-border px-4 pb-20 pt-24 sm:px-6 sm:pb-24 sm:pt-28 lg:pt-32">
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background via-background to-secondary/40" />
-          <div className="relative mx-auto grid min-h-[calc(100vh-8rem)] w-full max-w-[1200px] items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-14">
-            <div className="space-y-7">
-              <p data-hero-copy className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                OPEN SOURCE VIDEO REVIEW TOOL
-              </p>
-              <h1 data-hero-copy className="max-w-2xl text-4xl font-semibold leading-[1.03] tracking-[-0.03em] sm:text-5xl md:text-8xl">
-                Review Video. Without the Chaos.
-              </h1>
-              <p data-hero-copy className="max-w-xl text-base text-muted-foreground md:text-xl">
-                Timestamped text, voice feedback, and version control for modern creative teams.
-              </p>
+        {/* 1) HERO */}
+        <section className="relative flex min-h-[95vh] flex-col items-center justify-center px-4 pb-20 pt-32 text-center sm:px-6 lg:px-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background" />
 
-              <div data-hero-copy className="flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href={isLoggedIn ? '/dashboard' : '/register'}
-                  data-magnetic
-                  className={primaryButtonClass}
-                >
-                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary-foreground/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10 inline-flex items-center gap-2">
-                    Start using OpenFrame
-                    <MoveRight className="h-4 w-4" />
-                  </span>
-                </Link>
-                <a
-                  href="https://github.com/yusufipk/OpenFrame"
-                  target="_blank"
-                  rel="noreferrer"
-                  data-magnetic
-                  className={secondaryButtonClass}
-                >
-                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10 inline-flex items-center gap-2">
-                    <Github className="h-4 w-4" />
-                    GitHub Repo
-                  </span>
-                </a>
-              </div>
+          <div className="relative z-10 mx-auto max-w-[1000px] space-y-8">
+            <div data-hero-copy className="inline-flex items-center gap-2 border border-border/50 bg-secondary/30 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-md">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
+              </span>
+              <span className="font-mono tracking-wide uppercase">Open Source Video Review</span>
             </div>
 
-            <div data-hero-copy className="relative">
-              <div className="relative border border-border bg-card p-3">
-                <div className="mb-3 flex items-center justify-between border border-border/50 bg-background px-3 py-2">
-                  <div className="inline-flex items-center gap-2 text-xs">
-                    <Play className="h-3.5 w-3.5 text-primary" />
-                    <span className="font-mono text-muted-foreground">PLAYHEAD 00:02:14</span>
-                  </div>
-                  <span className="font-mono text-[11px] text-muted-foreground">v2.3.1</span>
-                </div>
+            <h1 data-hero-copy className="text-4xl font-semibold leading-[0.95] tracking-[-0.03em] sm:text-5xl md:text-6xl lg:text-7xl">
+              Cut Video Approval Time in Half. <br className="hidden md:block" />
+              <span className="text-muted-foreground">Stop Chasing Timecodes.</span>
+            </h1>
 
-                <div className="relative aspect-[16/10] overflow-hidden border border-border/50 bg-background">
-                  <Image
-                    src="https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=80"
-                    alt="Annotated video frame preview"
-                    fill
-                    className="object-cover opacity-75"
-                    sizes="(min-width: 1024px) 50vw, 100vw"
-                    priority
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-b from-background/20 via-background/5 to-background/35" />
+            <p data-hero-copy className="mx-auto max-w-2xl text-base text-muted-foreground md:text-xl">
+              OpenFrame puts comments, voice notes, and annotations on a single timeline so clients say &quot;yes&quot; faster and your team stops guessing.
+            </p>
 
-                  <svg className="pointer-events-none absolute inset-0" viewBox="0 0 640 400" fill="none">
-                    <circle
-                      ref={heroAnnotationCircleRef}
-                      cx="462"
-                      cy="198"
-                      r="88"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      className="text-primary"
-                      fill="none"
-                    />
-                  </svg>
+            <div data-hero-copy className="mx-auto flex max-w-md flex-col items-center justify-center gap-2">
+              <Link
+                href={hostedCtaHref}
+                className="group relative isolate inline-flex h-12 min-w-max items-center justify-center overflow-hidden border border-primary bg-primary px-10 text-sm font-medium whitespace-nowrap text-primary-foreground transition-transform duration-300 hover:scale-[1.02]"
+              >
+                Start free
+                <MoveRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
 
-                  <div className="absolute left-4 top-4 border border-border/70 bg-popover px-3 py-2 text-xs">
-                    <p className="font-mono text-muted-foreground">ANNOTATION</p>
-                    <p className="mt-1">Focus this subject isolation for scene 04.</p>
-                  </div>
-                </div>
+              <a href="#pricing" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                Prefer self-hosting? <ArrowRight className="ml-1 inline h-3.5 w-3.5" />
+              </a>
+            </div>
+          </div>
+
+          <div data-hero-copy className="relative mx-auto mt-20 w-full max-w-[1200px]">
+            <div className="relative aspect-[16/9] w-full overflow-hidden border border-border bg-card shadow-2xl rounded-lg">
+              <Image
+                src="/landing/deep-dive-dashboard-2.webp"
+                alt="Product Interface Preview"
+                fill
+                className="object-cover"
+                priority
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent pointer-events-none" />
+
+              {/* Toolbar floating UI */}
+              <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 border border-border/80 bg-background/90 p-2 backdrop-blur-md shadow-xl">
+                <button className="flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90">
+                  <PenTool className="h-4 w-4" />
+                </button>
+                <div className="h-6 w-px bg-border" />
+                <button className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground">
+                  <MessageSquare className="h-4 w-4" />
+                </button>
+                <button className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground">
+                  <Mic className="h-4 w-4" />
+                </button>
               </div>
 
-              <div className="hero-float-card absolute -left-7 top-8 hidden border border-border bg-popover px-4 py-3 shadow-sm sm:block">
-                <div className="flex items-center gap-2 text-xs">
-                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                  <span className="font-mono text-muted-foreground">00:01:23</span>
-                </div>
-                <p className="mt-2 text-xs">Re-time this beat hit by 4 frames.</p>
-              </div>
+            </div>
+          </div>
+        </section>
 
-              <div className="hero-float-card absolute -right-5 bottom-6 hidden border border-border bg-popover px-4 py-3 shadow-sm sm:block">
-                <div className="flex items-center gap-2 text-xs">
-                  <Mic className="h-3.5 w-3.5 text-primary" />
-                  <span className="font-mono text-muted-foreground">Voice Note</span>
-                </div>
-                <p className="mt-2 text-xs">Transition pacing reads cleaner in this cut.</p>
+        {/* 2) PROBLEM BLOCK */}
+        <section className="border-y border-border bg-card/10 px-4 py-16 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1200px]">
+            <div data-reveal className="mx-auto max-w-4xl">
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Feedback chaos looks like this:</h2>
+              <ul className="mt-8 space-y-4 text-base text-muted-foreground md:text-lg">
+                <li className="flex items-start gap-3">
+                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
+                  <span>Comments spread across WhatsApp, email, and random screenshots.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
+                  <span>&quot;Around 1:12&quot; turns into 10 minutes of guessing.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
+                  <span>Nobody knows which version is actually the latest.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
+                  <span>One unclear note becomes a full extra revision round.</span>
+                </li>
+              </ul>
+              <div className="mt-10 border-l-2 border-primary/50 pl-4">
+                <p className="text-base text-foreground md:text-lg">
+                  OpenFrame replaces all of that with one link, one timeline, one source of truth.
+                </p>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="features" className="scroll-mt-20 border-b border-border px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
+        {/* 3) HOW IT WORKS */}
+        <section className="border-b border-border bg-background px-4 py-16 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-10 flex flex-col gap-4">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Fast, precise collaborative video review.
-              </h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Guest commenting via shareable links and workspace-level permissions are available on every project.
-              </p>
+            <div data-reveal className="mb-10 text-center">
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">From upload to approval - in one flow.</h2>
             </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:auto-rows-[minmax(180px,auto)]">
-              <article data-reveal className="border border-border bg-card p-4 sm:p-6 md:col-span-7">
-                <div className="mb-5 flex items-center justify-between">
-                  <div className="inline-flex items-center gap-2">
-                    <Clock3 className="h-4 w-4 text-primary" />
-                    <h3 className="text-sm font-semibold">The Timeline</h3>
+            <div className="flex flex-col md:flex-row items-center gap-4 relative">
+              {['Upload a cut', 'Share a review link', 'Get timestamped feedback', 'Mark approved and move on'].map((step, idx, arr) => (
+                <div key={step} className="contents">
+                  <div data-reveal className="flex-1 w-full border border-border bg-card/20 p-6 text-center text-sm font-medium text-foreground md:text-base relative z-10 transition-colors hover:border-primary/30">
+                    <div className="mb-4 flex h-8 w-8 mx-auto items-center justify-center bg-secondary text-muted-foreground font-mono text-xs">
+                      {idx + 1}
+                    </div>
+                    {step}
                   </div>
-                  <span ref={timelineCounterRef} className="font-mono text-xs text-primary">
-                    00:01:23
-                  </span>
+                  {idx < arr.length - 1 && (
+                    <>
+                      <div className="hidden md:block text-muted-foreground/30 flex-shrink-0">
+                        <MoveRight className="h-6 w-6" />
+                      </div>
+                      <div className="block md:hidden text-muted-foreground/30 flex-shrink-0 py-2">
+                        <ArrowDown className="h-6 w-6" />
+                      </div>
+                    </>
+                  )}
                 </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  Comments attach to exact timestamps so every request references the exact moment on the video.
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* 4) FEATURES */}
+        <section id="features" className="scroll-mt-20 border-t border-border bg-card/10">
+
+          {/* Feature 1 */}
+          <div className="border-b border-border">
+            <div className="mx-auto flex w-full max-w-[1200px] flex-col-reverse items-center justify-between gap-12 px-4 py-20 sm:px-6 lg:flex-row lg:px-8 lg:py-32">
+              <div data-reveal className="w-full lg:w-1/2 relative">
+                <div className="relative aspect-[16/10] w-full border border-border/50 bg-background overflow-hidden">
+                  <Image src="/landing/compare-v2.webp" alt="Comparison Mode" fill className="object-cover object-left-top" sizes="(min-width: 1024px) 50vw, 100vw" />
+                  <div className="absolute inset-0 bg-background/5" />
+                </div>
+              </div>
+              <div data-reveal className="w-full lg:w-1/2 space-y-6">
+                <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Compare versions side-by-side. End &quot;which cut is this?&quot;</h2>
+                <p className="text-base text-muted-foreground md:text-lg">
+                  See what actually changed between versions then approve with confidence.
                 </p>
+                <p className="text-xs uppercase tracking-[0.14em] text-primary">Cuts revision cycles.</p>
+              </div>
+            </div>
+          </div>
 
-                <div className="mt-6 border border-border/50 bg-background p-4">
-                  <div className="mb-3 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-                    <span>SEQUENCE.A / MASTER CUT</span>
-                    <span>24 FPS</span>
-                  </div>
-                  <div className="relative h-20 border border-border/50 bg-card">
-                    <div className="absolute left-4 right-4 top-1/2 h-px -translate-y-1/2 bg-border" />
-                    <div className="absolute left-[14%] top-1/2 h-3 w-px -translate-y-1/2 bg-border" />
-                    <div className="absolute left-[38%] top-1/2 h-3 w-px -translate-y-1/2 bg-border" />
-                    <div className="absolute left-[64%] top-1/2 h-3 w-px -translate-y-1/2 bg-border" />
-                    <div className="absolute left-[88%] top-1/2 h-3 w-px -translate-y-1/2 bg-border" />
-
-                    <div className="timeline-drop absolute left-[22%] top-1.5 flex flex-col items-center gap-1">
-                      <span className="font-mono text-[10px] text-primary">00:00:23</span>
-                      <span className="h-4 w-px bg-primary" />
-                    </div>
-                    <div className="timeline-drop absolute left-[46%] top-1.5 flex flex-col items-center gap-1">
-                      <span className="font-mono text-[10px] text-primary">00:00:52</span>
-                      <span className="h-4 w-px bg-primary" />
-                    </div>
-                    <div className="timeline-drop absolute left-[74%] top-1.5 flex flex-col items-center gap-1">
-                      <span className="font-mono text-[10px] text-primary">00:01:34</span>
-                      <span className="h-4 w-px bg-primary" />
-                    </div>
-                  </div>
-                </div>
-              </article>
-
-              <article data-reveal className="border border-border bg-card p-4 sm:p-6 md:col-span-5">
-                <div className="mb-4 inline-flex items-center gap-2">
-                  <Waves className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold">Voice Notes</h3>
-                </div>
-                <p className="mb-5 text-sm text-muted-foreground">
-                  Record a voice note at any timestamp. Teammates play it back in context.
+          {/* Feature 2 */}
+          <div className="border-b border-border bg-background">
+            <div className="mx-auto flex w-full max-w-[1200px] flex-col items-center justify-between gap-12 px-4 py-20 sm:px-6 lg:flex-row lg:px-8 lg:py-32">
+              <div data-reveal className="w-full lg:w-1/2 space-y-6">
+                <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Explain it better with Voice.</h2>
+                <p className="text-base text-muted-foreground md:text-lg">
+                  No more &quot;What did you mean by this?&quot; emails. Every note lands at the exact moment in the video.
                 </p>
-                <div className="border border-border/50 bg-background p-4">
-                  <div className="mb-3 inline-flex items-center gap-2 border border-border/50 bg-card px-3 py-1.5 text-[11px]">
-                    <span className="h-1.5 w-1.5 animate-pulse bg-primary" />
-                    <span className="font-mono text-muted-foreground">REC 00:00:12</span>
-                  </div>
-                  <div className="relative overflow-hidden border border-border/50 bg-card px-3 py-4">
-                    <div className="voice-scan pointer-events-none absolute inset-y-0 left-0 bg-primary/10" />
-                    <div className="relative flex h-12 items-end gap-1">
-                      {Array.from({ length: 22 }).map((_, index) => (
-                        <span key={index} className="voice-bar h-full w-full bg-primary/80" />
+                <p className="text-xs uppercase tracking-[0.14em] text-primary">Faster feedback. Fewer misunderstandings.</p>
+              </div>
+              <div data-reveal className="w-full lg:w-1/2">
+                <div className="border border-border bg-card p-6">
+                  <div className="border border-border/50 bg-background p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center bg-secondary font-mono text-xs">Y</div>
+                        <div className="space-y-1">
+                          <p className="font-mono text-[11px] font-medium leading-none">Yusuf İpek</p>
+                          <p className="font-mono text-[10px] text-muted-foreground">00:03:45</p>
+                        </div>
+                      </div>
+                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                    </div>
+                    <div className="mt-6 flex h-16 items-center gap-1 overflow-hidden">
+                      <button className="mr-2 flex h-8 w-8 flex-none items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90">
+                        <Play className="h-3 w-3" />
+                      </button>
+                      {Array.from({ length: 40 }).map((_, i) => (
+                        <span key={i} className="voice-bar w-full flex-1 bg-primary/60" style={{ height: `${[30, 80, 50, 90, 40, 70, 60, 45, 85, 55, 65, 35, 95, 75, 25, 40, 80, 50, 90, 30][i % 20]}%` }} />
                       ))}
                     </div>
                   </div>
-                  <p className="mt-3 font-mono text-[11px] text-muted-foreground">MIC-01 / SAVED TO 00:01:23</p>
                 </div>
-              </article>
+              </div>
+            </div>
+          </div>
 
-              <article data-reveal className="border border-border bg-card p-4 sm:p-6 md:col-span-5">
-                <div className="mb-4 inline-flex items-center gap-2">
-                  <Layers3 className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold">Version Management</h3>
+          {/* Feature 3 */}
+          <div className="border-b border-border">
+            <div className="mx-auto flex w-full max-w-[1200px] flex-col-reverse items-center justify-between gap-12 px-4 py-20 sm:px-6 lg:flex-row lg:px-8 lg:py-32">
+              <div data-reveal className="w-full lg:w-1/2 relative aspect-video bg-card border border-border p-4">
+                <div className="relative h-full w-full border border-border/50 overflow-hidden bg-background">
+                  <Image src="https://images.unsplash.com/photo-1542204165-65bf26472b9b?auto=format&fit=crop&w=800&q=80" alt="Annotate" fill className="object-cover opacity-70" />
+                  <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox="0 0 800 450" fill="none">
+                    <circle cx="500" cy="225" r="80" stroke="#06b6d4" strokeWidth="4" className="opacity-90 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                    <path d="M500 145 Q550 80 620 120" stroke="#06b6d4" strokeWidth="4" className="opacity-90" strokeLinecap="round" />
+                  </svg>
+
+                  {/* Circle Editor UI mock */}
+                  <div className="absolute top-4 left-4 border border-border/50 bg-background/90 backdrop-blur-md p-2 flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <div className="h-6 w-6 rounded-full bg-red-500 cursor-pointer border-2 border-transparent"></div>
+                      <div className="h-6 w-6 rounded-full bg-yellow-500 cursor-pointer border-2 border-transparent"></div>
+                      <div className="h-6 w-6 rounded-full bg-green-500 cursor-pointer border-2 border-transparent"></div>
+                      <div className="h-6 w-6 rounded-full bg-[#06b6d4] cursor-pointer border-2 border-white"></div>
+                    </div>
+                    <div className="h-px w-full bg-border/50" />
+                    <div className="flex gap-2">
+                      <button className="flex h-8 w-8 items-center justify-center text-muted-foreground bg-primary/10 text-primary hover:bg-secondary">
+                        <PenTool className="h-4 w-4" />
+                      </button>
+                      <button className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:bg-secondary">
+                        <MoveRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Upload multiple cuts under one video and keep each version named and ordered.
+              </div>
+              <div data-reveal className="w-full lg:w-1/2 space-y-6">
+                <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Point. Draw. Done.</h2>
+                <p className="text-base text-muted-foreground md:text-lg">
+                  Precise feedback that leaves zero room for error. Circle, sketch, and point directly on the video frame.
                 </p>
-
-                <div className="mt-6 border border-border/50 bg-background p-3">
-                  <div className="version-row flex items-center justify-between border border-border/50 bg-card px-3 py-2 text-xs">
-                    <span className="inline-flex items-center gap-2">
-                      <FileVideo className="h-3.5 w-3.5 text-primary" />
-                      <span className="font-mono">v1.0.0 - rough-cut</span>
-                    </span>
-                    <span className="text-muted-foreground">Archived</span>
-                  </div>
-                  <div className="version-row mt-2 flex items-center justify-between border border-border/50 bg-card px-3 py-2 text-xs">
-                    <span className="inline-flex items-center gap-2">
-                      <FileVideo className="h-3.5 w-3.5 text-primary" />
-                      <span className="font-mono">v1.0.1 - client-notes</span>
-                    </span>
-                    <span className="text-muted-foreground">Previous</span>
-                  </div>
-                  <div className="version-row mt-2 flex items-center justify-between border border-primary/40 bg-secondary px-3 py-2 text-xs">
-                    <span className="inline-flex items-center gap-2">
-                      <FileVideo className="h-3.5 w-3.5 text-primary" />
-                      <span className="font-mono">v1.0.2 - current</span>
-                    </span>
-                    <span className="text-primary">Active</span>
-                  </div>
-                </div>
-
-                <div className="mt-4 inline-flex items-center gap-2 border border-border/50 bg-background px-3 py-2 text-xs">
-                  <Upload className="h-4 w-4 text-primary" />
-                  <span className="font-mono text-muted-foreground">Upload New Version</span>
-                </div>
-              </article>
-
-              <article data-reveal className="border border-border bg-card p-4 sm:p-6 md:col-span-7">
-                <div className="mb-4 inline-flex items-center gap-2">
-                  <PenTool className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold">Drawing & Annotation</h3>
-                </div>
-                <p className="mb-5 text-sm text-muted-foreground">
-                  Draw directly on the video image to point at exact areas during review.
-                </p>
-
-                <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-                  <div className="relative aspect-[16/7] overflow-hidden border border-border/50 bg-background">
-                    <Image
-                      src="https://images.unsplash.com/photo-1516724562728-afc824a36e84?auto=format&fit=crop&w=1200&q=80"
-                      alt="Video frame with annotation overlay"
-                      fill
-                      className="object-cover opacity-80"
-                      sizes="(min-width: 1024px) 45vw, 100vw"
-                    />
-                    <div className="absolute inset-0 bg-background/20" />
-                    <svg className="pointer-events-none absolute inset-0" viewBox="0 0 640 280" fill="none">
-                      <circle
-                        ref={featureAnnotationCircleRef}
-                        cx="208"
-                        cy="142"
-                        r="58"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        className="text-primary"
-                        fill="none"
-                      />
-                    </svg>
-                  </div>
-                  <div className="flex items-center border border-border/50 bg-background px-4 py-3 text-xs">
-                    <span className="font-mono text-muted-foreground">DRAW ON FRAME / SAVE WITH COMMENT</span>
-                  </div>
-                </div>
-              </article>
+                <p className="text-xs uppercase tracking-[0.14em] text-primary">Stops &quot;I thought you meant...&quot;</p>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="border-b border-border px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
+        {/* 5) EVERYTHING YOUR TEAM EXPECTS */}
+        <section className="border-b border-border px-4 py-20 sm:px-6 lg:px-8 lg:py-32 bg-background">
           <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-10 space-y-4">
-              <h2 className="max-w-3xl text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Upload. Review. Version. In one continuous loop.
-              </h2>
+            <div data-reveal className="mb-12 flex flex-col items-center text-center">
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Everything a real production workflow needs.</h2>
+              <p className="mt-4 max-w-2xl text-base text-muted-foreground">The core tools teams expect without the complexity that slows clients down.</p>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-3">
-              {workflowProofItems.map((item) => (
-                <article key={item.step} data-reveal className="border border-border bg-card p-4">
-                  <div className="relative mb-4 aspect-[4/3] border border-border/50 bg-background p-3 sm:aspect-[16/10]">
-                    {item.kind === 'upload' && (
-                      <div className="h-full border border-border/50 bg-card p-3">
-                        <div className="mb-2 flex items-center text-[11px]">
-                          <p className="inline-flex items-center gap-1.5 font-mono text-muted-foreground">
-                            <Upload className="h-3.5 w-3.5 text-primary" />
-                            Add Source
-                          </p>
-                        </div>
-                        <div className="mb-2 flex gap-2 text-[10px]">
-                          <span className="flex-1 border border-primary/40 bg-secondary px-2 py-1 font-mono text-primary">Paste URL</span>
-                          <span className="flex-1 border border-border/50 bg-background px-2 py-1 font-mono text-muted-foreground">Direct Upload</span>
-                        </div>
-                        <div className="space-y-1.5 text-[10px]">
-                          <div className="truncate border border-border/50 bg-background px-2 py-1 font-mono text-muted-foreground">https://youtube.com/watch?v=...</div>
-                          <div className="border border-border/50 bg-background px-2 py-1 font-mono text-muted-foreground">Video title (optional)</div>
-                          <div className="h-8 border border-border/50 bg-background px-2 py-1 font-mono text-muted-foreground">Description (optional)</div>
-                        </div>
-                        <div className="mt-1 flex justify-end">
-                          <span className="shrink-0 border border-primary/40 bg-secondary px-2 py-1 font-mono text-[10px] text-primary">
-                            Add Video
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {item.kind === 'comment' && (
-                      <div className="h-full border border-border/50 bg-card p-3">
-                        <div className="mb-3 flex items-center justify-between">
-                          <div className="inline-flex items-center gap-2">
-                            <span className="inline-flex h-5 w-5 items-center justify-center border border-primary/40 bg-secondary font-mono text-[10px] text-primary">
-                              Y
-                            </span>
-                            <span className="font-mono text-[11px]">Yusuf İpek</span>
-                          </div>
-                          <span className="font-mono text-[10px] text-muted-foreground">00:04:14</span>
-                        </div>
-                        <p className="font-mono text-xs leading-relaxed text-foreground/90">
-                          wrong tweet here&apos;s what you should use:
-                        </p>
-                        <p className="mt-1 truncate font-mono text-xs text-primary">https://x.com/...</p>
-                        <div className="mt-3 flex items-center justify-between text-[10px]">
-                          <span className="font-mono text-muted-foreground">2/21/2026</span>
-                          <span className="border border-primary/40 bg-secondary px-2 py-1 font-mono text-primary">Feedback</span>
-                        </div>
-                        <div className="mt-3 border border-border/50 bg-background px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                          ↩ Reply
-                        </div>
-                      </div>
-                    )}
-
-                    {item.kind === 'version' && (
-                      <div className="h-full border border-border/50 bg-card p-3">
-                        <div className="mb-3 flex items-center justify-between text-[11px]">
-                          <p className="inline-flex items-center gap-1.5 font-mono text-muted-foreground">
-                            <FileVideo className="h-3.5 w-3.5 text-primary" />
-                            New Version
-                          </p>
-                          <p className="font-mono text-muted-foreground">v1.0.3</p>
-                        </div>
-                        <div className="mb-2 flex gap-2 text-[10px]">
-                          <span className="flex-1 border border-primary/40 bg-secondary px-2 py-1 font-mono text-primary">Link URL</span>
-                          <span className="flex-1 border border-border/50 bg-background px-2 py-1 font-mono text-muted-foreground">Upload File</span>
-                        </div>
-                        <div className="space-y-2 text-[10px]">
-                          <div className="border border-border/50 bg-background px-2 py-1 font-mono text-muted-foreground">Video URL</div>
-                          <div className="border border-border/50 bg-background px-2 py-1 font-mono text-muted-foreground">Version Label</div>
-                        </div>
-                        <div className="mt-3 flex justify-end">
-                          <span className="border border-primary/40 bg-secondary px-2 py-1 text-[10px] font-mono text-primary">Ship Version</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="font-mono text-[11px] text-primary">{item.step}</p>
-                    <h3 className="text-base font-semibold">{item.title}</h3>
-                    <p className="text-sm text-muted-foreground">{item.description}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-b border-border px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-10 space-y-4">
-              <h2 className="max-w-3xl text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                One screen. Full review context.
-              </h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                This panel maps exactly where timestamp comments, voice notes, and frame annotation live.
-              </p>
-            </div>
-
-            <div data-reveal className="relative border border-border bg-card p-4 lg:p-6">
-              <div className="relative aspect-[1888/1048] overflow-hidden border border-border/50 bg-background">
-                <Image
-                  src="/landing/deep-dive-dashboard.webp"
-                  alt="OpenFrame dashboard deep dive screenshot"
-                  fill
-                  className="object-contain opacity-100"
-                  sizes="100vw"
-                />
-                <div className="absolute inset-0 bg-background/10" />
+            <div className="space-y-10">
+              <div>
+                <p data-reveal className="mb-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Core workflow</p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {coreWorkflowFeatures.map((feat) => (
+                    <div key={feat.title} data-reveal className="group border border-border bg-card p-6 transition-colors hover:border-primary/50 hover:bg-card/80">
+                      <feat.icon className="mb-4 h-6 w-6 text-primary" />
+                      <h3 className="mb-2 text-lg font-medium">{feat.title}</h3>
+                      <p className="text-sm text-muted-foreground">{feat.description}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="mt-4 grid gap-2 md:grid-cols-3">
-                <div className="border border-border/50 bg-background px-3 py-2 text-xs">
-                  <p className="inline-flex items-center gap-2 font-mono text-muted-foreground">
-                    <MessageSquareDot className="h-3.5 w-3.5 text-primary" />
-                    Timestamp Comments
-                  </p>
-                  <p className="mt-1 text-muted-foreground">Attached to exact timeline positions.</p>
-                </div>
-                <div className="border border-border/50 bg-background px-3 py-2 text-xs">
-                  <p className="inline-flex items-center gap-2 font-mono text-muted-foreground">
-                    <Mic className="h-3.5 w-3.5 text-primary" />
-                    Voice Notes
-                  </p>
-                  <p className="mt-1 text-muted-foreground">Captured in context, played back in thread.</p>
-                </div>
-                <div className="border border-border/50 bg-background px-3 py-2 text-xs">
-                  <p className="inline-flex items-center gap-2 font-mono text-muted-foreground">
-                    <PenTool className="h-3.5 w-3.5 text-primary" />
-                    Frame Annotation
-                  </p>
-                  <p className="mt-1 text-muted-foreground">Circle and draw directly on the frame.</p>
+              <div>
+                <p data-reveal className="mb-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Workflow Accelerators</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {workflowAcceleratorFeatures.map((feat) => (
+                    <div key={feat.title} data-reveal className="group border border-border bg-card p-6 transition-colors hover:border-primary/50 hover:bg-card/80">
+                      <feat.icon className="mb-4 h-6 w-6 text-primary" />
+                      <h3 className="mb-2 text-lg font-medium">{feat.title}</h3>
+                      <p className="text-sm text-muted-foreground">{feat.description}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="border-b border-border px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-10 space-y-4">
-              <h2 className="max-w-3xl text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Sync 2-4 videos and compare cuts in real time.
-              </h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Play multiple versions side-by-side with synchronized playback to validate pacing, edit decisions, and grading changes.
-              </p>
+        {/* 6) BUILT FOR CLIENTS */}
+        <section className="border-b border-border bg-card/20 px-4 py-20 sm:px-6 lg:px-8 lg:py-32">
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col lg:flex-row gap-12 lg:items-center">
+            <div data-reveal className="lg:w-1/2 space-y-6">
+              <h2 className="text-4xl font-semibold tracking-[-0.02em] md:text-5xl">Clients don&apos;t need an account. They just review.</h2>
+              <p className="text-lg text-muted-foreground">If clients can&apos;t adopt the tool, approvals don&apos;t happen. OpenFrame keeps it frictionless.</p>
             </div>
-
-            <article data-reveal className="border border-border bg-card p-4 lg:p-6">
-              <div className="relative aspect-[1888/1048] overflow-hidden border border-border/50 bg-background">
-                <Image
-                  src="/landing/compare-v2.webp"
-                  alt="OpenFrame compare mode screenshot"
-                  fill
-                  className="object-contain opacity-100"
-                  sizes="100vw"
-                />
-                <div className="absolute inset-0 bg-background/10" />
-              </div>
-
-              <div className="mt-4 grid gap-2 md:grid-cols-3">
-                <div className="border border-border/50 bg-background px-3 py-2 text-xs">
-                  <p className="inline-flex items-center gap-2 font-mono text-muted-foreground">
-                    <GitMerge className="h-3.5 w-3.5 text-primary" />
-                    2-4 Video Panels
-                  </p>
-                  <p className="mt-1 text-muted-foreground">Load multiple versions into one comparison view.</p>
-                </div>
-                <div className="border border-border/50 bg-background px-3 py-2 text-xs">
-                  <p className="inline-flex items-center gap-2 font-mono text-muted-foreground">
-                    <Play className="h-3.5 w-3.5 text-primary" />
-                    Synchronized Playback
-                  </p>
-                  <p className="mt-1 text-muted-foreground">Play, pause, and scrub all panels at once.</p>
-                </div>
-                <div className="border border-border/50 bg-background px-3 py-2 text-xs">
-                  <p className="inline-flex items-center gap-2 font-mono text-muted-foreground">
-                    <MessageSquareDot className="h-3.5 w-3.5 text-primary" />
-                    Compare Feedback Impact
-                  </p>
-                  <p className="mt-1 text-muted-foreground">Confirm that requested changes are visible across versions.</p>
+            <div data-reveal className="lg:w-1/2 space-y-4">
+              <div className="flex items-start gap-4 border border-border bg-background p-6 transition-transform hover:-translate-y-1">
+                <LinkIcon className="mt-1 h-6 w-6 shrink-0 text-primary" />
+                <div>
+                  <h3 className="text-lg font-semibold">One link. Review in the browser.</h3>
                 </div>
               </div>
-            </article>
-          </div>
-        </section>
-
-        <section className="border-b border-border px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-10 space-y-4">
-              <h2 className="max-w-3xl text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Built for agencies, solo editors, and internal teams.
-              </h2>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-3">
-              {useCaseRails.map((item) => (
-                <article key={item.title} data-reveal className="border border-border bg-card p-4">
-                  <div className="relative mb-4 aspect-[16/10] overflow-hidden border border-border/50 bg-background">
-                    <Image src={item.image} alt={`${item.title} screenshot`} fill className="object-cover opacity-90" sizes="(min-width: 1024px) 33vw, 100vw" />
-                    <div className="absolute inset-0 bg-background/15" />
-                  </div>
-
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{item.label}</p>
-                  <h3 className="mt-2 text-base font-semibold">{item.title}</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
-                </article>
-              ))}
+              <div className="flex items-start gap-4 border border-border bg-background p-6 transition-transform hover:-translate-y-1">
+                <Smartphone className="mt-1 h-6 w-6 shrink-0 text-primary" />
+                <div>
+                  <h3 className="text-lg font-semibold">Works great on mobile.</h3>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 border border-border bg-background p-6 transition-transform hover:-translate-y-1">
+                <MessageSquare className="mt-1 h-6 w-6 shrink-0 text-primary" />
+                <div>
+                  <h3 className="text-lg font-semibold">Timestamped notes that are impossible to miss.</h3>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <section id="pricing" className="scroll-mt-20 border-b border-border px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
+        {/* 7) PRICING */}
+        <section id="pricing" className="border-b border-border bg-[#0a0a0a] px-4 py-20 sm:px-6 lg:px-8 lg:py-32">
           <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-10 space-y-4">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Deploy it yourself - or let us run it for you.</h2>
+            <div data-reveal className="mb-16">
+              <h2 className="text-3xl font-semibold md:text-5xl text-foreground" style={{ fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+                Deploy it yourself - or let us run it for you.
+              </h2>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <article data-reveal className="flex h-full flex-col border border-border bg-card p-7">
-                <div className="mb-8 space-y-4">
-                  <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">For the builders.</p>
-                  <h3 className="text-2xl font-semibold">Open Source (Self-Hosted)</h3>
-                  <p className="font-mono text-3xl text-primary">Free / OSS</p>
+            <div className="grid gap-6 md:grid-cols-3">
+              {/* Card 1: Open Source */}
+              <div data-reveal className="relative flex flex-col border border-border/40 bg-[#141414] p-8">
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold text-foreground">Open Source (Self-hosted)</h3>
                 </div>
 
-                <ul className="mb-10 space-y-3 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <GitBranch className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Full codebase access</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Grid3X3 className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Self-hosted infrastructure control</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Clock3 className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Manual update cadence</span>
-                  </li>
+                <div className="mb-8 flex items-baseline gap-2">
+                  <span className="text-3xl font-semibold text-[#06b6d4]">Free</span>
+                </div>
+                <p className="mb-8 text-sm text-muted-foreground">For teams who want full control and can run their own infrastructure.</p>
+
+                <ul className="mb-8 flex-1 space-y-4 text-sm text-foreground/80">
+                  <li className="flex items-center gap-3"><CheckSquare className="h-4 w-4 text-[#06b6d4]" />Full codebase access</li>
+                  <li className="flex items-center gap-3"><CheckSquare className="h-4 w-4 text-[#06b6d4]" />Self-hosted infrastructure control</li>
+                  <li className="flex items-center gap-3"><CheckSquare className="h-4 w-4 text-[#06b6d4]" />Manual update cadence</li>
                 </ul>
 
-                <a
-                  href="https://github.com/yusufipk/OpenFrame"
-                  target="_blank"
-                  rel="noreferrer"
-                  data-magnetic
-                  className={secondaryButtonClass}
-                >
-                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10 inline-flex items-center gap-2">
-                    <Github className="h-4 w-4" />
-                    View GitHub
-                  </span>
+                <a href="https://github.com/yusufipk/OpenFrame" target="_blank" rel="noreferrer" className="mt-auto group relative isolate inline-flex h-12 w-full items-center justify-center overflow-hidden border border-border/50 bg-[#0a0a0a] font-medium text-foreground transition-colors hover:bg-white/5 text-sm">
+                  <Github className="mr-2 h-4 w-4" /> View on GitHub
                 </a>
-              </article>
+              </div>
 
-              <article data-reveal className="relative flex h-full flex-col border border-primary/30 bg-secondary p-7 shadow-sm">
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-primary/8 to-transparent" />
-                <div className="relative mb-8 space-y-4">
-                  <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    For modern creative teams.
-                  </p>
-                  <h3 className="text-2xl font-semibold">Hosted Cloud</h3>
-                  <p className="font-mono text-3xl text-primary">$10 / month</p>
-                  <p className="text-sm text-muted-foreground">For fast, collaborative video review.</p>
+              {/* Card 2: Hosted Cloud */}
+              <div data-reveal className="relative flex flex-col border border-[#06b6d4]/40 bg-[#141414] p-8">
+                <div className="mb-6">
+                  <p className="font-mono text-[10px] uppercase font-semibold text-muted-foreground tracking-widest mb-4">Best for teams who want zero setup.</p>
+                  <h3 className="text-xl font-semibold text-foreground">Hosted Cloud</h3>
                 </div>
 
-                <ul className="relative mb-10 space-y-3 text-sm text-foreground">
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Unlimited Seats (Collaborators/Guests)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Unlimited Workspaces & Projects</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Unlimited YouTube video imports</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>200 GB video storage included</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>+100 GB for $5</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Download uploaded original files as-is</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Instant Webhook (Telegram/Email) Setup</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>No per-seat pricing</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Unlimited reviewers</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckSquare className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>Keep control of your files</span>
-                  </li>
-                </ul>
+                <div className="mb-6 flex items-baseline gap-2">
+                  <span className="text-3xl font-semibold text-[#06b6d4]">$10</span>
+                  <span className="text-[#06b6d4]">/ month</span>
+                </div>
 
-                <Link
-                  href={isLoggedIn ? '/dashboard' : '/register'}
-                  data-magnetic
-                  className={`${primaryButtonClass} relative`}
-                >
-                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary-foreground/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10 inline-flex items-center gap-2">
-                    {isLoggedIn ? 'Launch workspace' : 'Start using OpenFrame'}
-                    <MoveRight className="h-4 w-4" />
-                  </span>
+                <ul className="mb-8 flex-1 space-y-4 text-sm text-foreground/80">
+                  <li className="flex items-start gap-3"><CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" /><span>Unlimited collaborators</span></li>
+                  <li className="flex items-start gap-3"><CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" /><span>Timestamped comments + voice notes</span></li>
+                  <li className="flex items-start gap-3"><CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" /><span>Annotations + version compare</span></li>
+                  <li className="flex items-start gap-3"><CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" /><span>Share links with permissions</span></li>
+                  <li className="flex items-start gap-3"><CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" /><span>Exports (PDF/CSV)</span></li>
+                  <li className="flex items-start gap-3"><CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" /><span>Unlimited YouTube Video Imports</span></li>
+                  <li className="flex items-start gap-3"><CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" /><span>Includes: 200 GB Storage</span></li>
+                </ul>
+                <p className="mb-8 text-sm text-muted-foreground">Need more storage? Add 100 GB for $5/mo.</p>
+
+                <Link href={hostedCtaHref} className="mt-auto group relative isolate inline-flex h-12 w-full items-center justify-center overflow-hidden bg-[#06b6d4] font-medium text-black transition-colors hover:bg-[#06b6d4]/90 text-sm">
+                  Start free
                 </Link>
-              </article>
+              </div>
 
-              <article data-reveal className="flex h-full flex-col border border-border bg-card p-7">
-                <div className="mb-8 space-y-4">
-                  <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Studio & Agency</p>
-                  <h3 className="text-2xl font-semibold">Scaling beyond standard limits?</h3>
-                  <p className="text-sm text-muted-foreground">
-                    We provide custom capacity, performance tuning, and priority support for high-volume production teams.
-                  </p>
+              {/* Card 3: Studio & Agency */}
+              <div data-reveal className="relative flex flex-col border border-border/40 bg-[#141414] p-8">
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold text-foreground">Need more than the standard limits?</h3>
+                </div>
+                <div className="mb-6 flex items-baseline gap-2">
+                  <span className="text-3xl font-semibold text-[#06b6d4]">Let&apos;s talk</span>
                 </div>
 
-                <a href="mailto:hello@openframe.so" data-magnetic className={secondaryButtonClass}>
-                  <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10 inline-flex items-center gap-2">
-                    Contact us
-                    <MoveRight className="h-4 w-4" />
-                  </span>
+                <p className="mb-8 text-sm text-foreground/80 leading-relaxed">
+                  Custom capacity and setup help for high-volume production teams. Tell us your storage, usage, and workflow - we&apos;ll recommend the right approach.
+                </p>
+
+                <a href="mailto:support@openframe.com" className="group relative isolate inline-flex h-12 w-full items-center justify-center overflow-hidden bg-[#0a0a0a] font-medium text-foreground transition-colors hover:bg-white/5 border border-border/50 text-sm">
+                  Contact us
                 </a>
-              </article>
+              </div>
+
             </div>
+          </div>
+        </section>
+
+        {/* 8) SECURITY & PRIVACY */}
+        <section className="border-b border-border bg-background px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
+          <div className="mx-auto w-full max-w-[1200px]">
+            <div data-reveal className="mx-auto max-w-4xl">
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Security & privacy, by design.</h2>
+              <ul className="mt-8 space-y-4 text-base text-muted-foreground md:text-lg">
+                <li>- Permissioned share links (control who can view/comment)</li>
+                <li>- Private-by-default projects</li>
+                <li>- Delete videos and projects anytime</li>
+                <li>- Self-host option for full data control</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* 9) FAQ */}
+        <section className="border-b border-border bg-card/10 px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
+          <div className="mx-auto w-full max-w-[1200px]">
+            <div data-reveal className="mx-auto max-w-4xl">
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">FAQ</h2>
+              <div className="mt-10 space-y-4">
+                {[
+                  {
+                    q: 'Do clients need an account?',
+                    a: 'No. They can review in the browser with a share link.',
+                  },
+                  {
+                    q: 'What happens if I exceed my storage?',
+                    a: 'You can add 100 GB for $5/mo. If you need much more, contact us and we’ll help you choose the best setup.',
+                  },
+                  {
+                    q: 'How is YouTube unlimited?',
+                    a: 'There is no storage limit on YouTube imports. You can import an unlimited amount of unlisted YouTube videos and use all of our review features exactly the same.',
+                  },
+                  {
+                    q: 'Can I self-host?',
+                    a: 'Yes. The core is open-source and self-hostable. Hosted Cloud is for teams who want zero setup.',
+                  },
+                  {
+                    q: 'How is this different from sending a Google Drive link?',
+                    a: 'Drive doesn’t give timestamped discussion, voice notes, annotations, or version compare, which is where approval time is actually saved.',
+                  },
+                  {
+                    q: 'Is it mobile-friendly?',
+                    a: 'Yes. Clients can review and comment from mobile.',
+                  },
+                  {
+                    q: 'Can I export feedback?',
+                    a: 'Yes. Export to PDF/CSV for archiving or client handoff.',
+                  },
+                  {
+                    q: 'Who can access my videos?',
+                    a: 'Only people you invite or share a link with (based on permissions you set).',
+                  },
+                  {
+                    q: 'Can I cancel anytime?',
+                    a: 'Yes. Cancel anytime from your billing settings.',
+                  },
+                ].map((item) => (
+                  <div key={item.q} className="border border-border bg-background p-6">
+                    <h3 className="text-lg font-semibold">{item.q}</h3>
+                    <p className="mt-2 text-sm text-muted-foreground md:text-base">{item.a}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 10) FINAL CTA STRIP */}
+        <section className="border-b border-border bg-background px-4 py-16 sm:px-6 lg:px-8">
+          <div data-reveal className="mx-auto flex w-full max-w-[1200px] flex-col items-center justify-between gap-4 text-center md:flex-row md:text-left">
+            <div>
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-4xl">Stop chasing feedback. Start getting approvals.</h2>
+              <p className="mt-2 text-sm text-muted-foreground">Your first review link takes minutes.</p>
+            </div>
+            <Link
+              href={hostedCtaHref}
+              className="group relative isolate inline-flex h-12 min-w-max items-center justify-center overflow-hidden border border-primary bg-primary px-10 text-sm font-medium whitespace-nowrap text-primary-foreground transition-transform duration-300 hover:scale-[1.02] md:min-w-[240px]"
+            >
+              Start free
+            </Link>
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-border bg-background">
-        <div className="mx-auto grid w-full max-w-[1200px] gap-8 px-4 py-12 sm:px-6 md:grid-cols-4 lg:px-10">
-          <div>
-            <p className="mb-2 text-sm font-semibold">OpenFrame</p>
-            <p className="max-w-xs text-sm text-muted-foreground">
-              Fast video review with timestamped feedback, version tracking, and guest collaboration.
-            </p>
+      <footer className="border-t border-border bg-background px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-[1200px] flex-col items-center justify-between gap-4 sm:flex-row">
+          <div className="flex items-center gap-2">
+            <Video className="h-4 w-4 text-primary" />
+            <span className="font-mono text-xs text-muted-foreground">© {new Date().getFullYear()} OpenFrame.</span>
           </div>
-
-          <div>
-            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Legal</p>
-            <div className="space-y-2 text-sm">
-              <Link href="/" className="block text-muted-foreground transition-colors hover:text-foreground">
-                Terms
-              </Link>
-              <Link href="/" className="block text-muted-foreground transition-colors hover:text-foreground">
-                Privacy
-              </Link>
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Open Source</p>
-            <div className="space-y-2 text-sm">
-              <a
-                href="https://github.com/yusufipk/OpenFrame"
-                target="_blank"
-                rel="noreferrer"
-                className="block text-muted-foreground transition-colors hover:text-foreground"
-              >
-                GitHub
-              </a>
-              <Link href="#pricing" className="block text-muted-foreground transition-colors hover:text-foreground">
-                Pricing
-              </Link>
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Console</p>
-            <div className="space-y-2 text-sm">
-              <a
-                href="https://x.com"
-                target="_blank"
-                rel="noreferrer"
-                className="block text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Twitter
-              </a>
-              <Link href="/" className="block text-muted-foreground transition-colors hover:text-foreground">
-                Docs
-              </Link>
-            </div>
+          <div className="flex gap-4">
+            <a href="https://github.com/yusufipk/OpenFrame" className="text-xs text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://x.com/yusufipk" className="text-xs text-muted-foreground hover:text-foreground">X (Twitter)</a>
           </div>
         </div>
       </footer>
