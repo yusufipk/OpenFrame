@@ -21,6 +21,7 @@ model User {
   password      String?   // Hashed password for email/password auth
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  onboardingCompletedAt DateTime?
 
   // Relations
   accounts           Account[]
@@ -70,12 +71,14 @@ enum DownloadEgressSource {
 enum VideoAssetKind {
   IMAGE
   VIDEO
+  AUDIO
 }
 
 enum VideoAssetProvider {
   R2_IMAGE
   YOUTUBE
   BUNNY
+  R2_AUDIO
 }
 
 model DownloadEgressEvent {

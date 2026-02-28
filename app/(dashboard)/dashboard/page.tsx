@@ -14,6 +14,14 @@ export default async function DashboardPage({
         redirect('/login');
     }
 
+    const userOnboarding = await db.user.findUnique({
+        where: { id: session.user.id },
+        select: { onboardingCompletedAt: true },
+    });
+    if (!userOnboarding?.onboardingCompletedAt) {
+        redirect('/onboarding');
+    }
+
     const resolvedSearchParams = await searchParams;
     const { ws, sort, page: pageParam } = resolvedSearchParams || {};
 
