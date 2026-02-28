@@ -132,6 +132,16 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
   // Per-panel mute state
   const [mutedPanels, setMutedPanels] = useState<Set<string>>(new Set());
 
+  // Refs for fast-changing playback values — avoids React re-renders on every frame
+  const currentTimeRef = useRef(0);
+  const durationRef = useRef(0);
+  const lastCommitRef = useRef(0);
+
+  // Direct DOM refs for progress bar / playhead / timecode — updated in the RAF loop
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const timecodeRef = useRef<HTMLSpanElement>(null);
+
   // Load YouTube IFrame API
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -213,9 +223,9 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelVersionIds]);
 
-  // RAF polling for time updates
+  // RAF loop: update refs + DOM every frame, throttle React state commits to ~250ms
   useEffect(() => {
-    const tick = () => {
+    const tick = (timestamp: number) => {
       if (!isDragging) {
         const players = Array.from(playersRef.current.values());
         const sourcePlayer = players[0];
@@ -223,12 +233,29 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
           try {
             const t = sourcePlayer.getCurrentTime();
             const d = sourcePlayer.getDuration();
-            if (t !== undefined) setCurrentTime(t);
-            if (d > 0) setDuration(d);
+            const playing = sourcePlayer.getPlayerState() === window.YT?.PlayerState?.PLAYING;
 
-            // Check play state from player
-            const state = sourcePlayer.getPlayerState();
-            setIsPlaying(state === window.YT?.PlayerState?.PLAYING);
+            // Update refs immediately — zero React overhead
+            if (t !== undefined) currentTimeRef.current = t;
+            if (d > 0) durationRef.current = d;
+            // Directly mutate DOM for smooth timeline visuals without re-renders
+            const dur = durationRef.current;
+            if (t !== undefined && dur > 0) {
+              const pct = (t / dur) * 100;
+              if (progressBarRef.current) progressBarRef.current.style.width = `${pct}%`;
+              if (playheadRef.current) playheadRef.current.style.left = `calc(${pct}% - 2px)`;
+              if (timecodeRef.current) {
+                timecodeRef.current.textContent = `${formatTime(t)} / ${formatTime(dur)}`;
+              }
+            }
+
+            // Throttle React state commits to ~4 updates/sec
+            if (timestamp - lastCommitRef.current >= 250) {
+              lastCommitRef.current = timestamp;
+              if (t !== undefined) setCurrentTime(t);
+              if (d > 0) setDuration(d);
+              setIsPlaying(playing);
+            }
           } catch {
             // Player not ready
           }
@@ -285,28 +312,37 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
   }, []);
 
   const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!timelineRef.current || duration <= 0) return;
+    if (!timelineRef.current || durationRef.current <= 0) return;
     setIsDragging(true);
     const rect = timelineRef.current.getBoundingClientRect();
     const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const time = fraction * duration;
+    const time = fraction * durationRef.current;
+    currentTimeRef.current = time;
     setCurrentTime(time);
     handleSeek(time);
-  }, [duration, handleSeek]);
+  }, [handleSeek]);
 
   const handleTimelineMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !timelineRef.current || duration <= 0) return;
+    if (!isDragging || !timelineRef.current || durationRef.current <= 0) return;
     const rect = timelineRef.current.getBoundingClientRect();
     const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const time = fraction * duration;
+    const time = fraction * durationRef.current;
+    currentTimeRef.current = time;
     setCurrentTime(time);
-  }, [isDragging, duration]);
+    // Keep DOM in sync while the RAF loop is paused during drag
+    const pct = fraction * 100;
+    if (progressBarRef.current) progressBarRef.current.style.width = `${pct}%`;
+    if (playheadRef.current) playheadRef.current.style.left = `calc(${pct}% - 2px)`;
+    if (timecodeRef.current) {
+      timecodeRef.current.textContent = `${formatTime(time)} / ${formatTime(durationRef.current)}`;
+    }
+  }, [isDragging]);
 
   const handleTimelineMouseUp = useCallback(() => {
     if (!isDragging) return;
     setIsDragging(false);
-    handleSeek(currentTime);
-  }, [isDragging, currentTime, handleSeek]);
+    handleSeek(currentTimeRef.current);
+  }, [isDragging, handleSeek]);
 
   const handleVideoMouseMove = useCallback(() => {
     setCursorIdle(false);
@@ -376,19 +412,19 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          handleSeek(Math.max(0, currentTime - 5));
+          handleSeek(Math.max(0, currentTimeRef.current - 5));
           break;
         case 'ArrowRight':
           e.preventDefault();
-          handleSeek(Math.min(duration, currentTime + 5));
+          handleSeek(Math.min(durationRef.current, currentTimeRef.current + 5));
           break;
         case 'KeyJ':
           e.preventDefault();
-          handleSeek(Math.max(0, currentTime - 10));
+          handleSeek(Math.max(0, currentTimeRef.current - 10));
           break;
         case 'KeyL':
           e.preventDefault();
-          handleSeek(Math.min(duration, currentTime + 10));
+          handleSeek(Math.min(durationRef.current, currentTimeRef.current + 10));
           break;
         case 'KeyM':
           e.preventDefault();
@@ -403,7 +439,7 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePlayPause, handleSeek, currentTime, duration]);
+  }, [handlePlayPause, handleSeek]);
 
   // Fetch comments for a version
   const toggleComments = useCallback(async (versionId: string) => {
@@ -742,7 +778,7 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePlayPause}>
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
           </Button>
-          <span className="text-xs text-muted-foreground tabular-nums">
+          <span ref={timecodeRef} className="text-xs text-muted-foreground tabular-nums">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
         </div>
@@ -755,11 +791,13 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
         >
           {/* Progress bar */}
           <div
+            ref={progressBarRef}
             className="absolute left-0 top-0 h-full bg-primary/30 rounded pointer-events-none"
             style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
           />
           {/* Playhead */}
           <div
+            ref={playheadRef}
             className="absolute top-0 h-full w-1 bg-primary rounded pointer-events-none"
             style={{ left: `calc(${duration > 0 ? (currentTime / duration) * 100 : 0}% - 2px)` }}
           />
