@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
@@ -8,7 +8,6 @@ import {
   Video,
   FolderOpen,
   Building2,
-
   Settings,
   LogOut,
   User,
@@ -16,6 +15,7 @@ import {
   Keyboard,
   LayoutDashboard,
   MessageSquareQuote,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,11 +27,17 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
 const KeyboardShortcutsModal = dynamic(
   () => import('@/components/keyboard-shortcuts-modal').then(mod => mod.KeyboardShortcutsModal),
+  { ssr: false }
+);
+
+const SearchModal = dynamic(
+  () => import('@/components/search-modal').then(mod => mod.SearchModal),
   { ssr: false }
 );
 
@@ -58,13 +64,26 @@ interface HeaderProps {
 export function Header({ user }: HeaderProps) {
   const pathname = usePathname();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Global Ctrl+K / Cmd+K listener
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        if (user) setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [user]);
 
   // Hide header on video player pages — they use full viewport with their own back button
   const isVideoPage = /\/videos\/[^/]+($|\/compare)/.test(pathname) || pathname.startsWith('/watch/');
   if (isVideoPage) return null;
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-[60] w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="px-4 md:px-6 lg:px-8 flex h-14 items-center w-full">
         {/* Mobile menu */}
         <Sheet>
@@ -153,6 +172,28 @@ export function Header({ user }: HeaderProps) {
         {/* Right side */}
         <div className="flex items-center gap-2 ml-auto">
           {user && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Search"
+                    onClick={() => setSearchOpen(true)}
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="flex items-center gap-1.5">
+                  <span>Search</span>
+                  <kbd className="inline-flex h-5 items-center rounded border border-background/30 bg-background/20 px-1 font-mono text-[10px] text-background">
+                    Ctrl K
+                  </kbd>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {user && (
             <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
               <Link href="/feedback">
                 <MessageSquareQuote className="h-4 w-4 mr-1.5" />
@@ -232,6 +273,7 @@ export function Header({ user }: HeaderProps) {
         </div>
       </div>
       <KeyboardShortcutsModal open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      {user && <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />}
     </header>
   );
 }

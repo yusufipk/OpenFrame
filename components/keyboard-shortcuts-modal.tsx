@@ -19,6 +19,12 @@ interface ShortcutGroup {
 
 const shortcutGroups: ShortcutGroup[] = [
   {
+    title: 'Navigation',
+    shortcuts: [
+      { keys: ['Ctrl', 'K'], description: 'Open search' },
+    ],
+  },
+  {
     title: 'Playback',
     shortcuts: [
       { keys: ['Space', 'K'], description: 'Play / Pause' },

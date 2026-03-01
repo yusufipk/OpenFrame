@@ -42,6 +42,9 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
     'asset-download':   { windowMs: 60 * 1000, maxRequests: 10 },       // 10 per minute
     'asset-bunny-init': { windowMs: 60 * 1000, maxRequests: 10 },       // 10 per minute
 
+    // Search — debounced on client but protect against scripted callers
+    'search':           { windowMs: 60 * 1000, maxRequests: 60 },        // 60 per minute
+
     // Watch progress — allow frequent updates but prevent abuse
     'watch-progress':   { windowMs: 60 * 1000, maxRequests: 30 },       // 30 per minute (pausing + periodic + visibility changes)
 
