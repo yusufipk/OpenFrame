@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type ReactNode, type RefObject } from 'react';
+import { memo, useState, type ReactNode, type RefObject } from 'react';
 import { ArrowUpRight, CheckCircle2, ChevronDown, Circle, Clock, Download, FileText, FolderOpen, Image as ImageIcon, Loader2, MessageSquare, Mic, MoreVertical, Pause, Pencil, Play, Reply, Tag, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -78,6 +78,7 @@ interface CommentsPaneProps {
   replyImageInputRef: RefObject<HTMLInputElement | null>;
   handleImageSelect: (e: React.ChangeEvent<HTMLInputElement>, isReply?: boolean) => void;
   handlePaste: (e: React.ClipboardEvent<HTMLTextAreaElement>, isReply?: boolean) => void;
+  handleDrop: (e: React.DragEvent<HTMLDivElement>, isReply?: boolean) => void;
   submitReplyWithMedia: (parentId: string) => void;
   isSubmittingReply: boolean;
   isUploadingReplyAudio: boolean;
@@ -147,6 +148,7 @@ export const CommentsPane = memo(function CommentsPane({
   replyImageInputRef,
   handleImageSelect,
   handlePaste,
+  handleDrop,
   submitReplyWithMedia,
   isSubmittingReply,
   isUploadingReplyAudio,
@@ -158,6 +160,8 @@ export const CommentsPane = memo(function CommentsPane({
   setActivePane,
   assetsPane,
 }: CommentsPaneProps) {
+  const [isPaneDraggingOver, setIsPaneDraggingOver] = useState(false);
+
   return (
     <>
       <div
@@ -168,13 +172,24 @@ export const CommentsPane = memo(function CommentsPane({
         onClick={() => setIsMobileCommentsOpen(false)}
       />
 
-      <div className={cn(
-        'bg-card flex flex-col overflow-hidden z-50',
-        'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl transition-transform duration-300 transform',
-        isMobileCommentsOpen ? 'translate-x-0' : 'translate-x-full',
-        'lg:static lg:w-80 lg:shrink-0 lg:border-l lg:transition-none lg:translate-x-0 lg:shadow-none lg:z-auto',
-        isFullscreenMode && !showComments ? 'hidden' : ''
-      )}>
+      <div
+        className={cn(
+          'bg-card flex flex-col overflow-hidden z-50 relative',
+          'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl transition-transform duration-300 transform',
+          isMobileCommentsOpen ? 'translate-x-0' : 'translate-x-full',
+          'lg:static lg:w-80 lg:shrink-0 lg:border-l lg:transition-none lg:translate-x-0 lg:shadow-none lg:z-auto',
+          isFullscreenMode && !showComments ? 'hidden' : ''
+        )}
+        onDragOver={(e) => { if (activePane !== 'comments') return; e.preventDefault(); setIsPaneDraggingOver(true); }}
+        onDragEnter={(e) => { if (activePane !== 'comments') return; e.preventDefault(); setIsPaneDraggingOver(true); }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsPaneDraggingOver(false); }}
+        onDrop={(e) => { setIsPaneDraggingOver(false); if (activePane !== 'comments') return; handleDrop(e, replyingTo !== null); }}
+      >
+        {isPaneDraggingOver && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-primary bg-primary/10 pointer-events-none">
+            <p className="text-sm font-medium text-primary">Drop image to attach</p>
+          </div>
+        )}
         <div className="shrink-0 p-4 border-b lg:cursor-default space-y-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1 min-w-0 overflow-x-auto">

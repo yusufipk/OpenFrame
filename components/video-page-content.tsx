@@ -414,6 +414,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
     handleAddComment,
     handleImageSelect,
     handlePaste,
+    handleDrop,
     startRecording,
     stopRecording,
     cancelRecording,
@@ -814,6 +815,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
           replyImageInputRef={replyImageInputRef}
           handleImageSelect={handleImageSelect}
           handlePaste={handlePaste}
+          handleDrop={handleDrop}
           submitReplyWithMedia={commentsActions.onSubmitReplyWithMedia}
           isSubmittingReply={isSubmittingReply}
           isUploadingReplyAudio={isUploadingReplyAudio}

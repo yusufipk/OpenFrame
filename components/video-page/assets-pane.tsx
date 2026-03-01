@@ -256,7 +256,7 @@ export const AssetsPane = memo(function AssetsPane({
   const handleImageUpload = useCallback(async (file: File) => {
     if (!file) return;
 
-    const imageError = validateImageFile(file);
+    const imageError = await validateImageFile(file);
     if (imageError) {
       toast.error(imageError);
       return;
@@ -297,7 +297,7 @@ export const AssetsPane = memo(function AssetsPane({
   const handleImageFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const imageError = validateImageFile(file);
+    const imageError = await validateImageFile(file);
     if (imageError) {
       toast.error(imageError);
       return;
@@ -306,16 +306,16 @@ export const AssetsPane = memo(function AssetsPane({
     toast.success('Image attached. Click Upload Image to send.');
   };
 
-  const handleImagePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+  const handleImagePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
     if (uploadTab !== 'image' || !canUploadAssets || isCreatingAsset) return;
     const pastedImage = extractPastedImageFile(event.clipboardData);
     if (!pastedImage) return;
-    const imageError = validateImageFile(pastedImage);
+    event.preventDefault();
+    const imageError = await validateImageFile(pastedImage);
     if (imageError) {
       toast.error(imageError);
       return;
     }
-    event.preventDefault();
     setPendingImageFile(pastedImage);
     toast.success('Image attached from clipboard. Click Upload Image to send.');
   };
@@ -582,7 +582,7 @@ export const AssetsPane = memo(function AssetsPane({
     if (!file) return;
 
     if (file.type.startsWith('image/')) {
-      const imageError = validateImageFile(file);
+      const imageError = await validateImageFile(file);
       if (imageError) { toast.error(imageError); return; }
       // Stage the file so the user can optionally set a name before uploading
       setUploadTab('image');

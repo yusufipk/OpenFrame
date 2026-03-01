@@ -7,6 +7,7 @@ import {
   useState,
   type ChangeEvent,
   type ClipboardEvent,
+  type DragEvent,
   type Dispatch,
   type RefObject,
   type SetStateAction,
@@ -284,11 +285,11 @@ export function useCommentActions({
     fetchAssets,
   ]);
 
-  const handleImageSelect = useCallback((e: ChangeEvent<HTMLInputElement>, isReply: boolean = false) => {
+  const handleImageSelect = useCallback(async (e: ChangeEvent<HTMLInputElement>, isReply: boolean = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const imageError = validateImageFile(file);
+    const imageError = await validateImageFile(file);
     if (imageError) {
       toast.error(imageError);
       return;
@@ -301,11 +302,12 @@ export function useCommentActions({
     }
   }, []);
 
-  const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>, isReply: boolean = false) => {
+  const handlePaste = useCallback(async (e: ClipboardEvent<HTMLTextAreaElement>, isReply: boolean = false) => {
     const file = extractPastedImageFile(e.clipboardData);
     if (!file) return;
+    e.preventDefault();
 
-    const imageError = validateImageFile(file);
+    const imageError = await validateImageFile(file);
     if (imageError) {
       toast.error(imageError);
       return;
@@ -316,7 +318,24 @@ export function useCommentActions({
     } else {
       setImageBlob(file);
     }
+  }, []);
+
+  const handleDrop = useCallback(async (e: DragEvent<HTMLDivElement>, isReply: boolean = false) => {
     e.preventDefault();
+    const file = extractPastedImageFile(e.dataTransfer);
+    if (!file) return;
+
+    const imageError = await validateImageFile(file);
+    if (imageError) {
+      toast.error(imageError);
+      return;
+    }
+
+    if (isReply) {
+      setReplyImageBlob(file);
+    } else {
+      setImageBlob(file);
+    }
   }, []);
 
   const startRecording = useCallback(async () => {
@@ -961,6 +980,7 @@ export function useCommentActions({
     handleAddComment,
     handleImageSelect,
     handlePaste,
+    handleDrop,
     startRecording,
     stopRecording,
     cancelRecording,
