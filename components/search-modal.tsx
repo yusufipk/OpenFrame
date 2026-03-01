@@ -72,7 +72,7 @@ function buildFlatList(results: SearchResults, term: string): ResultItem[] {
 }
 
 function getItemHref(item: ResultItem): string {
-  if (item.kind === 'project') return `/dashboard?project=${item.data.id}`;
+  if (item.kind === 'project') return `/projects/${item.data.id}`;
   if (item.kind === 'workspace') return `/workspaces/${item.data.id}`;
   return `/projects/${item.data.projectId}/videos/${item.data.id}`;
 }
