@@ -15,6 +15,14 @@ import { parseVideoUrl, fetchVideoMetadata, getThumbnailUrl, type VideoSource } 
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import * as tus from 'tus-js-client';
 
+const VIDEO_FILE_EXTENSIONS = ['mp4', 'webm', 'ogg', 'mov', 'm4v', 'mkv'];
+
+function isVideoFile(file: File): boolean {
+  if (file.type.startsWith('video/')) return true;
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  return !!extension && VIDEO_FILE_EXTENSIONS.includes(extension);
+}
+
 export default function NewVideoPageClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
@@ -32,11 +40,13 @@ export default function NewVideoPageClient({ projectId }: { projectId: string })
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
   const [pendingBunnyVideoId, setPendingBunnyVideoId] = useState<string | null>(null);
   const [pendingBunnyUploadToken, setPendingBunnyUploadToken] = useState<string | null>(null);
   const pendingBunnyVideoIdRef = useRef<string | null>(null);
   const pendingBunnyUploadTokenRef = useRef<string | null>(null);
   const activeTusUploadRef = useRef<tus.Upload | null>(null);
+  const fileDragDepthRef = useRef(0);
 
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -176,7 +186,7 @@ export default function NewVideoPageClient({ projectId }: { projectId: string })
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!file.type.startsWith('video/')) {
+      if (!isVideoFile(file)) {
         setSubmitError('Please select a valid video file.');
         return;
       }
@@ -189,6 +199,58 @@ export default function NewVideoPageClient({ projectId }: { projectId: string })
       }
     }
   };
+
+  const setSelectedVideoFile = useCallback((file: File) => {
+    if (!isVideoFile(file)) {
+      setSubmitError('Please select a valid video file.');
+      return;
+    }
+
+    setSelectedFile(file);
+    setSubmitError('');
+
+    if (!formData.title) {
+      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
+      setFormData((prev) => ({ ...prev, title: nameWithoutExt }));
+    }
+  }, [formData.title]);
+
+  const handleFileDragEnter = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (isLoading) return;
+    fileDragDepthRef.current += 1;
+    if (Array.from(event.dataTransfer.types).includes('Files')) {
+      setIsFileDragOver(true);
+    }
+  }, [isLoading]);
+
+  const handleFileDragOver = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (isLoading) return;
+    event.dataTransfer.dropEffect = 'copy';
+    if (Array.from(event.dataTransfer.types).includes('Files')) {
+      setIsFileDragOver(true);
+    }
+  }, [isLoading]);
+
+  const handleFileDragLeave = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+    if (fileDragDepthRef.current === 0) {
+      setIsFileDragOver(false);
+    }
+  }, []);
+
+  const handleFileDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    fileDragDepthRef.current = 0;
+    setIsFileDragOver(false);
+    if (isLoading) return;
+
+    const file = Array.from(event.dataTransfer.files)[0];
+    if (!file) return;
+    setSelectedVideoFile(file);
+  }, [isLoading, setSelectedVideoFile]);
 
   const uploadToBunny = async (
     file: File
@@ -425,7 +487,20 @@ export default function NewVideoPageClient({ projectId }: { projectId: string })
               <div className="space-y-2">
                 <Label htmlFor="file">Video File</Label>
                 <div className="flex items-center justify-center w-full">
-                  <label htmlFor="file" className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors ${selectedFile ? 'border-primary' : 'border-border'}`}>
+                  <label
+                    htmlFor="file"
+                    onDragEnter={handleFileDragEnter}
+                    onDragOver={handleFileDragOver}
+                    onDragLeave={handleFileDragLeave}
+                    onDrop={handleFileDrop}
+                    className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                      isFileDragOver
+                        ? 'border-primary bg-primary/10'
+                        : selectedFile
+                          ? 'border-primary bg-muted/30 hover:bg-muted/50'
+                          : 'border-border bg-muted/30 hover:bg-muted/50'
+                    }`}
+                  >
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
                       {selectedFile ? (
                         <>
