@@ -276,30 +276,35 @@ export const CommentsPane = memo(function CommentsPane({
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {activePane === 'assets' ? assetsPane : filteredComments.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>No comments yet</p>
-              <p className="text-sm">Be the first to leave feedback!</p>
-            </div>
-          ) : (
-            sortedComments.map((comment) => {
-              const authorName =
-                comment.author?.name || comment.guestName || 'Anonymous';
-              const isEditing = editingCommentId === comment.id;
-              const isReplying = replyingTo === comment.id;
-              const canEditComment = comment.canEdit ?? (comment.author?.id === currentUserId);
-              const canDeleteComment = comment.canDelete ?? (comment.author?.id === currentUserId || projectOwnerId === currentUserId);
-              const canManageComment = canEditComment || canDeleteComment;
-              return (
-                <div
-                  key={comment.id}
-                  className={cn(
-                    'group rounded-lg border p-3 transition-colors hover:bg-accent/50',
-                    comment.isResolved && 'opacity-60'
-                  )}
-                >
+        <div className="flex-1 overflow-y-auto">
+          <div className={cn(activePane === 'assets' ? 'block p-4' : 'hidden')} aria-hidden={activePane !== 'assets'}>
+            {assetsPane}
+          </div>
+
+          <div className={cn(activePane === 'comments' ? 'block p-4 space-y-3' : 'hidden')} aria-hidden={activePane !== 'comments'}>
+            {filteredComments.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No comments yet</p>
+                <p className="text-sm">Be the first to leave feedback!</p>
+              </div>
+            ) : (
+              sortedComments.map((comment) => {
+                const authorName =
+                  comment.author?.name || comment.guestName || 'Anonymous';
+                const isEditing = editingCommentId === comment.id;
+                const isReplying = replyingTo === comment.id;
+                const canEditComment = comment.canEdit ?? (comment.author?.id === currentUserId);
+                const canDeleteComment = comment.canDelete ?? (comment.author?.id === currentUserId || projectOwnerId === currentUserId);
+                const canManageComment = canEditComment || canDeleteComment;
+                return (
+                  <div
+                    key={comment.id}
+                    className={cn(
+                      'group rounded-lg border p-3 transition-colors hover:bg-accent/50',
+                      comment.isResolved && 'opacity-60'
+                    )}
+                  >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <Avatar className="h-6 w-6 shrink-0">
@@ -884,10 +889,11 @@ export const CommentsPane = memo(function CommentsPane({
                       Reply
                     </button>
                   )}
-                </div>
-              );
-            })
-          )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
         {activePane === 'comments' ? composer : null}
