@@ -18,6 +18,13 @@ interface RateLimitResult {
     resetAt: Date;
 }
 
+const TRUTHY_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
+
+function isRateLimitDisabled(): boolean {
+    const rawValue = process.env.DISABLE_RATE_LIMIT?.trim().toLowerCase();
+    return rawValue !== undefined && TRUTHY_ENV_VALUES.has(rawValue);
+}
+
 // Industry-standard rate limit defaults per action
 export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
     // Auth — strict to prevent brute force / credential stuffing
@@ -73,6 +80,15 @@ export async function checkRateLimit(
     config?: RateLimitConfig
 ): Promise<RateLimitResult> {
     const { windowMs, maxRequests } = config || RATE_LIMIT_CONFIGS[action] || RATE_LIMIT_CONFIGS.api;
+
+    if (isRateLimitDisabled()) {
+        return {
+            allowed: true,
+            remaining: maxRequests,
+            resetAt: new Date(Date.now() + windowMs),
+        };
+    }
+
     const windowSeconds = Math.floor(windowMs / 1000);
 
     // Validate inputs before passing to query — defence in depth.
