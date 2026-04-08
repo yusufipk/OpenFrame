@@ -1,4 +1,5 @@
 import { requireProjectAccessOrRedirect } from '@/lib/route-access';
+import { isBunnyUploadsEnabled } from '@/lib/feature-flags';
 import NewVideoPageClient from './new-video-page-client';
 
 interface NewVideoPageProps {
@@ -13,5 +14,5 @@ export default async function NewVideoPage({ params }: NewVideoPageProps) {
     intent: 'manage',
   });
 
-  return <NewVideoPageClient projectId={projectId} />;
+  return <NewVideoPageClient projectId={projectId} bunnyUploadsEnabled={isBunnyUploadsEnabled()} />;
 }

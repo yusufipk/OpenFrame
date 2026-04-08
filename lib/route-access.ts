@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { auth, checkProjectAccess, checkWorkspaceAccess } from '@/lib/auth';
-import { hasBillingAccess } from '@/lib/billing';
+import { buildBillingAccessWhereInput, hasBillingAccess } from '@/lib/billing';
 import { db } from '@/lib/db';
 
 type AccessIntent = 'view' | 'manage';
@@ -98,13 +98,7 @@ export async function hasCollaboratorBillingBackedAccess(userId: string) {
   const [workspaceCount, projectCount] = await Promise.all([
     db.workspace.count({
       where: {
-        owner: {
-          OR: [
-            { subscriptionStatus: { in: ['ACTIVE', 'TRIALING'] } },
-            { trialEndsAt: { gt: now } },
-            { stripeCurrentPeriodEnd: { gt: now } },
-          ],
-        },
+        owner: buildBillingAccessWhereInput(now),
         OR: [
           { ownerId: userId },
           { members: { some: { userId } } },
@@ -114,13 +108,7 @@ export async function hasCollaboratorBillingBackedAccess(userId: string) {
     db.project.count({
       where: {
         workspace: {
-          owner: {
-            OR: [
-              { subscriptionStatus: { in: ['ACTIVE', 'TRIALING'] } },
-              { trialEndsAt: { gt: now } },
-              { stripeCurrentPeriodEnd: { gt: now } },
-            ],
-          },
+          owner: buildBillingAccessWhereInput(now),
         },
         OR: [
           { ownerId: userId },

@@ -1,9 +1,14 @@
 import Stripe from 'stripe';
+import { hasStripeConfig, isStripeBillingEnabled } from '@/lib/feature-flags';
 
 let stripeClient: Stripe | null = null;
 
 export function isStripeConfigured() {
-  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_ID);
+  return isStripeBillingEnabled();
+}
+
+export function hasStripeRuntimeConfig() {
+  return hasStripeConfig();
 }
 
 export function getStripe() {

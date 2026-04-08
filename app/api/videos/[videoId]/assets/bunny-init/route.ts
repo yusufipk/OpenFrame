@@ -10,6 +10,7 @@ import {
   enforceGuestUploadQuota,
   verifyGuestUploadToken,
 } from '@/lib/guest-upload-token';
+import { isBunnyUploadsFeatureEnabled } from '@/lib/feature-flags';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { getVideoAssetAccessContext, SAFE_BUNNY_VIDEO_ID } from '@/lib/video-assets';
 
@@ -29,6 +30,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json().catch(() => null);
     const title = typeof body?.title === 'string' ? body.title.trim() : '';
     if (!title) return apiErrors.badRequest('Title is required');
+
+    if (!isBunnyUploadsFeatureEnabled()) {
+      return apiErrors.badRequest('Direct uploads are disabled by this host');
+    }
 
     const shareSession = getShareSessionFromRequest(request, context.video.id);
     if (!context.viewerUserId) {

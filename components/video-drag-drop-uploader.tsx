@@ -159,6 +159,13 @@ export function VideoDragDropUploader({
   }, [canUpload, needsProjectSelection, projectOptions, workspaceId]);
 
   useEffect(() => {
+    if (!canUpload) {
+      setDialogOpen(false);
+      setDroppedFile(null);
+    }
+  }, [canUpload]);
+
+  useEffect(() => {
     hasLoadedProjectsRef.current = false;
     if (projectOptions && projectOptions.length > 0) {
       setProjects(projectOptions);

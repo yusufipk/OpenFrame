@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OpenFrame
 
-## Getting Started
+OpenFrame is a collaborative video feedback platform built with Next.js, Bun, Prisma, and PostgreSQL.
 
-First, run the development server:
+## Development
+
+Install dependencies and run checks with Bun:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun install
+bun run check
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Self-hosting flags
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+OpenFrame supports env flags so self-hosted installs can disable hosted-only features without code changes:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+OPENFRAME_ENABLE_STRIPE=true
+OPENFRAME_ENABLE_BUNNY_UPLOADS=true
+OPENFRAME_REQUIRE_INVITE_CODE=true
+```
 
-## Learn More
+Recommended self-hosted values for a single-team deployment:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+OPENFRAME_ENABLE_STRIPE=false
+OPENFRAME_ENABLE_BUNNY_UPLOADS=false
+OPENFRAME_REQUIRE_INVITE_CODE=false
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Behavior when disabled:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `OPENFRAME_ENABLE_STRIPE=false`: disables Stripe checkout and portal flows and removes billing-based workspace restrictions.
+- `OPENFRAME_ENABLE_BUNNY_UPLOADS=false`: hides direct-upload entry points. URL-based providers such as YouTube continue to work.
+- `OPENFRAME_REQUIRE_INVITE_CODE=false`: allows open registration while keeping invitation-link registration intact.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Feature flags are documented in `.env.example`. Hosted defaults remain enabled.

@@ -184,6 +184,7 @@ export interface CommentActionsConfig {
 export interface VersionActionsConfig {
   projectId?: string;
   videoId: string;
+  bunnyUploadsEnabled?: boolean;
 }
 
 export interface VideoPageHeaderActions {

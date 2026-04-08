@@ -43,6 +43,7 @@ interface VideoPageHeaderProps {
   onDownload: (preference?: BunnyDownloadPreference) => void;
   projectId?: string;
   videoId: string;
+  bunnyUploadsEnabled: boolean;
   showVersionDialog: boolean;
   setShowVersionDialog: (open: boolean) => void;
   newVersionMode: 'url' | 'file';
@@ -90,6 +91,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   onDownload,
   projectId,
   videoId,
+  bunnyUploadsEnabled,
   showVersionDialog,
   setShowVersionDialog,
   newVersionMode,
@@ -227,6 +229,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                 <VersionActionsDialog
                   open={showVersionDialog}
                   onOpenChange={setShowVersionDialog}
+                  bunnyUploadsEnabled={bunnyUploadsEnabled}
                   newVersionMode={newVersionMode}
                   onNewVersionModeChange={setNewVersionMode}
                   newVersionUrl={newVersionUrl}

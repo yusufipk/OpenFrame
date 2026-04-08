@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 import { db } from '@/lib/db';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { ListObjectsV2Command, type ListObjectsV2CommandInput } from '@aws-sdk/client-s3';
+import { isBunnyUploadsFeatureEnabled } from '@/lib/feature-flags';
 
 const BUNNY_API_BASE = 'https://video.bunnycdn.com';
 const STORAGE_CACHE_SECONDS = 600;
@@ -116,6 +117,10 @@ export async function refreshR2StorageSnapshot(): Promise<string> {
 }
 
 async function fetchBunnyStorageStats(): Promise<BunnyStorageStats> {
+    if (!isBunnyUploadsFeatureEnabled()) {
+        return { totalBytes: 0, byVideoId: {} };
+    }
+
     const { apiKey, libraryId } = getBunnyConfig();
     const byVideoId: Record<string, number> = {};
     let totalBytes = 0;

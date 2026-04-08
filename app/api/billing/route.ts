@@ -1,7 +1,8 @@
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { getBillingOverview } from '@/lib/billing';
-import { isStripeConfigured } from '@/lib/stripe';
+import { isStripeFeatureEnabled } from '@/lib/feature-flags';
+import { hasStripeRuntimeConfig, isStripeConfigured } from '@/lib/stripe';
 
 export async function GET() {
   try {
@@ -11,8 +12,12 @@ export async function GET() {
     }
 
     const billing = await getBillingOverview(session.user.id);
+    const isEnabled = isStripeFeatureEnabled();
+    const isConfigured = hasStripeRuntimeConfig();
     const response = successResponse({
-      isConfigured: isStripeConfigured(),
+      isEnabled,
+      isConfigured,
+      status: !isEnabled ? 'disabled' : isStripeConfigured() ? 'ready' : 'misconfigured',
       checkoutAvailable: isStripeConfigured() && !billing.subscription.hasActiveSubscription,
       portalAvailable: isStripeConfigured() && Boolean(billing.subscription.stripeCustomerId),
       subscription: {

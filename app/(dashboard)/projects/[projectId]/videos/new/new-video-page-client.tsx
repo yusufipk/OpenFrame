@@ -23,7 +23,13 @@ function isVideoFile(file: File): boolean {
   return !!extension && VIDEO_FILE_EXTENSIONS.includes(extension);
 }
 
-export default function NewVideoPageClient({ projectId }: { projectId: string }) {
+export default function NewVideoPageClient({
+  projectId,
+  bunnyUploadsEnabled,
+}: {
+  projectId: string;
+  bunnyUploadsEnabled: boolean;
+}) {
   const router = useRouter();
   const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
 
@@ -348,6 +354,10 @@ export default function NewVideoPageClient({ projectId }: { projectId: string })
         finalThumbnailUrl = getThumbnailUrl(videoSource, 'large');
         finalDuration = videoSource.metadata?.duration || null;
       } else {
+        if (!bunnyUploadsEnabled) {
+          throw new Error('Direct uploads are disabled by this host');
+        }
+
         if (!selectedFile) {
           setSubmitError('Please select a video file to upload');
           setIsLoading(false);
@@ -439,14 +449,18 @@ export default function NewVideoPageClient({ projectId }: { projectId: string })
         <CardHeader>
           <CardTitle>Add Video</CardTitle>
           <CardDescription>
-            Paste a video link or upload a file directly to add it to your project. Currently supports YouTube.
+            {bunnyUploadsEnabled
+              ? 'Paste a video link or upload a file directly to add it to your project. Currently supports YouTube.'
+              : 'Paste a video link to add it to your project. Direct uploads are disabled on this host.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs value={uploadMode} onValueChange={(v) => !isLoading && setUploadMode(v as 'url' | 'file')} className="mb-6">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className={`grid w-full ${bunnyUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
               <TabsTrigger value="url" disabled={isLoading}>Paste URL</TabsTrigger>
-              <TabsTrigger value="file" disabled={isLoading}>Direct Upload</TabsTrigger>
+              {bunnyUploadsEnabled ? (
+                <TabsTrigger value="file" disabled={isLoading}>Direct Upload</TabsTrigger>
+              ) : null}
             </TabsList>
           </Tabs>
 

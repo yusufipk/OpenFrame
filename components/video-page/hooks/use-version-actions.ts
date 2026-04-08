@@ -16,6 +16,7 @@ interface UseVersionActionsParams extends VersionActionsConfig {
 export function useVersionActions({
   projectId,
   videoId,
+  bunnyUploadsEnabled = true,
   setVideo,
   activeVersionId,
   setActiveVersionId,
@@ -76,6 +77,7 @@ export function useVersionActions({
         finalThumbnailUrl = getThumbnailUrl(newVersionSource, 'large');
         finalDuration = meta?.duration || null;
       } else {
+        if (!bunnyUploadsEnabled) throw new Error('Direct uploads are disabled by this host');
         if (!newVersionFile) throw new Error('No file selected');
         let title = newVersionFile.name;
         if (newVersionLabel.trim()) {

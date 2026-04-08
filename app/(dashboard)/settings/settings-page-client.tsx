@@ -33,7 +33,9 @@ interface NotificationSettings {
 }
 
 interface BillingOverview {
+  isEnabled: boolean;
   isConfigured: boolean;
+  status: 'disabled' | 'ready' | 'misconfigured';
   checkoutAvailable: boolean;
   portalAvailable: boolean;
   subscription: {
@@ -319,6 +321,10 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
               <Skeleton className="h-4 w-40" />
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-10 w-44 rounded-md" />
+            </div>
+          ) : !billing.isEnabled ? (
+            <div className="rounded-md border border-muted bg-muted/40 p-4 text-sm text-muted-foreground">
+              Stripe billing is disabled by this host. Workspace creation is unrestricted in this environment.
             </div>
           ) : !billing.isConfigured ? (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-400">

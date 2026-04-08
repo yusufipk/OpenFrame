@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
+import { isBunnyUploadsFeatureEnabled } from '@/lib/feature-flags';
 import { redirect } from 'next/navigation';
 import {
     getCachedBunnyStorageStats,
@@ -280,7 +281,9 @@ export default async function AdminUsersPage({
                         <Film className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{formatBytes(bunnyStorageStats.totalBytes)}</div>
+                        <div className="text-2xl font-bold">
+                            {isBunnyUploadsFeatureEnabled() ? formatBytes(bunnyStorageStats.totalBytes) : 'Disabled'}
+                        </div>
                     </CardContent>
                 </Card>
                 <Card>

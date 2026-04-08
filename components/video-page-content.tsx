@@ -67,9 +67,15 @@ interface VideoPageContentProps {
   mode: VideoPageMode;
   videoId: string;
   projectId?: string;
+  bunnyUploadsEnabled?: boolean;
 }
 
-export function VideoPageContent({ mode, videoId, projectId: propProjectId }: VideoPageContentProps) {
+export function VideoPageContent({
+  mode,
+  videoId,
+  projectId: propProjectId,
+  bunnyUploadsEnabled = true,
+}: VideoPageContentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const bunnyViewportRef = useRef<HTMLDivElement>(null);
@@ -193,6 +199,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
   } = useVersionActions({
     projectId: propProjectId,
     videoId,
+    bunnyUploadsEnabled,
     setVideo,
     activeVersionId,
     setActiveVersionId,
@@ -676,6 +683,7 @@ export function VideoPageContent({ mode, videoId, projectId: propProjectId }: Vi
             onDownload={headerActions.onDownload}
             projectId={projectId}
             videoId={videoId}
+            bunnyUploadsEnabled={bunnyUploadsEnabled}
             showVersionDialog={showVersionDialog}
             setShowVersionDialog={setShowVersionDialog}
             newVersionMode={newVersionMode}

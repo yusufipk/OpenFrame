@@ -21,6 +21,7 @@ interface DashboardClientProps {
   totalPages: number;
   canCreateProjects: boolean;
   canUploadVideos: boolean;
+  bunnyUploadsEnabled: boolean;
 }
 
 export function DashboardClient({
@@ -29,10 +30,11 @@ export function DashboardClient({
   totalPages,
   canCreateProjects,
   canUploadVideos,
+  bunnyUploadsEnabled,
 }: DashboardClientProps) {
   return (
     <div className="px-6 lg:px-8 py-8 w-full">
-      <VideoDragDropUploader canUpload={canUploadVideos} />
+      <VideoDragDropUploader canUpload={canUploadVideos && bunnyUploadsEnabled} />
       <ProjectFilter
         projects={serializedProjects}
         workspaces={workspaces}

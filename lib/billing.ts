@@ -3,6 +3,7 @@ import type Stripe from 'stripe';
 import { BillingSubscriptionStatus } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getStripe, getStripePriceId } from '@/lib/stripe';
+import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set<BillingSubscriptionStatus>([
   BillingSubscriptionStatus.ACTIVE,
@@ -35,6 +36,10 @@ export function hasActiveSubscription(status: BillingSubscriptionStatus | null |
 }
 
 export function hasBillingAccess(subject: BillingAccessSubject, now: Date = new Date()) {
+  if (!isStripeFeatureEnabled()) {
+    return true;
+  }
+
   if (hasActiveSubscription(subject.subscriptionStatus)) {
     return true;
   }
@@ -68,6 +73,10 @@ export function getStorageCleanupEligibleAt(subject: BillingAccessSubject) {
 }
 
 export function buildBillingAccessWhereInput(now: Date = new Date()): Prisma.UserWhereInput {
+  if (!isStripeFeatureEnabled()) {
+    return {};
+  }
+
   return {
     OR: [
       { subscriptionStatus: { in: [BillingSubscriptionStatus.ACTIVE, BillingSubscriptionStatus.TRIALING] } },
@@ -217,10 +226,10 @@ export async function getWorkspaceCreationEligibility(userId: string) {
   const billingAccess = hasBillingAccess(user);
   const collaborationCount = invitedWorkspaceCount + projectOnlyCollaborationCount;
   const canCreateWorkspace =
-    billingAccess || (ownedWorkspaceCount === 0 && collaborationCount === 0);
+    !isStripeFeatureEnabled() || billingAccess || (ownedWorkspaceCount === 0 && collaborationCount === 0);
 
   let reason: string | null = null;
-  if (!canCreateWorkspace) {
+  if (!canCreateWorkspace && isStripeFeatureEnabled()) {
     if (collaborationCount > 0 && ownedWorkspaceCount === 0) {
       reason =
         'You are currently collaborating in someone else’s workspace or project. Start a subscription to create a workspace of your own.';

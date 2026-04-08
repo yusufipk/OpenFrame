@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { acceptInvitationTokenForUser, getValidInvitationByToken } from '@/lib/invitations';
 import { checkRateLimit, getClientIp, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { isInviteCodeRequired } from '@/lib/feature-flags';
 
 export async function POST(request: NextRequest) {
     try {
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!invitationIsValid) {
+        if (!invitationIsValid && isInviteCodeRequired()) {
             // Validate invite code using constant-time comparison to prevent timing attacks
             const validInviteCode = process.env.INVITE_CODE;
             if (!validInviteCode || !inviteCode) {

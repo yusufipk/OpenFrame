@@ -1,5 +1,6 @@
 import { VideoPageContent } from '@/components/video-page-content';
 import { auth } from '@/lib/auth';
+import { isBunnyUploadsEnabled } from '@/lib/feature-flags';
 import { requireVideoProjectAccessOrRedirect } from '@/lib/route-access';
 
 interface VideoPageProps {
@@ -18,5 +19,12 @@ export default async function VideoPage({ params }: VideoPageProps) {
     allowPublicView: true,
   });
 
-  return <VideoPageContent mode="dashboard" videoId={videoId} projectId={projectId} />;
+  return (
+    <VideoPageContent
+      mode="dashboard"
+      videoId={videoId}
+      projectId={projectId}
+      bunnyUploadsEnabled={isBunnyUploadsEnabled()}
+    />
+  );
 }

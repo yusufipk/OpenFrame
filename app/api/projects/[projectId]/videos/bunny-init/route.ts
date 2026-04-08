@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import crypto from 'crypto';
 import { cleanupBunnyStreamVideos } from '@/lib/bunny-stream-cleanup';
 import { createBunnyUploadToken, verifyBunnyUploadToken } from '@/lib/bunny-upload-token';
+import { isBunnyUploadsFeatureEnabled } from '@/lib/feature-flags';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -48,6 +49,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         if (!title) {
             return apiErrors.badRequest('Title is required');
+        }
+
+        if (!isBunnyUploadsFeatureEnabled()) {
+            return apiErrors.badRequest('Direct uploads are disabled by this host');
         }
 
         const apiKey = process.env.BUNNY_STREAM_API_KEY;

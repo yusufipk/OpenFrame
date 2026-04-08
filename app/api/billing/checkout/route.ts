@@ -7,6 +7,7 @@ import {
   getStripeCheckoutState,
 } from '@/lib/billing';
 import { rateLimit } from '@/lib/rate-limit';
+import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { getStripe, getStripePriceId, isStripeConfigured } from '@/lib/stripe';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 
@@ -33,6 +34,10 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
+    }
+
+    if (!isStripeFeatureEnabled()) {
+      return apiErrors.badRequest('Stripe billing is disabled by this host');
     }
 
     if (!isStripeConfigured()) {
