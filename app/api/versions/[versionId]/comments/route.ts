@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth, computeProjectAccess, projectAccessInclude } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -46,14 +46,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     try {
         const session = await auth();
         const { versionId } = await params;
+        const userId = session?.user?.id;
 
-        // Get version with project access info
+        // Get version with project access data pre-fetched in the same query
         const version = await db.videoVersion.findUnique({
             where: { id: versionId },
             include: {
                 video: {
                     include: {
-                        project: true,
+                        project: { include: projectAccessInclude(userId) },
                     },
                 },
             },
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         }
 
         const project = version.video.project;
-        const access = await checkProjectAccess(project, session?.user?.id);
+        const access = computeProjectAccess(project, userId);
         const shareSession = getShareSessionFromRequest(request, version.video.id);
 
         const shareAccess = shareSession
@@ -191,6 +192,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         const session = await auth();
         const { versionId } = await params;
+        const userId = session?.user?.id;
 
         const version = await db.videoVersion.findUnique({
             where: { id: versionId },
@@ -199,11 +201,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                     include: {
                         project: {
                             include: {
-                                workspace: {
-                                    select: {
-                                        ownerId: true,
-                                    },
-                                },
+                                ...projectAccessInclude(userId),
+                                // workspace.select is already included by projectAccessInclude;
+                                // ownerId is present on workspace via projectAccessInclude
                             },
                         },
                     },
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
 
         const project = version.video.project;
-        const access = await checkProjectAccess(project, session?.user?.id);
+        const access = computeProjectAccess(project, userId);
         const shareSession = getShareSessionFromRequest(request, version.video.id);
 
         const shareAccess = shareSession

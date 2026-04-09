@@ -90,6 +90,108 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
 type ProjectAccessIntent = 'view' | 'manage' | 'delete';
 
+// ---------------------------------------------------------------------------
+// Fast-path: pre-fetch access data alongside any existing DB query so that
+// computeProjectAccess() can resolve the result with zero extra round-trips.
+// ---------------------------------------------------------------------------
+
+/** Prisma include fragment to attach to any project fetch. */
+export function projectAccessInclude(userId: string | undefined) {
+  return {
+    workspace: {
+      select: {
+        id: true,
+        ownerId: true,
+        owner: {
+          select: {
+            subscriptionStatus: true,
+            trialEndsAt: true,
+            stripeCurrentPeriodEnd: true,
+            billingAccessEndedAt: true,
+          },
+        },
+        members: userId
+          ? { where: { userId }, take: 1, orderBy: { createdAt: 'asc' as const }, select: { role: true } }
+          : { take: 0, select: { role: true } },
+      },
+    },
+    members: userId
+      ? { where: { userId }, take: 1, orderBy: { createdAt: 'asc' as const }, select: { role: true } }
+      : { take: 0, select: { role: true } },
+  };
+}
+
+type ProjectAccessIncludes = ReturnType<typeof projectAccessInclude>;
+type WorkspaceForAccess = ProjectAccessIncludes['workspace']['select'] extends object
+  ? {
+      id: string;
+      ownerId: string;
+      owner: Parameters<typeof hasBillingAccess>[0] | null;
+      members: Array<{ role: WorkspaceMemberRole }>;
+    }
+  : never;
+
+export type EnrichedProjectForAccess = {
+  id: string;
+  ownerId: string;
+  workspaceId: string;
+  visibility: string;
+  workspace: WorkspaceForAccess;
+  members: Array<{ role: ProjectMemberRole }>;
+};
+
+/**
+ * Pure access computation — no DB queries.
+ * Use after fetching a project with `projectAccessInclude(userId)`.
+ */
+export function computeProjectAccess(
+  project: EnrichedProjectForAccess,
+  userId: string | undefined,
+) {
+  const isOwner = userId === project.ownerId;
+  const isPublic = project.visibility === 'PUBLIC';
+
+  const projectMember = project.members[0] ?? null;
+  const isProjectMember = !!projectMember;
+  const isProjectAdmin = projectMember?.role === ProjectMemberRole.ADMIN;
+
+  const workspaceOwnerBillingAccess = project.workspace.owner
+    ? hasBillingAccess(project.workspace.owner)
+    : false;
+
+  let workspaceRole: WorkspaceMemberRole | 'OWNER' | null = null;
+  if (userId === project.workspace.ownerId) {
+    workspaceRole = 'OWNER';
+  } else {
+    const wsMember = project.workspace.members[0] ?? null;
+    if (wsMember) workspaceRole = wsMember.role;
+  }
+
+  const isWorkspaceMember = !!workspaceRole;
+  const isWorkspaceAdmin =
+    workspaceRole === WorkspaceMemberRole.ADMIN || workspaceRole === 'OWNER';
+
+  const hasAccess =
+    workspaceOwnerBillingAccess &&
+    (isOwner || isProjectMember || isPublic || isWorkspaceMember);
+  const canEdit =
+    workspaceOwnerBillingAccess && (isOwner || isProjectAdmin || isWorkspaceAdmin);
+  const canDelete =
+    workspaceOwnerBillingAccess && (isOwner || workspaceRole === 'OWNER');
+
+  return {
+    isOwner,
+    isProjectMember,
+    isProjectAdmin,
+    isWorkspaceMember,
+    isWorkspaceAdmin,
+    hasAccess,
+    canEdit,
+    canDelete,
+    ownerBillingActive: workspaceOwnerBillingAccess,
+  };
+}
+
 // Helper to check project access including workspace membership
 export async function checkProjectAccess(
   project: { id: string; ownerId: string; workspaceId: string; visibility: string },

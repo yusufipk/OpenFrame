@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth, computeProjectAccess, projectAccessInclude } from '@/lib/auth';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 
@@ -17,11 +17,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const { videoId } = await params;
 
-        // Get the video and its active version
+        // Get the video and its active version (project access data pre-fetched in same query)
+        const userId = session.user.id;
         const video = await db.video.findUnique({
             where: { id: videoId },
             include: {
-                project: true,
+                project: { include: projectAccessInclude(userId) },
                 versions: {
                     where: { isActive: true },
                     take: 1,
@@ -33,8 +34,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             return apiErrors.notFound('Video');
         }
 
-        // Check access including workspace membership
-        const access = await checkProjectAccess(video.project, session?.user?.id);
+        const access = computeProjectAccess(video.project, userId);
 
         if (!access.hasAccess) {
             return apiErrors.forbidden('Access denied');
@@ -94,10 +94,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         // Always load the requested video and validate access before writing progress.
         // If versionId is provided, verify it belongs to this video; otherwise resolve active version.
+        // Project access data is pre-fetched in the same query — no extra round-trips.
+        const userId = session.user.id;
         const video = await db.video.findUnique({
             where: { id: videoId },
             include: {
-                project: true,
+                project: { include: projectAccessInclude(userId) },
                 versions: {
                     where: versionId ? { id: versionId } : { isActive: true },
                     take: 1,
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return apiErrors.notFound('Video');
         }
 
-        const access = await checkProjectAccess(video.project, session?.user?.id);
+        const access = computeProjectAccess(video.project, userId);
         if (!access.hasAccess) {
             return apiErrors.forbidden('Access denied');
         }
