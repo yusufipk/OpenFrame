@@ -466,6 +466,8 @@ model Comment {
   @@index([guestIdentityId])
   @@index([timestamp])
   @@index([tagId])
+  @@unique([imageUrl])
+  @@unique([voiceUrl])
   @@index([versionId, isResolved, timestamp])
   @@index([versionId, parentId, createdAt])
   @@map("comments")
