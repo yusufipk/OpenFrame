@@ -21,8 +21,8 @@ export async function POST(request: NextRequest) {
         const { name, email, password, inviteCode, invitationToken } = body;
 
         // Validate required fields
-        if (!name || typeof name !== 'string' || name.trim().length < 2) {
-            return apiErrors.badRequest('Name must be at least 2 characters');
+        if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
+            return apiErrors.badRequest('Name must be between 2 and 100 characters');
         }
 
         if (!email || typeof email !== 'string') {
@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!password || typeof password !== 'string' || password.length < 8) {
-            return apiErrors.badRequest('Password must be at least 8 characters');
+        if (!password || typeof password !== 'string' || password.length < 8 || password.length > 128) {
+            return apiErrors.badRequest('Password must be between 8 and 128 characters');
         }
 
         // Check if email already exists

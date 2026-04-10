@@ -252,6 +252,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return apiErrors.badRequest('Either content, a voice recording, an image attachment, or an annotation is required');
         }
 
+        // Length limits to prevent DB bloat and DoS on export/notification paths
+        if (content !== undefined && content !== null && String(content).length > 10_000) {
+            return apiErrors.badRequest('Comment content must be 10,000 characters or fewer');
+        }
+        if (guestName !== undefined && guestName !== null && String(guestName).length > 100) {
+            return apiErrors.badRequest('Guest name must be 100 characters or fewer');
+        }
+        if (annotationData !== undefined && annotationData !== null && JSON.stringify(annotationData).length > 50_000) {
+            return apiErrors.badRequest('Annotation data is too large');
+        }
+
         // If replying, verify parent exists in same version
         if (parentId) {
             const parent = await db.comment.findFirst({

@@ -26,8 +26,9 @@ export function GuestGate({ children }: { children: ReactNode }) {
   }
 
   const confirm = () => {
-    if (!guestName.trim()) return;
-    localStorage.setItem('openframe_guest_name', guestName.trim());
+    const trimmed = guestName.trim();
+    if (!trimmed || trimmed.length > 100) return;
+    localStorage.setItem('openframe_guest_name', trimmed);
     setConfirmed(true);
   };
 
@@ -47,13 +48,14 @@ export function GuestGate({ children }: { children: ReactNode }) {
           <Input
             placeholder="Your name"
             value={guestName}
+            maxLength={100}
             onChange={(e) => setGuestName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') confirm();
             }}
             autoFocus
           />
-          <Button className="w-full" disabled={!guestName.trim()} onClick={confirm}>
+          <Button className="w-full" disabled={!guestName.trim() || guestName.trim().length > 100} onClick={confirm}>
             Continue
           </Button>
         </div>

@@ -61,6 +61,7 @@ export function ShareLinkUnlock({ videoId }: ShareLinkUnlockProps) {
             type="password"
             placeholder="Password"
             value={password}
+            maxLength={128}
             onChange={(event) => setPassword(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
