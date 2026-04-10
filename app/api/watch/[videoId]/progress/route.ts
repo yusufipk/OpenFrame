@@ -85,11 +85,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const body = await request.json();
         const { progress, duration, versionId } = body;
 
-        if (typeof progress !== 'number' || !isFinite(progress) || progress < 0) {
+        const MAX_VIDEO_SECONDS = 86_400; // 24 hours — reasonable upper bound for any video
+
+        if (typeof progress !== 'number' || !isFinite(progress) || progress < 0 || progress > MAX_VIDEO_SECONDS) {
             return apiErrors.badRequest('Invalid progress value');
         }
 
-        if (duration !== undefined && (typeof duration !== 'number' || !isFinite(duration) || duration < 0)) {
+        if (duration !== undefined && (typeof duration !== 'number' || !isFinite(duration) || duration < 0 || duration > MAX_VIDEO_SECONDS)) {
             return apiErrors.badRequest('Invalid duration value');
         }
 
