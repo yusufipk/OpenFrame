@@ -26,6 +26,13 @@ function isRateLimitDisabled(): boolean {
     return rawValue !== undefined && TRUTHY_ENV_VALUES.has(rawValue);
 }
 
+if (process.env.NODE_ENV === 'production' && isRateLimitDisabled()) {
+    throw new Error(
+        'DISABLE_RATE_LIMIT must not be set in production. ' +
+        'Remove or unset the environment variable before deploying.'
+    );
+}
+
 // Industry-standard rate limit defaults per action
 export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
     // Auth — strict to prevent brute force / credential stuffing
