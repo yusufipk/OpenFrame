@@ -173,6 +173,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const { title, description, position } = body;
 
         // Validate types before using string methods to prevent type confusion attacks
+        if (
+            position !== undefined &&
+            (typeof position !== 'number' || !Number.isInteger(position) || position < 0)
+        ) {
+            return apiErrors.badRequest('position must be a non-negative integer');
+        }
+
         const updateData: Record<string, unknown> = {};
         if (typeof title === 'string') updateData.title = title.trim();
         if (typeof description === 'string') updateData.description = description.trim() || null;
