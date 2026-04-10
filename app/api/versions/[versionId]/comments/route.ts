@@ -293,6 +293,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return apiErrors.badRequest('Guest name is required for guest comments');
         }
 
+        // Verify tag belongs to this project to prevent cross-project tag leakage (IDOR)
+        if (tagId) {
+            const tag = await db.commentTag.findFirst({
+                where: { id: tagId, projectId: project.id },
+            });
+            if (!tag) {
+                return apiErrors.badRequest('Tag not found');
+            }
+        }
+
         if (voiceUrl && !SAFE_AUDIO_PATH.test(voiceUrl)) {
             return apiErrors.badRequest('Voice URL must reference an uploaded audio file');
         }

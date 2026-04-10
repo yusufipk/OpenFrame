@@ -173,7 +173,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
         const updateData: Record<string, unknown> = {};
         if (content !== undefined && typeof content === 'string') updateData.content = content.trim();
-        if (tagId !== undefined) updateData.tagId = tagId;
+        if (tagId !== undefined) {
+            // Verify tag belongs to this project to prevent cross-project tag leakage (IDOR)
+            if (tagId !== null) {
+                const tag = await db.commentTag.findFirst({
+                    where: { id: tagId, projectId: project.id },
+                });
+                if (!tag) {
+                    return apiErrors.badRequest('Tag not found');
+                }
+            }
+            updateData.tagId = tagId;
+        }
         if (annotationData !== undefined) {
             if (annotationData === null) {
                 updateData.annotationData = null;
