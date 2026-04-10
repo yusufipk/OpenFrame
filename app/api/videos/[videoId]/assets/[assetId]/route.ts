@@ -10,6 +10,7 @@ import {
   canDeleteAssetForViewer,
   getVideoAssetAccessContext,
 } from '@/lib/video-assets';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string; assetId: string }> };
 
@@ -94,7 +95,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error deleting video asset:', error);
+    logError('Error deleting video asset:', error);
     return apiErrors.internalError('Failed to delete asset');
   }
 }

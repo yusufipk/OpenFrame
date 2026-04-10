@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
+import { logError } from '@/lib/logger';
 
 interface FeedbackPayload {
   type?: string;
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
 
     return successResponse(entry, 201);
   } catch (error) {
-    console.error('Error submitting feedback:', error);
+    logError('Error submitting feedback:', error);
     return apiErrors.internalError('Failed to submit feedback');
   }
 }

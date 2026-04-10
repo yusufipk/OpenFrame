@@ -11,6 +11,7 @@ import {
 } from '@/lib/image-upload-validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
+import { logError } from '@/lib/logger';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + (512 * 1024); // file + multipart overhead
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     return successResponse({ url: `/api/upload/image/${filename}` }, 201);
   } catch (error) {
-    console.error('Error uploading feedback screenshot:', error);
+    logError('Error uploading feedback screenshot:', error);
     return apiErrors.internalError('Failed to upload screenshot');
   }
 }

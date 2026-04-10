@@ -11,6 +11,7 @@ import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { ensureGuestIdentityFromRequest, getGuestIdentityFromRequest, setGuestIdentityCookie } from '@/lib/guest-identity';
 import { extractImageFileNameFromProxyUrl, sanitizeAssetDisplayName } from '@/lib/video-assets';
 import { validateAnnotationStrokes } from '@/lib/validation';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 const SAFE_IMAGE_PATH = /^\/api\/upload\/image\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
@@ -180,7 +181,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         response.headers.set('ETag', etag);
         return withCacheControl(response, 'private, no-cache');
     } catch (error) {
-        console.error('Error fetching comments:', error);
+        logError('Error fetching comments:', error);
         return apiErrors.internalError('Failed to fetch comments');
     }
 }
@@ -391,7 +392,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                     parentAuthor: parentComment?.author?.name || parentComment?.guestName || 'Someone',
                     timestamp: ts,
                     url: `${baseUrl}/watch/${version.video.id}`,
-                }).catch((err) => console.error('Notification failed:', err));
+                }).catch((err) => logError('Notification failed:', err));
             } else {
                 notifyProjectOwner(project.ownerId, {
                     type: 'new_comment',
@@ -401,7 +402,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                     commentText: content?.trim() || (imageUrl ? '(image attachment)' : '(voice note)'),
                     timestamp: ts,
                     url: `${baseUrl}/watch/${version.video.id}`,
-                }).catch((err) => console.error('Notification failed:', err));
+                }).catch((err) => logError('Notification failed:', err));
             }
         }
 
@@ -428,7 +429,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error creating comment:', error);
+        logError('Error creating comment:', error);
         return apiErrors.internalError('Failed to create comment');
     }
 }

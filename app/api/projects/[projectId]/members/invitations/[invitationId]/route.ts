@@ -4,6 +4,7 @@ import { auth, checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string; invitationId: string }> };
 
@@ -65,7 +66,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const response = successResponse({ message: 'Invitation canceled' });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error canceling project invitation:', error);
+    logError('Error canceling project invitation:', error);
     return apiErrors.internalError('Failed to cancel invitation');
   }
 }

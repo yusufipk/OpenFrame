@@ -3,6 +3,7 @@ import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response
 import { getBillingOverview } from '@/lib/billing';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { hasStripeRuntimeConfig, isStripeConfigured } from '@/lib/stripe';
+import { logError } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -39,7 +40,7 @@ export async function GET() {
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error fetching billing overview:', error);
+    logError('Error fetching billing overview:', error);
     return apiErrors.internalError('Failed to fetch billing overview');
   }
 }

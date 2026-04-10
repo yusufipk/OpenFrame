@@ -6,6 +6,7 @@ import { collectWorkspaceMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ workspaceId: string }> };
 
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(workspace);
         return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
-        console.error('Error fetching workspace:', error);
+        logError('Error fetching workspace:', error);
         return apiErrors.internalError('Failed to fetch workspace');
     }
 }
@@ -123,7 +124,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(workspace);
         return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
-        console.error('Error updating workspace:', error);
+        logError('Error updating workspace:', error);
         return apiErrors.internalError('Failed to update workspace');
     }
 }
@@ -215,7 +216,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error deleting workspace:', error);
+        logError('Error deleting workspace:', error);
         return apiErrors.internalError('Failed to delete workspace');
     }
 }

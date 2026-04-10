@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { notifyUsers } from '@/lib/notifications';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ requestId: string }> };
 
@@ -179,7 +180,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       note: note || undefined,
       url: requestUrl,
     }).catch((error) => {
-      console.error('Approval action notification failed:', error);
+      logError('Approval action notification failed:', error);
     });
 
     if (updated.status === 'APPROVED') {
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         approvedByCount: updated.decisions.filter((item) => item.status === 'APPROVED').length,
         url: requestUrl,
       }).catch((error) => {
-        console.error('Approval completed notification failed:', error);
+        logError('Approval completed notification failed:', error);
       });
     } else if (updated.status === 'REJECTED') {
       notifyUsers([updated.requestedById], {
@@ -203,7 +204,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         note: note || undefined,
         url: requestUrl,
       }).catch((error) => {
-        console.error('Approval rejected notification failed:', error);
+        logError('Approval rejected notification failed:', error);
       });
     }
 
@@ -219,7 +220,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (isSerializableConflict(error)) {
       return apiErrors.conflict('Request state changed. Please try again.');
     }
-    console.error('Error responding to approval request:', error);
+    logError('Error responding to approval request:', error);
     return apiErrors.internalError('Failed to respond to approval request');
   }
 }

@@ -5,6 +5,7 @@ import { InvitationRole, WorkspaceMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { buildInvitationUrl, createOrRefreshInvitation, sendInvitationEmail } from '@/lib/invitations';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ workspaceId: string }> };
 
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         );
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error fetching workspace members:', error);
+        logError('Error fetching workspace members:', error);
         return apiErrors.internalError('Failed to fetch members');
     }
 }
@@ -218,7 +219,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const response = successResponse({ message: 'Invitation email sent.' });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error inviting workspace member:', error);
+        logError('Error inviting workspace member:', error);
         return apiErrors.internalError('Failed to invite member');
     }
 }

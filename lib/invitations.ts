@@ -10,6 +10,7 @@ import {
   emailRow,
   escapeHtml,
 } from '@/lib/email-brand';
+import { logError } from '@/lib/logger';
 
 const INVITATION_TTL_DAYS = 7;
 const MAX_INVITATION_RETRIES = 3;
@@ -79,7 +80,7 @@ export async function sendInvitationEmail(input: {
     });
     return true;
   } catch (error) {
-    console.error('Invitation email send failed:', error);
+    logError('Invitation email send failed:', error);
     return false;
   }
 }

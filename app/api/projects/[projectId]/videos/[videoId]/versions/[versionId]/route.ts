@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string; versionId: string }> };
 
@@ -75,7 +76,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(updated);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error updating version:', error);
+        logError('Error updating version:', error);
         return apiErrors.internalError('Failed to update version');
     }
 }
@@ -148,7 +149,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error deleting version:', error);
+        logError('Error deleting version:', error);
         return apiErrors.internalError('Failed to delete version');
     }
 }

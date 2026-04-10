@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { logError } from '@/lib/logger';
 
 const RATE_LIMIT_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -131,7 +132,7 @@ export async function checkRateLimit(
         return { allowed, remaining, resetAt };
     } catch (error) {
         // If table doesn't exist, allow the request but log warning
-        console.error('Rate limit check failed (table may not exist):', error);
+        logError('Rate limit check failed (table may not exist):', error);
         return {
             allowed: true,
             remaining: maxRequests,
@@ -215,14 +216,14 @@ export async function cleanupRateLimits(): Promise<void> {
     try {
         await db.$executeRaw`SELECT cleanup_rate_limits()`;
     } catch (error) {
-        console.error('Rate limit cleanup failed:', error);
+        logError('Rate limit cleanup failed:', error);
     }
 }
 
 // Start cleanup interval once per process to avoid duplicate scheduling on module reload.
 if (!globalForRateLimitCleanup.rateLimitCleanupIntervalStarted && typeof setInterval !== 'undefined') {
     const interval = setInterval(() => {
-        cleanupRateLimits().catch(console.error);
+        cleanupRateLimits().catch((err) => logError('Unexpected error:', err));
     }, RATE_LIMIT_CLEANUP_INTERVAL_MS);
 
     // Avoid keeping Node.js process alive because of housekeeping timers.

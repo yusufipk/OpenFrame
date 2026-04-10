@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
+import { logError } from '@/lib/logger';
 
 const MAX_Q_LENGTH = 100;
 const RESULTS_PER_CATEGORY = 5;
@@ -114,7 +115,7 @@ export async function GET(request: NextRequest) {
     response.headers.set('Cache-Control', 'private, no-store');
     return response;
   } catch (err) {
-    console.error('[search] error:', err);
+    logError('[search] error:', err);
     return apiErrors.internalError();
   }
 }

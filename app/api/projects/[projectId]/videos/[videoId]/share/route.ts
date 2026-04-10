@@ -7,6 +7,7 @@ import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { MAX_SHARE_PASSWORD_LENGTH } from '@/lib/share-links';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error fetching video share link:', error);
+    logError('Error fetching video share link:', error);
     return apiErrors.internalError('Failed to fetch video share link');
   }
 }
@@ -238,7 +239,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error creating video share link:', error);
+    logError('Error creating video share link:', error);
     return apiErrors.internalError('Failed to create video share link');
   }
 }
@@ -314,7 +315,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const response = successResponse(serializeShareLink(request, videoId, updated));
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error updating video share link:', error);
+    logError('Error updating video share link:', error);
     return apiErrors.internalError('Failed to update video share link');
   }
 }
@@ -345,7 +346,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const response = successResponse({ message: 'Video share link revoked' });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error deleting video share link:', error);
+    logError('Error deleting video share link:', error);
     return apiErrors.internalError('Failed to delete video share link');
   }
 }

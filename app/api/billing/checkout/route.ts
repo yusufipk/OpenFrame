@@ -10,6 +10,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { getStripe, getStripePriceId, isStripeConfigured } from '@/lib/stripe';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
+import { logError } from '@/lib/logger';
 
 function getAppOrigin(request: NextRequest) {
   if (isTrustedSameOriginRequest(request)) {
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     const response = successResponse({ url: checkoutSession.url });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error creating Stripe checkout session:', error);
+    logError('Error creating Stripe checkout session:', error);
     return apiErrors.internalError('Failed to start checkout');
   }
 }

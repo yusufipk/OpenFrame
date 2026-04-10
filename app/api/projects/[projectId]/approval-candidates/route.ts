@@ -3,6 +3,7 @@ import { auth, checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getApprovalCandidatesForProject } from '@/lib/approval-workflow';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -28,7 +29,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const response = successResponse({ candidates });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error fetching approval candidates:', error);
+    logError('Error fetching approval candidates:', error);
     return apiErrors.internalError('Failed to fetch approval candidates');
   }
 }

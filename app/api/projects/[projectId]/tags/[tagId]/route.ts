@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string; tagId: string }> };
 
@@ -68,7 +69,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(tag);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error updating tag:', error);
+        logError('Error updating tag:', error);
         if ((error as { code?: string }).code === 'P2002') {
             return apiErrors.conflict('Tag name already exists');
         }
@@ -115,7 +116,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         const response = successResponse({ message: 'Tag deleted' });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error deleting tag:', error);
+        logError('Error deleting tag:', error);
         return apiErrors.internalError('Failed to delete tag');
     }
 }

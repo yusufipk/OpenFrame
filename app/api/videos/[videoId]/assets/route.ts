@@ -24,6 +24,7 @@ import {
   getVideoAssetAccessContext,
   sanitizeAssetDisplayName,
 } from '@/lib/video-assets';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -260,7 +261,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     response.headers.set('ETag', etag);
     return withCacheControl(response, 'private, no-cache');
   } catch (error) {
-    console.error('Error fetching video assets:', error);
+    logError('Error fetching video assets:', error);
     return apiErrors.internalError('Failed to fetch assets');
   }
 }
@@ -450,7 +451,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error creating video asset:', error);
+    logError('Error creating video asset:', error);
     return apiErrors.internalError('Failed to create asset');
   }
 }

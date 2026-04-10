@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             : 'private, no-cache';
         return withCacheControl(response, cacheControl);
     } catch (error) {
-        console.error('Error fetching tags:', error);
+        logError('Error fetching tags:', error);
         return apiErrors.internalError('Failed to fetch tags');
     }
 }
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(tag, 201);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error creating tag:', error);
+        logError('Error creating tag:', error);
         if ((error as { code?: string }).code === 'P2002') {
             return apiErrors.conflict('Tag name already exists');
         }

@@ -19,6 +19,7 @@ import {
     enforceGuestUploadQuota,
     verifyGuestUploadToken,
 } from '@/lib/guest-upload-token';
+import { logError } from '@/lib/logger';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + (512 * 1024); // file + multipart overhead
@@ -150,7 +151,7 @@ export async function POST(request: NextRequest) {
         const response = successResponse({ url: imageUrl }, 201);
         return withCacheControl(response, 'public, max-age=31536000, immutable');
     } catch (error) {
-        console.error('Error uploading image:', error);
+        logError('Error uploading image:', error);
         return apiErrors.internalError('Failed to upload image');
     }
 }

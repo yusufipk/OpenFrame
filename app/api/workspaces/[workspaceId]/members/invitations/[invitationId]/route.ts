@@ -4,6 +4,7 @@ import { auth, checkWorkspaceAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ workspaceId: string; invitationId: string }> };
 
@@ -68,7 +69,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const response = successResponse({ message: 'Invitation canceled' });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error canceling workspace invitation:', error);
+    logError('Error canceling workspace invitation:', error);
     return apiErrors.internalError('Failed to cancel invitation');
   }
 }

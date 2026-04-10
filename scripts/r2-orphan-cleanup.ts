@@ -2,6 +2,7 @@ import { DeleteObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandInp
 import { db, disconnectDb } from '../lib/db';
 import { r2Client, R2_BUCKET_NAME } from '../lib/r2';
 import { cleanupExpiredBillingWorkspaces } from './expired-billing-cleanup';
+import { logError } from '@/lib/logger';
 
 const UNATTACHED_UPLOAD_TTL_MS = 15 * 60 * 1000;
 const CHUNK_SIZE = 500;
@@ -166,7 +167,7 @@ async function main() {
       deleted += 1;
     } catch (error) {
       failed += 1;
-      console.error(`[r2-orphan-cleanup] Failed deleting ${candidate.key}:`, error);
+      logError(`[r2-orphan-cleanup] Failed deleting ${candidate.key}:`, error);
     }
   }
 
@@ -179,7 +180,7 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error('[r2-orphan-cleanup] Fatal error:', error);
+    logError('[r2-orphan-cleanup] Fatal error:', error);
     process.exitCode = 1;
   })
   .finally(async () => {

@@ -12,6 +12,7 @@ import {
   guestUploadTokenTtlSeconds,
   type GuestUploadIntent,
 } from '@/lib/guest-upload-token';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error issuing guest upload token:', error);
+    logError('Error issuing guest upload token:', error);
     return apiErrors.internalError('Failed to issue upload token');
   }
 }

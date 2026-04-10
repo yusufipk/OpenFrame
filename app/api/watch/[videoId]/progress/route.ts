@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { auth, computeProjectAccess, projectAccessInclude } from '@/lib/auth';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             updatedAt: progress?.updatedAt || null,
         });
     } catch (error) {
-        console.error('Error fetching watch progress:', error);
+        logError('Error fetching watch progress:', error);
         return apiErrors.internalError('Failed to fetch watch progress');
     }
 }
@@ -153,7 +154,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             percentage: watchProgress.percentage,
         });
     } catch (error) {
-        console.error('Error saving watch progress:', error);
+        logError('Error saving watch progress:', error);
         return apiErrors.internalError('Failed to save watch progress');
     }
 }

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { ListObjectsV2Command, type ListObjectsV2CommandInput } from '@aws-sdk/client-s3';
 import { isBunnyUploadsFeatureEnabled } from '@/lib/feature-flags';
+import { logError } from '@/lib/logger';
 
 const BUNNY_API_BASE = 'https://video.bunnycdn.com';
 const STORAGE_CACHE_SECONDS = 600;
@@ -174,7 +175,7 @@ export async function getCachedTotalStorage(): Promise<number> {
         const snapshot = await getR2StorageSnapshot();
         return snapshot.totalBytes;
     } catch (err) {
-        console.error('Failed to fetch total storage stats:', err);
+        logError('Failed to fetch total storage stats:', err);
         return -1;
     }
 }
@@ -184,7 +185,7 @@ export const getCachedBunnyStorageStats = unstable_cache(
         try {
             return await fetchBunnyStorageStats();
         } catch (err) {
-            console.error('Failed to fetch Bunny storage stats:', err);
+            logError('Failed to fetch Bunny storage stats:', err);
             return { totalBytes: -1, byVideoId: {} } as BunnyStorageStats;
         }
     },
@@ -247,7 +248,7 @@ export const getCachedUserBunnyStorage = unstable_cache(
                 perUserStorage[billedUserId] = (perUserStorage[billedUserId] || 0) + size;
             }
         } catch (err) {
-            console.error('Failed to calculate per-user Bunny storage:', err);
+            logError('Failed to calculate per-user Bunny storage:', err);
         }
         return perUserStorage;
     },
@@ -376,7 +377,7 @@ export async function getCachedUserMediaStorage(): Promise<Record<string, { tota
             userStorage[billedUserId].total += size;
         }
     } catch (err) {
-        console.error('Failed to parse user storage:', err);
+        logError('Failed to parse user storage:', err);
     }
     return userStorage;
 }
@@ -398,7 +399,7 @@ export const getCachedUserDownloadEgress = unstable_cache(
                     : 0;
             }
         } catch (err) {
-            console.error('Failed to calculate per-user download egress:', err);
+            logError('Failed to calculate per-user download egress:', err);
         }
 
         return perUserDownloadEgress;

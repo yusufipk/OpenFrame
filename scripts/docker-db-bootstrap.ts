@@ -3,6 +3,7 @@ import { Client } from 'pg';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { logError } from '@/lib/logger';
 
 type MigrationRow = {
   migration_name: string;
@@ -147,6 +148,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Docker database bootstrap failed:', error);
+  logError('Docker database bootstrap failed:', error);
   process.exit(1);
 });

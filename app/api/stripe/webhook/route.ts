@@ -5,6 +5,7 @@ import {
   syncStripeSubscriptionToUser,
 } from '@/lib/billing';
 import { getStripe, getStripeWebhookSecret } from '@/lib/stripe';
+import { logError } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     event = stripe.webhooks.constructEvent(body, signature, getStripeWebhookSecret());
   } catch (error) {
-    console.error('Failed to verify Stripe webhook:', error);
+    logError('Failed to verify Stripe webhook:', error);
     return new Response('Invalid webhook signature', { status: 400 });
   }
 
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Failed to process Stripe webhook:', error);
+    logError('Failed to process Stripe webhook:', error);
     return new Response('Webhook processing failed', { status: 500 });
   }
 }

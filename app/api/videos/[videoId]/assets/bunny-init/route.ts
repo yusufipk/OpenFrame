@@ -13,6 +13,7 @@ import {
 import { isBunnyUploadsFeatureEnabled } from '@/lib/feature-flags';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { getVideoAssetAccessContext, SAFE_BUNNY_VIDEO_ID } from '@/lib/video-assets';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!bunnyRes.ok) {
-      console.error('Failed to create Bunny Stream video asset', await bunnyRes.text());
+      logError('Failed to create Bunny Stream video asset', await bunnyRes.text());
       return apiErrors.internalError('Failed to initialize Bunny upload');
     }
 
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error initializing Bunny asset upload:', error);
+    logError('Error initializing Bunny asset upload:', error);
     return apiErrors.internalError('Failed to initialize asset upload');
   }
 }
@@ -157,7 +158,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const response = successResponse({ message: 'Pending upload cleaned up' });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error cleaning up Bunny asset upload:', error);
+    logError('Error cleaning up Bunny asset upload:', error);
     return apiErrors.internalError('Failed to cleanup pending upload');
   }
 }

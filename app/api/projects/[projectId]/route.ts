@@ -6,6 +6,7 @@ import { collectProjectMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-cl
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(project);
         return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
-        console.error('Error fetching project:', error);
+        logError('Error fetching project:', error);
         return apiErrors.internalError('Failed to fetch project');
     }
 }
@@ -128,7 +129,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(project);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error updating project:', error);
+        logError('Error updating project:', error);
         return apiErrors.internalError('Failed to update project');
     }
 }
@@ -212,7 +213,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error deleting project:', error);
+        logError('Error deleting project:', error);
         return apiErrors.internalError('Failed to delete project');
     }
 }

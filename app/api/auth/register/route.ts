@@ -5,6 +5,7 @@ import { acceptInvitationTokenForUser, getValidInvitationByToken } from '@/lib/i
 import { checkRateLimit, getClientIp, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { isInviteCodeRequired } from '@/lib/feature-flags';
+import { logError } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
     try {
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
 
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Registration error:', error);
+        logError('Registration error:', error);
         return apiErrors.internalError('Failed to create account');
     }
 }

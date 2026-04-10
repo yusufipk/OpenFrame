@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { verifyBunnyUploadToken } from '@/lib/bunny-upload-token';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const response = successResponse({ versions });
         return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
-        console.error('Error fetching versions:', error);
+        logError('Error fetching versions:', error);
         return apiErrors.internalError('Failed to fetch versions');
     }
 }
@@ -166,13 +167,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 versionLabel: version.versionLabel || `Version ${version.versionNumber}`,
                 addedBy: session.user.name || 'A team member',
                 url: `${baseUrl}/watch/${video.id}`,
-            }).catch((err) => console.error('Notification failed:', err));
+            }).catch((err) => logError('Notification failed:', err));
         }
 
         const response = successResponse(version, 201);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error creating version:', error);
+        logError('Error creating version:', error);
         return apiErrors.internalError('Failed to create version');
     }
 }

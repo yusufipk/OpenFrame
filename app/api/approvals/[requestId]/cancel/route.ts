@@ -4,6 +4,7 @@ import { auth, checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ requestId: string }> };
 
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (isSerializableConflict(error)) {
       return apiErrors.conflict('Request state changed. Please try again.');
     }
-    console.error('Error canceling approval request:', error);
+    logError('Error canceling approval request:', error);
     return apiErrors.internalError('Failed to cancel approval request');
   }
 }

@@ -1,5 +1,6 @@
 import { db, disconnectDb } from '../lib/db';
 import { cleanupExpiredBillingWorkspaces } from './expired-billing-cleanup';
+import { logError } from '@/lib/logger';
 
 const BUNNY_API_BASE = 'https://video.bunnycdn.com';
 const BUNNY_VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
@@ -233,7 +234,7 @@ async function main() {
       }
     } catch (error) {
       failed += 1;
-      console.error(`[bunny-orphan-cleanup] Failed deleting ${orphanId}:`, error);
+      logError(`[bunny-orphan-cleanup] Failed deleting ${orphanId}:`, error);
     }
   }
 
@@ -247,7 +248,7 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error('[bunny-orphan-cleanup] Fatal error:', error);
+    logError('[bunny-orphan-cleanup] Fatal error:', error);
     process.exitCode = 1;
   })
   .finally(async () => {

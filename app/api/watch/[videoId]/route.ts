@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { getGuestIdentityFromRequest } from '@/lib/guest-identity';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -207,7 +208,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         return withCacheControl(response, 'private, no-cache');
     } catch (error) {
-        console.error('Error fetching video:', error);
+        logError('Error fetching video:', error);
         return apiErrors.internalError('Failed to fetch video');
     }
 }

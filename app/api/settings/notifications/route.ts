@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import nodemailer from 'nodemailer';
 import { testEmailHtml } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 // GET /api/settings/notifications — Fetch current notification preferences
 export async function GET() {
@@ -35,7 +36,7 @@ export async function GET() {
 
         return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
-        console.error('Error fetching notification settings:', error);
+        logError('Error fetching notification settings:', error);
         return apiErrors.internalError('Failed to fetch settings');
     }
 }
@@ -102,7 +103,7 @@ export async function PUT(request: NextRequest) {
         const response = successResponse(settings);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error updating notification settings:', error);
+        logError('Error updating notification settings:', error);
         return apiErrors.internalError('Failed to update settings');
     }
 }
@@ -197,7 +198,7 @@ export async function POST(request: NextRequest) {
                     html: testEmailHtml(),
                 });
             } catch (emailErr) {
-                console.error('SMTP test email failed:', emailErr);
+                logError('SMTP test email failed:', emailErr);
                 return apiErrors.internalError('Failed to send test email — check SMTP settings');
             }
 
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest) {
 
         return apiErrors.badRequest('Unknown channel');
     } catch (error) {
-        console.error('Error testing notification:', error);
+        logError('Error testing notification:', error);
         return apiErrors.internalError('Failed to test notification');
     }
 }

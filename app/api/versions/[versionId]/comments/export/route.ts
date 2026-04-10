@@ -9,6 +9,7 @@ import {
 } from '@/lib/comment-export';
 import { apiErrors, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 const MAX_EXPORT_COMMENTS = 5000;
@@ -157,7 +158,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error exporting comments:', error);
+    logError('Error exporting comments:', error);
     return apiErrors.internalError('Failed to export comments');
   }
 }

@@ -2,6 +2,7 @@ import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { db } from '@/lib/db';
 import { runWithConcurrency } from '@/lib/async-pool';
+import { logError } from '@/lib/logger';
 
 /** The path prefix for images served by the upload API. */
 const IMAGE_PATH_PREFIX = '/api/upload/image/';
@@ -62,7 +63,7 @@ export async function deleteMediaFilesBestEffort(mediaUrls: string[]): Promise<R
             );
         } catch (err) {
             failedKeys.add(key);
-            console.error(`Failed to delete media from R2 (key: ${key}):`, err);
+            logError(`Failed to delete media from R2 (key: ${key}):`, err);
         }
     });
 

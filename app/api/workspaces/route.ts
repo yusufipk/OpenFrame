@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { buildBillingAccessWhereInput, getWorkspaceCreationEligibility } from '@/lib/billing';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 // GET /api/workspaces - List all workspaces for the authenticated user
 export async function GET(request: NextRequest) {
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
         );
         return withCacheControl(response, 'private, max-age=60, stale-while-revalidate=120');
     } catch (error) {
-        console.error('Error fetching workspaces:', error);
+        logError('Error fetching workspaces:', error);
         return apiErrors.internalError('Failed to fetch workspaces');
     }
 }
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest) {
         const response = successResponse(workspace, 201);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error creating workspace:', error);
+        logError('Error creating workspace:', error);
         return apiErrors.internalError('Failed to create workspace');
     }
 }

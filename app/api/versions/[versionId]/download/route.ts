@@ -7,6 +7,7 @@ import { getShareSessionFromRequest } from '@/lib/share-session';
 import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { NextRequest } from 'next/server';
 import { DownloadEgressSource } from '@prisma/client';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 type BunnyDownloadSourcePreference = 'auto' | 'original' | 'compressed';
@@ -483,12 +484,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       });
     } catch (egressError) {
-      console.error('Failed to record download egress event:', egressError);
+      logError('Failed to record download egress event:', egressError);
     }
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error downloading version:', error);
+    logError('Error downloading version:', error);
     return apiErrors.internalError('Failed to download video');
   }
 }

@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import { NextResponse } from 'next/server';
 import { apiErrors } from '@/lib/api-response';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
+import { logError } from '@/lib/logger';
 
 type ProxyR2MediaOptions = {
   request: Request;
@@ -132,7 +133,7 @@ export async function proxyR2MediaObject({
             },
           });
         }
-        console.error('Error proxying R2 object:', retryError);
+        logError('Error proxying R2 object:', retryError);
         return apiErrors.internalError(internalErrorMessage);
       }
     } else if (isNotFoundError(error)) {
@@ -146,7 +147,7 @@ export async function proxyR2MediaObject({
         },
       });
     } else {
-      console.error('Error proxying R2 object:', error);
+      logError('Error proxying R2 object:', error);
       return apiErrors.internalError(internalErrorMessage);
     }
   }

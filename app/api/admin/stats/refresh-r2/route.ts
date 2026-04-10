@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { refreshR2StorageSnapshot } from '@/lib/admin-stats';
+import { logError } from '@/lib/logger';
 
 export async function POST() {
   try {
@@ -16,7 +17,7 @@ export async function POST() {
       refreshedAt,
     });
   } catch (error) {
-    console.error('Error refreshing R2 admin stats cache:', error);
+    logError('Error refreshing R2 admin stats cache:', error);
     return apiErrors.internalError('Failed to refresh R2 stats');
   }
 }

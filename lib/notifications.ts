@@ -9,6 +9,7 @@ import {
     emailRow,
     escapeHtml,
 } from '@/lib/email-brand';
+import { logError } from '@/lib/logger';
 
 // ============================================
 // NOTIFICATION CHANNELS
@@ -50,7 +51,7 @@ async function sendTelegram(
         }
         return true;
     } catch (err) {
-        console.error('Telegram send failed:', err);
+        logError('Telegram send failed:', err);
         return false;
     }
 }
@@ -93,7 +94,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
         await transporter.sendMail({ from: fromAddress, to, subject, html });
         return true;
     } catch (err) {
-        console.error('Email send failed:', err);
+        logError('Email send failed:', err);
         return false;
     }
 }
@@ -476,7 +477,7 @@ export async function notifyUsers(userIds: string[], event: NotificationEvent): 
             await Promise.allSettled(promises);
         }));
     } catch (err) {
-        console.error('Notification dispatch failed:', err);
+        logError('Notification dispatch failed:', err);
     }
 }
 
@@ -484,7 +485,7 @@ export async function notifyProjectOwner(ownerId: string, event: NotificationEve
     try {
         await notifyUsers([ownerId], event);
     } catch (err) {
-        console.error('Notification dispatch failed:', err);
+        logError('Notification dispatch failed:', err);
     }
 }
 

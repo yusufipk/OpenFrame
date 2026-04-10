@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ feedbackId: string }> };
 
@@ -121,7 +122,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     if (message.includes('Record to delete does not exist')) {
       return apiErrors.notFound('Feedback');
     }
-    console.error('Error deleting feedback:', error);
+    logError('Error deleting feedback:', error);
     return apiErrors.internalError('Failed to delete feedback');
   }
 }

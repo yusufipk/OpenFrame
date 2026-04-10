@@ -6,6 +6,7 @@ import { getApprovalCandidatesForProject } from '@/lib/approval-workflow';
 import { notifyUsers } from '@/lib/notifications';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 
@@ -54,7 +55,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const response = successResponse({ requests });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error fetching approvals:', error);
+    logError('Error fetching approvals:', error);
     return apiErrors.internalError('Failed to fetch approvals');
   }
 }
@@ -165,7 +166,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       message: message || undefined,
       url: requestUrl,
     }).catch((error) => {
-      console.error('Approval request notification failed:', error);
+      logError('Approval request notification failed:', error);
     });
 
     const response = successResponse({ request: created }, 201);
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (isSerializableConflict(error)) {
       return apiErrors.conflict('Request state changed. Please try again.');
     }
-    console.error('Error creating approval request:', error);
+    logError('Error creating approval request:', error);
     return apiErrors.internalError('Failed to create approval request');
   }
 }

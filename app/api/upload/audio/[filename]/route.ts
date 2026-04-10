@@ -1,5 +1,6 @@
 import { apiErrors } from '@/lib/api-response';
 import { proxyR2MediaObject } from '@/lib/r2-media-proxy';
+import { logError } from '@/lib/logger';
 
 // Only allow UUID filenames with safe extensions
 const SAFE_FILENAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
@@ -39,7 +40,7 @@ export async function GET(
       internalErrorMessage: 'Failed to retrieve audio',
     });
   } catch (error: unknown) {
-    console.error('Error serving audio:', error);
+    logError('Error serving audio:', error);
     return apiErrors.internalError('Failed to retrieve audio');
   }
 }

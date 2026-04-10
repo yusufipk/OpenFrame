@@ -10,6 +10,7 @@ import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response
 import { getGuestIdentityFromRequest } from '@/lib/guest-identity';
 import { runWithConcurrency } from '@/lib/async-pool';
 import { validateAnnotationStrokes } from '@/lib/validation';
+import { logError } from '@/lib/logger';
 
 const CLEANUP_DELETE_CONCURRENCY = 5;
 
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(commentData);
         return withCacheControl(response, 'private, no-cache');
     } catch (error) {
-        console.error('Error fetching comment:', error);
+        logError('Error fetching comment:', error);
         return apiErrors.internalError('Failed to fetch comment');
     }
 }
@@ -230,7 +231,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error updating comment:', error);
+        logError('Error updating comment:', error);
         return apiErrors.internalError('Failed to update comment');
     }
 }
@@ -334,14 +335,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
                     })
                 );
             } catch (err) {
-                console.error(`Failed to delete media from R2 (key: ${key}):`, err);
+                logError(`Failed to delete media from R2 (key: ${key}):`, err);
             }
         });
 
         const response = successResponse({ message: 'Comment deleted' });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error deleting comment:', error);
+        logError('Error deleting comment:', error);
         return apiErrors.internalError('Failed to delete comment');
     }
 }

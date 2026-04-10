@@ -4,6 +4,7 @@ import { youtubeProvider } from './youtube';
 import { directProvider } from './direct';
 import { bunnyProvider } from './bunny';
 import type { VideoProvider, VideoSource, VideoMetadata, VideoProviderType } from './types';
+import { logError } from '@/lib/logger';
 
 // Export types
 export * from './types';
@@ -82,7 +83,7 @@ export async function fetchVideoMetadata(source: VideoSource): Promise<VideoMeta
   try {
     return await provider.getMetadata(source.videoId);
   } catch (error) {
-    console.error('Failed to fetch video metadata:', error);
+    logError('Failed to fetch video metadata:', error);
     return null;
   }
 }

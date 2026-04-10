@@ -10,6 +10,7 @@ import {
   extractAudioFileNameFromProxyUrl,
   getVideoAssetAccessContext,
 } from '@/lib/video-assets';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string; assetId: string }> };
 type BunnySourcePreference = 'auto' | 'original' | 'compressed';
@@ -205,7 +206,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    console.error('Error downloading asset:', error);
+    logError('Error downloading asset:', error);
     return apiErrors.internalError('Failed to download asset');
   }
 }

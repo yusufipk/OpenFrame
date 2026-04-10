@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { buildBillingAccessWhereInput } from '@/lib/billing';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { DEFAULT_COMMENT_TAGS } from '@/lib/comment-tags';
+import { logError } from '@/lib/logger';
 
 // GET /api/projects - List all projects for the authenticated user
 export async function GET(request: NextRequest) {
@@ -94,7 +95,7 @@ export async function GET(request: NextRequest) {
 
         return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
     } catch (error) {
-        console.error('Error fetching projects:', error);
+        logError('Error fetching projects:', error);
         return apiErrors.internalError('Failed to fetch projects');
     }
 }
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
         const response = successResponse(project, 201);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error creating project:', error);
+        logError('Error creating project:', error);
         return apiErrors.internalError('Failed to create project');
     }
 }

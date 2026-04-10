@@ -7,6 +7,7 @@ import { collectVideoMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-clea
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
@@ -134,7 +135,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         return withCacheControl(response, 'private, no-cache');
     } catch (error) {
-        console.error('Error fetching video:', error);
+        logError('Error fetching video:', error);
         return apiErrors.internalError('Failed to fetch video');
     }
 }
@@ -189,7 +190,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         const response = successResponse(updatedVideo);
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error updating video:', error);
+        logError('Error updating video:', error);
         return apiErrors.internalError('Failed to update video');
     }
 }
@@ -270,7 +271,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         });
         return withCacheControl(response, 'private, no-store');
     } catch (error) {
-        console.error('Error deleting video:', error);
+        logError('Error deleting video:', error);
         return apiErrors.internalError('Failed to delete video');
     }
 }

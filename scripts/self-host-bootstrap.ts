@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { ensureR2BucketExists, R2_BUCKET_NAME } from '@/lib/r2';
+import { logError } from '@/lib/logger';
 
 const shouldCreateBucket = /^(1|true|yes|on)$/i.test(process.env.SELF_HOSTED_AUTO_CREATE_BUCKET ?? '');
 
@@ -15,6 +16,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Self-host bootstrap failed:', error);
+  logError('Self-host bootstrap failed:', error);
   process.exit(1);
 });
