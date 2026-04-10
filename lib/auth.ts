@@ -1,17 +1,22 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import Google from 'next-auth/providers/google';
+import GitHub from 'next-auth/providers/github';
+import { PrismaAdapter } from '@auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { db } from '@/lib/db';
 import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { hasBillingAccess } from '@/lib/billing';
+import { isInviteCodeRequired } from '@/lib/feature-flags';
 
 // Dummy hash for timing-safe comparison when user doesn't exist
 // This prevents user enumeration via timing attacks
 const DUMMY_HASH = '$2a$12$000000000000000000000uGG3k3xK2CVTxXrT7VW2sGd1XrY6Ky';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  // Note: We don't use PrismaAdapter with Credentials + JWT strategy
-  // The adapter is for OAuth providers that need to store accounts/sessions in DB
+  // PrismaAdapter handles OAuth account linking and user creation in DB.
+  // JWT strategy is still used for sessions (no DB sessions table needed).
+  adapter: PrismaAdapter(db),
   providers: [
     Credentials({
       name: 'credentials',
@@ -50,6 +55,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         };
       },
     }),
+    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+      ? [Google({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })]
+      : []),
+    ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+      ? [{
+          ...GitHub({ clientId: process.env.GITHUB_CLIENT_ID, clientSecret: process.env.GITHUB_CLIENT_SECRET }),
+          // GitHub sends iss=https://github.com/login/oauth in callbacks (RFC 9207).
+          // Auth.js v5 beta defaults to "https://authjs.dev" for OAuth providers, causing
+          // a mismatch. Setting the correct issuer here fixes the CallbackRouteError.
+          issuer: 'https://github.com/login/oauth',
+        }]
+      : []),
   ],
   session: {
     strategy: 'jwt',
@@ -60,6 +77,32 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signOut: '/signout',
   },
   callbacks: {
+    async signIn({ account, profile }) {
+      // Credentials sign-in is handled by the authorize() function above
+      if (account?.provider === 'credentials') return true;
+
+      // Reject OAuth sign-ins where the provider email is not verified.
+      // Google always sets email_verified: true. GitHub does not guarantee it.
+      if (profile && profile.email_verified === false) {
+        return '/login?error=OAuthEmailNotVerified';
+      }
+
+      // OAuth sign-in: allow existing OAuth accounts regardless of invite setting
+      if (account?.providerAccountId && account?.provider) {
+        const existingAccount = await db.account.findUnique({
+          where: { provider_providerAccountId: { provider: account.provider, providerAccountId: account.providerAccountId } },
+          select: { id: true },
+        });
+        if (existingAccount) return true;
+      }
+
+      // New OAuth user: block when invite-only mode is active
+      if (isInviteCodeRequired()) {
+        return '/login?error=RegistrationClosed';
+      }
+
+      return true;
+    },
     async session({ session, token }) {
       if (token.sub && session.user) {
         session.user.id = token.sub;
