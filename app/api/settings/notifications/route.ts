@@ -154,8 +154,8 @@ export async function POST(request: NextRequest) {
 
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                const desc = (data as { description?: string }).description || 'Unknown error';
-                return apiErrors.badRequest(`Telegram test failed: ${desc}`);
+                logError('Telegram test failed:', (data as { description?: string }).description);
+                return apiErrors.badRequest('Telegram test failed: check that the Chat ID is correct and the bot has been started');
             }
 
             const response = successResponse({ message: 'Test message sent to Telegram' });
