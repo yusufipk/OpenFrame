@@ -161,6 +161,9 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="https://github.com/yusufipk/OpenFrame" target="_blank" rel="noreferrer">
               GitHub
             </a>
+            <a className="text-muted-foreground transition-colors hover:text-foreground" href="mailto:info@open-frame.net">
+              Contact
+            </a>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -672,9 +675,12 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
             <Video className="h-4 w-4 text-primary" />
             <span className="font-mono text-xs text-muted-foreground">© 2026 IPEK TECH LLC. All rights reserved.</span>
           </div>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap justify-center gap-4">
+            <a href="mailto:info@open-frame.net" className="text-xs text-muted-foreground hover:text-foreground">info@open-frame.net</a>
             <a href="https://github.com/yusufipk/OpenFrame" className="text-xs text-muted-foreground hover:text-foreground">GitHub</a>
-            <a href="https://x.com/yusufipk" className="text-xs text-muted-foreground hover:text-foreground">X (Twitter)</a>
+            <Link href="/terms" className="text-xs text-muted-foreground hover:text-foreground">Terms</Link>
+            <Link href="/privacy" className="text-xs text-muted-foreground hover:text-foreground">Privacy</Link>
+            <Link href="/refund" className="text-xs text-muted-foreground hover:text-foreground">Refund Policy</Link>
           </div>
         </div>
       </footer>

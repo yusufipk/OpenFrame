@@ -25,7 +25,10 @@ export default function LoginPage() {
         </Suspense>
 
         <p className="text-center text-xs text-muted-foreground mt-4">
-          By continuing, you agree to our Terms of Service and Privacy Policy
+          By continuing, you agree to our{' '}
+          <Link href="/terms" className="underline hover:text-foreground">Terms of Service</Link>
+          {' '}and{' '}
+          <Link href="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>
         </p>
       </div>
     </div>
