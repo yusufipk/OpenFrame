@@ -13,12 +13,11 @@ import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 const MAX_EXPORT_COMMENTS = 5000;
-const EXPORT_RATE_LIMIT = { windowMs: 60 * 1000, maxRequests: 10 };
 
 // GET /api/versions/[versionId]/comments/export?format=csv|pdf&includeResolved=true|false
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const limited = await rateLimit(request, 'comment-export', EXPORT_RATE_LIMIT);
+    const limited = await rateLimit(request, 'comment-export');
     if (limited) return limited;
 
     const session = await auth();
