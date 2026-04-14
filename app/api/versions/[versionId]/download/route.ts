@@ -21,19 +21,6 @@ const BUNNY_DOWNLOAD_FALLBACK_HEIGHTS = [2160, 1440, 1080, 720, 480, 360, 240];
 const BUNNY_ALLOWED_QUALITIES = new Set(BUNNY_DOWNLOAD_FALLBACK_HEIGHTS);
 const BUNNY_SOURCE_RESOLUTION_CACHE_TTL_MS = 60 * 1000;
 const BUNNY_REMOTE_FETCH_TIMEOUT_MS = 8 * 1000;
-const SAFE_DOWNLOAD_CONTENT_TYPE = 'application/octet-stream';
-const CONTENT_TYPE_EXTENSION_MAP: Record<string, string> = {
-  'video/mp4': '.mp4',
-  'video/quicktime': '.mov',
-  'video/webm': '.webm',
-  'video/x-matroska': '.mkv',
-  'video/x-msvideo': '.avi',
-  'video/mpeg': '.mpeg',
-  'video/3gpp': '.3gp',
-  'video/ogg': '.ogv',
-};
-const SAFE_VIDEO_CONTENT_TYPES = new Set(Object.keys(CONTENT_TYPE_EXTENSION_MAP));
-const SAFE_VIDEO_EXTENSIONS = new Set(Object.values(CONTENT_TYPE_EXTENSION_MAP));
 
 type BunnyDownloadSourceCacheRecord = {
   source: BunnyDownloadSource | null;
@@ -42,29 +29,6 @@ type BunnyDownloadSourceCacheRecord = {
 
 const BUNNY_SOURCE_CACHE_MAX_ENTRIES = 500;
 const bunnyDownloadSourceCache = new Map<string, BunnyDownloadSourceCacheRecord>();
-
-function sanitizeFileName(value: string): string {
-  const sanitized = value
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return sanitized.length > 0 ? sanitized : 'video';
-}
-
-function toAsciiFileName(value: string): string {
-  const normalized = value
-    .normalize('NFKD')
-    .replace(/[^\x20-\x7E]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return normalized.length > 0 ? normalized : 'video';
-}
-
-function buildContentDisposition(fileNameWithExt: string): string {
-  const asciiFallback = toAsciiFileName(fileNameWithExt).replace(/["\\]/g, '_');
-  const encoded = encodeURIComponent(fileNameWithExt);
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
-}
 
 function resolveBunnyCdnHostname(): string | null {
   return resolveServerBunnyCdnHostname();
@@ -264,80 +228,6 @@ function extractHeightFromBunnyMp4Url(url: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function extractFileNameFromContentDisposition(contentDisposition: string | null): string | null {
-  if (!contentDisposition) return null;
-
-  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) {
-    try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch {
-      return utf8Match[1];
-    }
-  }
-
-  const fallbackMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
-  return fallbackMatch?.[1] ?? null;
-}
-
-function extractFileExtension(fileName: string | null): string | null {
-  if (!fileName) return null;
-  const dotIndex = fileName.lastIndexOf('.');
-  if (dotIndex <= 0 || dotIndex === fileName.length - 1) return null;
-  const extension = fileName.slice(dotIndex).toLowerCase();
-  return /^[.][a-z0-9]{1,10}$/i.test(extension) ? extension : null;
-}
-
-function inferExtensionFromContentType(contentType: string | null): string | null {
-  if (!contentType) return null;
-  const normalized = contentType.split(';')[0]?.trim().toLowerCase();
-  return normalized ? CONTENT_TYPE_EXTENSION_MAP[normalized] ?? null : null;
-}
-
-function normalizeContentType(contentType: string | null): string | null {
-  if (!contentType) return null;
-  const normalized = contentType.split(';')[0]?.trim().toLowerCase();
-  return normalized || null;
-}
-
-function resolveSafeDownloadMetadata(
-  sourceType: BunnyDownloadSource['sourceType'],
-  sourceFileName: string | null,
-  sourceContentType: string | null
-): { extension: string; contentType: string } | null {
-  const rawExtension = extractFileExtension(sourceFileName);
-  const sourceExtension = rawExtension && SAFE_VIDEO_EXTENSIONS.has(rawExtension) ? rawExtension : null;
-
-  const normalizedContentType = normalizeContentType(sourceContentType);
-  const safeContentType =
-    normalizedContentType && SAFE_VIDEO_CONTENT_TYPES.has(normalizedContentType)
-      ? normalizedContentType
-      : null;
-  const inferredExtension = safeContentType ? inferExtensionFromContentType(safeContentType) : null;
-  const fallbackExtension = sourceType === 'compressed' ? '.mp4' : null;
-
-  const extension = sourceExtension || inferredExtension || fallbackExtension;
-  if (!extension) return null;
-
-  return {
-    extension,
-    contentType: safeContentType ?? (sourceType === 'compressed' ? 'video/mp4' : SAFE_DOWNLOAD_CONTENT_TYPE),
-  };
-}
-
-function parseEstimatedBytes(contentLengthHeader: string | null): bigint {
-  if (!contentLengthHeader) return BigInt(0);
-  const normalized = contentLengthHeader.trim();
-  if (!/^\d+$/.test(normalized)) return BigInt(0);
-
-  try {
-    const parsed = BigInt(normalized);
-    return parsed > BigInt(0) ? parsed : BigInt(0);
-  } catch {
-    return BigInt(0);
-  }
-}
-
 // GET /api/versions/[versionId]/download
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -437,38 +327,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return withCacheControl(response, 'private, no-store');
     }
 
-    const upstream = await fetchWithTimeout(source.url, { cache: 'no-store' });
-    if (!upstream.ok || !upstream.body) {
-      return apiErrors.notFound('Download file');
-    }
-
-    const versionLabel = version.versionLabel?.trim() || `v${version.versionNumber}`;
-    const sourceFileName = extractFileNameFromContentDisposition(upstream.headers.get('content-disposition'));
-    const metadata = resolveSafeDownloadMetadata(
-      source.sourceType,
-      sourceFileName,
-      upstream.headers.get('content-type')
-    );
-    if (!metadata) {
-      return apiErrors.badRequest('Original file format is not supported for download');
-    }
-
-    const filename = sanitizeFileName(`${version.video.title} ${versionLabel}`) + metadata.extension;
-    const contentDisposition = buildContentDisposition(filename);
-
-    const response = new Response(upstream.body, {
-      status: 200,
-      headers: {
-        'Content-Type': metadata.contentType,
-        'Content-Disposition': contentDisposition,
-        'Cache-Control': 'private, no-store',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    });
-
-    const contentLength = upstream.headers.get('content-length');
-    if (contentLength) response.headers.set('Content-Length', contentLength);
-
     try {
       await db.downloadEgressEvent.create({
         data: {
@@ -480,14 +338,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           downloaderUserId: session?.user?.id ?? null,
           source: source.sourceType === 'original' ? DownloadEgressSource.ORIGINAL : DownloadEgressSource.COMPRESSED,
           quality: source.quality,
-          estimatedBytes: parseEstimatedBytes(contentLength),
+          estimatedBytes: BigInt(0),
         },
       });
     } catch (egressError) {
       logError('Failed to record download egress event:', egressError);
     }
 
-    return withCacheControl(response, 'private, no-store');
+    return Response.redirect(source.url, 302);
   } catch (error) {
     logError('Error downloading version:', error);
     return apiErrors.internalError('Failed to download video');
