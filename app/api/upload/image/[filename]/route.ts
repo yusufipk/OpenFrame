@@ -37,38 +37,38 @@ export async function GET(
         // Parallelize the DB lookup and session check to narrow the timing delta
         // between "asset not found" and "asset found, access denied" responses.
         const imageUrl = `/api/upload/image/${filename}`;
-        const [comment, session] = await Promise.all([
+        const projectSelect = {
+            id: true,
+            ownerId: true,
+            workspaceId: true,
+            visibility: true,
+        } as const;
+        const videoSelect = {
+            id: true,
+            projectId: true,
+            project: { select: projectSelect },
+        } as const;
+        const [comment, videoAsset, session] = await Promise.all([
             db.comment.findFirst({
                 where: { imageUrl },
                 select: {
                     version: {
-                        select: {
-                            video: {
-                                select: {
-                                    id: true,
-                                    projectId: true,
-                                    project: {
-                                        select: {
-                                            id: true,
-                                            ownerId: true,
-                                            workspaceId: true,
-                                            visibility: true,
-                                        },
-                                    },
-                                },
-                            },
-                        },
+                        select: { video: { select: videoSelect } },
                     },
                 },
+            }),
+            db.videoAsset.findFirst({
+                where: { sourceUrl: imageUrl },
+                select: { video: { select: videoSelect } },
             }),
             auth(),
         ]);
 
-        if (!comment) {
+        const video = comment?.version?.video ?? videoAsset?.video ?? null;
+        if (!video) {
             return apiErrors.forbidden('Access denied');
         }
 
-        const { video } = comment.version;
         const access = await checkProjectAccess(video.project, session?.user?.id);
 
         if (!access.hasAccess) {
