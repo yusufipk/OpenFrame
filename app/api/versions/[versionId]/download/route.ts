@@ -327,6 +327,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return withCacheControl(response, 'private, no-store');
     }
 
+    // Fetch Content-Length via HEAD so we can record egress bytes without proxying the body.
+    let estimatedBytes = BigInt(0);
+    try {
+      const headRes = await fetchWithTimeout(source.url, { method: 'HEAD', cache: 'no-store' });
+      const cl = headRes.headers.get('content-length');
+      if (cl && /^\d+$/.test(cl.trim())) {
+        const parsed = BigInt(cl.trim());
+        if (parsed > BigInt(0)) estimatedBytes = parsed;
+      }
+    } catch {
+      // Best-effort — leave estimatedBytes as 0 if HEAD fails.
+    }
+
     try {
       await db.downloadEgressEvent.create({
         data: {
@@ -338,7 +351,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           downloaderUserId: session?.user?.id ?? null,
           source: source.sourceType === 'original' ? DownloadEgressSource.ORIGINAL : DownloadEgressSource.COMPRESSED,
           quality: source.quality,
-          estimatedBytes: BigInt(0),
+          estimatedBytes,
         },
       });
     } catch (egressError) {
