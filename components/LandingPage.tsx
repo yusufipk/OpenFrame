@@ -182,7 +182,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 </Link>
                 <Link href="/register" className={controlButtonClass}>
                   <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10">Get Started Free</span>
+                  <span className="relative z-10">Get Started for Free</span>
                 </Link>
               </>
             )}
@@ -218,7 +218,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 href={hostedCtaHref}
                 className="group relative isolate inline-flex h-12 min-w-max items-center justify-center overflow-hidden border border-primary bg-primary px-10 text-sm font-medium whitespace-nowrap text-primary-foreground transition-transform duration-300 hover:scale-[1.02]"
               >
-                Start free
+                Start for free
                 <MoveRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
 
@@ -261,7 +261,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
         <section className="border-y border-border bg-card/10 px-4 py-16 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1200px]">
             <div className="mx-auto max-w-4xl">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Feedback chaos looks like this:</h2>
+              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">This is feedback chaos</h2>
               <ul className="mt-8 space-y-4 text-base text-muted-foreground md:text-lg">
                 <li className="flex items-start gap-3">
                   <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
@@ -349,7 +349,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 <p className="text-base text-muted-foreground md:text-lg">
                   See what actually changed between versions then approve with confidence.
                 </p>
-                <p className="text-xs uppercase tracking-[0.14em] text-primary">Cuts revision cycles.</p>
+                <p className="text-xs uppercase tracking-[0.14em] text-primary">Cut revision cycles.</p>
               </div>
             </div>
           </div>
@@ -360,7 +360,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
               <div data-reveal className="w-full lg:w-1/2 space-y-6">
                 <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Explain it better with Voice.</h2>
                 <p className="text-base text-muted-foreground md:text-lg">
-                  No more &quot;What did you mean by this?&quot; emails. Every note lands at the exact moment in the video.
+                  No more &quot;What do you mean?&quot; emails. Every note lands at the exact moment in the timeline.
                 </p>
                 <p className="text-xs uppercase tracking-[0.14em] text-primary">Faster feedback. Fewer misunderstandings.</p>
               </div>
@@ -427,7 +427,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 <p className="text-base text-muted-foreground md:text-lg">
                   Precise feedback that leaves zero room for error. Circle, sketch, and point directly on the video frame.
                 </p>
-                <p className="text-xs uppercase tracking-[0.14em] text-primary">Stops &quot;I thought you meant...&quot;</p>
+                <p className="text-xs uppercase tracking-[0.14em] text-primary">Stop &quot;I thought you meant...&quot;</p>
               </div>
             </div>
           </div>
@@ -438,7 +438,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
           <div className="mx-auto w-full max-w-[1200px]">
             <div data-reveal className="mb-12 flex flex-col items-center text-center">
               <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">Everything a real production workflow needs.</h2>
-              <p className="mt-4 max-w-2xl text-base text-muted-foreground">The core tools teams expect without the complexity that slows clients down.</p>
+              <p className="mt-4 max-w-2xl text-base text-muted-foreground">The core tools teams expect without the complexity that slow clients down.</p>
             </div>
 
             <div className="space-y-10">
@@ -514,7 +514,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
               {/* Card 1: Open Source */}
               <div data-reveal className="relative flex flex-col border border-border/40 bg-[#141414] p-8">
                 <div className="mb-6">
-                  <h3 className="text-xl font-semibold text-foreground">Open Source (Self-hosted)</h3>
+                  <h3 className="text-xl font-semibold text-foreground">Open Source (Self-host)</h3>
                 </div>
 
                 <div className="mb-8 flex items-baseline gap-2">
@@ -537,7 +537,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
               <div data-reveal className="relative flex flex-col border border-[#06b6d4]/40 bg-[#141414] p-8">
                 <div className="mb-6">
                   <p className="font-mono text-[10px] uppercase font-semibold text-muted-foreground tracking-widest mb-4">Best for teams who want zero setup.</p>
-                  <h3 className="text-xl font-semibold text-foreground">Hosted Cloud</h3>
+                  <h3 className="text-xl font-semibold text-foreground">Cloud Hosting</h3>
                 </div>
 
                 <div className="mb-6 flex items-baseline gap-2">
@@ -565,14 +565,14 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
               {/* Card 3: Studio & Agency */}
               <div data-reveal className="relative flex flex-col border border-border/40 bg-[#141414] p-8">
                 <div className="mb-6">
-                  <h3 className="text-xl font-semibold text-foreground">Need more than the standard limits?</h3>
+                  <h3 className="text-xl font-semibold text-foreground">Need more than our plans?</h3>
                 </div>
                 <div className="mb-6 flex items-baseline gap-2">
                   <span className="text-3xl font-semibold text-[#06b6d4]">Let&apos;s talk</span>
                 </div>
 
                 <p className="mb-8 text-sm text-foreground/80 leading-relaxed">
-                  Custom capacity and setup help for high-volume production teams. Tell us your storage, usage, and workflow - we&apos;ll recommend the right approach.
+                  Custom capacity and setup help for high-volume production teams. Tell us your storage, usage, and workflow - we&apos;ll design the perfect plan.
                 </p>
 
                 <a href="mailto:support@openframe.com" className="group relative isolate inline-flex h-12 w-full items-center justify-center overflow-hidden bg-[#0a0a0a] font-medium text-foreground transition-colors hover:bg-white/5 border border-border/50 text-sm">
@@ -608,7 +608,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 {[
                   {
                     q: 'Do clients need an account?',
-                    a: 'No. They can review in the browser with a share link.',
+                    a: 'No. They can review in the browser with a link.',
                   },
                   {
                     q: 'What happens if I exceed my storage?',
@@ -620,23 +620,23 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                   },
                   {
                     q: 'Can I self-host?',
-                    a: 'Yes. The core is open-source and self-hostable. Hosted Cloud is for teams who want zero setup.',
+                    a: 'Yes. The core is open-source and self-hostable. Cloud Hosting is for teams who want zero setup.',
                   },
                   {
                     q: 'How is this different from sending a Google Drive link?',
-                    a: 'Drive doesn’t give timestamped discussion, voice notes, annotations, or version compare, which is where approval time is actually saved.',
+                    a: 'Drive doesn’t give timestamped discussion, voice notes, annotations, or version control, which is where approval time is actually saved.',
                   },
                   {
                     q: 'Is it mobile-friendly?',
-                    a: 'Yes. Clients can review and comment from mobile.',
+                    a: 'Yes. Clients can review and comment from mobile devices.',
                   },
                   {
                     q: 'Can I export feedback?',
-                    a: 'Yes. Export to PDF/CSV for archiving or client handoff.',
+                    a: 'Yes. Export to PDF or CSV files for archiving or to hand off to clients.',
                   },
                   {
                     q: 'Who can access my videos?',
-                    a: 'Only people you invite or share a link with (based on permissions you set).',
+                    a: 'Only people you invite or share a link with can access your videos. (based on permissions you set).',
                   },
                   {
                     q: 'Can I cancel anytime?',
@@ -664,7 +664,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
               href={hostedCtaHref}
               className="group relative isolate inline-flex h-12 min-w-max items-center justify-center overflow-hidden border border-primary bg-primary px-10 text-sm font-medium whitespace-nowrap text-primary-foreground transition-transform duration-300 hover:scale-[1.02] md:min-w-[240px]"
             >
-              Start free
+              Start for free
             </Link>
           </div>
         </section>
