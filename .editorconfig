@@ -1,0 +1,32 @@
+# EditorConfig — https://editorconfig.org
+
+root = true
+
+# All files
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# Markdown
+[*.md]
+trim_trailing_whitespace = false
+
+# YAML
+[*.{yml,yaml}]
+indent_size = 2
+
+# JSON
+[*.json]
+indent_size = 2
+
+# SQL
+[*.sql]
+indent_size = 4
+
+# Shell scripts
+[*.sh]
+indent_size = 4
