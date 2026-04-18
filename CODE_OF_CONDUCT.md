@@ -34,15 +34,6 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 This Code of Conduct applies within all community spaces and also applies when an individual is officially representing the project in public spaces. Examples include using an official project email address, posting via an official social media account, or acting as an appointed representative at an online or offline event.
 
-## Enforcement
-
-If you experience or witness unacceptable behavior, report it by opening a private security advisory at:
-
-- https://github.com/yusufipk/OpenFrame/security/advisories/new
-
-Reports will be reviewed and investigated promptly and fairly.
-All maintainers are obligated to respect the privacy and security of the reporter.
-
 ## Enforcement Guidelines
 
 Maintainers will follow these Community Impact Guidelines in determining consequences:
@@ -73,8 +64,8 @@ Consequence: A permanent ban from any sort of public interaction within the proj
 
 ## Attribution
 
-This Code of Conduct is adapted from the Contributor Covenant, version 2.1:
+This Code of Conduct is adapted from the Contributor Covenant, version 3.0:
 
-- https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
+- https://www.contributor-covenant.org/version/3/0/code_of_conduct/
 
 Community Impact Guidelines were inspired by Mozilla's code of conduct enforcement ladder.
