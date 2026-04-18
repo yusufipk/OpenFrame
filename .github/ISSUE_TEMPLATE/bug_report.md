@@ -32,11 +32,9 @@ What happened instead?
 - Browser (if UI issue):
 - OS:
 
-## Relevant logs/errors
+## Relevant logs/errors (attach files)
 
-```text
-Paste error logs, stack traces, or API errors here.
-```
+Attach error logs, stack traces, or API error outputs as files/images. If needed, you can add a short summary here.
 
 ## Scope and impact
 

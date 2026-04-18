@@ -18,23 +18,13 @@ What do you want to happen?
 
 What alternatives did you evaluate?
 
-## Scope
-
-Which areas are affected?
-
-- [ ] API
-- [ ] Auth/access
-- [ ] Database
-- [ ] UI/UX
-- [ ] Docs
-- [ ] DevEx/Operations
-
 ## Acceptance criteria
 
 How will we know this is done?
 
-- [ ] Criterion 1
-- [ ] Criterion 2
+- [ ] User value: The proposed change solves the stated problem in an end-to-end user flow.
+- [ ] Security and access control: Existing authorization rules are preserved, and no sensitive data is exposed.
+- [ ] Verifiability: Completion is proven with test steps, reproducible evidence, or clear output/screenshots.
 
 ## Non-goals (optional)
 

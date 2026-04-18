@@ -9,10 +9,6 @@ Security fixes are prioritized for the latest code on `master` and recent releas
 
 Please do not report security vulnerabilities in public issues.
 
-Use GitHub private security advisories:
-
-- https://github.com/yusufipk/OpenFrame/security/advisories/new
-
 Include as much detail as possible:
 
 - Affected area (API route, auth flow, upload flow, etc.)
@@ -41,11 +37,3 @@ Security-sensitive areas in this repository include:
 - Upload validation and storage paths in [app/api/upload](app/api/upload)
 - Billing and webhook handling in [app/api/billing](app/api/billing) and [app/api/stripe/webhook/route.ts](app/api/stripe/webhook/route.ts)
 
-## Safe Contribution Reminders
-
-When contributing fixes:
-
-- Avoid logging secrets or sensitive payloads.
-- Keep error responses safe and non-leaky.
-- Preserve access-control checks (do not bypass shared helpers).
-- Add regression tests or reproduction notes for the fix.

@@ -6,14 +6,6 @@ Explain what changed in this PR.
 
 Explain the problem this PR solves.
 
-## Type of change
-
-- [ ] feat
-- [ ] fix
-- [ ] docs
-- [ ] refactor
-- [ ] chore
-- [ ] test
 
 ## Scope
 
