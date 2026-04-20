@@ -8,6 +8,7 @@ Security fixes are prioritized for the latest code on `master` and recent releas
 ## Reporting a Vulnerability
 
 Please do not report security vulnerabilities in public issues.
+Report vulnerabilities by email to info@open-frame.net.
 
 Include as much detail as possible:
 

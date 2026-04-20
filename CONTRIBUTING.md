@@ -1,76 +1,43 @@
 # Contributing to OpenFrame
 
-Thanks for taking the time to contribute to OpenFrame.
-This guide explains where contributions are most useful, how to prepare a pull request, and which project conventions are required.
+Thanks for taking the time to contribute.
+This guide covers setup, PR expectations, and required conventions.
 
-## Ways to Contribute
+## Local setup
 
-You can contribute in several ways:
-
-- Fix bugs in existing behavior.
-- Improve reliability, safety, and performance.
-- Build features that align with product goals.
-- Improve documentation in [README.md](README.md) and related in-repo docs.
-- Add tests and increase confidence for risky paths.
-
-## What To Work On
-
-Good places to contribute:
-
-- API routes in [app/api](app/api)
-- Auth and access control in [lib/auth.ts](lib/auth.ts) and [lib/route-access.ts](lib/route-access.ts)
-- API response consistency in [lib/api-response.ts](lib/api-response.ts)
-- Data model and migrations in [prisma/schema.prisma](prisma/schema.prisma) and [prisma/migrations](prisma/migrations)
-- Video review UI in [components/video-page](components/video-page)
-- Operational and setup docs in [README.md](README.md)
-
-If your change is large, open an issue first so scope can be aligned.
-
-## Local Setup
-
-1. Install dependencies:
+1. Install dependencies.
 
 ```bash
 bun install
 ```
 
-2. Copy environment file and set required values:
+2. Copy environment variables.
 
 ```bash
 cp .env.example .env
 ```
 
-3. Ensure Prisma client is generated:
+3. Generate Prisma client.
 
 ```bash
 bun run db:generate
 ```
 
-4. Run validation:
+4. Run validation.
 
 ```bash
 bun run check
 ```
 
-Optional helpful commands:
-
-```bash
-bun run db:push
-bun run db:migrate
-bun run db:seed
-```
-
-## Contribution Workflow
+## Contribution workflow
 
 1. Fork and create a branch from `master`.
 2. Keep changes focused on one logical concern.
-3. Follow coding and architecture conventions in this guide.
-4. Run required validation locally.
-5. Open a PR with a clear description and checklist.
+3. Follow repository conventions in this file.
+4. Run required checks locally.
+5. Open a PR with a clear summary and checklist.
 
-## Branch Naming
-
-Use one of these prefixes:
+## Branch naming
 
 - `feature/<short-topic>`
 - `fix/<short-topic>`
@@ -78,130 +45,42 @@ Use one of these prefixes:
 - `refactor/<short-topic>`
 - `chore/<short-topic>`
 
-Examples:
+## Commit and PR title standard
 
-- `feature/approval-request-filters`
-- `fix/share-link-password-validation`
-- `docs/contributing-guide`
-
-## Commit and PR Title Standard
-
-Use Conventional Commits style:
-
-- `feat: add workspace invite resend endpoint`
-- `fix: prevent guest comment without share permission`
-- `docs: add contribution workflow examples`
-- `refactor: simplify project access checks`
-
-Recommended pattern:
+Use Conventional Commits with this pattern:
 
 ```text
 type(scope): short summary
 ```
 
-Examples:
+## Required checks before opening a PR
 
-- `feat(api): add comment export pagination`
-- `fix(auth): block unverified credential sign-in`
+- Run `bun run check`.
+- If `prisma/schema.prisma` changed, run `bun run db:generate`.
+- Ensure no unrelated file changes are included.
+- Ensure no secrets or private keys are committed.
+- Update docs when behavior changes.
 
-## Required Checks Before Opening a PR
+## Project conventions (must follow)
 
-You should run:
-
-```bash
-bun run check
-```
-
-If you changed [prisma/schema.prisma](prisma/schema.prisma), also run:
-
-```bash
-bun run db:generate
-```
-
-Also verify:
-
-- No unrelated file changes are included.
-- No secrets or private keys are committed.
-- Docs are updated when behavior changes.
-
-## Project Conventions (Must Follow)
-
-### Package and scripts
-
-- Use Bun commands only for dependency and script workflows.
-- Keep lockfile changes intentional and minimal.
-
-### Auth and authorization
-
-- Server-side session reads: use `auth()` from [lib/auth.ts](lib/auth.ts).
-- Access checks: use `checkProjectAccess()` / `checkWorkspaceAccess()`.
-- Do not implement ad-hoc role checks when shared helpers exist.
-
-### API responses
-
-- Use `successResponse` / `apiErrors` from [lib/api-response.ts](lib/api-response.ts).
-- Keep error messages specific but safe.
-
-### Dynamic route params
-
-In App Router dynamic routes, keep `params` typed as `Promise<...>` and use `await params`.
-
-### Database write safety
-
+- Use Bun commands only.
+- Server-side session reads must use `auth()` from [lib/auth.ts](lib/auth.ts).
+- Access control should use `checkProjectAccess()` / `checkWorkspaceAccess()`.
+- API responses should use `successResponse` / `apiErrors` from [lib/api-response.ts](lib/api-response.ts).
+- In App Router dynamic routes, keep `params` typed as `Promise<...>` and use `await params`.
 - For multi-step DB writes, use Prisma transactions.
-- Prefer backward-compatible API changes unless a breaking change is explicitly required.
-- If custom SQL is needed, manage it in migration SQL files under [prisma/migrations](prisma/migrations).
+- Prefer backward-compatible API changes unless a breaking change is explicitly requested.
+- Prefer `@/` imports when available.
 
-### Imports
+## Security issues
 
-- Prefer `@/` alias imports when available.
+Do not open public issues for vulnerabilities.
+Follow [SECURITY.md](SECURITY.md).
 
-## Database Change Guidelines
+## Code of conduct
 
-When changing data model behavior:
+Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-1. Update [prisma/schema.prisma](prisma/schema.prisma).
-2. Generate Prisma client (`bun run db:generate`).
-3. Add/update migration files as needed under [prisma/migrations](prisma/migrations).
-4. Validate affected endpoints and access-control paths.
-5. Include migration notes in the PR description.
-
-## Frontend Change Guidelines
-
-- Preserve existing UI patterns and information architecture.
-- Keep components focused; extract reusable logic into hooks/services.
-- Avoid unrelated visual churn in functional PRs.
-- Ensure desktop and mobile behavior remains usable.
-
-## Documentation Change Guidelines
-
-- Primary project docs: [README.md](README.md)
-- For technical changes, document behavior in the most relevant existing file or PR notes.
-- Keep docs practical and update them in the same PR when behavior changes.
-
-
-## Review Expectations
-
-Maintainers will usually review for:
-
-- Correctness and regressions
-- Security and access control
-- API contract compatibility
-- Code clarity and maintainability
-- Operational safety (migrations, cleanup impact)
-
-Please be responsive to review comments and keep follow-up commits scoped.
-
-## Security Issues
-
-Do not open public issues for security vulnerabilities.
-Please follow [SECURITY.md](SECURITY.md).
-
-## Code of Conduct
-
-Please follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-## Need Help?
+## Need help?
 
 If you are unsure where to start, open an issue with context and a proposed approach.
-Maintainers can help you scope the change before implementation.

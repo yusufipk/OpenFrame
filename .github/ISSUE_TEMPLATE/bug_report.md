@@ -36,14 +36,9 @@ What happened instead?
 
 Attach error logs, stack traces, or API error outputs as files/images. If needed, you can add a short summary here.
 
-## Scope and impact
+## Impact (optional)
 
-- [ ] Blocking
-- [ ] High
-- [ ] Medium
-- [ ] Low
-
-Who is affected and how?
+Who is affected and how severe is the impact?
 
 ## Additional context
 
