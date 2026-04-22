@@ -151,3 +151,11 @@ bun run check
 ```
 
 Feature flags and self-hosting environment variables are documented in `.env.example` and `.env.docker.example`.
+
+## Contributing
+
+Contributions are welcome.
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for workflow, conventions, and PR requirements.
+- Use [SECURITY.md](SECURITY.md) for responsible vulnerability reporting.
+- Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) in all project interactions.
