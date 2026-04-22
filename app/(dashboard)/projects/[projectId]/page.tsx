@@ -36,7 +36,7 @@ function formatRelativeTime(date: Date): string {
 
 interface ProjectPageProps {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string }>;
 }
 
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
@@ -45,7 +45,8 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   const resolvedSearchParams = await searchParams;
 
   const page = Number(resolvedSearchParams?.page) || 1;
-  const pageSize = 20;
+  const sortOrder = resolvedSearchParams?.sort === 'asc' ? 'asc' : 'desc';
+  const pageSize = 21;
   const skip = (page - 1) * pageSize;
 
   // Fetch project with videos
@@ -107,7 +108,10 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       where: { projectId: project.id },
       skip,
       take: pageSize,
-      orderBy: { position: 'asc' },
+      orderBy: [
+        { updatedAt: sortOrder },
+        { id: sortOrder },
+      ],
       include: {
         versions: {
           where: { isActive: true },
