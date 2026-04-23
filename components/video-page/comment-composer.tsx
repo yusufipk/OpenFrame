@@ -2,7 +2,18 @@
 
 import { memo, type RefObject } from 'react';
 import Link from 'next/link';
-import { Image as ImageIcon, Loader2, Mic, Pause, Pencil, Play, Send, Tag, Trash2, X } from 'lucide-react';
+import {
+  Image as ImageIcon,
+  Loader2,
+  Mic,
+  Pause,
+  Pencil,
+  Play,
+  Send,
+  Tag,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -145,12 +156,7 @@ export const CommentComposer = memo(function CommentComposer({
                 {voicePlaybackRate}x
               </button>
             )}
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              onClick={cancelRecording}
-            >
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={cancelRecording}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -158,12 +164,20 @@ export const CommentComposer = memo(function CommentComposer({
           {imageBlob && (
             <div className="relative group rounded-md overflow-hidden bg-muted flex items-center justify-center max-h-40 mb-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={URL.createObjectURL(imageBlob)} alt="Preview" className="max-h-40 w-auto object-contain" />
+              <img
+                src={URL.createObjectURL(imageBlob)}
+                alt="Preview"
+                className="max-h-40 w-auto object-contain"
+              />
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Button size="icon" variant="destructive" onClick={() => {
-                  setImageBlob(null);
-                  if (imageInputRef.current) imageInputRef.current.value = '';
-                }}>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  onClick={() => {
+                    setImageBlob(null);
+                    if (imageInputRef.current) imageInputRef.current.value = '';
+                  }}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -205,7 +219,10 @@ export const CommentComposer = memo(function CommentComposer({
               <span className="text-xs text-violet-400 font-medium">Annotation attached</span>
               <button
                 className="ml-auto text-xs text-muted-foreground hover:text-destructive transition-colors"
-                onClick={() => { setAnnotationStrokes(null); setIsAnnotating(false); }}
+                onClick={() => {
+                  setAnnotationStrokes(null);
+                  setIsAnnotating(false);
+                }}
               >
                 Remove
               </button>
@@ -214,12 +231,20 @@ export const CommentComposer = memo(function CommentComposer({
           {imageBlob && (
             <div className="relative group rounded-md overflow-hidden bg-muted flex items-center justify-center max-h-40 mb-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={URL.createObjectURL(imageBlob)} alt="Preview" className="max-h-40 w-auto object-contain" />
+              <img
+                src={URL.createObjectURL(imageBlob)}
+                alt="Preview"
+                className="max-h-40 w-auto object-contain"
+              />
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Button size="icon" variant="destructive" onClick={() => {
-                  setImageBlob(null);
-                  if (imageInputRef.current) imageInputRef.current.value = '';
-                }}>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  onClick={() => {
+                    setImageBlob(null);
+                    if (imageInputRef.current) imageInputRef.current.value = '';
+                  }}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -246,7 +271,11 @@ export const CommentComposer = memo(function CommentComposer({
               <Button
                 size="icon"
                 onClick={handleAddComment}
-                disabled={(!commentText.trim() && !imageBlob && !annotationStrokes) || isSubmittingComment || isUploadingImage}
+                disabled={
+                  (!commentText.trim() && !imageBlob && !annotationStrokes) ||
+                  isSubmittingComment ||
+                  isUploadingImage
+                }
               >
                 {isSubmittingComment || isUploadingImage ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -279,7 +308,11 @@ export const CommentComposer = memo(function CommentComposer({
                   pauseVideoForAnnotation();
                   setIsAnnotating(true);
                 }}
-                title={annotationStrokes ? 'Annotation added ✓ (click to redraw)' : 'Draw annotation on video'}
+                title={
+                  annotationStrokes
+                    ? 'Annotation added ✓ (click to redraw)'
+                    : 'Draw annotation on video'
+                }
               >
                 <Pencil className="h-4 w-4" />
               </Button>
@@ -297,9 +330,14 @@ export const CommentComposer = memo(function CommentComposer({
                       size="icon"
                       variant={selectedTagId ? 'default' : 'outline'}
                       title="Select tag"
-                      style={selectedTagId ? {
-                        backgroundColor: availableTags.find(t => t.id === selectedTagId)?.color
-                      } : undefined}
+                      style={
+                        selectedTagId
+                          ? {
+                              backgroundColor: availableTags.find((t) => t.id === selectedTagId)
+                                ?.color,
+                            }
+                          : undefined
+                      }
                     >
                       <Tag className="h-4 w-4" />
                     </Button>
@@ -323,7 +361,10 @@ export const CommentComposer = memo(function CommentComposer({
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
-                          <Link href={`/projects/${projectId}/settings#comment-tags`} className="gap-2 text-muted-foreground">
+                          <Link
+                            href={`/projects/${projectId}/settings#comment-tags`}
+                            className="gap-2 text-muted-foreground"
+                          >
                             <Tag className="h-3 w-3" />
                             Manage Tags
                           </Link>

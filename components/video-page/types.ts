@@ -200,7 +200,11 @@ export interface VideoPageCommentsActions {
   onResolveComment: (commentId: string, currentlyResolved: boolean) => void;
   onEditComment: (commentId: string) => void;
   onDeleteComment: (commentId: string) => void;
-  onReplyComment: (parentId: string, voiceData?: { url: string; duration: number }, imageData?: { url: string }) => void;
+  onReplyComment: (
+    parentId: string,
+    voiceData?: { url: string; duration: number },
+    imageData?: { url: string }
+  ) => void;
   onSubmitReplyWithMedia: (parentId: string) => void;
   onStartEditAnnotation: () => void;
 }

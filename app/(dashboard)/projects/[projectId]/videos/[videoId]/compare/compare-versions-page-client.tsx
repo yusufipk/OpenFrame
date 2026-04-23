@@ -100,7 +100,13 @@ const isSafeUrl = (url: string) => {
   }
 };
 
-export default function CompareVersionsPageClient({ projectId, videoId }: { projectId: string; videoId: string }) {
+export default function CompareVersionsPageClient({
+  projectId,
+  videoId,
+}: {
+  projectId: string;
+  videoId: string;
+}) {
   const searchParams = useSearchParams();
 
   const [video, setVideo] = useState<VideoData | null>(null);
@@ -164,7 +170,9 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
   useEffect(() => {
     async function fetchVideo() {
       try {
-        const res = await fetch(`/api/projects/${projectId}/videos/${videoId}?includeComments=false`);
+        const res = await fetch(
+          `/api/projects/${projectId}/videos/${videoId}?includeComments=false`
+        );
         if (!res.ok) {
           setError('Failed to load video');
           setLoading(false);
@@ -176,9 +184,9 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
 
         const versionsParam = searchParams.get('versions');
         if (versionsParam) {
-          const ids = versionsParam.split(',').filter((id) =>
-            data.versions.some((v: Version) => v.id === id)
-          );
+          const ids = versionsParam
+            .split(',')
+            .filter((id) => data.versions.some((v: Version) => v.id === id));
           if (ids.length >= 2) {
             setPanelVersionIds(ids);
           } else {
@@ -291,12 +299,23 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
       const playing = state === window.YT?.PlayerState?.PLAYING;
 
       if (playing) {
-        players.forEach((p) => { try { p.pauseVideo(); } catch { /* */ } });
+        players.forEach((p) => {
+          try {
+            p.pauseVideo();
+          } catch {
+            /* */
+          }
+        });
         setIsPlaying(false);
       } else {
         const t = firstPlayer.getCurrentTime();
         players.forEach((p) => {
-          try { p.seekTo(t, true); p.playVideo(); } catch { /* */ }
+          try {
+            p.seekTo(t, true);
+            p.playVideo();
+          } catch {
+            /* */
+          }
         });
         setIsPlaying(true);
       }
@@ -307,36 +326,48 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
 
   const handleSeek = useCallback((time: number) => {
     const players = Array.from(playersRef.current.values());
-    players.forEach((p) => { try { p.seekTo(time, true); } catch { /* */ } });
+    players.forEach((p) => {
+      try {
+        p.seekTo(time, true);
+      } catch {
+        /* */
+      }
+    });
     setCurrentTime(time);
   }, []);
 
-  const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!timelineRef.current || durationRef.current <= 0) return;
-    setIsDragging(true);
-    const rect = timelineRef.current.getBoundingClientRect();
-    const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const time = fraction * durationRef.current;
-    currentTimeRef.current = time;
-    setCurrentTime(time);
-    handleSeek(time);
-  }, [handleSeek]);
+  const handleTimelineMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!timelineRef.current || durationRef.current <= 0) return;
+      setIsDragging(true);
+      const rect = timelineRef.current.getBoundingClientRect();
+      const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const time = fraction * durationRef.current;
+      currentTimeRef.current = time;
+      setCurrentTime(time);
+      handleSeek(time);
+    },
+    [handleSeek]
+  );
 
-  const handleTimelineMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !timelineRef.current || durationRef.current <= 0) return;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const time = fraction * durationRef.current;
-    currentTimeRef.current = time;
-    setCurrentTime(time);
-    // Keep DOM in sync while the RAF loop is paused during drag
-    const pct = fraction * 100;
-    if (progressBarRef.current) progressBarRef.current.style.width = `${pct}%`;
-    if (playheadRef.current) playheadRef.current.style.left = `calc(${pct}% - 2px)`;
-    if (timecodeRef.current) {
-      timecodeRef.current.textContent = `${formatTime(time)} / ${formatTime(durationRef.current)}`;
-    }
-  }, [isDragging]);
+  const handleTimelineMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isDragging || !timelineRef.current || durationRef.current <= 0) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const time = fraction * durationRef.current;
+      currentTimeRef.current = time;
+      setCurrentTime(time);
+      // Keep DOM in sync while the RAF loop is paused during drag
+      const pct = fraction * 100;
+      if (progressBarRef.current) progressBarRef.current.style.width = `${pct}%`;
+      if (playheadRef.current) playheadRef.current.style.left = `calc(${pct}% - 2px)`;
+      if (timecodeRef.current) {
+        timecodeRef.current.textContent = `${formatTime(time)} / ${formatTime(durationRef.current)}`;
+      }
+    },
+    [isDragging]
+  );
 
   const handleTimelineMouseUp = useCallback(() => {
     if (!isDragging) return;
@@ -399,7 +430,8 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        return;
 
       const players = Array.from(playersRef.current.values());
       if (players.length === 0) return;
@@ -430,8 +462,14 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
           e.preventDefault();
           players.forEach((p) => {
             try {
-              if (p.isMuted?.()) { p.unMute?.(); } else { p.mute?.(); }
-            } catch { /* */ }
+              if (p.isMuted?.()) {
+                p.unMute?.();
+              } else {
+                p.mute?.();
+              }
+            } catch {
+              /* */
+            }
           });
           break;
       }
@@ -442,28 +480,31 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
   }, [handlePlayPause, handleSeek]);
 
   // Fetch comments for a version
-  const toggleComments = useCallback(async (versionId: string) => {
-    if (openCommentsPanel === versionId) {
-      setOpenCommentsPanel(null);
-      return;
-    }
-    setOpenCommentsPanel(versionId);
-
-    if (!commentsCache.has(versionId)) {
-      setCommentsLoading(versionId);
-      try {
-        const res = await fetch(`/api/versions/${versionId}/comments`);
-        const json = await res.json();
-        const data = json.data;
-        const commentsList = Array.isArray(data) ? data : (data?.comments ?? []);
-        setCommentsCache((prev) => new Map(prev).set(versionId, commentsList));
-      } catch {
-        setCommentsCache((prev) => new Map(prev).set(versionId, []));
-      } finally {
-        setCommentsLoading(null);
+  const toggleComments = useCallback(
+    async (versionId: string) => {
+      if (openCommentsPanel === versionId) {
+        setOpenCommentsPanel(null);
+        return;
       }
-    }
-  }, [openCommentsPanel, commentsCache]);
+      setOpenCommentsPanel(versionId);
+
+      if (!commentsCache.has(versionId)) {
+        setCommentsLoading(versionId);
+        try {
+          const res = await fetch(`/api/versions/${versionId}/comments`);
+          const json = await res.json();
+          const data = json.data;
+          const commentsList = Array.isArray(data) ? data : (data?.comments ?? []);
+          setCommentsCache((prev) => new Map(prev).set(versionId, commentsList));
+        } catch {
+          setCommentsCache((prev) => new Map(prev).set(versionId, []));
+        } finally {
+          setCommentsLoading(null);
+        }
+      }
+    },
+    [openCommentsPanel, commentsCache]
+  );
 
   const handleChangeVersion = useCallback((panelIndex: number, newVersionId: string) => {
     setPanelVersionIds((prev) => {
@@ -471,7 +512,11 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
       const oldId = next[panelIndex];
       const oldPlayer = playersRef.current.get(oldId);
       if (oldPlayer) {
-        try { oldPlayer.destroy(); } catch { /* */ }
+        try {
+          oldPlayer.destroy();
+        } catch {
+          /* */
+        }
         playersRef.current.delete(oldId);
       }
       next[panelIndex] = newVersionId;
@@ -619,11 +664,21 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
                       if (!player) return;
                       const isMuted = mutedPanels.has(versionId);
                       try {
-                        if (isMuted) { player.unMute(); } else { player.mute(); }
-                      } catch { /* */ }
+                        if (isMuted) {
+                          player.unMute();
+                        } else {
+                          player.mute();
+                        }
+                      } catch {
+                        /* */
+                      }
                       setMutedPanels((prev) => {
                         const next = new Set(prev);
-                        if (isMuted) { next.delete(versionId); } else { next.add(versionId); }
+                        if (isMuted) {
+                          next.delete(versionId);
+                        } else {
+                          next.add(versionId);
+                        }
                         return next;
                       });
                     }}
@@ -686,7 +741,11 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
                 <div
                   className={cn(
                     'absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-300 pointer-events-none',
-                    isPlaying ? (cursorIdle ? 'opacity-0' : 'opacity-0 group-hover:opacity-100') : 'opacity-100'
+                    isPlaying
+                      ? cursorIdle
+                        ? 'opacity-0'
+                        : 'opacity-0 group-hover:opacity-100'
+                      : 'opacity-100'
                   )}
                 >
                   <div className="w-14 h-14 rounded-full bg-black/60 flex items-center justify-center">
@@ -710,7 +769,12 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
                         {panelComments.length}
                       </Badge>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setOpenCommentsPanel(null)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => setOpenCommentsPanel(null)}
+                    >
                       <X className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -728,20 +792,29 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
                       [...panelComments]
                         .sort((a, b) => a.timestamp - b.timestamp)
                         .map((comment) => {
-                          const authorName = comment.author?.name || comment.guestName || 'Anonymous';
+                          const authorName =
+                            comment.author?.name || comment.guestName || 'Anonymous';
                           return (
                             <div
                               key={comment.id}
-                              className={cn('rounded-lg border p-2 text-xs', comment.isResolved && 'opacity-60')}
+                              className={cn(
+                                'rounded-lg border p-2 text-xs',
+                                comment.isResolved && 'opacity-60'
+                              )}
                             >
                               <div className="flex items-center gap-1.5 mb-1">
                                 <Avatar className="h-4 w-4">
                                   <AvatarImage src={comment.author?.image ?? undefined} />
-                                  <AvatarFallback className="text-[8px]">{authorName.charAt(0)}</AvatarFallback>
+                                  <AvatarFallback className="text-[8px]">
+                                    {authorName.charAt(0)}
+                                  </AvatarFallback>
                                 </Avatar>
                                 <span className="font-medium truncate">{authorName}</span>
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); handleSeek(comment.timestamp); }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSeek(comment.timestamp);
+                                  }}
                                   className="ml-auto flex items-center gap-0.5 text-primary bg-primary/10 px-1 py-0.5 rounded text-[10px] hover:bg-primary/20 transition-colors"
                                 >
                                   <Clock className="h-2.5 w-2.5" />
@@ -749,13 +822,18 @@ export default function CompareVersionsPageClient({ projectId, videoId }: { proj
                                 </button>
                               </div>
                               {comment.content && (
-                                <p className="text-muted-foreground leading-relaxed">{comment.content}</p>
+                                <p className="text-muted-foreground leading-relaxed">
+                                  {comment.content}
+                                </p>
                               )}
                               {comment.tag && (
                                 <Badge
                                   variant="outline"
                                   className="mt-1 text-[10px] px-1.5 py-0"
-                                  style={{ borderColor: comment.tag.color, color: comment.tag.color }}
+                                  style={{
+                                    borderColor: comment.tag.color,
+                                    color: comment.tag.color,
+                                  }}
                                 >
                                   {comment.tag.name}
                                 </Badge>
@@ -873,7 +951,11 @@ function YouTubePanel({
         clearTimeout(timeout);
         onUnregister(version.id);
         if (playerRef.current) {
-          try { playerRef.current.destroy(); } catch { /* */ }
+          try {
+            playerRef.current.destroy();
+          } catch {
+            /* */
+          }
           playerRef.current = null;
         }
       };
@@ -882,7 +964,11 @@ function YouTubePanel({
     return () => {
       onUnregister(version.id);
       if (playerRef.current) {
-        try { playerRef.current.destroy(); } catch { /* */ }
+        try {
+          playerRef.current.destroy();
+        } catch {
+          /* */
+        }
         playerRef.current = null;
       }
     };
@@ -979,11 +1065,8 @@ function BunnyPanel({
         }
         return cachedDuration;
       },
-      getPlayerState: () => (
-        isPlaying
-          ? (window.YT?.PlayerState?.PLAYING ?? 1)
-          : (window.YT?.PlayerState?.PAUSED ?? 2)
-      ),
+      getPlayerState: () =>
+        isPlaying ? (window.YT?.PlayerState?.PLAYING ?? 1) : (window.YT?.PlayerState?.PAUSED ?? 2),
       setPlaybackRate: (rate: number) => {
         videoEl.playbackRate = rate;
       },
@@ -997,7 +1080,11 @@ function BunnyPanel({
         videoEl.removeEventListener('loadedmetadata', onLoadedMetadata);
         videoEl.removeEventListener('error', onError);
         if (hlsRef.current) {
-          try { hlsRef.current.destroy(); } catch { /* ignore */ }
+          try {
+            hlsRef.current.destroy();
+          } catch {
+            /* ignore */
+          }
           hlsRef.current = null;
         }
         videoEl.removeAttribute('src');
@@ -1014,10 +1101,18 @@ function BunnyPanel({
         setIsPortraitSource(videoEl.videoHeight > videoEl.videoWidth);
       }
     };
-    const onTimeUpdate = () => { cachedTime = videoEl.currentTime || 0; };
-    const onPlay = () => { isPlaying = true; };
-    const onPause = () => { isPlaying = false; };
-    const onEnded = () => { isPlaying = false; };
+    const onTimeUpdate = () => {
+      cachedTime = videoEl.currentTime || 0;
+    };
+    const onPlay = () => {
+      isPlaying = true;
+    };
+    const onPause = () => {
+      isPlaying = false;
+    };
+    const onEnded = () => {
+      isPlaying = false;
+    };
     if (!bunnyCdnHostname) {
       return;
     }
@@ -1027,7 +1122,11 @@ function BunnyPanel({
       sourceMode = 'original';
       clearRetryTimer();
       if (hlsRef.current) {
-        try { hlsRef.current.destroy(); } catch { /* ignore */ }
+        try {
+          hlsRef.current.destroy();
+        } catch {
+          /* ignore */
+        }
         hlsRef.current = null;
       }
       videoEl.src = getRetryUrl(originalUrl);
@@ -1075,24 +1174,30 @@ function BunnyPanel({
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (destroyed) return;
         const responseCode = (data as { response?: { code?: number } }).response?.code;
-        const isManifestLoadFailure = data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR
-          || data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT;
-        const hasProcessingLikeStatus = responseCode === undefined
-          || responseCode === 0
-          || responseCode === 403
-          || responseCode === 404
-          || responseCode === 423
-          || responseCode === 429
-          || responseCode === 503;
+        const isManifestLoadFailure =
+          data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+          data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT;
+        const hasProcessingLikeStatus =
+          responseCode === undefined ||
+          responseCode === 0 ||
+          responseCode === 403 ||
+          responseCode === 404 ||
+          responseCode === 423 ||
+          responseCode === 429 ||
+          responseCode === 503;
         const isLikelyProcessing = isManifestLoadFailure && hasProcessingLikeStatus;
-        const isNetworkPreMetadataProcessing = data.type === Hls.ErrorTypes.NETWORK_ERROR
-          && hasProcessingLikeStatus
-          && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
-        const isUnknownPreMetadataProcessing = !data.details
-          && !data.type
-          && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
+        const isNetworkPreMetadataProcessing =
+          data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+          hasProcessingLikeStatus &&
+          videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
+        const isUnknownPreMetadataProcessing =
+          !data.details && !data.type && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
 
-        if (isLikelyProcessing || isNetworkPreMetadataProcessing || isUnknownPreMetadataProcessing) {
+        if (
+          isLikelyProcessing ||
+          isNetworkPreMetadataProcessing ||
+          isUnknownPreMetadataProcessing
+        ) {
           if (sourceMode === 'hls') {
             activateOriginalFallback();
             return;
@@ -1132,13 +1237,20 @@ function BunnyPanel({
   }, [version.id, version.videoId, onRegister, onUnregister, bunnyCdnHostname]);
 
   return (
-    <div ref={panelRef} className="relative w-full h-full group flex items-center justify-center bg-black">
+    <div
+      ref={panelRef}
+      className="relative w-full h-full group flex items-center justify-center bg-black"
+    >
       <div
         className={cn(
           'relative flex items-center justify-center bg-black',
           isPortraitSource ? 'h-full overflow-hidden' : 'w-full h-full'
         )}
-        style={isPortraitSource && portraitFrameWidth > 0 ? { width: `${portraitFrameWidth}px` } : undefined}
+        style={
+          isPortraitSource && portraitFrameWidth > 0
+            ? { width: `${portraitFrameWidth}px` }
+            : undefined
+        }
       >
         <video
           ref={videoRef}
@@ -1156,5 +1268,5 @@ function BunnyPanel({
         />
       </div>
     </div>
-  )
+  );
 }

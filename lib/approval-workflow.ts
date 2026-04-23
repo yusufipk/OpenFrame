@@ -7,12 +7,17 @@ export interface ApprovalCandidate {
   image: string | null;
 }
 
-function addCandidate(map: Map<string, ApprovalCandidate>, user: ApprovalCandidate | null | undefined) {
+function addCandidate(
+  map: Map<string, ApprovalCandidate>,
+  user: ApprovalCandidate | null | undefined
+) {
   if (!user) return;
   map.set(user.id, user);
 }
 
-export async function getApprovalCandidatesForProject(projectId: string): Promise<ApprovalCandidate[] | null> {
+export async function getApprovalCandidatesForProject(
+  projectId: string
+): Promise<ApprovalCandidate[] | null> {
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: {

@@ -53,9 +53,10 @@ export async function getUserStorageInfo(userId: string): Promise<{
 }> {
   const usedBytes = await getUserTotalStorageBytes(userId);
   const limitBytes = PLAN_STORAGE_LIMIT_BYTES;
-  const percentage = limitBytes > BigInt(0)
-    ? Math.min(100, Number((usedBytes * BigInt(10000)) / limitBytes) / 100)
-    : 0;
+  const percentage =
+    limitBytes > BigInt(0)
+      ? Math.min(100, Number((usedBytes * BigInt(10000)) / limitBytes) / 100)
+      : 0;
 
   return { usedBytes, limitBytes, percentage };
 }
@@ -71,7 +72,7 @@ export async function getUserStorageInfo(userId: string): Promise<{
  */
 export async function enforceStorageQuota(
   userId: string,
-  incomingSizeBytes: bigint,
+  incomingSizeBytes: bigint
 ): Promise<NextResponse | null> {
   if (!isStripeFeatureEnabled()) {
     return null;
@@ -101,7 +102,7 @@ export async function enforceStorageQuota(
  */
 export async function reserveStorageQuota(
   userId: string,
-  incomingSizeBytes: bigint,
+  incomingSizeBytes: bigint
 ): Promise<{ reservationId: string | null } | { error: NextResponse }> {
   if (!isStripeFeatureEnabled()) {
     return { reservationId: null };

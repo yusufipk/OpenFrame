@@ -36,7 +36,13 @@ export function RefreshR2StatsButton() {
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button type="button" variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleRefresh}
+        disabled={isRefreshing}
+      >
         {isRefreshing ? (
           <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
         ) : (

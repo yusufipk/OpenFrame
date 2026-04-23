@@ -26,7 +26,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { AnnotationCanvas, type AnnotationCanvasHandle, type AnnotationStroke } from '@/components/annotation-canvas';
+import {
+  AnnotationCanvas,
+  type AnnotationCanvasHandle,
+  type AnnotationStroke,
+} from '@/components/annotation-canvas';
 import type { BunnyQualityOption, CommentMarker } from '@/components/video-page/types';
 
 interface PlayerCoreProps {
@@ -157,13 +161,20 @@ export const PlayerCore = memo(function PlayerCore({
       >
         <div className={cn('relative w-full h-full', isFullscreenMode && 'absolute inset-0')}>
           {activeProviderId === 'bunny' ? (
-            <div ref={bunnyViewportRef} className="absolute inset-0 flex items-center justify-center bg-black">
+            <div
+              ref={bunnyViewportRef}
+              className="absolute inset-0 flex items-center justify-center bg-black"
+            >
               <div
                 className={cn(
                   'relative flex items-center justify-center bg-black',
                   isBunnyPortraitSource ? 'h-full overflow-hidden' : 'w-full h-full'
                 )}
-                style={isBunnyPortraitSource && bunnyPortraitFrameWidth > 0 ? { width: `${bunnyPortraitFrameWidth}px` } : undefined}
+                style={
+                  isBunnyPortraitSource && bunnyPortraitFrameWidth > 0
+                    ? { width: `${bunnyPortraitFrameWidth}px` }
+                    : undefined
+                }
               >
                 <video
                   key={activeVersionId}
@@ -198,9 +209,12 @@ export const PlayerCore = memo(function PlayerCore({
           <div
             className={cn(
               'absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-300',
-              (showBunnyProcessingOverlay || showBunnyErrorOverlay) && 'opacity-0 pointer-events-none',
+              (showBunnyProcessingOverlay || showBunnyErrorOverlay) &&
+                'opacity-0 pointer-events-none',
               isPlaying
-                ? cursorIdle ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
+                ? cursorIdle
+                  ? 'opacity-0'
+                  : 'opacity-0 group-hover:opacity-100'
                 : 'opacity-100'
             )}
           >
@@ -318,11 +332,15 @@ export const PlayerCore = memo(function PlayerCore({
         </div>
       </div>
 
-      <div className={cn(
-        'shrink-0 px-4 py-2 bg-background border-t',
-        isFullscreenMode ? 'absolute bottom-0 left-0 right-0 z-50 transition-opacity duration-300' : '',
-        isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
-      )}>
+      <div
+        className={cn(
+          'shrink-0 px-4 py-2 bg-background border-t',
+          isFullscreenMode
+            ? 'absolute bottom-0 left-0 right-0 z-50 transition-opacity duration-300'
+            : '',
+          isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
+        )}
+      >
         <div className="flex items-center gap-1 mb-2">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePlayPause}>
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
@@ -348,12 +366,7 @@ export const PlayerCore = memo(function PlayerCore({
             <SkipForward className="h-4 w-4" />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={handleMuteToggle}
-          >
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleMuteToggle}>
             {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </Button>
 
@@ -387,7 +400,9 @@ export const PlayerCore = memo(function PlayerCore({
                     <DropdownMenuItem
                       key={option.level}
                       onClick={() => handleQualityChange(option.level)}
-                      className={cn(option.level === selectedQualityLevel && 'font-bold text-primary')}
+                      className={cn(
+                        option.level === selectedQualityLevel && 'font-bold text-primary'
+                      )}
                     >
                       {option.label}
                     </DropdownMenuItem>
@@ -423,7 +438,11 @@ export const PlayerCore = memo(function PlayerCore({
               onClick={toggleFullscreen}
               title={isFullscreenMode ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
             >
-              {isFullscreenMode ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+              {isFullscreenMode ? (
+                <Minimize className="h-4 w-4" />
+              ) : (
+                <Maximize className="h-4 w-4" />
+              )}
             </Button>
 
             {isFullscreenMode ? (
@@ -434,7 +453,11 @@ export const PlayerCore = memo(function PlayerCore({
                 onClick={() => setShowComments(!showComments)}
                 title={showComments ? 'Hide comments' : 'Show comments'}
               >
-                {showComments ? <MessageSquareOff className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                {showComments ? (
+                  <MessageSquareOff className="h-4 w-4" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
               </Button>
             ) : (
               <Button

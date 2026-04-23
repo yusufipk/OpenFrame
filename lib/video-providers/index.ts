@@ -10,16 +10,10 @@ import { logError } from '@/lib/logger';
 export * from './types';
 
 // Registry of all available providers
-const providers: VideoProvider[] = [
-  youtubeProvider,
-  directProvider,
-  bunnyProvider,
-];
+const providers: VideoProvider[] = [youtubeProvider, directProvider, bunnyProvider];
 
 // Provider lookup map for quick access
-const providerMap = new Map<string, VideoProvider>(
-  providers.map(p => [p.id, p])
-);
+const providerMap = new Map<string, VideoProvider>(providers.map((p) => [p.id, p]));
 
 /**
  * Detect which provider can handle a given URL
@@ -91,7 +85,10 @@ export async function fetchVideoMetadata(source: VideoSource): Promise<VideoMeta
 /**
  * Get embed URL for a video source
  */
-export function getEmbedUrl(source: VideoSource, options?: Parameters<VideoProvider['getEmbedUrl']>[1]): string | null {
+export function getEmbedUrl(
+  source: VideoSource,
+  options?: Parameters<VideoProvider['getEmbedUrl']>[1]
+): string | null {
   const provider = getProvider(source.providerId);
 
   if (!provider) {
@@ -104,7 +101,10 @@ export function getEmbedUrl(source: VideoSource, options?: Parameters<VideoProvi
 /**
  * Get thumbnail URL for a video source
  */
-export function getThumbnailUrl(source: VideoSource, size?: Parameters<VideoProvider['getThumbnailUrl']>[1]): string | null {
+export function getThumbnailUrl(
+  source: VideoSource,
+  size?: Parameters<VideoProvider['getThumbnailUrl']>[1]
+): string | null {
   const provider = getProvider(source.providerId);
 
   if (!provider) {

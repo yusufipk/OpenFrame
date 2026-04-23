@@ -27,12 +27,9 @@ interface UseVideoPlayerParams {
   playerRef: RefObject<YT.Player | PlayerAdapter | null>;
   formatBunnyQualityLabel: (level: { height?: number; bitrate?: number }, index: number) => string;
   speedOptions: number[];
-  scheduleWatchProgressSaveRef: RefObject<(input: {
-    progress: number;
-    duration?: number;
-    immediate?: boolean;
-    force?: boolean;
-  }) => void>;
+  scheduleWatchProgressSaveRef: RefObject<
+    (input: { progress: number; duration?: number; immediate?: boolean; force?: boolean }) => void
+  >;
   setViewingAnnotation: (strokes: AnnotationStroke[] | null) => void;
 }
 
@@ -166,11 +163,19 @@ export function useVideoPlayer({
     setIsBunnyPortraitSource(false);
 
     if (playerRef.current) {
-      try { playerRef.current.destroy(); } catch { /* ignore */ }
+      try {
+        playerRef.current.destroy();
+      } catch {
+        /* ignore */
+      }
       playerRef.current = null;
     }
     if (hlsRef.current) {
-      try { hlsRef.current.destroy(); } catch { /* ignore */ }
+      try {
+        hlsRef.current.destroy();
+      } catch {
+        /* ignore */
+      }
       hlsRef.current = null;
     }
     if (bunnyRetryTimerRef.current) {
@@ -222,7 +227,8 @@ export function useVideoPlayer({
         let retryAttempt = 0;
         let usingHlsJs = false;
         let hlsInstance: Hls | null = null;
-        let sourceMode: 'hls' | 'original' = bunnySourcePreference === 'original' ? 'original' : 'hls';
+        let sourceMode: 'hls' | 'original' =
+          bunnySourcePreference === 'original' ? 'original' : 'hls';
         const clearRetryTimer = () => {
           if (bunnyRetryTimerRef.current) {
             clearTimeout(bunnyRetryTimerRef.current);
@@ -268,7 +274,11 @@ export function useVideoPlayer({
           usingHlsJs = false;
           clearRetryTimer();
           if (hlsRef.current) {
-            try { hlsRef.current.destroy(); } catch { /* ignore */ }
+            try {
+              hlsRef.current.destroy();
+            } catch {
+              /* ignore */
+            }
             hlsRef.current = null;
           }
           hlsInstance = null;
@@ -288,7 +298,10 @@ export function useVideoPlayer({
 
         const saveProgress = () => {
           const current = videoEl.currentTime || 0;
-          const duration = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : cachedDuration;
+          const duration =
+            Number.isFinite(videoEl.duration) && videoEl.duration > 0
+              ? videoEl.duration
+              : cachedDuration;
           scheduleWatchProgressSaveRef.current({
             progress: current,
             duration,
@@ -310,17 +323,23 @@ export function useVideoPlayer({
           setIsReady(true);
           const resumeState = bunnySourceSwitchResumeRef.current;
           if (resumeState) {
-            const knownDuration = Number.isFinite(videoEl.duration) && videoEl.duration > 0
-              ? videoEl.duration
-              : cachedDuration;
-            const targetTime = knownDuration > 0
-              ? Math.min(Math.max(0, resumeState.time), Math.max(0, knownDuration - 0.01))
-              : Math.max(0, resumeState.time);
+            const knownDuration =
+              Number.isFinite(videoEl.duration) && videoEl.duration > 0
+                ? videoEl.duration
+                : cachedDuration;
+            const targetTime =
+              knownDuration > 0
+                ? Math.min(Math.max(0, resumeState.time), Math.max(0, knownDuration - 0.01))
+                : Math.max(0, resumeState.time);
             videoEl.currentTime = targetTime;
             setCurrentTime(targetTime);
             bunnySourceSwitchResumeRef.current = null;
             if (resumeState.wasPlaying) {
-              videoEl.play().catch((err) => console.error('Error resuming Bunny video after source switch:', err));
+              videoEl
+                .play()
+                .catch((err) =>
+                  console.error('Error resuming Bunny video after source switch:', err)
+                );
             }
           }
           syncDuration();
@@ -348,7 +367,11 @@ export function useVideoPlayer({
           if (!isDraggingRef.current) {
             setCurrentTime(videoEl.currentTime || 0);
           }
-          if (Number.isFinite(videoEl.duration) && videoEl.duration > 0 && videoEl.duration !== cachedDuration) {
+          if (
+            Number.isFinite(videoEl.duration) &&
+            videoEl.duration > 0 &&
+            videoEl.duration !== cachedDuration
+          ) {
             cachedDuration = videoEl.duration;
             setVideoDuration(videoEl.duration);
           }
@@ -380,10 +403,12 @@ export function useVideoPlayer({
         videoEl.addEventListener('error', onVideoError);
 
         const configureHlsLevels = (levels: Level[]) => {
-          setQualityOptions(levels.map((level, index) => ({
-            level: index,
-            label: formatBunnyQualityLabel(level, index),
-          })));
+          setQualityOptions(
+            levels.map((level, index) => ({
+              level: index,
+              label: formatBunnyQualityLabel(level, index),
+            }))
+          );
           const pendingQuality = pendingHlsQualityRef.current;
           pendingHlsQualityRef.current = null;
 
@@ -438,24 +463,29 @@ export function useVideoPlayer({
           hls.on(Hls.Events.ERROR, (_, data) => {
             if (destroyed) return;
             const responseCode = (data as { response?: { code?: number } }).response?.code;
-            const isManifestLoadFailure = data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR
-              || data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT;
-            const hasProcessingLikeStatus = responseCode === undefined
-              || responseCode === 0
-              || responseCode === 403
-              || responseCode === 404
-              || responseCode === 423
-              || responseCode === 429
-              || responseCode === 503;
-            const isLikelyProcessing = isManifestLoadFailure
-              && hasProcessingLikeStatus;
-            const isNetworkPreMetadataProcessing = data.type === Hls.ErrorTypes.NETWORK_ERROR
-              && hasProcessingLikeStatus
-              && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
-            const isUnknownPreMetadataProcessing = !data.details
-              && !data.type
-              && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
-            if (isLikelyProcessing || isNetworkPreMetadataProcessing || isUnknownPreMetadataProcessing) {
+            const isManifestLoadFailure =
+              data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+              data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT;
+            const hasProcessingLikeStatus =
+              responseCode === undefined ||
+              responseCode === 0 ||
+              responseCode === 403 ||
+              responseCode === 404 ||
+              responseCode === 423 ||
+              responseCode === 429 ||
+              responseCode === 503;
+            const isLikelyProcessing = isManifestLoadFailure && hasProcessingLikeStatus;
+            const isNetworkPreMetadataProcessing =
+              data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+              hasProcessingLikeStatus &&
+              videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
+            const isUnknownPreMetadataProcessing =
+              !data.details && !data.type && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
+            if (
+              isLikelyProcessing ||
+              isNetworkPreMetadataProcessing ||
+              isUnknownPreMetadataProcessing
+            ) {
               if (activateOriginalFallback()) {
                 return;
               }
@@ -495,11 +525,10 @@ export function useVideoPlayer({
             if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) return videoEl.duration;
             return cachedDuration;
           },
-          getPlayerState: () => (
+          getPlayerState: () =>
             videoEl.paused
               ? (window.YT?.PlayerState?.PAUSED ?? 2)
-              : (window.YT?.PlayerState?.PLAYING ?? 1)
-          ),
+              : (window.YT?.PlayerState?.PLAYING ?? 1),
           setPlaybackRate: (rate: number) => {
             videoEl.playbackRate = rate;
           },
@@ -513,7 +542,11 @@ export function useVideoPlayer({
             videoEl.removeEventListener('timeupdate', onTimeUpdate);
             videoEl.removeEventListener('error', onVideoError);
             if (hlsRef.current) {
-              try { hlsRef.current.destroy(); } catch { /* ignore */ }
+              try {
+                hlsRef.current.destroy();
+              } catch {
+                /* ignore */
+              }
               hlsRef.current = null;
             }
             videoEl.removeAttribute('src');
@@ -541,11 +574,19 @@ export function useVideoPlayer({
         window.onYouTubeIframeAPIReady = undefined;
       }
       if (playerRef.current) {
-        try { playerRef.current.destroy(); } catch { /* ignore */ }
+        try {
+          playerRef.current.destroy();
+        } catch {
+          /* ignore */
+        }
         playerRef.current = null;
       }
       if (hlsRef.current) {
-        try { hlsRef.current.destroy(); } catch { /* ignore */ }
+        try {
+          hlsRef.current.destroy();
+        } catch {
+          /* ignore */
+        }
         hlsRef.current = null;
       }
       if (bunnyRetryTimerRef.current) {
@@ -553,25 +594,44 @@ export function useVideoPlayer({
         bunnyRetryTimerRef.current = null;
       }
     };
-  }, [activeProviderId, activeVersionId, embedUrl, isApiLoaded, canInitializePlayer, formatBunnyQualityLabel, bunnySourcePreference, hlsRef, iframeRef, playerRef, scheduleWatchProgressSaveRef, videoRef]);
+  }, [
+    activeProviderId,
+    activeVersionId,
+    embedUrl,
+    isApiLoaded,
+    canInitializePlayer,
+    formatBunnyQualityLabel,
+    bunnySourcePreference,
+    hlsRef,
+    iframeRef,
+    playerRef,
+    scheduleWatchProgressSaveRef,
+    videoRef,
+  ]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => {
-        setIsFullscreenMode(true);
-        setShowComments(false);
-      }).catch((err) => {
-        console.error('Fullscreen failed:', err);
-        toast.error('Unable to enter fullscreen mode');
-      });
+      document.documentElement
+        .requestFullscreen()
+        .then(() => {
+          setIsFullscreenMode(true);
+          setShowComments(false);
+        })
+        .catch((err) => {
+          console.error('Fullscreen failed:', err);
+          toast.error('Unable to enter fullscreen mode');
+        });
     } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreenMode(false);
-        setShowComments(true);
-      }).catch((err) => {
-        console.error('Exit fullscreen failed:', err);
-        toast.error('Unable to exit fullscreen mode');
-      });
+      document
+        .exitFullscreen()
+        .then(() => {
+          setIsFullscreenMode(false);
+          setShowComments(true);
+        })
+        .catch((err) => {
+          console.error('Exit fullscreen failed:', err);
+          toast.error('Unable to exit fullscreen mode');
+        });
     }
   }, []);
 
@@ -730,7 +790,16 @@ export function useVideoPlayer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, currentTime, duration, isMuted, playbackSpeed, speedOptions, toggleFullscreen, playerRef]);
+  }, [
+    isPlaying,
+    currentTime,
+    duration,
+    isMuted,
+    playbackSpeed,
+    speedOptions,
+    toggleFullscreen,
+    playerRef,
+  ]);
 
   const handlePlayPause = useCallback(() => {
     if (!playerRef.current) return;
@@ -741,41 +810,41 @@ export function useVideoPlayer({
     }
   }, [isPlaying, playerRef]);
 
-  const handleSeekToTimestamp = useCallback((
-    timestamp: number,
-    annotation?: string | null,
-    options?: { pauseAfterSeek?: boolean }
-  ) => {
-    setCurrentTime(timestamp);
-    if (playerRef.current?.seekTo) {
-      const playerState = playerRef.current.getPlayerState?.();
-      const ytPlayingState = window.YT?.PlayerState?.PLAYING ?? 1;
-      const ytBufferingState = window.YT?.PlayerState?.BUFFERING ?? 3;
-      const wasPlayingBeforeSeek = typeof playerState === 'number'
-        ? playerState === ytPlayingState || playerState === ytBufferingState
-        : isPlaying;
+  const handleSeekToTimestamp = useCallback(
+    (timestamp: number, annotation?: string | null, options?: { pauseAfterSeek?: boolean }) => {
+      setCurrentTime(timestamp);
+      if (playerRef.current?.seekTo) {
+        const playerState = playerRef.current.getPlayerState?.();
+        const ytPlayingState = window.YT?.PlayerState?.PLAYING ?? 1;
+        const ytBufferingState = window.YT?.PlayerState?.BUFFERING ?? 3;
+        const wasPlayingBeforeSeek =
+          typeof playerState === 'number'
+            ? playerState === ytPlayingState || playerState === ytBufferingState
+            : isPlaying;
 
-      playerRef.current.seekTo(timestamp, true);
-      if (options?.pauseAfterSeek) {
-        playerRef.current.pauseVideo();
-      } else if (wasPlayingBeforeSeek) {
-        playerRef.current.playVideo();
-      } else {
-        playerRef.current.pauseVideo();
+        playerRef.current.seekTo(timestamp, true);
+        if (options?.pauseAfterSeek) {
+          playerRef.current.pauseVideo();
+        } else if (wasPlayingBeforeSeek) {
+          playerRef.current.playVideo();
+        } else {
+          playerRef.current.pauseVideo();
+        }
       }
-    }
-    if (annotation) {
-      try {
-        const parsed = JSON.parse(annotation);
-        const safe = validateAnnotationStrokes(parsed);
-        setViewingAnnotation(safe as AnnotationStroke[] | null);
-      } catch {
+      if (annotation) {
+        try {
+          const parsed = JSON.parse(annotation);
+          const safe = validateAnnotationStrokes(parsed);
+          setViewingAnnotation(safe as AnnotationStroke[] | null);
+        } catch {
+          setViewingAnnotation(null);
+        }
+      } else {
         setViewingAnnotation(null);
       }
-    } else {
-      setViewingAnnotation(null);
-    }
-  }, [isPlaying, playerRef, setViewingAnnotation]);
+    },
+    [isPlaying, playerRef, setViewingAnnotation]
+  );
 
   const handleMuteToggle = useCallback(() => {
     if (!playerRef.current) return;
@@ -803,49 +872,51 @@ export function useVideoPlayer({
     [playerRef]
   );
 
-  const handleQualityChange = useCallback((level: number) => {
-    const shouldCaptureSourceSwitch = (
-      activeProviderId === 'bunny'
-      && ((level === -2 && bunnySourcePreference !== 'original')
-        || (level !== -2 && bunnySourcePreference === 'original'))
-    );
+  const handleQualityChange = useCallback(
+    (level: number) => {
+      const shouldCaptureSourceSwitch =
+        activeProviderId === 'bunny' &&
+        ((level === -2 && bunnySourcePreference !== 'original') ||
+          (level !== -2 && bunnySourcePreference === 'original'));
 
-    if (shouldCaptureSourceSwitch) {
-      const fallbackCurrentTime = videoRef.current?.currentTime ?? 0;
-      const current = playerRef.current?.getCurrentTime?.() ?? fallbackCurrentTime;
-      bunnySourceSwitchResumeRef.current = {
-        time: Number.isFinite(current) ? Math.max(0, current) : 0,
-        wasPlaying: isPlaying,
-      };
-    }
+      if (shouldCaptureSourceSwitch) {
+        const fallbackCurrentTime = videoRef.current?.currentTime ?? 0;
+        const current = playerRef.current?.getCurrentTime?.() ?? fallbackCurrentTime;
+        bunnySourceSwitchResumeRef.current = {
+          time: Number.isFinite(current) ? Math.max(0, current) : 0,
+          wasPlaying: isPlaying,
+        };
+      }
 
-    if (level === -2) {
-      pendingHlsQualityRef.current = null;
-      setBunnySourcePreference('original');
-      setSelectedQualityLevel(-2);
-      return;
-    }
+      if (level === -2) {
+        pendingHlsQualityRef.current = null;
+        setBunnySourcePreference('original');
+        setSelectedQualityLevel(-2);
+        return;
+      }
 
-    pendingHlsQualityRef.current = level;
-    setBunnySourcePreference('auto');
+      pendingHlsQualityRef.current = level;
+      setBunnySourcePreference('auto');
 
-    const hls = hlsRef.current;
-    if (!hls) {
-      setSelectedQualityLevel(level === -1 ? -1 : level);
-      return;
-    }
+      const hls = hlsRef.current;
+      if (!hls) {
+        setSelectedQualityLevel(level === -1 ? -1 : level);
+        return;
+      }
 
-    if (level === -1) {
-      hls.currentLevel = -1;
-      hls.nextLevel = -1;
-      setSelectedQualityLevel(-1);
-      return;
-    }
+      if (level === -1) {
+        hls.currentLevel = -1;
+        hls.nextLevel = -1;
+        setSelectedQualityLevel(-1);
+        return;
+      }
 
-    hls.currentLevel = level;
-    hls.nextLevel = level;
-    setSelectedQualityLevel(level);
-  }, [activeProviderId, bunnySourcePreference, hlsRef, isPlaying, playerRef, videoRef]);
+      hls.currentLevel = level;
+      hls.nextLevel = level;
+      setSelectedQualityLevel(level);
+    },
+    [activeProviderId, bunnySourcePreference, hlsRef, isPlaying, playerRef, videoRef]
+  );
 
   const handleTimelineClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {

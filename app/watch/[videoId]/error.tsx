@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { AlertTriangle, Film } from "lucide-react";
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle, Film } from 'lucide-react';
 
 export default function WatchError({
   error,
@@ -12,7 +12,7 @@ export default function WatchError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Watch page error:", error);
+    console.error('Watch page error:', error);
   }, [error]);
 
   return (
@@ -26,17 +26,13 @@ export default function WatchError({
         <p className="text-muted-foreground max-w-md">
           We couldn&apos;t load this video. It may have been removed or the link might be incorrect.
         </p>
-        {error.digest && (
-          <p className="text-muted-foreground text-xs">
-            Error ID: {error.digest}
-          </p>
-        )}
+        {error.digest && <p className="text-muted-foreground text-xs">Error ID: {error.digest}</p>}
       </div>
       <div className="flex gap-2">
         <Button onClick={reset} variant="default">
           Try again
         </Button>
-        <Button onClick={() => window.location.href = "/"} variant="outline">
+        <Button onClick={() => (window.location.href = '/')} variant="outline">
           Go home
         </Button>
       </div>

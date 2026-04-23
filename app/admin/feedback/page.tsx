@@ -18,7 +18,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-type SortBy = 'submittedAt' | 'type' | 'status' | 'rating' | 'user' | 'allowShowcase' | 'showOnLanding';
+type SortBy =
+  | 'submittedAt'
+  | 'type'
+  | 'status'
+  | 'rating'
+  | 'user'
+  | 'allowShowcase'
+  | 'showOnLanding';
 type SortDirection = 'asc' | 'desc';
 type TypeFilter = 'ALL' | FeedbackEntryType;
 type StatusFilter = 'ALL' | FeedbackStatus;
@@ -39,7 +46,15 @@ type AdminFeedbackEntry = {
 };
 
 function parseSortBy(value: string | undefined): SortBy {
-  const accepted: SortBy[] = ['submittedAt', 'type', 'status', 'rating', 'user', 'allowShowcase', 'showOnLanding'];
+  const accepted: SortBy[] = [
+    'submittedAt',
+    'type',
+    'status',
+    'rating',
+    'user',
+    'allowShowcase',
+    'showOnLanding',
+  ];
   return accepted.includes(value as SortBy) ? (value as SortBy) : 'submittedAt';
 }
 
@@ -58,7 +73,11 @@ function parseStatusFilter(value: string | undefined): StatusFilter {
   return 'ALL';
 }
 
-function getSortIndicator(column: SortBy, activeSortBy: SortBy, activeSortDirection: SortDirection): string {
+function getSortIndicator(
+  column: SortBy,
+  activeSortBy: SortBy,
+  activeSortDirection: SortDirection
+): string {
   if (column !== activeSortBy) return '↕';
   return activeSortDirection === 'asc' ? '↑' : '↓';
 }
@@ -127,12 +146,14 @@ export default async function AdminFeedbackPage({
   };
   const orderBy = getOrderBy(sortBy, sortDirection);
 
-  const userFeedbackDelegate = (db as unknown as {
-    userFeedback?: {
-      count: (args?: unknown) => Promise<number>;
-      findMany: (args?: unknown) => Promise<AdminFeedbackEntry[]>;
-    };
-  }).userFeedback;
+  const userFeedbackDelegate = (
+    db as unknown as {
+      userFeedback?: {
+        count: (args?: unknown) => Promise<number>;
+        findMany: (args?: unknown) => Promise<AdminFeedbackEntry[]>;
+      };
+    }
+  ).userFeedback;
 
   let totalEntries = 0;
   let page = requestedPage;
@@ -174,7 +195,7 @@ export default async function AdminFeedbackPage({
           const totalPages = Math.max(1, Math.ceil(totalEntries / pageSize));
           page = Math.min(requestedPage, totalPages);
           const skip = (page - 1) * pageSize;
-          const fallbackEntries = await userFeedbackDelegate.findMany({
+          const fallbackEntries = (await userFeedbackDelegate.findMany({
             where,
             skip,
             take: pageSize,
@@ -188,7 +209,11 @@ export default async function AdminFeedbackPage({
               },
             },
             orderBy,
-          }) as Array<Omit<AdminFeedbackEntry, 'screenshots'> & { screenshots?: Array<{ id: string; url: string }> }>;
+          })) as Array<
+            Omit<AdminFeedbackEntry, 'screenshots'> & {
+              screenshots?: Array<{ id: string; url: string }>;
+            }
+          >;
 
           entries = fallbackEntries.map((entry) => ({
             id: entry.id,
@@ -272,7 +297,12 @@ export default async function AdminFeedbackPage({
           <Link href={buildFilterHref(typeFilter, 'ALL')}>All Statuses</Link>
         </Button>
         {(['NEW', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'RESOLVED'] as const).map((status) => (
-          <Button key={status} variant={statusFilter === status ? 'default' : 'outline'} size="sm" asChild>
+          <Button
+            key={status}
+            variant={statusFilter === status ? 'default' : 'outline'}
+            size="sm"
+            asChild
+          >
             <Link href={buildFilterHref(typeFilter, status)}>{status.replace('_', ' ')}</Link>
           </Button>
         ))}
@@ -289,48 +319,83 @@ export default async function AdminFeedbackPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>
-                    <Link href={buildSortHref('submittedAt')} className="inline-flex items-center gap-1 hover:underline">
+                    <Link
+                      href={buildSortHref('submittedAt')}
+                      className="inline-flex items-center gap-1 hover:underline"
+                    >
                       Submitted
-                      <span className="text-xs">{getSortIndicator('submittedAt', sortBy, sortDirection)}</span>
+                      <span className="text-xs">
+                        {getSortIndicator('submittedAt', sortBy, sortDirection)}
+                      </span>
                     </Link>
                   </TableHead>
                   <TableHead>
-                    <Link href={buildSortHref('user')} className="inline-flex items-center gap-1 hover:underline">
+                    <Link
+                      href={buildSortHref('user')}
+                      className="inline-flex items-center gap-1 hover:underline"
+                    >
                       User
-                      <span className="text-xs">{getSortIndicator('user', sortBy, sortDirection)}</span>
+                      <span className="text-xs">
+                        {getSortIndicator('user', sortBy, sortDirection)}
+                      </span>
                     </Link>
                   </TableHead>
                   <TableHead>
-                    <Link href={buildSortHref('type')} className="inline-flex items-center gap-1 hover:underline">
+                    <Link
+                      href={buildSortHref('type')}
+                      className="inline-flex items-center gap-1 hover:underline"
+                    >
                       Type
-                      <span className="text-xs">{getSortIndicator('type', sortBy, sortDirection)}</span>
+                      <span className="text-xs">
+                        {getSortIndicator('type', sortBy, sortDirection)}
+                      </span>
                     </Link>
                   </TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Message</TableHead>
                   <TableHead className="text-center">Screenshot</TableHead>
                   <TableHead className="text-center">
-                    <Link href={buildSortHref('rating')} className="inline-flex items-center justify-center gap-1 hover:underline">
+                    <Link
+                      href={buildSortHref('rating')}
+                      className="inline-flex items-center justify-center gap-1 hover:underline"
+                    >
                       Rating
-                      <span className="text-xs">{getSortIndicator('rating', sortBy, sortDirection)}</span>
+                      <span className="text-xs">
+                        {getSortIndicator('rating', sortBy, sortDirection)}
+                      </span>
                     </Link>
                   </TableHead>
                   <TableHead className="text-center">
-                    <Link href={buildSortHref('status')} className="inline-flex items-center justify-center gap-1 hover:underline">
+                    <Link
+                      href={buildSortHref('status')}
+                      className="inline-flex items-center justify-center gap-1 hover:underline"
+                    >
                       Status
-                      <span className="text-xs">{getSortIndicator('status', sortBy, sortDirection)}</span>
+                      <span className="text-xs">
+                        {getSortIndicator('status', sortBy, sortDirection)}
+                      </span>
                     </Link>
                   </TableHead>
                   <TableHead className="text-center">
-                    <Link href={buildSortHref('allowShowcase')} className="inline-flex items-center justify-center gap-1 hover:underline">
+                    <Link
+                      href={buildSortHref('allowShowcase')}
+                      className="inline-flex items-center justify-center gap-1 hover:underline"
+                    >
                       Consent
-                      <span className="text-xs">{getSortIndicator('allowShowcase', sortBy, sortDirection)}</span>
+                      <span className="text-xs">
+                        {getSortIndicator('allowShowcase', sortBy, sortDirection)}
+                      </span>
                     </Link>
                   </TableHead>
                   <TableHead className="text-center">
-                    <Link href={buildSortHref('showOnLanding')} className="inline-flex items-center justify-center gap-1 hover:underline">
+                    <Link
+                      href={buildSortHref('showOnLanding')}
+                      className="inline-flex items-center justify-center gap-1 hover:underline"
+                    >
                       Landing
-                      <span className="text-xs">{getSortIndicator('showOnLanding', sortBy, sortDirection)}</span>
+                      <span className="text-xs">
+                        {getSortIndicator('showOnLanding', sortBy, sortDirection)}
+                      </span>
                     </Link>
                   </TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -357,7 +422,9 @@ export default async function AdminFeedbackPage({
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <Badge variant="outline">{entry.type === 'FEEDBACK' ? 'Feedback' : 'Review'}</Badge>
+                          <Badge variant="outline">
+                            {entry.type === 'FEEDBACK' ? 'Feedback' : 'Review'}
+                          </Badge>
                           {entry.category && (
                             <Badge variant="secondary" className="w-fit">
                               {entry.category}
@@ -366,12 +433,16 @@ export default async function AdminFeedbackPage({
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">{entry.title}</TableCell>
-                      <TableCell className="max-w-[320px] truncate text-sm text-muted-foreground">{entry.message}</TableCell>
+                      <TableCell className="max-w-[320px] truncate text-sm text-muted-foreground">
+                        {entry.message}
+                      </TableCell>
                       <TableCell className="text-center">
-                        {(entry.screenshots.length > 0 || entry.screenshotUrl) ? (
+                        {entry.screenshots.length > 0 || entry.screenshotUrl ? (
                           <Link href={`/admin/feedback/${entry.id}`} className="text-xs underline">
-                            {(entry.screenshots.length || (entry.screenshotUrl ? 1 : 0))} image
-                            {(entry.screenshots.length || (entry.screenshotUrl ? 1 : 0)) > 1 ? 's' : ''}
+                            {entry.screenshots.length || (entry.screenshotUrl ? 1 : 0)} image
+                            {(entry.screenshots.length || (entry.screenshotUrl ? 1 : 0)) > 1
+                              ? 's'
+                              : ''}
                           </Link>
                         ) : (
                           '-'
@@ -381,8 +452,12 @@ export default async function AdminFeedbackPage({
                       <TableCell className="text-center">
                         <Badge variant="outline">{entry.status}</Badge>
                       </TableCell>
-                      <TableCell className="text-center">{entry.allowShowcase ? 'Yes' : 'No'}</TableCell>
-                      <TableCell className="text-center">{entry.showOnLanding ? 'Yes' : 'No'}</TableCell>
+                      <TableCell className="text-center">
+                        {entry.allowShowcase ? 'Yes' : 'No'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {entry.showOnLanding ? 'Yes' : 'No'}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button variant="outline" size="sm" asChild>
@@ -411,7 +486,12 @@ export default async function AdminFeedbackPage({
               <span className="text-sm font-medium">
                 Page {page} of {totalPages}
               </span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} asChild={page < totalPages}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                asChild={page < totalPages}
+              >
                 {page < totalPages ? <Link href={buildPageHref(page + 1)}>Next</Link> : 'Next'}
               </Button>
             </div>

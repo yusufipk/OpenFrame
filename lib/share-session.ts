@@ -74,7 +74,11 @@ export function createShareSessionValue(
   } satisfies ShareSessionPayload);
 }
 
-export function createPendingShareValue(token: string, videoId: string, ttlSeconds = PENDING_TTL_SECONDS): string {
+export function createPendingShareValue(
+  token: string,
+  videoId: string,
+  ttlSeconds = PENDING_TTL_SECONDS
+): string {
   return createSignedValue({
     token,
     videoId,
@@ -102,7 +106,10 @@ export function getShareSessionFromRequest(
   return { token: payload.token, passwordVerified: payload.passwordVerified };
 }
 
-export function getPendingShareTokenFromRequest(request: NextRequest, videoId: string): string | null {
+export function getPendingShareTokenFromRequest(
+  request: NextRequest,
+  videoId: string
+): string | null {
   const cookieName = getPendingShareCookieName(videoId);
   const cookieValue = request.cookies.get(cookieName)?.value;
   if (!cookieValue) return null;

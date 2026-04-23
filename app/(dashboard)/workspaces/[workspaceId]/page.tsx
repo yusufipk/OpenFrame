@@ -60,9 +60,8 @@ export default async function WorkspacePage({ params, searchParams }: WorkspaceP
 
   const pageParam = resolvedSearchParams?.page;
   const parsedPage = pageParam ? Number(pageParam) : 1;
-  const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 && parsedPage <= MAX_PAGE
-    ? parsedPage
-    : 1;
+  const page =
+    Number.isSafeInteger(parsedPage) && parsedPage > 0 && parsedPage <= MAX_PAGE ? parsedPage : 1;
   const pageSize = 20;
   const skip = (page - 1) * pageSize;
 
@@ -94,7 +93,10 @@ export default async function WorkspacePage({ params, searchParams }: WorkspaceP
   const membership = workspace.members[0];
   const isMember = !!membership;
   const isAdmin = isOwner || membership?.role === 'ADMIN';
-  const access = await checkWorkspaceAccess({ id: workspace.id, ownerId: workspace.ownerId }, session.user.id);
+  const access = await checkWorkspaceAccess(
+    { id: workspace.id, ownerId: workspace.ownerId },
+    session.user.id
+  );
 
   if (!access.hasAccess || (!isOwner && !isMember)) {
     redirect('/dashboard');
@@ -213,7 +215,12 @@ export default async function WorkspacePage({ params, searchParams }: WorkspaceP
               <span className="text-sm font-medium">
                 Page {page} of {totalPages}
               </span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} asChild={page < totalPages}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                asChild={page < totalPages}
+              >
                 {page < totalPages ? (
                   <Link href={`/workspaces/${workspaceId}?page=${page + 1}`}>Next</Link>
                 ) : (

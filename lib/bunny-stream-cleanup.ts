@@ -17,10 +17,13 @@ const BUNNY_DELETE_CONCURRENCY = 5;
 
 function getBunnyConfig(): { apiKey: string; libraryId: string } {
   const apiKey = process.env.BUNNY_STREAM_API_KEY;
-  const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || process.env.NEXT_PUBLIC_BUNNY_STREAM_LIBRARY_ID;
+  const libraryId =
+    process.env.BUNNY_STREAM_LIBRARY_ID || process.env.NEXT_PUBLIC_BUNNY_STREAM_LIBRARY_ID;
 
   if (!apiKey || !libraryId) {
-    throw new Error('Bunny cleanup failed: missing BUNNY_STREAM_API_KEY or BUNNY_STREAM_LIBRARY_ID.');
+    throw new Error(
+      'Bunny cleanup failed: missing BUNNY_STREAM_API_KEY or BUNNY_STREAM_LIBRARY_ID.'
+    );
   }
 
   return { apiKey, libraryId };
@@ -42,7 +45,9 @@ function getUniqueBunnyVideoIds(videoRefs: BunnyVideoRef[]): string[] {
   ];
 }
 
-export async function cleanupBunnyStreamVideosBestEffort(videoRefs: BunnyVideoRef[]): Promise<BunnyCleanupResult> {
+export async function cleanupBunnyStreamVideosBestEffort(
+  videoRefs: BunnyVideoRef[]
+): Promise<BunnyCleanupResult> {
   const bunnyVideoIds = getUniqueBunnyVideoIds(videoRefs);
   if (bunnyVideoIds.length === 0) {
     return {
@@ -70,12 +75,15 @@ export async function cleanupBunnyStreamVideosBestEffort(videoRefs: BunnyVideoRe
 
   await runWithConcurrency(bunnyVideoIds, BUNNY_DELETE_CONCURRENCY, async (bunnyVideoId) => {
     try {
-      const response = await fetch(`${BUNNY_API_BASE}/library/${libraryId}/videos/${encodeURIComponent(bunnyVideoId)}`, {
-        method: 'DELETE',
-        headers: {
-          AccessKey: apiKey,
-        },
-      });
+      const response = await fetch(
+        `${BUNNY_API_BASE}/library/${libraryId}/videos/${encodeURIComponent(bunnyVideoId)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            AccessKey: apiKey,
+          },
+        }
+      );
 
       // Treat not-found as already deleted.
       if (response.status === 404) return;

@@ -1,4 +1,8 @@
-import { DeleteObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandInput } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  type ListObjectsV2CommandInput,
+} from '@aws-sdk/client-s3';
 import { db, disconnectDb } from '../lib/db';
 import { r2Client, R2_BUCKET_NAME } from '../lib/r2';
 import { cleanupExpiredBillingWorkspaces } from './expired-billing-cleanup';
@@ -14,7 +18,10 @@ type CleanupCandidate = {
 };
 
 type UserFeedbackScreenshotDelegate = {
-  findMany: (args: { where: { url: { in: string[] } }; select: { url: true } }) => Promise<Array<{ url: string }>>;
+  findMany: (args: {
+    where: { url: { in: string[] } };
+    select: { url: true };
+  }) => Promise<Array<{ url: string }>>;
 };
 
 function keyToProxyUrl(key: string): string | null {
@@ -37,7 +44,10 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-async function listCleanupCandidates(): Promise<{ candidates: CleanupCandidate[]; scanned: number }> {
+async function listCleanupCandidates(): Promise<{
+  candidates: CleanupCandidate[];
+  scanned: number;
+}> {
   const candidates: CleanupCandidate[] = [];
   const cutoff = Date.now() - UNATTACHED_UPLOAD_TTL_MS;
   let scanned = 0;
@@ -76,9 +86,11 @@ async function listCleanupCandidates(): Promise<{ candidates: CleanupCandidate[]
 
 async function findReferencedUrls(urls: string[]): Promise<Set<string>> {
   const referenced = new Set<string>();
-  const userFeedbackScreenshotDelegate = (db as unknown as {
-    userFeedbackScreenshot?: UserFeedbackScreenshotDelegate;
-  }).userFeedbackScreenshot;
+  const userFeedbackScreenshotDelegate = (
+    db as unknown as {
+      userFeedbackScreenshot?: UserFeedbackScreenshotDelegate;
+    }
+  ).userFeedbackScreenshot;
 
   for (const group of chunk(urls, CHUNK_SIZE)) {
     const [commentRows, feedbackRows, feedbackAttachmentRows, assetRows] = await Promise.all([
@@ -97,9 +109,9 @@ async function findReferencedUrls(urls: string[]): Promise<Set<string>> {
       }),
       userFeedbackScreenshotDelegate
         ? userFeedbackScreenshotDelegate.findMany({
-          where: { url: { in: group } },
-          select: { url: true },
-        })
+            where: { url: { in: group } },
+            select: { url: true },
+          })
         : Promise.resolve([] as Array<{ url: string }>),
       db.videoAsset.findMany({
         where: { sourceUrl: { in: group } },
@@ -130,11 +142,17 @@ async function main() {
   console.log(`[r2-orphan-cleanup] Starting (${dryRun ? 'dry-run' : 'delete mode'})`);
 
   const expiredBillingCleanup = await cleanupExpiredBillingWorkspaces({ dryRun });
-  console.log(`[r2-orphan-cleanup] Expired owner workspaces scanned: ${expiredBillingCleanup.scanned}`);
-  console.log(`[r2-orphan-cleanup] Expired owner workspaces deleted: ${expiredBillingCleanup.deleted}`);
+  console.log(
+    `[r2-orphan-cleanup] Expired owner workspaces scanned: ${expiredBillingCleanup.scanned}`
+  );
+  console.log(
+    `[r2-orphan-cleanup] Expired owner workspaces deleted: ${expiredBillingCleanup.deleted}`
+  );
 
   const { candidates, scanned } = await listCleanupCandidates();
-  console.log(`[r2-orphan-cleanup] Scanned: ${scanned}, eligible (old enough): ${candidates.length}`);
+  console.log(
+    `[r2-orphan-cleanup] Scanned: ${scanned}, eligible (old enough): ${candidates.length}`
+  );
 
   if (candidates.length === 0) {
     console.log('[r2-orphan-cleanup] No eligible objects found');

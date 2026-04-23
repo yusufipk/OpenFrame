@@ -19,26 +19,28 @@ async function getExpiredWorkspaceTargets(): Promise<ExpiredWorkspaceTarget[]> {
     return [];
   }
 
-  return db.workspace.findMany({
-    where: {
-      ownerId: { in: expiredOwners.map((owner) => owner.id) },
-    },
-    select: {
-      id: true,
-      ownerId: true,
-      owner: {
-        select: {
-          email: true,
+  return db.workspace
+    .findMany({
+      where: {
+        ownerId: { in: expiredOwners.map((owner) => owner.id) },
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        owner: {
+          select: {
+            email: true,
+          },
         },
       },
-    },
-  }).then((workspaces) =>
-    workspaces.map((workspace) => ({
-      id: workspace.id,
-      ownerId: workspace.ownerId,
-      ownerEmail: workspace.owner.email,
-    }))
-  );
+    })
+    .then((workspaces) =>
+      workspaces.map((workspace) => ({
+        id: workspace.id,
+        ownerId: workspace.ownerId,
+        ownerEmail: workspace.owner.email,
+      }))
+    );
 }
 
 export async function cleanupExpiredBillingWorkspaces(options?: { dryRun?: boolean }) {

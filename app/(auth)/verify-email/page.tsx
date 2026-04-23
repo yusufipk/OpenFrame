@@ -55,8 +55,8 @@ function VerifyEmailContent() {
             </CardTitle>
             <CardDescription>
               We sent a verification link to{' '}
-              {emailParam ? <strong>{emailParam}</strong> : 'your email address'}.
-              Click the link to activate your account.
+              {emailParam ? <strong>{emailParam}</strong> : 'your email address'}. Click the link to
+              activate your account.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -75,7 +75,9 @@ function VerifyEmailContent() {
                     <span className="w-full border-t" />
                   </div>
                   <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">Didn&apos;t receive it?</span>
+                    <span className="bg-card px-2 text-muted-foreground">
+                      Didn&apos;t receive it?
+                    </span>
                   </div>
                 </div>
 

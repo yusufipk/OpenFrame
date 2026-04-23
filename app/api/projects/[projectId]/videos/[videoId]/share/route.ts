@@ -149,7 +149,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const allowDownloads = typeof body?.allowDownloads === 'boolean' ? body.allowDownloads : false;
     const password = typeof body?.password === 'string' ? body.password.trim() : '';
     if (password.length > MAX_SHARE_PASSWORD_LENGTH) {
-      return apiErrors.badRequest(`Password must be ${MAX_SHARE_PASSWORD_LENGTH} characters or fewer`);
+      return apiErrors.badRequest(
+        `Password must be ${MAX_SHARE_PASSWORD_LENGTH} characters or fewer`
+      );
     }
     const passwordHash = password ? await bcrypt.hash(password, 12) : null;
     const token = randomBytes(24).toString('base64url');
@@ -166,26 +168,50 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     } | null = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        link = await db.$transaction(async (tx) => {
-          const existing = await tx.shareLink.findFirst({
-            where: {
-              projectId,
-              videoId,
-              permission: 'COMMENT',
-            },
-            orderBy: { createdAt: 'desc' },
-            select: { id: true },
-          });
+        link = await db.$transaction(
+          async (tx) => {
+            const existing = await tx.shareLink.findFirst({
+              where: {
+                projectId,
+                videoId,
+                permission: 'COMMENT',
+              },
+              orderBy: { createdAt: 'desc' },
+              select: { id: true },
+            });
 
-          if (existing) {
-            return tx.shareLink.update({
-              where: { id: existing.id },
+            if (existing) {
+              return tx.shareLink.update({
+                where: { id: existing.id },
+                data: {
+                  token,
+                  allowGuests,
+                  allowDownloads,
+                  passwordHash,
+                  expiresAt: null,
+                },
+                select: {
+                  id: true,
+                  token: true,
+                  permission: true,
+                  allowGuests: true,
+                  allowDownloads: true,
+                  expiresAt: true,
+                  createdAt: true,
+                  passwordHash: true,
+                },
+              });
+            }
+
+            return tx.shareLink.create({
               data: {
                 token,
+                projectId,
+                videoId,
+                permission: 'COMMENT',
                 allowGuests,
                 allowDownloads,
                 passwordHash,
-                expiresAt: null,
               },
               select: {
                 id: true,
@@ -198,33 +224,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 passwordHash: true,
               },
             });
-          }
-
-          return tx.shareLink.create({
-            data: {
-              token,
-              projectId,
-              videoId,
-              permission: 'COMMENT',
-              allowGuests,
-              allowDownloads,
-              passwordHash,
-            },
-            select: {
-              id: true,
-              token: true,
-              permission: true,
-              allowGuests: true,
-              allowDownloads: true,
-              expiresAt: true,
-              createdAt: true,
-              passwordHash: true,
-            },
-          });
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
         break;
       } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034' && attempt < 2) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034' &&
+          attempt < 2
+        ) {
           continue;
         }
         throw error;
@@ -261,11 +270,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const body = await request.json().catch(() => ({}));
     const allowGuests = typeof body?.allowGuests === 'boolean' ? body.allowGuests : undefined;
-    const allowDownloads = typeof body?.allowDownloads === 'boolean' ? body.allowDownloads : undefined;
+    const allowDownloads =
+      typeof body?.allowDownloads === 'boolean' ? body.allowDownloads : undefined;
     const rawPassword = typeof body?.password === 'string' ? body.password : undefined;
     const clearPassword = body?.clearPassword === true;
     if (rawPassword !== undefined && rawPassword.length > MAX_SHARE_PASSWORD_LENGTH) {
-      return apiErrors.badRequest(`Password must be ${MAX_SHARE_PASSWORD_LENGTH} characters or fewer`);
+      return apiErrors.badRequest(
+        `Password must be ${MAX_SHARE_PASSWORD_LENGTH} characters or fewer`
+      );
     }
 
     const existing = await db.shareLink.findFirst({

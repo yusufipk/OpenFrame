@@ -12,7 +12,12 @@ import { Textarea } from '@/components/ui/textarea';
 
 type Visibility = 'PRIVATE' | 'INVITE' | 'PUBLIC';
 
-const visibilityOptions: { value: Visibility; label: string; description: string; icon: React.ReactNode }[] = [
+const visibilityOptions: {
+  value: Visibility;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+}[] = [
   {
     value: 'PRIVATE',
     label: 'Private',
@@ -111,8 +116,7 @@ export default function NewWorkspaceProjectPageClient({ workspaceId }: { workspa
 
               <div className="space-y-2">
                 <Label htmlFor="description" className="text-sm font-medium">
-                  Description{' '}
-                  <span className="text-muted-foreground font-normal">(optional)</span>
+                  Description <span className="text-muted-foreground font-normal">(optional)</span>
                 </Label>
                 <Textarea
                   id="description"

@@ -35,9 +35,11 @@ export async function POST(request: NextRequest) {
     const legacyScreenshotUrl = body.screenshotUrl?.trim() ?? null;
     const screenshotUrls = Array.isArray(body.screenshotUrls)
       ? body.screenshotUrls
-        .map((url) => (typeof url === 'string' ? url.trim() : ''))
-        .filter((url) => !!url)
-      : (legacyScreenshotUrl ? [legacyScreenshotUrl] : []);
+          .map((url) => (typeof url === 'string' ? url.trim() : ''))
+          .filter((url) => !!url)
+      : legacyScreenshotUrl
+        ? [legacyScreenshotUrl]
+        : [];
 
     if (type !== FeedbackEntryType.FEEDBACK && type !== FeedbackEntryType.REVIEW) {
       return apiErrors.badRequest('Invalid entry type');
@@ -70,7 +72,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === FeedbackEntryType.REVIEW) {
-      if (!Number.isInteger(body.rating) || (body.rating as number) < 1 || (body.rating as number) > 5) {
+      if (
+        !Number.isInteger(body.rating) ||
+        (body.rating as number) < 1 ||
+        (body.rating as number) > 5
+      ) {
         return apiErrors.badRequest('Review rating must be between 1 and 5');
       }
     }
@@ -83,17 +89,19 @@ export async function POST(request: NextRequest) {
         data: {
           userId: session.user.id,
           type,
-          category: type === FeedbackEntryType.FEEDBACK ? (body.category as FeedbackCategory) : null,
+          category:
+            type === FeedbackEntryType.FEEDBACK ? (body.category as FeedbackCategory) : null,
           title,
           message,
           screenshotUrl: type === FeedbackEntryType.FEEDBACK ? (screenshotUrls[0] ?? null) : null,
           rating: type === FeedbackEntryType.REVIEW ? body.rating : null,
           allowShowcase: type === FeedbackEntryType.REVIEW ? !!body.allowShowcase : false,
-          screenshots: type === FeedbackEntryType.FEEDBACK
-            ? {
-              create: screenshotUrls.map((url) => ({ url })),
-            }
-            : undefined,
+          screenshots:
+            type === FeedbackEntryType.FEEDBACK
+              ? {
+                  create: screenshotUrls.map((url) => ({ url })),
+                }
+              : undefined,
         },
         select: {
           id: true,
@@ -112,7 +120,8 @@ export async function POST(request: NextRequest) {
         data: {
           userId: session.user.id,
           type,
-          category: type === FeedbackEntryType.FEEDBACK ? (body.category as FeedbackCategory) : null,
+          category:
+            type === FeedbackEntryType.FEEDBACK ? (body.category as FeedbackCategory) : null,
           title,
           message,
           screenshotUrl: type === FeedbackEntryType.FEEDBACK ? (screenshotUrls[0] ?? null) : null,
@@ -128,19 +137,25 @@ export async function POST(request: NextRequest) {
     }
 
     if (usedLegacyCreatePath && type === FeedbackEntryType.FEEDBACK && screenshotUrls.length > 1) {
-      const screenshotDelegate = (db as unknown as {
-        userFeedbackScreenshot?: {
-          createMany: (args: { data: Array<{ feedbackId: string; url: string }> }) => Promise<unknown>;
-        };
-      }).userFeedbackScreenshot;
+      const screenshotDelegate = (
+        db as unknown as {
+          userFeedbackScreenshot?: {
+            createMany: (args: {
+              data: Array<{ feedbackId: string; url: string }>;
+            }) => Promise<unknown>;
+          };
+        }
+      ).userFeedbackScreenshot;
 
       if (screenshotDelegate) {
-        await screenshotDelegate.createMany({
-          data: screenshotUrls.map((url) => ({
-            feedbackId: entry.id,
-            url,
-          })),
-        }).catch(() => undefined);
+        await screenshotDelegate
+          .createMany({
+            data: screenshotUrls.map((url) => ({
+              feedbackId: entry.id,
+              url,
+            })),
+          })
+          .catch(() => undefined);
       }
     }
 

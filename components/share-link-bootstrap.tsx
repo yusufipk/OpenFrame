@@ -32,7 +32,10 @@ export function ShareLinkBootstrap({ videoId, shareToken }: ShareLinkBootstrapPr
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as { requiresPassword?: boolean; error?: string } | null;
+        const payload = (await response.json().catch(() => null)) as {
+          requiresPassword?: boolean;
+          error?: string;
+        } | null;
         if (payload?.requiresPassword) {
           router.replace(`/watch/${videoId}?unlock=1`);
           return;

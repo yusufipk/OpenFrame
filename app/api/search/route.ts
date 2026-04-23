@@ -21,10 +21,10 @@ export async function GET(request: NextRequest) {
     const cfg = RATE_LIMIT_CONFIGS['search'];
     const rl = await checkRateLimit(userId, 'search', cfg);
     if (!rl.allowed) {
-      return new Response(
-        JSON.stringify({ error: 'Too many requests. Please try again later.' }),
-        { status: 429, headers: { 'Content-Type': 'application/json', ...rateLimitHeaders(rl, cfg.maxRequests) } }
-      );
+      return new Response(JSON.stringify({ error: 'Too many requests. Please try again later.' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', ...rateLimitHeaders(rl, cfg.maxRequests) },
+      });
     }
 
     const { searchParams } = new URL(request.url);
@@ -48,10 +48,7 @@ export async function GET(request: NextRequest) {
     };
 
     const workspaceAccessFilter = {
-      OR: [
-        { ownerId: userId },
-        { members: { some: { userId } } },
-      ],
+      OR: [{ ownerId: userId }, { members: { some: { userId } } }],
     };
 
     const [projects, workspaces, videos] = await Promise.all([

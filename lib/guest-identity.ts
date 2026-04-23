@@ -10,7 +10,8 @@ interface GuestIdentityPayload {
 }
 
 function getGuestIdentitySecret(): string {
-  const secret = process.env.GUEST_IDENTITY_SECRET ?? process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  const secret =
+    process.env.GUEST_IDENTITY_SECRET ?? process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!secret) {
     throw new Error('Missing GUEST_IDENTITY_SECRET, AUTH_SECRET, or NEXTAUTH_SECRET.');
   }
@@ -38,9 +39,12 @@ function parseSignedValue(value: string): GuestIdentityPayload | null {
   if (!timingSafeEqual(actualBytes, expectedBytes)) return null;
 
   try {
-    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as Partial<GuestIdentityPayload>;
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString('utf8')
+    ) as Partial<GuestIdentityPayload>;
     if (!payload.gid || typeof payload.gid !== 'string') return null;
-    if (!payload.exp || typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) return null;
+    if (!payload.exp || typeof payload.exp !== 'number' || !Number.isFinite(payload.exp))
+      return null;
     if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
     return { gid: payload.gid, exp: payload.exp };
   } catch {
@@ -72,7 +76,10 @@ export function getGuestIdentityFromRequest(request: NextRequest): string | null
   return payload?.gid ?? null;
 }
 
-export function ensureGuestIdentityFromRequest(request: NextRequest): { identityId: string; shouldSetCookie: boolean } {
+export function ensureGuestIdentityFromRequest(request: NextRequest): {
+  identityId: string;
+  shouldSetCookie: boolean;
+} {
   const existingIdentity = getGuestIdentityFromRequest(request);
   if (existingIdentity) {
     return { identityId: existingIdentity, shouldSetCookie: false };
@@ -88,4 +95,3 @@ export function setGuestIdentityCookie(response: NextResponse, identityId: strin
     cookieOptions(GUEST_IDENTITY_TTL_SECONDS)
   );
 }
-

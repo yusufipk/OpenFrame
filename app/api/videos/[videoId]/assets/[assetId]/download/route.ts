@@ -152,10 +152,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('Invalid source. Allowed values: original, compressed');
     }
     if (
-      rawQuality !== null
-      && (!Number.isFinite(requestedQuality) || !BUNNY_ALLOWED_QUALITIES.has(requestedQuality))
+      rawQuality !== null &&
+      (!Number.isFinite(requestedQuality) || !BUNNY_ALLOWED_QUALITIES.has(requestedQuality))
     ) {
-      return apiErrors.badRequest('Invalid quality. Allowed values: 2160, 1440, 1080, 720, 480, 360, 240');
+      return apiErrors.badRequest(
+        'Invalid quality. Allowed values: 2160, 1440, 1080, 720, 480, 360, 240'
+      );
     }
     if (rawQuality !== null && sourcePreference === 'original') {
       return apiErrors.badRequest('Quality cannot be used when source=original');

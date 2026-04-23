@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Copy, Link2, Loader2, RefreshCcw, ShieldOff, Lock, ShieldCheck } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  Copy,
+  Link2,
+  Loader2,
+  RefreshCcw,
+  ShieldOff,
+  Lock,
+  ShieldCheck,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -46,7 +56,9 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
       setError('');
 
       try {
-        const response = await fetch(`/api/projects/${projectId}/videos/${videoId}/share`, { cache: 'no-store' });
+        const response = await fetch(`/api/projects/${projectId}/videos/${videoId}/share`, {
+          cache: 'no-store',
+        });
         const payload = (await response.json()) as ShareResponse;
 
         if (!response.ok || payload.error) {
@@ -152,7 +164,10 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as ShareResponse | { error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as
+        | ShareResponse
+        | { error?: string }
+        | null;
       if (!response.ok || ('error' in (payload || {}) && payload?.error)) {
         setError((payload as { error?: string } | null)?.error || 'Failed to update link security');
         return;
@@ -182,9 +197,14 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ allowDownloads: nextAllowDownloads }),
       });
-      const payload = (await response.json().catch(() => null)) as ShareResponse | { error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as
+        | ShareResponse
+        | { error?: string }
+        | null;
       if (!response.ok || ('error' in (payload || {}) && payload?.error)) {
-        setError((payload as { error?: string } | null)?.error || 'Failed to update download setting');
+        setError(
+          (payload as { error?: string } | null)?.error || 'Failed to update download setting'
+        );
         return;
       }
       const data = (payload as ShareResponse).data;
@@ -237,18 +257,28 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
                 </div>
                 <div className="flex gap-2">
                   <Button onClick={createShareLink} disabled={submitting} variant="outline">
-                    {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCcw className="h-4 w-4 mr-2" />}
+                    {submitting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="h-4 w-4 mr-2" />
+                    )}
                     Regenerate Link
                   </Button>
                   <Button onClick={revokeShareLink} disabled={submitting} variant="destructive">
-                    {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldOff className="h-4 w-4 mr-2" />}
+                    {submitting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ShieldOff className="h-4 w-4 mr-2" />
+                    )}
                     Revoke Link
                   </Button>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <div>
                     <p className="text-sm font-medium">Video download</p>
-                    <p className="text-xs text-muted-foreground">Allow viewers with this link to download</p>
+                    <p className="text-xs text-muted-foreground">
+                      Allow viewers with this link to download
+                    </p>
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -270,13 +300,19 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
 
                 <div className="rounded-lg border p-3 space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium">
-                    {hasPassword ? <ShieldCheck className="h-4 w-4 text-green-600" /> : <Lock className="h-4 w-4" />}
+                    {hasPassword ? (
+                      <ShieldCheck className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <Lock className="h-4 w-4" />
+                    )}
                     Link password
                   </div>
                   <div className="flex gap-2">
                     <Input
                       type="password"
-                      placeholder={hasPassword ? 'Enter new password to replace current one' : 'Set a password'}
+                      placeholder={
+                        hasPassword ? 'Enter new password to replace current one' : 'Set a password'
+                      }
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       disabled={submitting}
@@ -302,18 +338,21 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
               </div>
             ) : (
               <Button onClick={createShareLink} disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Link2 className="h-4 w-4 mr-2" />
+                )}
                 Create Review Link
               </Button>
             )}
 
             <p className="text-xs text-muted-foreground">
-              This link allows guests to leave comments without an account. You can optionally protect it with a password.
+              This link allows guests to leave comments without an account. You can optionally
+              protect it with a password.
             </p>
 
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </CardContent>
         </Card>
       </div>

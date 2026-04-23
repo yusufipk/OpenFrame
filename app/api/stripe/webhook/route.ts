@@ -1,9 +1,6 @@
 import { NextRequest } from 'next/server';
 import type Stripe from 'stripe';
-import {
-  markSubscriptionCanceledByCustomerId,
-  syncStripeSubscriptionToUser,
-} from '@/lib/billing';
+import { markSubscriptionCanceledByCustomerId, syncStripeSubscriptionToUser } from '@/lib/billing';
 import { getStripe, getStripeWebhookSecret } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
 
@@ -11,9 +8,7 @@ export const runtime = 'nodejs';
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   const customerId =
-    typeof subscription.customer === 'string'
-      ? subscription.customer
-      : subscription.customer.id;
+    typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
 
   const currentPeriodEnd =
     'current_period_end' in subscription && typeof subscription.current_period_end === 'number'

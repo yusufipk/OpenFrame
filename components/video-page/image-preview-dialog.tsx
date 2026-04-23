@@ -21,7 +21,9 @@ export const ImagePreviewDialog = memo(function ImagePreviewDialog({
   downloadFileName,
   canDownload = true,
 }: ImagePreviewDialogProps) {
-  const resolvedDownloadName = downloadFileName || (previewImage ? previewImage.split('/').pop() || 'attachment.png' : 'attachment.png');
+  const resolvedDownloadName =
+    downloadFileName ||
+    (previewImage ? previewImage.split('/').pop() || 'attachment.png' : 'attachment.png');
 
   return (
     <Dialog open={!!previewImage} onOpenChange={(open) => !open && onClose()}>
@@ -38,9 +40,15 @@ export const ImagePreviewDialog = memo(function ImagePreviewDialog({
         }}
       >
         <DialogTitle className="sr-only">{title || 'Image Preview'}</DialogTitle>
-        <div className="w-[min(96vw,1500px)] h-[min(94vh,1000px)] border border-border/60 bg-black/80 shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="w-[min(96vw,1500px)] h-[min(94vh,1000px)] border border-border/60 bg-black/80 shadow-2xl flex flex-col overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="shrink-0 flex items-center gap-2 border-b border-border/60 bg-background/85 px-2 py-1.5 backdrop-blur-sm">
-            <p className="flex-1 min-w-0 text-sm text-foreground truncate" title={title || undefined}>
+            <p
+              className="flex-1 min-w-0 text-sm text-foreground truncate"
+              title={title || undefined}
+            >
               {title || 'Image Preview'}
             </p>
             {canDownload ? (

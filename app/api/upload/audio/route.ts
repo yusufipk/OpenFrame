@@ -17,10 +17,17 @@ import { reserveStorageQuota, releaseStorageReservation } from '@/lib/storage-qu
 import { logError } from '@/lib/logger';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + (512 * 1024); // file + multipart overhead
+const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + 512 * 1024; // file + multipart overhead
 
 // Canonical MIME types accepted
-const ALLOWED_TYPES = new Set(['audio/webm', 'audio/ogg', 'audio/opus', 'audio/mp4', 'audio/mpeg', 'audio/wav']);
+const ALLOWED_TYPES = new Set([
+  'audio/webm',
+  'audio/ogg',
+  'audio/opus',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/wav',
+]);
 
 // Normalize known MIME aliases to canonical values
 const MIME_ALIASES: Record<string, string> = {
@@ -49,7 +56,11 @@ const SAFE_AUDIO_EXTENSIONS = new Set(['webm', 'ogg', 'opus', 'mp3', 'm4a', 'mp4
 
 // Reject content that looks like HTML/XML/script regardless of the declared MIME type.
 function isHtmlContent(bytes: Buffer): boolean {
-  const snippet = bytes.toString('latin1', 0, Math.min(bytes.length, 512)).trimStart().slice(0, 50).toLowerCase();
+  const snippet = bytes
+    .toString('latin1', 0, Math.min(bytes.length, 512))
+    .trimStart()
+    .slice(0, 50)
+    .toLowerCase();
   return (
     snippet.startsWith('<!doctype') ||
     snippet.startsWith('<html') ||
@@ -133,15 +144,22 @@ export async function POST(request: NextRequest) {
     const shareSession = getShareSessionFromRequest(request, safeVideoId);
     const shareAccess = shareSession
       ? await validateShareLinkAccess({
-        token: shareSession.token,
-        projectId: video.projectId,
-        videoId: safeVideoId,
-        requiredPermission: 'COMMENT',
-        passwordVerified: shareSession.passwordVerified,
-      })
-      : { hasAccess: false, canComment: false, canDownload: false, allowGuests: false, requiresPassword: false };
+          token: shareSession.token,
+          projectId: video.projectId,
+          videoId: safeVideoId,
+          requiredPermission: 'COMMENT',
+          passwordVerified: shareSession.passwordVerified,
+        })
+      : {
+          hasAccess: false,
+          canComment: false,
+          canDownload: false,
+          allowGuests: false,
+          requiresPassword: false,
+        };
     const canCommentWithMembership = !!session?.user?.id && access.hasAccess;
-    const canCommentWithShareLink = shareAccess.canComment && (session?.user?.id ? true : shareAccess.allowGuests);
+    const canCommentWithShareLink =
+      shareAccess.canComment && (session?.user?.id ? true : shareAccess.allowGuests);
     if (!canCommentWithMembership && !canCommentWithShareLink) {
       return apiErrors.forbidden('Access denied');
     }
@@ -166,7 +184,12 @@ export async function POST(request: NextRequest) {
         return apiErrors.forbidden('Invalid upload token');
       }
 
-      const quotaError = await enforceGuestUploadQuota(request, safeVideoId, 'audio', shareSession?.token ?? null);
+      const quotaError = await enforceGuestUploadQuota(
+        request,
+        safeVideoId,
+        'audio',
+        shareSession?.token ?? null
+      );
       if (quotaError) return quotaError;
     }
 

@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { AlertTriangle, Film } from "lucide-react";
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle, Film } from 'lucide-react';
 
 export default function VideoError({
   error,
@@ -12,7 +12,7 @@ export default function VideoError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Video player error:", error);
+    console.error('Video player error:', error);
   }, [error]);
 
   return (
@@ -24,13 +24,10 @@ export default function VideoError({
         </div>
         <h1 className="text-2xl font-bold">Video Player Error</h1>
         <p className="text-muted-foreground max-w-md">
-          Something went wrong with the video player. This could be due to a network issue or a problem with the video file.
+          Something went wrong with the video player. This could be due to a network issue or a
+          problem with the video file.
         </p>
-        {error.digest && (
-          <p className="text-muted-foreground text-xs">
-            Error ID: {error.digest}
-          </p>
-        )}
+        {error.digest && <p className="text-muted-foreground text-xs">Error ID: {error.digest}</p>}
       </div>
       <div className="flex gap-2">
         <Button onClick={reset} variant="default">

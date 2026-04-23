@@ -13,7 +13,7 @@ export const youtubeProvider: VideoProvider = {
   icon: 'Youtube',
 
   canHandle(url: string): boolean {
-    return YOUTUBE_PATTERNS.some(pattern => pattern.test(url));
+    return YOUTUBE_PATTERNS.some((pattern) => pattern.test(url));
   },
 
   extractVideoId(url: string): string | null {
@@ -28,21 +28,21 @@ export const youtubeProvider: VideoProvider = {
 
   getEmbedUrl(videoId: string, options: EmbedOptions = {}): string {
     const params = new URLSearchParams();
-    
+
     // Enable JS API for programmatic control
     params.set('enablejsapi', '1');
     params.set('origin', typeof window !== 'undefined' ? window.location.origin : '');
-    
+
     if (options.autoplay) params.set('autoplay', '1');
     if (options.startTime) params.set('start', String(Math.floor(options.startTime)));
     if (options.controls === false) params.set('controls', '0');
     if (options.loop) params.set('loop', '1');
     if (options.muted) params.set('mute', '1');
-    
+
     // Better UX options
     params.set('rel', '0'); // Don't show related videos from other channels
     params.set('modestbranding', '1'); // Minimal YouTube branding
-    
+
     return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
   },
 
@@ -53,7 +53,7 @@ export const youtubeProvider: VideoProvider = {
       large: 'hqdefault', // 480x360
       maxres: 'maxresdefault', // 1280x720
     };
-    
+
     return `https://img.youtube.com/vi/${videoId}/${sizeMap[size]}.jpg`;
   },
 
@@ -68,13 +68,13 @@ export const youtubeProvider: VideoProvider = {
         `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
         { signal: AbortSignal.timeout(5000) }
       );
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch video metadata');
       }
-      
+
       const data = await response.json();
-      
+
       const metadata: VideoMetadata = {
         title: data.title,
         thumbnailUrl: data.thumbnail_url,

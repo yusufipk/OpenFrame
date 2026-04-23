@@ -46,7 +46,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { parseVideoUrl, fetchVideoMetadata, getThumbnailUrl, type VideoSource } from '@/lib/video-providers';
+import {
+  parseVideoUrl,
+  fetchVideoMetadata,
+  getThumbnailUrl,
+  type VideoSource,
+} from '@/lib/video-providers';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 interface VideoCardProps {
@@ -210,30 +215,32 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
               {imgError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/80">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
-                  <span className="text-xs text-muted-foreground font-medium">Processing thumbnail...</span>
-                  <span className="text-[11px] text-muted-foreground/90">Video may already be playable</span>
+                  <span className="text-xs text-muted-foreground font-medium">
+                    Processing thumbnail...
+                  </span>
+                  <span className="text-[11px] text-muted-foreground/90">
+                    Video may already be playable
+                  </span>
                 </div>
+              ) : resolvedThumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`${resolvedThumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`}
+                  alt={video.title}
+                  className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105"
+                  onError={() => {
+                    setImgError(true);
+                    // Check again after 10 seconds in case Bunny is still processing
+                    setTimeout(() => {
+                      setRetryKey(Date.now());
+                      setImgError(false);
+                    }, 10000);
+                  }}
+                />
               ) : (
-                resolvedThumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`${resolvedThumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`}
-                    alt={video.title}
-                    className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105"
-                    onError={() => {
-                      setImgError(true);
-                      // Check again after 10 seconds in case Bunny is still processing
-                      setTimeout(() => {
-                        setRetryKey(Date.now());
-                        setImgError(false);
-                      }, 10000);
-                    }}
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-muted/80 text-xs text-muted-foreground font-medium">
-                    Thumbnail unavailable
-                  </div>
-                )
+                <div className="absolute inset-0 flex items-center justify-center bg-muted/80 text-xs text-muted-foreground font-medium">
+                  Thumbnail unavailable
+                </div>
               )}
               {!imgError && (
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -348,7 +355,11 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
                 {editError}
               </p>
             )}
-            <Button onClick={handleEdit} disabled={!editTitle.trim() || isSaving} className="w-full">
+            <Button
+              onClick={handleEdit}
+              disabled={!editTitle.trim() || isSaving}
+              className="w-full"
+            >
               {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Save Changes
             </Button>
@@ -420,7 +431,8 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
           <AlertDialogHeader>
             <AlertDialogTitle>Delete &quot;{video.title}&quot;?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this video, all its versions, and all comments. This action cannot be undone.
+              This will permanently delete this video, all its versions, and all comments. This
+              action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

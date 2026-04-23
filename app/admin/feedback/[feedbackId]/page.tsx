@@ -20,25 +20,29 @@ export default async function AdminFeedbackDetailPage({
   }
 
   const { feedbackId } = await params;
-  const userFeedbackDelegate = (db as unknown as {
-    userFeedback?: {
-      findUnique: (args?: unknown) => Promise<{
-        id: string;
-        type: string;
-        category: string | null;
-        status: string;
-        rating: number | null;
-        title: string;
-        message: string;
-        screenshotUrl: string | null;
-        createdAt: Date;
-        user: { name: string | null; email: string | null };
-        screenshots: Array<{ id: string; url: string }>;
-      } | null>;
-    };
-  }).userFeedback;
+  const userFeedbackDelegate = (
+    db as unknown as {
+      userFeedback?: {
+        findUnique: (args?: unknown) => Promise<{
+          id: string;
+          type: string;
+          category: string | null;
+          status: string;
+          rating: number | null;
+          title: string;
+          message: string;
+          screenshotUrl: string | null;
+          createdAt: Date;
+          user: { name: string | null; email: string | null };
+          screenshots: Array<{ id: string; url: string }>;
+        } | null>;
+      };
+    }
+  ).userFeedback;
 
-  let entry = null as Awaited<ReturnType<NonNullable<typeof userFeedbackDelegate>['findUnique']>> | null;
+  let entry = null as Awaited<
+    ReturnType<NonNullable<typeof userFeedbackDelegate>['findUnique']>
+  > | null;
   if (userFeedbackDelegate) {
     try {
       entry = await userFeedbackDelegate.findUnique({
@@ -63,7 +67,7 @@ export default async function AdminFeedbackDetailPage({
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       if (message.includes('Unknown field `screenshots`')) {
-        entry = await userFeedbackDelegate.findUnique({
+        entry = (await userFeedbackDelegate.findUnique({
           where: { id: feedbackId },
           include: {
             user: {
@@ -74,7 +78,7 @@ export default async function AdminFeedbackDetailPage({
               },
             },
           },
-        }) as typeof entry;
+        })) as typeof entry;
 
         if (entry && !Array.isArray(entry.screenshots)) {
           entry = {
@@ -95,9 +99,9 @@ export default async function AdminFeedbackDetailPage({
   const screenshotItems =
     entry.screenshots.length > 0
       ? entry.screenshots
-      : (entry.screenshotUrl
+      : entry.screenshotUrl
         ? [{ id: `${entry.id}-legacy`, url: entry.screenshotUrl }]
-        : []);
+        : [];
   const submittedAtText = format(new Date(entry.createdAt), 'MMM dd, yyyy HH:mm');
   const submitterName = entry.user.name || 'there';
   const feedbackTypeLabel = entry.type.toLowerCase();
@@ -107,14 +111,14 @@ export default async function AdminFeedbackDetailPage({
     .join('\n');
   const mailtoHref = entry.user.email
     ? `mailto:${entry.user.email}?subject=${encodeURIComponent(
-      `[OpenFrame ${entry.type}] Re: ${entry.title}`
-    )}&body=${encodeURIComponent(
-      `Hi ${submitterName},\n\nThanks for your ${feedbackTypeLabel}.\n\n` +
-      `I reviewed your submission:\n` +
-      `Title: ${entry.title}\n` +
-      `Submitted: ${submittedAtText}\n\n` +
-      `Your message:\n${quotedMessage}\n\n`
-    )}`
+        `[OpenFrame ${entry.type}] Re: ${entry.title}`
+      )}&body=${encodeURIComponent(
+        `Hi ${submitterName},\n\nThanks for your ${feedbackTypeLabel}.\n\n` +
+          `I reviewed your submission:\n` +
+          `Title: ${entry.title}\n` +
+          `Submitted: ${submittedAtText}\n\n` +
+          `Your message:\n${quotedMessage}\n\n`
+      )}`
     : null;
 
   return (
@@ -169,7 +173,9 @@ export default async function AdminFeedbackDetailPage({
               Screenshots ({screenshotItems.length})
             </h3>
             {screenshotItems.length === 0 ? (
-              <div className="rounded-md border p-4 text-sm text-muted-foreground">No screenshots attached.</div>
+              <div className="rounded-md border p-4 text-sm text-muted-foreground">
+                No screenshots attached.
+              </div>
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
                 {screenshotItems.map((screenshot, index) => (

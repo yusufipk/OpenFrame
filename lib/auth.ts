@@ -62,16 +62,26 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [Google({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })]
+      ? [
+          Google({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          }),
+        ]
       : []),
     ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
-      ? [{
-          ...GitHub({ clientId: process.env.GITHUB_CLIENT_ID, clientSecret: process.env.GITHUB_CLIENT_SECRET }),
-          // GitHub sends iss=https://github.com/login/oauth in callbacks (RFC 9207).
-          // Auth.js v5 beta defaults to "https://authjs.dev" for OAuth providers, causing
-          // a mismatch. Setting the correct issuer here fixes the CallbackRouteError.
-          issuer: 'https://github.com/login/oauth',
-        }]
+      ? [
+          {
+            ...GitHub({
+              clientId: process.env.GITHUB_CLIENT_ID,
+              clientSecret: process.env.GITHUB_CLIENT_SECRET,
+            }),
+            // GitHub sends iss=https://github.com/login/oauth in callbacks (RFC 9207).
+            // Auth.js v5 beta defaults to "https://authjs.dev" for OAuth providers, causing
+            // a mismatch. Setting the correct issuer here fixes the CallbackRouteError.
+            issuer: 'https://github.com/login/oauth',
+          },
+        ]
       : []),
   ],
   session: {
@@ -96,7 +106,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // OAuth sign-in: allow existing OAuth accounts regardless of invite setting
       if (account?.providerAccountId && account?.provider) {
         const existingAccount = await db.account.findUnique({
-          where: { provider_providerAccountId: { provider: account.provider, providerAccountId: account.providerAccountId } },
+          where: {
+            provider_providerAccountId: {
+              provider: account.provider,
+              providerAccountId: account.providerAccountId,
+            },
+          },
           select: { id: true },
         });
         if (existingAccount) return true;
@@ -160,12 +175,22 @@ export function projectAccessInclude(userId: string | undefined) {
           },
         },
         members: userId
-          ? { where: { userId }, take: 1, orderBy: { createdAt: 'asc' as const }, select: { role: true } }
+          ? {
+              where: { userId },
+              take: 1,
+              orderBy: { createdAt: 'asc' as const },
+              select: { role: true },
+            }
           : { take: 0, select: { role: true } },
       },
     },
     members: userId
-      ? { where: { userId }, take: 1, orderBy: { createdAt: 'asc' as const }, select: { role: true } }
+      ? {
+          where: { userId },
+          take: 1,
+          orderBy: { createdAt: 'asc' as const },
+          select: { role: true },
+        }
       : { take: 0, select: { role: true } },
   };
 }
@@ -195,7 +220,7 @@ export type EnrichedProjectForAccess = {
  */
 export function computeProjectAccess(
   project: EnrichedProjectForAccess,
-  userId: string | undefined,
+  userId: string | undefined
 ) {
   const isOwner = userId === project.ownerId;
   const isPublic = project.visibility === 'PUBLIC';
@@ -217,16 +242,12 @@ export function computeProjectAccess(
   }
 
   const isWorkspaceMember = !!workspaceRole;
-  const isWorkspaceAdmin =
-    workspaceRole === WorkspaceMemberRole.ADMIN || workspaceRole === 'OWNER';
+  const isWorkspaceAdmin = workspaceRole === WorkspaceMemberRole.ADMIN || workspaceRole === 'OWNER';
 
   const hasAccess =
-    workspaceOwnerBillingAccess &&
-    (isOwner || isProjectMember || isPublic || isWorkspaceMember);
-  const canEdit =
-    workspaceOwnerBillingAccess && (isOwner || isProjectAdmin || isWorkspaceAdmin);
-  const canDelete =
-    workspaceOwnerBillingAccess && (isOwner || workspaceRole === 'OWNER');
+    workspaceOwnerBillingAccess && (isOwner || isProjectMember || isPublic || isWorkspaceMember);
+  const canEdit = workspaceOwnerBillingAccess && (isOwner || isProjectAdmin || isWorkspaceAdmin);
+  const canDelete = workspaceOwnerBillingAccess && (isOwner || workspaceRole === 'OWNER');
 
   return {
     isOwner,
@@ -254,8 +275,8 @@ export async function checkProjectAccess(
   // Get project membership
   const projectMember = userId
     ? await db.projectMember.findUnique({
-      where: { projectId_userId: { projectId: project.id, userId } },
-    })
+        where: { projectId_userId: { projectId: project.id, userId } },
+      })
     : null;
   const isProjectMember = !!projectMember;
   const isProjectAdmin = projectMember?.role === ProjectMemberRole.ADMIN;
@@ -316,7 +337,8 @@ export async function checkProjectAccess(
   const isWorkspaceMember = !!workspaceRole;
   const isWorkspaceAdmin = workspaceRole === WorkspaceMemberRole.ADMIN || workspaceRole === 'OWNER';
 
-  const hasAccess = workspaceOwnerBillingAccess && (isOwner || isProjectMember || isPublic || isWorkspaceMember);
+  const hasAccess =
+    workspaceOwnerBillingAccess && (isOwner || isProjectMember || isPublic || isWorkspaceMember);
   const canEdit = workspaceOwnerBillingAccess && (isOwner || isProjectAdmin || isWorkspaceAdmin);
   const canDelete = workspaceOwnerBillingAccess && (isOwner || workspaceRole === 'OWNER');
 
@@ -343,8 +365,8 @@ export async function checkWorkspaceAccess(
   // Get workspace membership
   const workspaceMember = userId
     ? await db.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId: workspace.id, userId } },
-    })
+        where: { workspaceId_userId: { workspaceId: workspace.id, userId } },
+      })
     : null;
   const isMember = !!workspaceMember;
   const isAdmin = workspaceMember?.role === WorkspaceMemberRole.ADMIN;

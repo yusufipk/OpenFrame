@@ -14,8 +14,17 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import type { AnnotationCanvasHandle, AnnotationStroke } from '@/components/annotation-canvas';
-import type { Comment, CommentActionsConfig, CommentTag, Version, VideoData } from '@/components/video-page/types';
-import { extractPastedImageFile, validateImageFile } from '@/components/video-page/image-upload-utils';
+import type {
+  Comment,
+  CommentActionsConfig,
+  CommentTag,
+  Version,
+  VideoData,
+} from '@/components/video-page/types';
+import {
+  extractPastedImageFile,
+  validateImageFile,
+} from '@/components/video-page/image-upload-utils';
 import { validateAnnotationStrokes } from '@/lib/validation';
 
 interface UseCommentActionsParams extends CommentActionsConfig {
@@ -96,230 +105,251 @@ export function useCommentActions({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editTagId, setEditTagId] = useState<string | null>(null);
-  const [editAnnotationData, setEditAnnotationData] = useState<string | null | undefined>(undefined);
+  const [editAnnotationData, setEditAnnotationData] = useState<string | null | undefined>(
+    undefined
+  );
   const [isEditingAnnotation, setIsEditingAnnotation] = useState(false);
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const isMutatingRef = useRef(false);
 
-  const getGuestUploadToken = useCallback(async (intent: 'audio' | 'image') => {
-    if (!isGuest) return null;
+  const getGuestUploadToken = useCallback(
+    async (intent: 'audio' | 'image') => {
+      if (!isGuest) return null;
 
-    const response = await fetch(`/api/watch/${videoId}/upload-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent }),
-    });
-    const payload = (await response.json().catch(() => null)) as
-      | { data?: { token?: string }; error?: string }
-      | null;
-    const token = payload?.data?.token;
-    if (!response.ok || !token) {
-      throw new Error(payload?.error || 'Failed to prepare upload');
-    }
-    return token;
-  }, [isGuest, videoId]);
-
-  const handleAddComment = useCallback(async (voiceData?: { url: string; duration: number }) => {
-    if (!voiceData && !imageBlob && !commentText.trim() && !annotationStrokes && !isAnnotating) return;
-    if (!activeVersion || !activeVersionId) return;
-
-    let effectiveStrokes = annotationStrokes;
-    if (isAnnotating && annotationCanvasRef.current) {
-      const canvasStrokes = annotationCanvasRef.current.getStrokes();
-      if (canvasStrokes.length > 0) {
-        effectiveStrokes = canvasStrokes;
-      }
-    }
-
-    const tempId = `temp-${Date.now()}`;
-    const serializedAnnotation = effectiveStrokes ? JSON.stringify(effectiveStrokes) : null;
-    const optimisticComment: Comment = {
-      id: tempId,
-      content: (voiceData || imageBlob) ? commentText.trim() || null : commentText,
-      timestamp: currentTime,
-      voiceUrl: voiceData?.url ?? null,
-      voiceDuration: voiceData?.duration ?? null,
-      imageUrl: imageBlob ? URL.createObjectURL(imageBlob) : null,
-      annotationData: serializedAnnotation,
-      isResolved: false,
-      createdAt: new Date().toISOString(),
-      author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
-      guestName: isGuest ? normalizedGuestName : null,
-      canEdit: true,
-      canDelete: true,
-      tag: availableTags.find(t => t.id === selectedTagId) || null,
-      replies: [],
-    };
-
-    setVideo((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        versions: prev.versions.map((v) =>
-          v.id === activeVersionId
-            ? { ...v, comments: [...v.comments, optimisticComment] }
-            : v
-        ),
-      };
-    });
-
-    setCommentText('');
-    setSelectedTagId(availableTags.length > 0 ? availableTags[0].id : null);
-    setAudioBlob(null);
-    setImageBlob(null);
-    setAnnotationStrokes(null);
-    setIsAnnotating(false);
-    setViewingAnnotation(effectiveStrokes || null);
-
-    setIsSubmittingComment(true);
-    isMutatingRef.current = true;
-
-    try {
-      let imageData: { url: string } | undefined;
-
-      if (imageBlob) {
-        setIsUploadingImage(true);
-        const imageFormData = new FormData();
-        imageFormData.append('image', imageBlob);
-        imageFormData.append('videoId', videoId);
-        const uploadToken = await getGuestUploadToken('image');
-        if (uploadToken) imageFormData.append('uploadToken', uploadToken);
-
-        const imageRes = await fetch('/api/upload/image', {
-          method: 'POST',
-          body: imageFormData,
-        });
-
-        if (!imageRes.ok) throw new Error('Failed to upload image');
-        const imageDataResponse = await imageRes.json();
-        imageData = { url: imageDataResponse.data.url };
-      }
-
-      const res = await fetch(`/api/versions/${activeVersion.id}/comments`, {
+      const response = await fetch(`/api/watch/${videoId}/upload-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: (voiceData || imageBlob) ? commentText.trim() || null : commentText,
-          timestamp: currentTime,
-          ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
-          ...(imageData && { imageUrl: imageData.url }),
-          ...(isGuest && normalizedGuestName && { guestName: normalizedGuestName }),
-          ...(selectedTagId && { tagId: selectedTagId }),
-          ...(effectiveStrokes && { annotationData: effectiveStrokes }),
-        }),
+        body: JSON.stringify({ intent }),
       });
-
-      if (res.ok) {
-        const response = await res.json();
-        const newComment = response.data;
-        setVideo((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            versions: prev.versions.map((v) =>
-              v.id === activeVersionId
-                ? { ...v, comments: v.comments.map(c => c.id === tempId ? { ...newComment, replies: newComment.replies || [] } : { ...c, replies: c.replies || [] }) }
-                : v
-            ),
-          };
-        });
-        
-        // If an image was attached, refresh the assets list
-        if (imageData) {
-          void fetchAssets();
-        }
-      } else {
-        setVideo((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            versions: prev.versions.map((v) =>
-              v.id === activeVersionId
-                ? { ...v, comments: v.comments.filter(c => c.id !== tempId) }
-                : v
-            ),
-          };
-        });
-        toast.error('Failed to add comment');
+      const payload = (await response.json().catch(() => null)) as {
+        data?: { token?: string };
+        error?: string;
+      } | null;
+      const token = payload?.data?.token;
+      if (!response.ok || !token) {
+        throw new Error(payload?.error || 'Failed to prepare upload');
       }
-    } catch {
+      return token;
+    },
+    [isGuest, videoId]
+  );
+
+  const handleAddComment = useCallback(
+    async (voiceData?: { url: string; duration: number }) => {
+      if (!voiceData && !imageBlob && !commentText.trim() && !annotationStrokes && !isAnnotating)
+        return;
+      if (!activeVersion || !activeVersionId) return;
+
+      let effectiveStrokes = annotationStrokes;
+      if (isAnnotating && annotationCanvasRef.current) {
+        const canvasStrokes = annotationCanvasRef.current.getStrokes();
+        if (canvasStrokes.length > 0) {
+          effectiveStrokes = canvasStrokes;
+        }
+      }
+
+      const tempId = `temp-${Date.now()}`;
+      const serializedAnnotation = effectiveStrokes ? JSON.stringify(effectiveStrokes) : null;
+      const optimisticComment: Comment = {
+        id: tempId,
+        content: voiceData || imageBlob ? commentText.trim() || null : commentText,
+        timestamp: currentTime,
+        voiceUrl: voiceData?.url ?? null,
+        voiceDuration: voiceData?.duration ?? null,
+        imageUrl: imageBlob ? URL.createObjectURL(imageBlob) : null,
+        annotationData: serializedAnnotation,
+        isResolved: false,
+        createdAt: new Date().toISOString(),
+        author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
+        guestName: isGuest ? normalizedGuestName : null,
+        canEdit: true,
+        canDelete: true,
+        tag: availableTags.find((t) => t.id === selectedTagId) || null,
+        replies: [],
+      };
+
       setVideo((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
           versions: prev.versions.map((v) =>
-            v.id === activeVersionId
-              ? { ...v, comments: v.comments.filter(c => c.id !== tempId) }
-              : v
+            v.id === activeVersionId ? { ...v, comments: [...v.comments, optimisticComment] } : v
           ),
         };
       });
-      toast.error('Failed to add comment');
-    } finally {
-      setIsSubmittingComment(false);
-      setIsUploadingImage(false);
-      isMutatingRef.current = false;
-    }
-  }, [
-    commentText,
-    currentTime,
-    activeVersion,
-    activeVersionId,
-    isGuest,
-    normalizedGuestName,
-    currentUserName,
-    selectedTagId,
-    availableTags,
-    imageBlob,
-    annotationStrokes,
-    isAnnotating,
-    videoId,
-    getGuestUploadToken,
-    annotationCanvasRef,
-    setSelectedTagId,
-    setAnnotationStrokes,
-    setIsAnnotating,
-    setViewingAnnotation,
-    setVideo,
-    fetchAssets,
-  ]);
 
-  const handleImageSelect = useCallback(async (e: ChangeEvent<HTMLInputElement>, isReply: boolean = false) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+      setCommentText('');
+      setSelectedTagId(availableTags.length > 0 ? availableTags[0].id : null);
+      setAudioBlob(null);
+      setImageBlob(null);
+      setAnnotationStrokes(null);
+      setIsAnnotating(false);
+      setViewingAnnotation(effectiveStrokes || null);
 
-    const imageError = await validateImageFile(file);
-    if (imageError) {
-      toast.error(imageError);
-      return;
-    }
+      setIsSubmittingComment(true);
+      isMutatingRef.current = true;
 
-    if (isReply) {
-      setReplyImageBlob(file);
-    } else {
-      setImageBlob(file);
-    }
-  }, []);
+      try {
+        let imageData: { url: string } | undefined;
 
-  const handlePaste = useCallback(async (e: ClipboardEvent<HTMLTextAreaElement>, isReply: boolean = false) => {
-    const file = extractPastedImageFile(e.clipboardData);
-    if (!file) return;
-    e.preventDefault();
+        if (imageBlob) {
+          setIsUploadingImage(true);
+          const imageFormData = new FormData();
+          imageFormData.append('image', imageBlob);
+          imageFormData.append('videoId', videoId);
+          const uploadToken = await getGuestUploadToken('image');
+          if (uploadToken) imageFormData.append('uploadToken', uploadToken);
 
-    const imageError = await validateImageFile(file);
-    if (imageError) {
-      toast.error(imageError);
-      return;
-    }
+          const imageRes = await fetch('/api/upload/image', {
+            method: 'POST',
+            body: imageFormData,
+          });
 
-    if (isReply) {
-      setReplyImageBlob(file);
-    } else {
-      setImageBlob(file);
-    }
-  }, []);
+          if (!imageRes.ok) throw new Error('Failed to upload image');
+          const imageDataResponse = await imageRes.json();
+          imageData = { url: imageDataResponse.data.url };
+        }
+
+        const res = await fetch(`/api/versions/${activeVersion.id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: voiceData || imageBlob ? commentText.trim() || null : commentText,
+            timestamp: currentTime,
+            ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
+            ...(imageData && { imageUrl: imageData.url }),
+            ...(isGuest && normalizedGuestName && { guestName: normalizedGuestName }),
+            ...(selectedTagId && { tagId: selectedTagId }),
+            ...(effectiveStrokes && { annotationData: effectiveStrokes }),
+          }),
+        });
+
+        if (res.ok) {
+          const response = await res.json();
+          const newComment = response.data;
+          setVideo((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              versions: prev.versions.map((v) =>
+                v.id === activeVersionId
+                  ? {
+                      ...v,
+                      comments: v.comments.map((c) =>
+                        c.id === tempId
+                          ? { ...newComment, replies: newComment.replies || [] }
+                          : { ...c, replies: c.replies || [] }
+                      ),
+                    }
+                  : v
+              ),
+            };
+          });
+
+          // If an image was attached, refresh the assets list
+          if (imageData) {
+            void fetchAssets();
+          }
+        } else {
+          setVideo((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              versions: prev.versions.map((v) =>
+                v.id === activeVersionId
+                  ? { ...v, comments: v.comments.filter((c) => c.id !== tempId) }
+                  : v
+              ),
+            };
+          });
+          toast.error('Failed to add comment');
+        }
+      } catch {
+        setVideo((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            versions: prev.versions.map((v) =>
+              v.id === activeVersionId
+                ? { ...v, comments: v.comments.filter((c) => c.id !== tempId) }
+                : v
+            ),
+          };
+        });
+        toast.error('Failed to add comment');
+      } finally {
+        setIsSubmittingComment(false);
+        setIsUploadingImage(false);
+        isMutatingRef.current = false;
+      }
+    },
+    [
+      commentText,
+      currentTime,
+      activeVersion,
+      activeVersionId,
+      isGuest,
+      normalizedGuestName,
+      currentUserName,
+      selectedTagId,
+      availableTags,
+      imageBlob,
+      annotationStrokes,
+      isAnnotating,
+      videoId,
+      getGuestUploadToken,
+      annotationCanvasRef,
+      setSelectedTagId,
+      setAnnotationStrokes,
+      setIsAnnotating,
+      setViewingAnnotation,
+      setVideo,
+      fetchAssets,
+    ]
+  );
+
+  const handleImageSelect = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>, isReply: boolean = false) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const imageError = await validateImageFile(file);
+      if (imageError) {
+        toast.error(imageError);
+        return;
+      }
+
+      if (isReply) {
+        setReplyImageBlob(file);
+      } else {
+        setImageBlob(file);
+      }
+    },
+    []
+  );
+
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent<HTMLTextAreaElement>, isReply: boolean = false) => {
+      const file = extractPastedImageFile(e.clipboardData);
+      if (!file) return;
+      e.preventDefault();
+
+      const imageError = await validateImageFile(file);
+      if (imageError) {
+        toast.error(imageError);
+        return;
+      }
+
+      if (isReply) {
+        setReplyImageBlob(file);
+      } else {
+        setImageBlob(file);
+      }
+    },
+    []
+  );
 
   const handleDrop = useCallback(async (e: DragEvent<HTMLDivElement>, isReply: boolean = false) => {
     e.preventDefault();
@@ -465,7 +495,17 @@ export function useCommentActions({
       setIsUploadingAudio(false);
       setIsUploadingImage(false);
     }
-  }, [audioBlob, imageBlob, activeVersion, recordingTime, commentText, submitVoiceComment, handleAddComment, videoId, getGuestUploadToken]);
+  }, [
+    audioBlob,
+    imageBlob,
+    activeVersion,
+    recordingTime,
+    commentText,
+    submitVoiceComment,
+    handleAddComment,
+    videoId,
+    getGuestUploadToken,
+  ]);
 
   const handleResolveComment = useCallback(
     async (commentId: string, currentlyResolved: boolean) => {
@@ -544,137 +584,32 @@ export function useCommentActions({
     [activeVersionId, canResolveComments, setVideo]
   );
 
-  const handleReplyComment = useCallback(async (parentId: string, voiceData?: { url: string; duration: number }, imageData?: { url: string }) => {
-    if (!voiceData && !replyImageBlob && !replyText.trim()) return;
-    if (!activeVersion || !activeVersionId) return;
+  const handleReplyComment = useCallback(
+    async (
+      parentId: string,
+      voiceData?: { url: string; duration: number },
+      imageData?: { url: string }
+    ) => {
+      if (!voiceData && !replyImageBlob && !replyText.trim()) return;
+      if (!activeVersion || !activeVersionId) return;
 
-    const tempId = `temp-reply-${Date.now()}`;
-    const parentComment = comments.find((c) => c.id === parentId);
-    const optimisticReply = {
-      id: tempId,
-      content: (voiceData || replyImageBlob) ? replyText.trim() || null : replyText,
-      voiceUrl: voiceData?.url ?? null,
-      voiceDuration: voiceData?.duration ?? null,
-      imageUrl: replyImageBlob ? URL.createObjectURL(replyImageBlob) : null,
-      annotationData: null,
-      createdAt: new Date().toISOString(),
-      author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
-      guestName: isGuest ? normalizedGuestName : null,
-      canEdit: true,
-      canDelete: true,
-      tag: null,
-    };
-
-    setVideo((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        versions: prev.versions.map((v) =>
-          v.id === activeVersionId
-            ? {
-                ...v,
-                comments: v.comments.map((c) =>
-                  c.id === parentId
-                    ? { ...c, replies: [...(c.replies || []), optimisticReply] }
-                    : c
-                ),
-              }
-            : v
-        ),
+      const tempId = `temp-reply-${Date.now()}`;
+      const parentComment = comments.find((c) => c.id === parentId);
+      const optimisticReply = {
+        id: tempId,
+        content: voiceData || replyImageBlob ? replyText.trim() || null : replyText,
+        voiceUrl: voiceData?.url ?? null,
+        voiceDuration: voiceData?.duration ?? null,
+        imageUrl: replyImageBlob ? URL.createObjectURL(replyImageBlob) : null,
+        annotationData: null,
+        createdAt: new Date().toISOString(),
+        author: isGuest ? null : { id: 'current-user', name: currentUserName, image: null },
+        guestName: isGuest ? normalizedGuestName : null,
+        canEdit: true,
+        canDelete: true,
+        tag: null,
       };
-    });
 
-    setReplyText('');
-    setReplyingTo(null);
-    setReplyAudioBlob(null);
-    setReplyRecordingTime(0);
-    setReplyImageBlob(null);
-
-    setIsSubmittingReply(true);
-    isMutatingRef.current = true;
-
-    try {
-      let submittedImageData: { url: string } | undefined = imageData;
-
-      if (replyImageBlob && !imageData) {
-        setIsUploadingReplyImage(true);
-        const imageFormData = new FormData();
-        imageFormData.append('image', replyImageBlob);
-        imageFormData.append('videoId', videoId);
-        const uploadToken = await getGuestUploadToken('image');
-        if (uploadToken) imageFormData.append('uploadToken', uploadToken);
-
-        const imageRes = await fetch('/api/upload/image', {
-          method: 'POST',
-          body: imageFormData,
-        });
-
-        if (!imageRes.ok) throw new Error('Failed to upload image reply');
-        const imageDataResponse = await imageRes.json();
-        submittedImageData = { url: imageDataResponse.data.url };
-      }
-
-      const res = await fetch(`/api/versions/${activeVersion.id}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: (voiceData || submittedImageData) ? replyText.trim() || null : replyText,
-          timestamp: parentComment?.timestamp ?? currentTime,
-          parentId,
-          ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
-          ...(submittedImageData && { imageUrl: submittedImageData.url }),
-          ...(isGuest && normalizedGuestName && { guestName: normalizedGuestName }),
-        }),
-      });
-
-      if (res.ok) {
-        const response = await res.json();
-        const newReply = response.data;
-        setVideo((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            versions: prev.versions.map((v) =>
-              v.id === activeVersionId
-                ? {
-                    ...v,
-                    comments: v.comments.map((c) =>
-                      c.id === parentId
-                        ? { ...c, replies: (c.replies || []).map(r => r.id === tempId ? newReply : r) }
-                        : { ...c, replies: c.replies || [] }
-                    ),
-                  }
-                : v
-            ),
-          };
-        });
-        
-        // If an image was attached, refresh the assets list
-        if (submittedImageData) {
-          void fetchAssets();
-        }
-      } else {
-        setVideo((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            versions: prev.versions.map((v) =>
-              v.id === activeVersionId
-                ? {
-                    ...v,
-                    comments: v.comments.map((c) =>
-                      c.id === parentId
-                        ? { ...c, replies: (c.replies || []).filter(r => r.id !== tempId) }
-                        : c
-                    ),
-                  }
-                : v
-            ),
-          };
-        });
-        toast.error('Failed to add reply');
-      }
-    } catch {
       setVideo((prev) => {
         if (!prev) return prev;
         return {
@@ -685,7 +620,7 @@ export function useCommentActions({
                   ...v,
                   comments: v.comments.map((c) =>
                     c.id === parentId
-                      ? { ...c, replies: (c.replies || []).filter(r => r.id !== tempId) }
+                      ? { ...c, replies: [...(c.replies || []), optimisticReply] }
                       : c
                   ),
                 }
@@ -693,13 +628,144 @@ export function useCommentActions({
           ),
         };
       });
-      toast.error('Failed to add reply');
-    } finally {
-      setIsSubmittingReply(false);
-      setIsUploadingReplyImage(false);
-      isMutatingRef.current = false;
-    }
-  }, [replyText, activeVersion, activeVersionId, comments, currentTime, isGuest, normalizedGuestName, currentUserName, replyImageBlob, videoId, getGuestUploadToken, setVideo, fetchAssets]);
+
+      setReplyText('');
+      setReplyingTo(null);
+      setReplyAudioBlob(null);
+      setReplyRecordingTime(0);
+      setReplyImageBlob(null);
+
+      setIsSubmittingReply(true);
+      isMutatingRef.current = true;
+
+      try {
+        let submittedImageData: { url: string } | undefined = imageData;
+
+        if (replyImageBlob && !imageData) {
+          setIsUploadingReplyImage(true);
+          const imageFormData = new FormData();
+          imageFormData.append('image', replyImageBlob);
+          imageFormData.append('videoId', videoId);
+          const uploadToken = await getGuestUploadToken('image');
+          if (uploadToken) imageFormData.append('uploadToken', uploadToken);
+
+          const imageRes = await fetch('/api/upload/image', {
+            method: 'POST',
+            body: imageFormData,
+          });
+
+          if (!imageRes.ok) throw new Error('Failed to upload image reply');
+          const imageDataResponse = await imageRes.json();
+          submittedImageData = { url: imageDataResponse.data.url };
+        }
+
+        const res = await fetch(`/api/versions/${activeVersion.id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: voiceData || submittedImageData ? replyText.trim() || null : replyText,
+            timestamp: parentComment?.timestamp ?? currentTime,
+            parentId,
+            ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
+            ...(submittedImageData && { imageUrl: submittedImageData.url }),
+            ...(isGuest && normalizedGuestName && { guestName: normalizedGuestName }),
+          }),
+        });
+
+        if (res.ok) {
+          const response = await res.json();
+          const newReply = response.data;
+          setVideo((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              versions: prev.versions.map((v) =>
+                v.id === activeVersionId
+                  ? {
+                      ...v,
+                      comments: v.comments.map((c) =>
+                        c.id === parentId
+                          ? {
+                              ...c,
+                              replies: (c.replies || []).map((r) =>
+                                r.id === tempId ? newReply : r
+                              ),
+                            }
+                          : { ...c, replies: c.replies || [] }
+                      ),
+                    }
+                  : v
+              ),
+            };
+          });
+
+          // If an image was attached, refresh the assets list
+          if (submittedImageData) {
+            void fetchAssets();
+          }
+        } else {
+          setVideo((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              versions: prev.versions.map((v) =>
+                v.id === activeVersionId
+                  ? {
+                      ...v,
+                      comments: v.comments.map((c) =>
+                        c.id === parentId
+                          ? { ...c, replies: (c.replies || []).filter((r) => r.id !== tempId) }
+                          : c
+                      ),
+                    }
+                  : v
+              ),
+            };
+          });
+          toast.error('Failed to add reply');
+        }
+      } catch {
+        setVideo((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            versions: prev.versions.map((v) =>
+              v.id === activeVersionId
+                ? {
+                    ...v,
+                    comments: v.comments.map((c) =>
+                      c.id === parentId
+                        ? { ...c, replies: (c.replies || []).filter((r) => r.id !== tempId) }
+                        : c
+                    ),
+                  }
+                : v
+            ),
+          };
+        });
+        toast.error('Failed to add reply');
+      } finally {
+        setIsSubmittingReply(false);
+        setIsUploadingReplyImage(false);
+        isMutatingRef.current = false;
+      }
+    },
+    [
+      replyText,
+      activeVersion,
+      activeVersionId,
+      comments,
+      currentTime,
+      isGuest,
+      normalizedGuestName,
+      currentUserName,
+      replyImageBlob,
+      videoId,
+      getGuestUploadToken,
+      setVideo,
+      fetchAssets,
+    ]
+  );
 
   const startReplyRecording = useCallback(async () => {
     try {
@@ -750,185 +816,238 @@ export function useCommentActions({
     setReplyRecordingTime(0);
   }, []);
 
-  const submitVoiceReply = useCallback(async (parentId: string) => {
-    if (!replyAudioBlob || !activeVersion) return;
-    setIsUploadingReplyAudio(true);
-    try {
-      const formData = new FormData();
-      formData.append('audio', replyAudioBlob, 'recording.webm');
-      formData.append('videoId', videoId);
-      const uploadToken = await getGuestUploadToken('audio');
-      if (uploadToken) formData.append('uploadToken', uploadToken);
-      const uploadRes = await fetch('/api/upload/audio', { method: 'POST', body: formData });
-      if (!uploadRes.ok) throw new Error('Failed to upload audio');
-      const uploadData = await uploadRes.json();
-      const { url } = uploadData.data;
-      await handleReplyComment(parentId, { url, duration: replyRecordingTime });
-    } catch (err) {
-      console.error('Failed to submit voice reply:', err);
-    } finally {
-      setIsUploadingReplyAudio(false);
-    }
-  }, [replyAudioBlob, activeVersion, replyRecordingTime, handleReplyComment, videoId, getGuestUploadToken]);
-
-  const submitReplyWithMedia = useCallback(async (parentId: string) => {
-    if (!activeVersion) return;
-
-    if (replyAudioBlob && !replyImageBlob && !replyText.trim()) {
-      submitVoiceReply(parentId);
-      return;
-    }
-
-    if (replyAudioBlob) setIsUploadingReplyAudio(true);
-    if (replyImageBlob) setIsUploadingReplyImage(true);
-
-    try {
-      let voiceData: { url: string; duration: number } | undefined;
-
-      if (replyAudioBlob) {
+  const submitVoiceReply = useCallback(
+    async (parentId: string) => {
+      if (!replyAudioBlob || !activeVersion) return;
+      setIsUploadingReplyAudio(true);
+      try {
         const formData = new FormData();
         formData.append('audio', replyAudioBlob, 'recording.webm');
         formData.append('videoId', videoId);
         const uploadToken = await getGuestUploadToken('audio');
         if (uploadToken) formData.append('uploadToken', uploadToken);
         const uploadRes = await fetch('/api/upload/audio', { method: 'POST', body: formData });
-        if (!uploadRes.ok) throw new Error('Failed to upload audio reply');
+        if (!uploadRes.ok) throw new Error('Failed to upload audio');
         const uploadData = await uploadRes.json();
-        voiceData = { url: uploadData.data.url, duration: replyRecordingTime };
+        const { url } = uploadData.data;
+        await handleReplyComment(parentId, { url, duration: replyRecordingTime });
+      } catch (err) {
+        console.error('Failed to submit voice reply:', err);
+      } finally {
+        setIsUploadingReplyAudio(false);
+      }
+    },
+    [
+      replyAudioBlob,
+      activeVersion,
+      replyRecordingTime,
+      handleReplyComment,
+      videoId,
+      getGuestUploadToken,
+    ]
+  );
+
+  const submitReplyWithMedia = useCallback(
+    async (parentId: string) => {
+      if (!activeVersion) return;
+
+      if (replyAudioBlob && !replyImageBlob && !replyText.trim()) {
+        submitVoiceReply(parentId);
+        return;
       }
 
-      await handleReplyComment(parentId, voiceData);
+      if (replyAudioBlob) setIsUploadingReplyAudio(true);
+      if (replyImageBlob) setIsUploadingReplyImage(true);
 
-      setReplyAudioBlob(null);
-      setReplyRecordingTime(0);
-      setReplyImageBlob(null);
-      if (replyImageInputRef.current) replyImageInputRef.current.value = '';
-    } catch (err) {
-      console.error('Failed to submit reply with media:', err);
-      toast.error('Failed to upload media');
-    } finally {
-      setIsUploadingReplyAudio(false);
-      setIsUploadingReplyImage(false);
-    }
-  }, [replyAudioBlob, replyImageBlob, activeVersion, replyRecordingTime, replyText, submitVoiceReply, handleReplyComment, videoId, getGuestUploadToken]);
+      try {
+        let voiceData: { url: string; duration: number } | undefined;
 
-  const handleEditComment = useCallback(async (commentId: string) => {
-    if (!editText.trim() && !editAnnotationData) return;
-    if (!activeVersionId) return;
+        if (replyAudioBlob) {
+          const formData = new FormData();
+          formData.append('audio', replyAudioBlob, 'recording.webm');
+          formData.append('videoId', videoId);
+          const uploadToken = await getGuestUploadToken('audio');
+          if (uploadToken) formData.append('uploadToken', uploadToken);
+          const uploadRes = await fetch('/api/upload/audio', { method: 'POST', body: formData });
+          if (!uploadRes.ok) throw new Error('Failed to upload audio reply');
+          const uploadData = await uploadRes.json();
+          voiceData = { url: uploadData.data.url, duration: replyRecordingTime };
+        }
 
-    setIsSubmittingEdit(true);
-    isMutatingRef.current = true;
+        await handleReplyComment(parentId, voiceData);
 
-    let finalAnnotationData = editAnnotationData;
-    if (isEditingAnnotation && editAnnotationCanvasRef.current) {
-      const strokes = editAnnotationCanvasRef.current.getStrokes();
-      if (strokes.length > 0) {
-        finalAnnotationData = JSON.stringify(strokes);
+        setReplyAudioBlob(null);
+        setReplyRecordingTime(0);
+        setReplyImageBlob(null);
+        if (replyImageInputRef.current) replyImageInputRef.current.value = '';
+      } catch (err) {
+        console.error('Failed to submit reply with media:', err);
+        toast.error('Failed to upload media');
+      } finally {
+        setIsUploadingReplyAudio(false);
+        setIsUploadingReplyImage(false);
       }
-    }
+    },
+    [
+      replyAudioBlob,
+      replyImageBlob,
+      activeVersion,
+      replyRecordingTime,
+      replyText,
+      submitVoiceReply,
+      handleReplyComment,
+      videoId,
+      getGuestUploadToken,
+    ]
+  );
 
-    try {
-      const body: Record<string, unknown> = { content: editText };
-      if (editTagId !== undefined) body.tagId = editTagId;
-      if (finalAnnotationData !== undefined) {
-        body.annotationData = finalAnnotationData !== null ? JSON.parse(finalAnnotationData) : null;
-      }
-      if (isGuest && normalizedGuestName) body.guestName = normalizedGuestName;
-      const res = await fetch(`/api/comments/${commentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        const editedTag = editTagId ? availableTags.find(t => t.id === editTagId) || null : null;
-        setVideo((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            versions: prev.versions.map((v) =>
-              v.id === activeVersionId
-                ? {
-                    ...v,
-                    comments: v.comments.map((c) => {
-                      if (c.id === commentId) return { ...c, content: editText.trim(), tag: editTagId !== undefined ? editedTag : c.tag, annotationData: finalAnnotationData !== undefined ? finalAnnotationData : c.annotationData };
-                      return {
-                        ...c,
-                        replies: (c.replies || []).map((r) =>
-                          r.id === commentId ? { ...r, content: editText.trim() } : r
-                        ),
-                      };
-                    }),
-                  }
-                : v
-            ),
-          };
-        });
-        setEditingCommentId(null);
-        setEditText('');
-        setEditTagId(null);
-        setEditAnnotationData(undefined);
-        setIsEditingAnnotation(false);
-        if (finalAnnotationData !== undefined && finalAnnotationData) {
-          try {
-            const parsed = JSON.parse(finalAnnotationData);
-            const safe = validateAnnotationStrokes(parsed);
-            if (safe) setViewingAnnotation(safe as AnnotationStroke[]);
-          } catch {
-            // ignore parse errors
-          }
-        } else if (finalAnnotationData === null) {
-          setViewingAnnotation(null);
+  const handleEditComment = useCallback(
+    async (commentId: string) => {
+      if (!editText.trim() && !editAnnotationData) return;
+      if (!activeVersionId) return;
+
+      setIsSubmittingEdit(true);
+      isMutatingRef.current = true;
+
+      let finalAnnotationData = editAnnotationData;
+      if (isEditingAnnotation && editAnnotationCanvasRef.current) {
+        const strokes = editAnnotationCanvasRef.current.getStrokes();
+        if (strokes.length > 0) {
+          finalAnnotationData = JSON.stringify(strokes);
         }
       }
-    } catch (err) {
-      console.error('Failed to edit comment:', err);
-    } finally {
-      setIsSubmittingEdit(false);
-      isMutatingRef.current = false;
-    }
-  }, [editText, editTagId, editAnnotationData, isEditingAnnotation, activeVersionId, availableTags, isGuest, normalizedGuestName, editAnnotationCanvasRef, setVideo, setViewingAnnotation]);
 
-  const handleDeleteComment = useCallback(async (commentId: string) => {
-    if (!activeVersionId) return;
-
-    isMutatingRef.current = true;
-
-    const previousVideoRef: { current: VideoData | null } = { current: null };
-    setVideo((prev) => {
-      previousVideoRef.current = prev;
-      if (!prev) return prev;
-      return {
-        ...prev,
-        versions: prev.versions.map((v) =>
-          v.id === activeVersionId
-            ? {
-                ...v,
-                comments: v.comments
-                  .filter((c) => c.id !== commentId)
-                  .map((c) => ({
-                    ...c,
-                    replies: c.replies?.filter((r) => r.id !== commentId) || [],
-                  })),
-              }
-            : v
-        ),
-      };
-    });
-
-    try {
-      const res = await fetch(`/api/comments/${commentId}`, { method: 'DELETE' });
-      if (!res.ok && previousVideoRef.current) {
-        setVideo(previousVideoRef.current);
+      try {
+        const body: Record<string, unknown> = { content: editText };
+        if (editTagId !== undefined) body.tagId = editTagId;
+        if (finalAnnotationData !== undefined) {
+          body.annotationData =
+            finalAnnotationData !== null ? JSON.parse(finalAnnotationData) : null;
+        }
+        if (isGuest && normalizedGuestName) body.guestName = normalizedGuestName;
+        const res = await fetch(`/api/comments/${commentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          const editedTag = editTagId
+            ? availableTags.find((t) => t.id === editTagId) || null
+            : null;
+          setVideo((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              versions: prev.versions.map((v) =>
+                v.id === activeVersionId
+                  ? {
+                      ...v,
+                      comments: v.comments.map((c) => {
+                        if (c.id === commentId)
+                          return {
+                            ...c,
+                            content: editText.trim(),
+                            tag: editTagId !== undefined ? editedTag : c.tag,
+                            annotationData:
+                              finalAnnotationData !== undefined
+                                ? finalAnnotationData
+                                : c.annotationData,
+                          };
+                        return {
+                          ...c,
+                          replies: (c.replies || []).map((r) =>
+                            r.id === commentId ? { ...r, content: editText.trim() } : r
+                          ),
+                        };
+                      }),
+                    }
+                  : v
+              ),
+            };
+          });
+          setEditingCommentId(null);
+          setEditText('');
+          setEditTagId(null);
+          setEditAnnotationData(undefined);
+          setIsEditingAnnotation(false);
+          if (finalAnnotationData !== undefined && finalAnnotationData) {
+            try {
+              const parsed = JSON.parse(finalAnnotationData);
+              const safe = validateAnnotationStrokes(parsed);
+              if (safe) setViewingAnnotation(safe as AnnotationStroke[]);
+            } catch {
+              // ignore parse errors
+            }
+          } else if (finalAnnotationData === null) {
+            setViewingAnnotation(null);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to edit comment:', err);
+      } finally {
+        setIsSubmittingEdit(false);
+        isMutatingRef.current = false;
       }
-    } catch (err) {
-      console.error('Failed to delete comment:', err);
-      if (previousVideoRef.current) {
-        setVideo(previousVideoRef.current);
+    },
+    [
+      editText,
+      editTagId,
+      editAnnotationData,
+      isEditingAnnotation,
+      activeVersionId,
+      availableTags,
+      isGuest,
+      normalizedGuestName,
+      editAnnotationCanvasRef,
+      setVideo,
+      setViewingAnnotation,
+    ]
+  );
+
+  const handleDeleteComment = useCallback(
+    async (commentId: string) => {
+      if (!activeVersionId) return;
+
+      isMutatingRef.current = true;
+
+      const previousVideoRef: { current: VideoData | null } = { current: null };
+      setVideo((prev) => {
+        previousVideoRef.current = prev;
+        if (!prev) return prev;
+        return {
+          ...prev,
+          versions: prev.versions.map((v) =>
+            v.id === activeVersionId
+              ? {
+                  ...v,
+                  comments: v.comments
+                    .filter((c) => c.id !== commentId)
+                    .map((c) => ({
+                      ...c,
+                      replies: c.replies?.filter((r) => r.id !== commentId) || [],
+                    })),
+                }
+              : v
+          ),
+        };
+      });
+
+      try {
+        const res = await fetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+        if (!res.ok && previousVideoRef.current) {
+          setVideo(previousVideoRef.current);
+        }
+      } catch (err) {
+        console.error('Failed to delete comment:', err);
+        if (previousVideoRef.current) {
+          setVideo(previousVideoRef.current);
+        }
+      } finally {
+        isMutatingRef.current = false;
       }
-    } finally {
-      isMutatingRef.current = false;
-    }
-  }, [activeVersionId, setVideo]);
+    },
+    [activeVersionId, setVideo]
+  );
 
   useEffect(() => {
     if (!activeVersionId) return;

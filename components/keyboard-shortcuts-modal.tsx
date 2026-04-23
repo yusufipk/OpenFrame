@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface ShortcutItem {
   keys: string[];
@@ -20,9 +15,7 @@ interface ShortcutGroup {
 const shortcutGroups: ShortcutGroup[] = [
   {
     title: 'Navigation',
-    shortcuts: [
-      { keys: ['Ctrl', 'K'], description: 'Open search' },
-    ],
+    shortcuts: [{ keys: ['Ctrl', 'K'], description: 'Open search' }],
   },
   {
     title: 'Playback',

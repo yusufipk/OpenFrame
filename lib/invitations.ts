@@ -1,6 +1,13 @@
 import { randomBytes } from 'crypto';
 import nodemailer from 'nodemailer';
-import { InvitationRole, InvitationScope, InvitationStatus, Prisma, ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
+import {
+  InvitationRole,
+  InvitationScope,
+  InvitationStatus,
+  Prisma,
+  ProjectMemberRole,
+  WorkspaceMemberRole,
+} from '@prisma/client';
 import { db } from '@/lib/db';
 import {
   brandedEmailTemplate,
@@ -60,7 +67,8 @@ export async function sendInvitationEmail(input: {
     return false;
   }
 
-  const fromAddress = process.env.SMTP_FROM || process.env.EMAIL_FROM || 'OpenFrame <notifications@openframe.app>';
+  const fromAddress =
+    process.env.SMTP_FROM || process.env.EMAIL_FROM || 'OpenFrame <notifications@openframe.app>';
   const subject = `[OpenFrame] You were invited to a ${scopeLabel(input.scope)}: ${input.targetName}`;
   const html = invitationEmailTemplate({
     inviterName: input.inviterName,
@@ -128,35 +136,8 @@ export async function createOrRefreshInvitation(params: {
     const token = randomBytes(32).toString('hex');
 
     try {
-      return await db.$transaction(async (tx) => {
-        await tx.invitation.updateMany({
-          where: {
-            email: normalizedEmail,
-            scope: params.scope,
-            workspaceId: params.workspaceId ?? null,
-            projectId: params.projectId ?? null,
-            status: InvitationStatus.PENDING,
-            expiresAt: { lte: now },
-          },
-          data: {
-            status: InvitationStatus.EXPIRED,
-          },
-        });
-
-        const existingPending = await tx.invitation.findFirst({
-          where: {
-            email: normalizedEmail,
-            scope: params.scope,
-            workspaceId: params.workspaceId ?? null,
-            projectId: params.projectId ?? null,
-            status: InvitationStatus.PENDING,
-            expiresAt: { gt: now },
-          },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true },
-        });
-
-        if (existingPending) {
+      return await db.$transaction(
+        async (tx) => {
           await tx.invitation.updateMany({
             where: {
               email: normalizedEmail,
@@ -164,42 +145,73 @@ export async function createOrRefreshInvitation(params: {
               workspaceId: params.workspaceId ?? null,
               projectId: params.projectId ?? null,
               status: InvitationStatus.PENDING,
-              id: { not: existingPending.id },
+              expiresAt: { lte: now },
             },
             data: {
-              status: InvitationStatus.CANCELED,
+              status: InvitationStatus.EXPIRED,
             },
           });
 
-          return tx.invitation.update({
-            where: { id: existingPending.id },
+          const existingPending = await tx.invitation.findFirst({
+            where: {
+              email: normalizedEmail,
+              scope: params.scope,
+              workspaceId: params.workspaceId ?? null,
+              projectId: params.projectId ?? null,
+              status: InvitationStatus.PENDING,
+              expiresAt: { gt: now },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+          });
+
+          if (existingPending) {
+            await tx.invitation.updateMany({
+              where: {
+                email: normalizedEmail,
+                scope: params.scope,
+                workspaceId: params.workspaceId ?? null,
+                projectId: params.projectId ?? null,
+                status: InvitationStatus.PENDING,
+                id: { not: existingPending.id },
+              },
+              data: {
+                status: InvitationStatus.CANCELED,
+              },
+            });
+
+            return tx.invitation.update({
+              where: { id: existingPending.id },
+              data: {
+                role: params.role,
+                invitedById: params.invitedById,
+                token,
+                expiresAt,
+              },
+            });
+          }
+
+          return tx.invitation.create({
             data: {
+              email: normalizedEmail,
+              scope: params.scope,
               role: params.role,
               invitedById: params.invitedById,
+              workspaceId: params.workspaceId ?? null,
+              projectId: params.projectId ?? null,
               token,
               expiresAt,
+              status: InvitationStatus.PENDING,
             },
           });
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         }
-
-        return tx.invitation.create({
-          data: {
-            email: normalizedEmail,
-            scope: params.scope,
-            role: params.role,
-            invitedById: params.invitedById,
-            workspaceId: params.workspaceId ?? null,
-            projectId: params.projectId ?? null,
-            token,
-            expiresAt,
-            status: InvitationStatus.PENDING,
-          },
-        });
-      }, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      });
+      );
     } catch (error) {
-      const isSerializationFailure = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
+      const isSerializationFailure =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
       if (!isSerializationFailure || attempt === MAX_INVITATION_RETRIES) {
         throw error;
       }
@@ -230,13 +242,17 @@ async function acceptInvitation(tx: Prisma.TransactionClient, invitationId: stri
   });
 }
 
-async function applyInvitationMembership(tx: Prisma.TransactionClient, invitation: {
-  id: string;
-  role: InvitationRole;
-  scope: InvitationScope;
-  workspaceId: string | null;
-  projectId: string | null;
-}, userId: string) {
+async function applyInvitationMembership(
+  tx: Prisma.TransactionClient,
+  invitation: {
+    id: string;
+    role: InvitationRole;
+    scope: InvitationScope;
+    workspaceId: string | null;
+    projectId: string | null;
+  },
+  userId: string
+) {
   if (invitation.scope === InvitationScope.WORKSPACE && invitation.workspaceId) {
     const workspace = await tx.workspace.findUnique({
       where: { id: invitation.workspaceId },
@@ -253,16 +269,18 @@ async function applyInvitationMembership(tx: Prisma.TransactionClient, invitatio
           },
         },
         update: {
-          role: invitation.role === InvitationRole.ADMIN
-            ? WorkspaceMemberRole.ADMIN
-            : WorkspaceMemberRole.COMMENTATOR,
+          role:
+            invitation.role === InvitationRole.ADMIN
+              ? WorkspaceMemberRole.ADMIN
+              : WorkspaceMemberRole.COMMENTATOR,
         },
         create: {
           workspaceId: invitation.workspaceId,
           userId,
-          role: invitation.role === InvitationRole.ADMIN
-            ? WorkspaceMemberRole.ADMIN
-            : WorkspaceMemberRole.COMMENTATOR,
+          role:
+            invitation.role === InvitationRole.ADMIN
+              ? WorkspaceMemberRole.ADMIN
+              : WorkspaceMemberRole.COMMENTATOR,
         },
       });
     }
@@ -287,16 +305,18 @@ async function applyInvitationMembership(tx: Prisma.TransactionClient, invitatio
           },
         },
         update: {
-          role: invitation.role === InvitationRole.ADMIN
-            ? ProjectMemberRole.ADMIN
-            : ProjectMemberRole.COMMENTATOR,
+          role:
+            invitation.role === InvitationRole.ADMIN
+              ? ProjectMemberRole.ADMIN
+              : ProjectMemberRole.COMMENTATOR,
         },
         create: {
           projectId: invitation.projectId,
           userId,
-          role: invitation.role === InvitationRole.ADMIN
-            ? ProjectMemberRole.ADMIN
-            : ProjectMemberRole.COMMENTATOR,
+          role:
+            invitation.role === InvitationRole.ADMIN
+              ? ProjectMemberRole.ADMIN
+              : ProjectMemberRole.COMMENTATOR,
         },
       });
     }

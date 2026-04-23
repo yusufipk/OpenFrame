@@ -2,7 +2,17 @@
 
 import { memo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ChevronDown, GitCompareArrows, ListChecks, MoreVertical, Plus, Share2, ShieldCheck, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  ChevronDown,
+  GitCompareArrows,
+  ListChecks,
+  MoreVertical,
+  Plus,
+  Share2,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +27,11 @@ import { cn } from '@/lib/utils';
 import { DownloadControls } from '@/components/video-page/download-controls';
 import { VersionDeleteDialog } from '@/components/video-page/version-delete-dialog';
 import { VersionActionsDialog } from '@/components/video-page/version-actions-dialog';
-import type { BunnyDownloadPreference, DownloadTarget, Version } from '@/components/video-page/types';
+import type {
+  BunnyDownloadPreference,
+  DownloadTarget,
+  Version,
+} from '@/components/video-page/types';
 import type { VideoSource } from '@/lib/video-providers';
 
 interface VideoPageHeaderProps {
@@ -118,11 +132,15 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   const canManageVideo = canShareVideo || canRequestApproval;
 
   return (
-    <div className={cn(
-      'shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50 gap-3',
-      isFullscreenMode ? 'absolute top-0 left-0 right-0 z-50 transition-opacity duration-300' : '',
-      isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
-    )}>
+    <div
+      className={cn(
+        'shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50 gap-3',
+        isFullscreenMode
+          ? 'absolute top-0 left-0 right-0 z-50 transition-opacity duration-300'
+          : '',
+        isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
+      )}
+    >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <Link
           href={backHref}
@@ -152,10 +170,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {versions.map((version) => (
-              <DropdownMenuItem
-                key={version.id}
-                onClick={() => onVersionSelect(version.id)}
-              >
+              <DropdownMenuItem key={version.id} onClick={() => onVersionSelect(version.id)}>
                 <Badge
                   variant={version.id === activeVersionId ? 'default' : 'secondary'}
                   className="mr-2"
@@ -203,22 +218,39 @@ export const VideoPageHeader = memo(function VideoPageHeader({
         {mode === 'dashboard' && (
           <>
             {canManageVideo ? (
-              <Button variant="outline" size="sm" onClick={() => setShowVersionDialog(true)} className="hidden sm:inline-flex">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowVersionDialog(true)}
+                className="hidden sm:inline-flex"
+              >
                 <Plus className="h-4 w-4 mr-1" />
                 New Version
               </Button>
             ) : null}
 
-            <Button variant="outline" size="sm" onClick={onOpenApprovalsPanel} className="hidden sm:inline-flex">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenApprovalsPanel}
+              className="hidden sm:inline-flex"
+            >
               <ListChecks className="h-4 w-4 mr-1" />
               Approvals
               {hasPendingApprovalRequest ? (
-                <Badge variant="default" className="ml-2 hidden xl:inline-flex">Pending</Badge>
+                <Badge variant="default" className="ml-2 hidden xl:inline-flex">
+                  Pending
+                </Badge>
               ) : null}
             </Button>
 
             {versions.length >= 2 && (
-              <Button variant="outline" size="sm" onClick={onOpenCompare} className="hidden sm:inline-flex">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenCompare}
+                className="hidden sm:inline-flex"
+              >
                 <GitCompareArrows className="h-4 w-4 mr-1" />
                 Compare
               </Button>

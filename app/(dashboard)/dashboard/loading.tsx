@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardHeader, CardContent } from "@/components/ui/card"
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 
 function ProjectCardSkeleton() {
   return (
@@ -24,7 +24,7 @@ function ProjectCardSkeleton() {
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export default function DashboardLoading() {
@@ -44,5 +44,5 @@ export default function DashboardLoading() {
         ))}
       </div>
     </div>
-  )
+  );
 }

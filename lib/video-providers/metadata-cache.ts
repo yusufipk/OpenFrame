@@ -32,7 +32,11 @@ export function getCachedMetadata(key: string): VideoMetadata | null {
   return entry.value;
 }
 
-export function setCachedMetadata(key: string, value: VideoMetadata, ttlMs: number = DEFAULT_TTL_MS): void {
+export function setCachedMetadata(
+  key: string,
+  value: VideoMetadata,
+  ttlMs: number = DEFAULT_TTL_MS
+): void {
   cache.set(key, { value, expiresAt: Date.now() + ttlMs });
   pruneIfNeeded();
 }

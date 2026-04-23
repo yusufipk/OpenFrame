@@ -25,8 +25,21 @@ export const VideoPageLoading = memo(function VideoPageLoading({
   return (
     <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
       <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className={cn('flex-1 flex flex-col overflow-hidden min-h-0', isFullscreenMode && 'relative')}>
-          <div className={cn('shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50', isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none transition-opacity duration-300')}>
+        <div
+          className={cn(
+            'flex-1 flex flex-col overflow-hidden min-h-0',
+            isFullscreenMode && 'relative'
+          )}
+        >
+          <div
+            className={cn(
+              'shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50',
+              isFullscreenMode &&
+                cursorIdle &&
+                isPlaying &&
+                'opacity-0 pointer-events-none transition-opacity duration-300'
+            )}
+          >
             <div className="flex items-center gap-3">
               <Skeleton className="h-4 w-12" />
               <Separator orientation="vertical" className="h-5" />
@@ -41,7 +54,15 @@ export const VideoPageLoading = memo(function VideoPageLoading({
             </div>
           </div>
           <div className="flex-1 bg-black min-h-0" />
-          <div className={cn('shrink-0 px-4 py-2 bg-background border-t', isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none transition-opacity duration-300')}>
+          <div
+            className={cn(
+              'shrink-0 px-4 py-2 bg-background border-t',
+              isFullscreenMode &&
+                cursorIdle &&
+                isPlaying &&
+                'opacity-0 pointer-events-none transition-opacity duration-300'
+            )}
+          >
             <div className="flex items-center gap-1 mb-2">
               <Skeleton className="h-8 w-8 rounded-md" />
               <Skeleton className="h-8 w-8 rounded-md" />
@@ -55,7 +76,12 @@ export const VideoPageLoading = memo(function VideoPageLoading({
             <Skeleton className="h-8 w-full rounded" />
           </div>
         </div>
-        <div className={cn('hidden lg:flex w-80 shrink-0 border-l bg-card flex-col overflow-hidden', isFullscreenMode && !showComments && 'hidden')}>
+        <div
+          className={cn(
+            'hidden lg:flex w-80 shrink-0 border-l bg-card flex-col overflow-hidden',
+            isFullscreenMode && !showComments && 'hidden'
+          )}
+        >
           <div className="shrink-0 flex items-center justify-between p-4 border-b">
             <div className="flex items-center gap-2">
               <Skeleton className="h-5 w-5" />

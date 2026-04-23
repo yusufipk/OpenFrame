@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardHeader, CardContent } from "@/components/ui/card"
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 
 export default function ProjectSettingsLoading() {
   return (
@@ -63,5 +63,5 @@ export default function ProjectSettingsLoading() {
         </Card>
       </div>
     </div>
-  )
+  );
 }

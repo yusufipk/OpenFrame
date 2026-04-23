@@ -3,12 +3,12 @@
  * Prevents javascript:, data:, and other potentially dangerous URI schemes
  */
 export function isValidHttpUrl(urlString: string): boolean {
-    try {
-        const url = new URL(urlString);
-        return url.protocol === 'http:' || url.protocol === 'https:';
-    } catch {
-        return false;
-    }
+  try {
+    const url = new URL(urlString);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 // Matches exactly 6-digit hex colours produced by the annotation canvas (e.g. #FF3B30)
@@ -28,62 +28,66 @@ const MAX_STROKE_WIDTH = 20;
  * Returns null when the input is absent or structurally invalid.
  */
 export function validateAnnotationStrokes(
-    data: unknown
+  data: unknown
 ): { points: { x: number; y: number }[]; color: string; width: number }[] | null {
-    if (data === null || data === undefined) return null;
-    if (!Array.isArray(data)) return null;
-    if (data.length > MAX_STROKES) return null;
+  if (data === null || data === undefined) return null;
+  if (!Array.isArray(data)) return null;
+  if (data.length > MAX_STROKES) return null;
 
-    const result: { points: { x: number; y: number }[]; color: string; width: number }[] = [];
+  const result: { points: { x: number; y: number }[]; color: string; width: number }[] = [];
 
-    for (const stroke of data) {
-        if (stroke === null || typeof stroke !== 'object' || Array.isArray(stroke)) return null;
+  for (const stroke of data) {
+    if (stroke === null || typeof stroke !== 'object' || Array.isArray(stroke)) return null;
 
-        const { points, color, width } = stroke as Record<string, unknown>;
+    const { points, color, width } = stroke as Record<string, unknown>;
 
-        if (!Array.isArray(points)) return null;
-        if (points.length > MAX_POINTS_PER_STROKE) return null;
+    if (!Array.isArray(points)) return null;
+    if (points.length > MAX_POINTS_PER_STROKE) return null;
 
-        const safePoints: { x: number; y: number }[] = [];
-        for (const pt of points) {
-            if (pt === null || typeof pt !== 'object' || Array.isArray(pt)) return null;
-            const { x, y } = pt as Record<string, unknown>;
-            if (typeof x !== 'number' || !isFinite(x)) return null;
-            if (typeof y !== 'number' || !isFinite(y)) return null;
-            safePoints.push({ x, y });
-        }
-
-        if (typeof color !== 'string' || !ANNOTATION_COLOR_RE.test(color)) return null;
-        if (typeof width !== 'number' || width < MIN_STROKE_WIDTH || width > MAX_STROKE_WIDTH) return null;
-
-        result.push({ points: safePoints, color, width });
+    const safePoints: { x: number; y: number }[] = [];
+    for (const pt of points) {
+      if (pt === null || typeof pt !== 'object' || Array.isArray(pt)) return null;
+      const { x, y } = pt as Record<string, unknown>;
+      if (typeof x !== 'number' || !isFinite(x)) return null;
+      if (typeof y !== 'number' || !isFinite(y)) return null;
+      safePoints.push({ x, y });
     }
 
-    return result;
+    if (typeof color !== 'string' || !ANNOTATION_COLOR_RE.test(color)) return null;
+    if (typeof width !== 'number' || width < MIN_STROKE_WIDTH || width > MAX_STROKE_WIDTH)
+      return null;
+
+    result.push({ points: safePoints, color, width });
+  }
+
+  return result;
 }
 
 /**
  * Validates a URL and returns an error message if invalid
  */
 export function validateUrl(urlString: string, fieldName: string = 'URL'): string | null {
-    if (!urlString || typeof urlString !== 'string') {
-        return `${fieldName} is required`;
-    }
+  if (!urlString || typeof urlString !== 'string') {
+    return `${fieldName} is required`;
+  }
 
-    if (!isValidHttpUrl(urlString)) {
-        return `${fieldName} must be a valid HTTP or HTTPS URL`;
-    }
+  if (!isValidHttpUrl(urlString)) {
+    return `${fieldName} must be a valid HTTP or HTTPS URL`;
+  }
 
-    return null;
+  return null;
 }
 
 /**
  * Validates an optional URL - returns null if empty/undefined, error if invalid
  */
-export function validateOptionalUrl(urlString: string | null | undefined, fieldName: string = 'URL'): string | null {
-    if (!urlString) {
-        return null; // Optional URLs can be empty
-    }
+export function validateOptionalUrl(
+  urlString: string | null | undefined,
+  fieldName: string = 'URL'
+): string | null {
+  if (!urlString) {
+    return null; // Optional URLs can be empty
+  }
 
-    return validateUrl(urlString, fieldName);
+  return validateUrl(urlString, fieldName);
 }

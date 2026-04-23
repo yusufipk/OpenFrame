@@ -26,18 +26,24 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
 const KeyboardShortcutsModal = dynamic(
-  () => import('@/components/keyboard-shortcuts-modal').then(mod => mod.KeyboardShortcutsModal),
+  () => import('@/components/keyboard-shortcuts-modal').then((mod) => mod.KeyboardShortcutsModal),
   { ssr: false }
 );
 
 const SearchModal = dynamic(
-  () => import('@/components/search-modal').then(mod => mod.SearchModal),
+  () => import('@/components/search-modal').then((mod) => mod.SearchModal),
   { ssr: false }
 );
 
@@ -84,7 +90,8 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
   }, [showAppNavigation, user]);
 
   // Hide header on video player pages — they use full viewport with their own back button
-  const isVideoPage = /\/videos\/[^/]+($|\/compare)/.test(pathname) || pathname.startsWith('/watch/');
+  const isVideoPage =
+    /\/videos\/[^/]+($|\/compare)/.test(pathname) || pathname.startsWith('/watch/');
   if (isVideoPage) return null;
 
   return (
@@ -100,23 +107,26 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
           </SheetTrigger>
           <SheetContent side="left" className="w-64">
             <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-            <SheetDescription className="sr-only">Access your projects and workspaces</SheetDescription>
+            <SheetDescription className="sr-only">
+              Access your projects and workspaces
+            </SheetDescription>
             <nav className="flex flex-col gap-2 mt-10">
-              {showAppNavigation && navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                    pathname === item.href
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-accent hover:text-accent-foreground'
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              ))}
+              {showAppNavigation &&
+                navItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      pathname === item.href
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent hover:text-accent-foreground'
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                ))}
               {user?.isAdmin && (
                 <Link
                   href="/admin"
@@ -143,21 +153,20 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-1">
-          {showAppNavigation && navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                pathname === item.href
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/50'
-              )}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          ))}
+          {showAppNavigation &&
+            navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                  pathname === item.href ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            ))}
           {user?.isAdmin && (
             <Link
               href="/admin"
@@ -207,7 +216,13 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
             </Button>
           )}
           {user && showAppNavigation && (
-            <Button asChild variant="ghost" size="icon" className="sm:hidden" aria-label="Feedback and reviews">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="sm:hidden"
+              aria-label="Feedback and reviews"
+            >
               <Link href="/feedback">
                 <MessageSquareQuote className="h-4 w-4" />
               </Link>
@@ -222,9 +237,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={user.image ?? undefined} alt={user.name ?? ''} />
-                    <AvatarFallback>
-                      {user.name?.charAt(0).toUpperCase() ?? 'U'}
-                    </AvatarFallback>
+                    <AvatarFallback>{user.name?.charAt(0).toUpperCase() ?? 'U'}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
@@ -237,9 +250,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
                   <div className="flex flex-col space-y-1 leading-none">
                     {user.name && <p className="font-medium">{user.name}</p>}
                     {user.email && (
-                      <p className="truncate text-sm text-muted-foreground">
-                        {user.email}
-                      </p>
+                      <p className="truncate text-sm text-muted-foreground">{user.email}</p>
                     )}
                   </div>
                 </div>

@@ -3,7 +3,20 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as tus from 'tus-js-client';
 import { toast } from 'sonner';
-import { Download, FileVideo, Image as ImageIcon, Loader2, Mic, Pause, Play, Square, UploadCloud, Volume2, X, Youtube } from 'lucide-react';
+import {
+  Download,
+  FileVideo,
+  Image as ImageIcon,
+  Loader2,
+  Mic,
+  Pause,
+  Play,
+  Square,
+  UploadCloud,
+  Volume2,
+  X,
+  Youtube,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -16,10 +29,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ImagePreviewDialog } from '@/components/video-page/image-preview-dialog';
-import { BunnyPreviewPlayer, type BunnyPreviewPlayerHandle } from '@/components/video-page/bunny-preview-player';
+import {
+  BunnyPreviewPlayer,
+  type BunnyPreviewPlayerHandle,
+} from '@/components/video-page/bunny-preview-player';
 import { AssetListSection } from '@/components/video-page/asset-list-section';
 import type { VideoAsset } from '@/components/video-page/types';
-import { extractPastedImageFile, validateImageFile } from '@/components/video-page/image-upload-utils';
+import {
+  extractPastedImageFile,
+  validateImageFile,
+} from '@/components/video-page/image-upload-utils';
 import { useCommentMedia } from '@/components/video-page/hooks/use-comment-media';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { cn } from '@/lib/utils';
@@ -113,10 +132,16 @@ export const AssetsPane = memo(function AssetsPane({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isUploadingBunny, setIsUploadingBunny] = useState(false);
   const [bunnyProgress, setBunnyProgress] = useState(0);
-  const [bunnyProcessingByAssetId, setBunnyProcessingByAssetId] = useState<Record<string, boolean>>({});
+  const [bunnyProcessingByAssetId, setBunnyProcessingByAssetId] = useState<Record<string, boolean>>(
+    {}
+  );
   const [bunnyReadyByAssetId, setBunnyReadyByAssetId] = useState<Record<string, boolean>>({});
-  const [bunnyThumbnailRetryKeyByAssetId, setBunnyThumbnailRetryKeyByAssetId] = useState<Record<string, number>>({});
-  const [bunnyThumbnailLoadErrorByAssetId, setBunnyThumbnailLoadErrorByAssetId] = useState<Record<string, boolean>>({});
+  const [bunnyThumbnailRetryKeyByAssetId, setBunnyThumbnailRetryKeyByAssetId] = useState<
+    Record<string, number>
+  >({});
+  const [bunnyThumbnailLoadErrorByAssetId, setBunnyThumbnailLoadErrorByAssetId] = useState<
+    Record<string, boolean>
+  >({});
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewImageTitle, setPreviewImageTitle] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<VideoAsset | null>(null);
@@ -145,7 +170,15 @@ export const AssetsPane = memo(function AssetsPane({
   const dragCounterRef = useRef(0);
 
   // Audio playback for asset preview dialog and recording preview
-  const { playingVoiceId, voiceProgress, voiceCurrentTime, voicePlaybackRate, playVoice, stopVoice, toggleVoiceSpeed } = useCommentMedia();
+  const {
+    playingVoiceId,
+    voiceProgress,
+    voiceCurrentTime,
+    voicePlaybackRate,
+    playVoice,
+    stopVoice,
+    toggleVoiceSpeed,
+  } = useCommentMedia();
 
   const sortedAssets = useMemo(() => {
     return [...assets].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -158,7 +191,10 @@ export const AssetsPane = memo(function AssetsPane({
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setFocusedAssetId(highlightedAssetId);
-      window.setTimeout(() => setFocusedAssetId((prev) => (prev === highlightedAssetId ? null : prev)), 2500);
+      window.setTimeout(
+        () => setFocusedAssetId((prev) => (prev === highlightedAssetId ? null : prev)),
+        2500
+      );
     }
 
     onHighlightedAssetHandled();
@@ -170,11 +206,14 @@ export const AssetsPane = memo(function AssetsPane({
     const sendYouTubeCommand = (func: string, args: unknown[] = []) => {
       const iframe = youtubeIframeRef.current;
       if (!iframe?.contentWindow) return;
-      iframe.contentWindow.postMessage(JSON.stringify({
-        event: 'command',
-        func,
-        args,
-      }), '*');
+      iframe.contentWindow.postMessage(
+        JSON.stringify({
+          event: 'command',
+          func,
+          args,
+        }),
+        '*'
+      );
     };
 
     const onMessage = (event: MessageEvent) => {
@@ -186,7 +225,9 @@ export const AssetsPane = memo(function AssetsPane({
       } catch {
         return;
       }
-      const info = (parsed as { info?: { currentTime?: number; playerState?: number; muted?: boolean } })?.info;
+      const info = (
+        parsed as { info?: { currentTime?: number; playerState?: number; muted?: boolean } }
+      )?.info;
       if (!info) return;
       if (typeof info.currentTime === 'number') {
         youtubePreviewStateRef.current.currentTime = info.currentTime;
@@ -202,9 +243,22 @@ export const AssetsPane = memo(function AssetsPane({
     const onKeyDown = (event: KeyboardEvent) => {
       if (!selectedAsset || selectedAsset.kind !== 'VIDEO') return;
       const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      )
+        return;
 
-      const handledKeys = new Set(['Space', 'KeyK', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyL', 'KeyM', 'Escape']);
+      const handledKeys = new Set([
+        'Space',
+        'KeyK',
+        'ArrowLeft',
+        'ArrowRight',
+        'KeyJ',
+        'KeyL',
+        'KeyM',
+        'Escape',
+      ]);
       if (!handledKeys.has(event.code)) return;
 
       event.preventDefault();
@@ -280,53 +334,61 @@ export const AssetsPane = memo(function AssetsPane({
   useEffect(() => {
     if (!selectedAsset || selectedAsset.provider !== 'BUNNY') return;
     if (bunnyReadyByAssetId[selectedAsset.id]) return;
-    setBunnyProcessingByAssetId((prev) => (prev[selectedAsset.id] ? prev : { ...prev, [selectedAsset.id]: true }));
+    setBunnyProcessingByAssetId((prev) =>
+      prev[selectedAsset.id] ? prev : { ...prev, [selectedAsset.id]: true }
+    );
   }, [bunnyReadyByAssetId, selectedAsset]);
 
-  const handleImageUpload = useCallback(async (file: File) => {
-    if (!file) return;
+  const handleImageUpload = useCallback(
+    async (file: File) => {
+      if (!file) return;
 
-    const imageError = await validateImageFile(file);
-    if (imageError) {
-      toast.error(imageError);
-      return;
-    }
-
-    setIsUploadingImage(true);
-    try {
-      const formData = new FormData();
-      formData.append('image', file);
-      formData.append('videoId', videoId);
-      const guestUploadToken = await getGuestUploadToken('image');
-      if (guestUploadToken) formData.append('uploadToken', guestUploadToken);
-
-      const uploadRes = await fetch('/api/upload/image', {
-        method: 'POST',
-        body: formData,
-      });
-      const uploadPayload = (await uploadRes.json().catch(() => null)) as { data?: { url?: string; reservationId?: string | null }; error?: string } | null;
-      const uploadedImageUrl = uploadPayload?.data?.url;
-      if (!uploadRes.ok || !uploadedImageUrl) {
-        toast.error(uploadPayload?.error || 'Failed to upload image');
+      const imageError = await validateImageFile(file);
+      if (imageError) {
+        toast.error(imageError);
         return;
       }
 
-      await createAsset({
-        provider: 'R2_IMAGE',
-        sourceUrl: uploadedImageUrl,
-        displayName: imageTitle.trim() || file.name,
-        reservationId: uploadPayload?.data?.reservationId ?? null,
-      });
-      if (imageInputRef.current) imageInputRef.current.value = '';
-      setImageTitle('');
-      setPendingImageFile(null);
-    } catch (error) {
-      console.error('Failed to upload image asset:', error);
-      toast.error('Failed to upload image');
-    } finally {
-      setIsUploadingImage(false);
-    }
-  }, [videoId, getGuestUploadToken, createAsset, imageTitle]);
+      setIsUploadingImage(true);
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        formData.append('videoId', videoId);
+        const guestUploadToken = await getGuestUploadToken('image');
+        if (guestUploadToken) formData.append('uploadToken', guestUploadToken);
+
+        const uploadRes = await fetch('/api/upload/image', {
+          method: 'POST',
+          body: formData,
+        });
+        const uploadPayload = (await uploadRes.json().catch(() => null)) as {
+          data?: { url?: string; reservationId?: string | null };
+          error?: string;
+        } | null;
+        const uploadedImageUrl = uploadPayload?.data?.url;
+        if (!uploadRes.ok || !uploadedImageUrl) {
+          toast.error(uploadPayload?.error || 'Failed to upload image');
+          return;
+        }
+
+        await createAsset({
+          provider: 'R2_IMAGE',
+          sourceUrl: uploadedImageUrl,
+          displayName: imageTitle.trim() || file.name,
+          reservationId: uploadPayload?.data?.reservationId ?? null,
+        });
+        if (imageInputRef.current) imageInputRef.current.value = '';
+        setImageTitle('');
+        setPendingImageFile(null);
+      } catch (error) {
+        console.error('Failed to upload image asset:', error);
+        toast.error('Failed to upload image');
+      } finally {
+        setIsUploadingImage(false);
+      }
+    },
+    [videoId, getGuestUploadToken, createAsset, imageTitle]
+  );
 
   const handleImageFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -367,101 +429,104 @@ export const AssetsPane = memo(function AssetsPane({
     }
   };
 
-  const handleBunnyFileUpload = useCallback(async (file: File) => {
-    if (!file.type.startsWith('video/')) {
-      toast.error('Please select a video file');
-      return;
-    }
-
-    let uploadedVideoId: string | null = null;
-    let uploadToken: string | null = null;
-    try {
-      setIsUploadingBunny(true);
-      setBunnyProgress(0);
-
-      const initRes = await fetch(`/api/videos/${videoId}/assets/bunny-init`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: bunnyTitle.trim() || file.name.replace(/\.[^/.]+$/, '') }),
-      });
-      const initPayload = (await initRes.json().catch(() => null)) as {
-        data?: {
-          videoId: string;
-          libraryId: string;
-          signature: string;
-          expirationTime: number;
-          uploadToken: string;
-        };
-        error?: string;
-      } | null;
-
-      if (!initRes.ok || !initPayload?.data) {
-        toast.error(initPayload?.error || 'Failed to initialize Bunny upload');
+  const handleBunnyFileUpload = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith('video/')) {
+        toast.error('Please select a video file');
         return;
       }
 
-      const initData = initPayload.data;
-      uploadedVideoId = initData.videoId;
-      uploadToken = initData.uploadToken;
+      let uploadedVideoId: string | null = null;
+      let uploadToken: string | null = null;
+      try {
+        setIsUploadingBunny(true);
+        setBunnyProgress(0);
 
-      await new Promise<void>((resolve, reject) => {
-        const upload = new tus.Upload(file, {
-          endpoint: 'https://video.bunnycdn.com/tusupload',
-          retryDelays: [0, 3000, 5000, 10000, 20000],
-          headers: {
-            AuthorizationSignature: initData.signature,
-            AuthorizationExpire: initData.expirationTime.toString(),
-            VideoId: initData.videoId,
-            LibraryId: initData.libraryId,
-          },
-          metadata: {
-            filetype: file.type,
-            title: file.name,
-          },
-          onError: (error) => reject(error),
-          onProgress: (bytesUploaded, bytesTotal) => {
-            const percentage = bytesTotal > 0 ? (bytesUploaded / bytesTotal) * 100 : 0;
-            setBunnyProgress(Math.min(100, Math.max(0, percentage)));
-          },
-          onSuccess: () => resolve(),
-        });
-        upload.start();
-      });
-
-      const sourceUrl = `https://iframe.mediadelivery.net/embed/${initData.libraryId}/${initData.videoId}`;
-      const thumbnailUrl = bunnyCdnHostname
-        ? `https://${bunnyCdnHostname}/${initData.videoId}/thumbnail.jpg`
-        : undefined;
-      const createdAsset = await createAsset({
-        provider: 'BUNNY',
-        sourceUrl,
-        providerVideoId: initData.videoId,
-        uploadToken: initData.uploadToken,
-        thumbnailUrl,
-        displayName: bunnyTitle.trim() || file.name,
-      });
-      if (!createdAsset) {
-        throw new Error('Failed to finalize Bunny asset');
-      }
-      setBunnyReadyByAssetId((prev) => ({ ...prev, [createdAsset.id]: false }));
-      setBunnyProcessingByAssetId((prev) => ({ ...prev, [createdAsset.id]: true }));
-      if (bunnyInputRef.current) bunnyInputRef.current.value = '';
-      setBunnyTitle('');
-    } catch (error) {
-      console.error('Failed to upload Bunny asset:', error);
-      toast.error('Failed to upload Bunny video');
-      if (uploadedVideoId && uploadToken) {
-        await fetch(`/api/videos/${videoId}/assets/bunny-init`, {
-          method: 'DELETE',
+        const initRes = await fetch(`/api/videos/${videoId}/assets/bunny-init`, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: uploadedVideoId, uploadToken }),
-        }).catch(() => undefined);
+          body: JSON.stringify({ title: bunnyTitle.trim() || file.name.replace(/\.[^/.]+$/, '') }),
+        });
+        const initPayload = (await initRes.json().catch(() => null)) as {
+          data?: {
+            videoId: string;
+            libraryId: string;
+            signature: string;
+            expirationTime: number;
+            uploadToken: string;
+          };
+          error?: string;
+        } | null;
+
+        if (!initRes.ok || !initPayload?.data) {
+          toast.error(initPayload?.error || 'Failed to initialize Bunny upload');
+          return;
+        }
+
+        const initData = initPayload.data;
+        uploadedVideoId = initData.videoId;
+        uploadToken = initData.uploadToken;
+
+        await new Promise<void>((resolve, reject) => {
+          const upload = new tus.Upload(file, {
+            endpoint: 'https://video.bunnycdn.com/tusupload',
+            retryDelays: [0, 3000, 5000, 10000, 20000],
+            headers: {
+              AuthorizationSignature: initData.signature,
+              AuthorizationExpire: initData.expirationTime.toString(),
+              VideoId: initData.videoId,
+              LibraryId: initData.libraryId,
+            },
+            metadata: {
+              filetype: file.type,
+              title: file.name,
+            },
+            onError: (error) => reject(error),
+            onProgress: (bytesUploaded, bytesTotal) => {
+              const percentage = bytesTotal > 0 ? (bytesUploaded / bytesTotal) * 100 : 0;
+              setBunnyProgress(Math.min(100, Math.max(0, percentage)));
+            },
+            onSuccess: () => resolve(),
+          });
+          upload.start();
+        });
+
+        const sourceUrl = `https://iframe.mediadelivery.net/embed/${initData.libraryId}/${initData.videoId}`;
+        const thumbnailUrl = bunnyCdnHostname
+          ? `https://${bunnyCdnHostname}/${initData.videoId}/thumbnail.jpg`
+          : undefined;
+        const createdAsset = await createAsset({
+          provider: 'BUNNY',
+          sourceUrl,
+          providerVideoId: initData.videoId,
+          uploadToken: initData.uploadToken,
+          thumbnailUrl,
+          displayName: bunnyTitle.trim() || file.name,
+        });
+        if (!createdAsset) {
+          throw new Error('Failed to finalize Bunny asset');
+        }
+        setBunnyReadyByAssetId((prev) => ({ ...prev, [createdAsset.id]: false }));
+        setBunnyProcessingByAssetId((prev) => ({ ...prev, [createdAsset.id]: true }));
+        if (bunnyInputRef.current) bunnyInputRef.current.value = '';
+        setBunnyTitle('');
+      } catch (error) {
+        console.error('Failed to upload Bunny asset:', error);
+        toast.error('Failed to upload Bunny video');
+        if (uploadedVideoId && uploadToken) {
+          await fetch(`/api/videos/${videoId}/assets/bunny-init`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoId: uploadedVideoId, uploadToken }),
+          }).catch(() => undefined);
+        }
+      } finally {
+        setIsUploadingBunny(false);
+        setBunnyProgress(0);
       }
-    } finally {
-      setIsUploadingBunny(false);
-      setBunnyProgress(0);
-    }
-  }, [videoId, bunnyTitle, bunnyCdnHostname, createAsset]);
+    },
+    [videoId, bunnyTitle, bunnyCdnHostname, createAsset]
+  );
 
   const handleBunnyUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -536,7 +601,10 @@ export const AssetsPane = memo(function AssetsPane({
     setIsRecording(false);
     setRecordingTime(0);
     setAudioBlob(null);
-    setAudioBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setAudioBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     setPendingAudioFile(null);
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
@@ -574,9 +642,9 @@ export const AssetsPane = memo(function AssetsPane({
       const uploadedUrl = uploadPayload?.data?.url;
       if (!uploadRes.ok || !uploadedUrl) {
         toast.error(
-          uploadPayload?.error
-          || (uploadRes.status === 413 ? MAX_AUDIO_UPLOAD_SIZE_MESSAGE : null)
-          || 'Failed to upload voice recording'
+          uploadPayload?.error ||
+            (uploadRes.status === 413 ? MAX_AUDIO_UPLOAD_SIZE_MESSAGE : null) ||
+            'Failed to upload voice recording'
         );
         return;
       }
@@ -592,7 +660,10 @@ export const AssetsPane = memo(function AssetsPane({
       });
       setVoiceTitle('');
       setAudioBlob(null);
-      setAudioBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      setAudioBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       setPendingAudioFile(null);
     } catch (error) {
       console.error('Failed to upload voice asset:', error);
@@ -602,12 +673,15 @@ export const AssetsPane = memo(function AssetsPane({
     }
   }, [pendingAudioFile, audioBlob, videoId, getGuestUploadToken, createAsset, voiceTitle]);
 
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (!canUploadAssets) return;
-    dragCounterRef.current += 1;
-    if (e.dataTransfer.types.includes('Files')) setIsDragOver(true);
-  }, [canUploadAssets]);
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!canUploadAssets) return;
+      dragCounterRef.current += 1;
+      if (e.dataTransfer.types.includes('Files')) setIsDragOver(true);
+    },
+    [canUploadAssets]
+  );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -619,38 +693,44 @@ export const AssetsPane = memo(function AssetsPane({
     e.preventDefault();
   }, []);
 
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current = 0;
-    setIsDragOver(false);
-    if (!canUploadAssets) return;
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+      if (!canUploadAssets) return;
 
-    const file = Array.from(e.dataTransfer.files)[0];
-    if (!file) return;
+      const file = Array.from(e.dataTransfer.files)[0];
+      if (!file) return;
 
-    if (file.type.startsWith('image/')) {
-      const imageError = await validateImageFile(file);
-      if (imageError) { toast.error(imageError); return; }
-      // Stage the file so the user can optionally set a name before uploading
-      setUploadTab('image');
-      setPendingImageFile(file);
-    } else if (file.type.startsWith('video/')) {
-      // Videos upload immediately (large files, no staging)
-      setUploadTab('bunny');
-      await handleBunnyFileUpload(file);
-    } else if (file.type.startsWith('audio/')) {
-      const audioError = getAudioUploadValidationError(file);
-      if (audioError) {
-        toast.error(audioError);
-        return;
+      if (file.type.startsWith('image/')) {
+        const imageError = await validateImageFile(file);
+        if (imageError) {
+          toast.error(imageError);
+          return;
+        }
+        // Stage the file so the user can optionally set a name before uploading
+        setUploadTab('image');
+        setPendingImageFile(file);
+      } else if (file.type.startsWith('video/')) {
+        // Videos upload immediately (large files, no staging)
+        setUploadTab('bunny');
+        await handleBunnyFileUpload(file);
+      } else if (file.type.startsWith('audio/')) {
+        const audioError = getAudioUploadValidationError(file);
+        if (audioError) {
+          toast.error(audioError);
+          return;
+        }
+        // Stage the file so the user can optionally set a name before uploading
+        setUploadTab('voice');
+        setPendingAudioFile(file);
+      } else {
+        toast.error('Unsupported file type. Drop an image, video, or audio file.');
       }
-      // Stage the file so the user can optionally set a name before uploading
-      setUploadTab('voice');
-      setPendingAudioFile(file);
-    } else {
-      toast.error('Unsupported file type. Drop an image, video, or audio file.');
-    }
-  }, [canUploadAssets, handleBunnyFileUpload]);
+    },
+    [canUploadAssets, handleBunnyFileUpload]
+  );
 
   const renderAssetPreview = (asset: VideoAsset) => {
     if (asset.kind === 'AUDIO') {
@@ -681,7 +761,10 @@ export const AssetsPane = memo(function AssetsPane({
         <div className="h-24 w-36 rounded border overflow-hidden bg-black/70 flex items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={asset.thumbnailUrl || `https://img.youtube.com/vi/${asset.providerVideoId}/mqdefault.jpg`}
+            src={
+              asset.thumbnailUrl ||
+              `https://img.youtube.com/vi/${asset.providerVideoId}/mqdefault.jpg`
+            }
             alt={asset.displayName}
             className="h-full w-full object-contain"
           />
@@ -693,7 +776,9 @@ export const AssetsPane = memo(function AssetsPane({
     const isProcessing = !!bunnyProcessingByAssetId[asset.id];
     const isReadyToPlay = !!bunnyReadyByAssetId[asset.id];
     const hasThumbnailLoadError = !!bunnyThumbnailLoadErrorByAssetId[asset.id];
-    const thumbnailSrc = asset.thumbnailUrl ? `${asset.thumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}` : null;
+    const thumbnailSrc = asset.thumbnailUrl
+      ? `${asset.thumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`
+      : null;
     const showThumbnailImage = !!thumbnailSrc && !hasThumbnailLoadError;
 
     return (
@@ -718,9 +803,7 @@ export const AssetsPane = memo(function AssetsPane({
         {isProcessing && !isReadyToPlay && (
           <div className="absolute inset-0 bg-black/65 flex flex-col items-center justify-center gap-1">
             <Loader2 className="h-4 w-4 animate-spin text-white" />
-            <span className="text-[10px] text-white/90 font-medium">
-              Processing...
-            </span>
+            <span className="text-[10px] text-white/90 font-medium">Processing...</span>
           </div>
         )}
       </div>
@@ -742,7 +825,9 @@ export const AssetsPane = memo(function AssetsPane({
       return;
     }
     if (asset.provider === 'BUNNY' && !bunnyReadyByAssetId[asset.id]) {
-      setBunnyProcessingByAssetId((prev) => (prev[asset.id] ? prev : { ...prev, [asset.id]: true }));
+      setBunnyProcessingByAssetId((prev) =>
+        prev[asset.id] ? prev : { ...prev, [asset.id]: true }
+      );
     }
     setSelectedAsset(asset);
   };
@@ -769,14 +854,24 @@ export const AssetsPane = memo(function AssetsPane({
       </div>
 
       {canUploadAssets ? (
-        <div className={cn('rounded-lg border p-3 space-y-3 relative transition-colors', isDragOver && 'border-primary bg-primary/5')}>
+        <div
+          className={cn(
+            'rounded-lg border p-3 space-y-3 relative transition-colors',
+            isDragOver && 'border-primary bg-primary/5'
+          )}
+        >
           {isDragOver && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 border-2 border-dashed border-primary pointer-events-none">
               <UploadCloud className="h-8 w-8 text-primary" />
               <span className="text-sm font-medium text-primary">Drop to upload</span>
             </div>
           )}
-          <Tabs value={uploadTab} onValueChange={(value) => setUploadTab(value as 'image' | 'youtube' | 'bunny' | 'voice')}>
+          <Tabs
+            value={uploadTab}
+            onValueChange={(value) =>
+              setUploadTab(value as 'image' | 'youtube' | 'bunny' | 'voice')
+            }
+          >
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="image">Image</TabsTrigger>
               <TabsTrigger value="youtube">YouTube</TabsTrigger>
@@ -792,8 +887,12 @@ export const AssetsPane = memo(function AssetsPane({
                 value={imageTitle}
                 onChange={(event) => setImageTitle(event.target.value)}
               />
-              <p className="text-xs text-muted-foreground">If set, this name will be used in @asset mentions.</p>
-              <p className="text-xs text-muted-foreground">Tip: you can paste an image here with Ctrl/Cmd+V.</p>
+              <p className="text-xs text-muted-foreground">
+                If set, this name will be used in @asset mentions.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Tip: you can paste an image here with Ctrl/Cmd+V.
+              </p>
               {pendingImageFile ? (
                 <div className="rounded-md border px-2 py-1.5 text-xs flex items-center justify-between gap-2">
                   <span className="truncate">Attached: {pendingImageFile.name}</span>
@@ -823,10 +922,18 @@ export const AssetsPane = memo(function AssetsPane({
                   imageInputRef.current?.click();
                 }}
               >
-                {isUploadingImage || isCreatingAsset
-                  ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  : <UploadCloud className="h-4 w-4 mr-2" />}
-                {isUploadingImage ? 'Uploading...' : isCreatingAsset ? 'Saving...' : pendingImageFile ? 'Upload Image' : 'Select Image'}
+                {isUploadingImage || isCreatingAsset ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <UploadCloud className="h-4 w-4 mr-2" />
+                )}
+                {isUploadingImage
+                  ? 'Uploading...'
+                  : isCreatingAsset
+                    ? 'Saving...'
+                    : pendingImageFile
+                      ? 'Upload Image'
+                      : 'Select Image'}
               </Button>
               <input
                 ref={imageInputRef}
@@ -868,14 +975,20 @@ export const AssetsPane = memo(function AssetsPane({
                 value={bunnyTitle}
                 onChange={(event) => setBunnyTitle(event.target.value)}
               />
-              <p className="text-xs text-muted-foreground">If set, this name will be used in @asset mentions.</p>
+              <p className="text-xs text-muted-foreground">
+                If set, this name will be used in @asset mentions.
+              </p>
               <Button
                 variant="outline"
                 className="w-full"
                 disabled={isUploadingBunny || isCreatingAsset}
                 onClick={() => bunnyInputRef.current?.click()}
               >
-                {isUploadingBunny ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UploadCloud className="h-4 w-4 mr-2" />}
+                {isUploadingBunny ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <UploadCloud className="h-4 w-4 mr-2" />
+                )}
                 {isUploadingBunny ? 'Uploading...' : 'Upload Video'}
               </Button>
               <input
@@ -887,7 +1000,10 @@ export const AssetsPane = memo(function AssetsPane({
               />
               {isUploadingBunny && (
                 <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary h-2 rounded-full" style={{ width: `${bunnyProgress}%` }} />
+                  <div
+                    className="bg-primary h-2 rounded-full"
+                    style={{ width: `${bunnyProgress}%` }}
+                  />
                 </div>
               )}
             </div>
@@ -920,7 +1036,11 @@ export const AssetsPane = memo(function AssetsPane({
                     disabled={isUploadingVoice || isCreatingAsset}
                     onClick={handleVoiceUpload}
                   >
-                    {isUploadingVoice ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UploadCloud className="h-4 w-4 mr-2" />}
+                    {isUploadingVoice ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <UploadCloud className="h-4 w-4 mr-2" />
+                    )}
                     {isUploadingVoice ? 'Uploading...' : 'Upload File'}
                   </Button>
                 </div>
@@ -933,13 +1053,26 @@ export const AssetsPane = memo(function AssetsPane({
                     </span>
                     <span className="text-red-500 font-medium">Recording</span>
                     <span className="ml-auto tabular-nums text-muted-foreground">
-                      {String(Math.floor(recordingTime / 60)).padStart(2, '0')}:{String(recordingTime % 60).padStart(2, '0')}
+                      {String(Math.floor(recordingTime / 60)).padStart(2, '0')}:
+                      {String(recordingTime % 60).padStart(2, '0')}
                     </span>
                   </div>
-                  <Button size="icon" variant="outline" className="h-9 w-9 shrink-0" title="Stop recording" onClick={stopRecording}>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-9 w-9 shrink-0"
+                    title="Stop recording"
+                    onClick={stopRecording}
+                  >
                     <Square className="h-3.5 w-3.5 fill-current" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" title="Cancel recording" onClick={cancelRecording}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-9 w-9 shrink-0"
+                    title="Cancel recording"
+                    onClick={cancelRecording}
+                  >
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
@@ -950,14 +1083,23 @@ export const AssetsPane = memo(function AssetsPane({
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 shrink-0"
-                      onClick={() => audioBlobUrl && playVoice('recording-preview', audioBlobUrl, recordingTime)}
+                      onClick={() =>
+                        audioBlobUrl && playVoice('recording-preview', audioBlobUrl, recordingTime)
+                      }
                     >
-                      {playingVoiceId === 'recording-preview' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      {playingVoiceId === 'recording-preview' ? (
+                        <Pause className="h-4 w-4" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
                     </Button>
                     <div className="flex-1 h-2 bg-primary/20 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-primary rounded-full"
-                        style={{ width: playingVoiceId === 'recording-preview' ? `${voiceProgress}%` : '0%' }}
+                        style={{
+                          width:
+                            playingVoiceId === 'recording-preview' ? `${voiceProgress}%` : '0%',
+                        }}
                       />
                     </div>
                     <span className="text-xs text-muted-foreground tabular-nums shrink-0">
@@ -980,21 +1122,38 @@ export const AssetsPane = memo(function AssetsPane({
                       disabled={isUploadingVoice || isCreatingAsset}
                       onClick={handleVoiceUpload}
                     >
-                      {isUploadingVoice ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UploadCloud className="h-4 w-4 mr-2" />}
+                      {isUploadingVoice ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <UploadCloud className="h-4 w-4 mr-2" />
+                      )}
                       {isUploadingVoice ? 'Uploading...' : 'Upload Recording'}
                     </Button>
-                    <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" title="Discard and re-record" onClick={cancelRecording}>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      title="Discard and re-record"
+                      onClick={cancelRecording}
+                    >
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
               ) : (
-                <Button variant="outline" className="w-full" onClick={startRecording} disabled={isUploadingVoice || isCreatingAsset}>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={startRecording}
+                  disabled={isUploadingVoice || isCreatingAsset}
+                >
                   <Mic className="h-4 w-4 mr-2" />
                   Start Recording
                 </Button>
               )}
-              <p className="text-xs text-muted-foreground">Or drag an audio file anywhere onto this panel.</p>
+              <p className="text-xs text-muted-foreground">
+                Or drag an audio file anywhere onto this panel.
+              </p>
             </div>
           )}
         </div>
@@ -1033,7 +1192,15 @@ export const AssetsPane = memo(function AssetsPane({
         }}
       />
 
-      <Dialog open={selectedAsset?.kind === 'AUDIO'} onOpenChange={(open) => { if (!open) { stopVoice(); setSelectedAsset(null); } }}>
+      <Dialog
+        open={selectedAsset?.kind === 'AUDIO'}
+        onOpenChange={(open) => {
+          if (!open) {
+            stopVoice();
+            setSelectedAsset(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogTitle>{selectedAsset?.displayName || 'Voice Recording'}</DialogTitle>
           {selectedAsset?.sourceUrl ? (
@@ -1042,14 +1209,22 @@ export const AssetsPane = memo(function AssetsPane({
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8 shrink-0"
-                onClick={() => selectedAsset.sourceUrl && playVoice(selectedAsset.id, selectedAsset.sourceUrl)}
+                onClick={() =>
+                  selectedAsset.sourceUrl && playVoice(selectedAsset.id, selectedAsset.sourceUrl)
+                }
               >
-                {playingVoiceId === selectedAsset?.id ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {playingVoiceId === selectedAsset?.id ? (
+                  <Pause className="h-4 w-4" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
               </Button>
               <div className="flex-1 h-2 bg-primary/20 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-primary rounded-full"
-                  style={{ width: playingVoiceId === selectedAsset?.id ? `${voiceProgress}%` : '0%' }}
+                  style={{
+                    width: playingVoiceId === selectedAsset?.id ? `${voiceProgress}%` : '0%',
+                  }}
                 />
               </div>
               <span className="text-xs text-muted-foreground tabular-nums shrink-0">
@@ -1070,7 +1245,10 @@ export const AssetsPane = memo(function AssetsPane({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={selectedAsset?.kind === 'VIDEO'} onOpenChange={(open) => !open && setSelectedAsset(null)}>
+      <Dialog
+        open={selectedAsset?.kind === 'VIDEO'}
+        onOpenChange={(open) => !open && setSelectedAsset(null)}
+      >
         <DialogContent
           showCloseButton={false}
           className="max-w-none sm:max-w-none w-screen h-screen max-h-screen p-0 overflow-hidden bg-black/90 border-none shadow-none rounded-none flex items-center justify-center"
@@ -1083,20 +1261,23 @@ export const AssetsPane = memo(function AssetsPane({
             }
           }}
         >
-          <DialogTitle className="sr-only">{selectedAsset?.displayName || 'Video Preview'}</DialogTitle>
+          <DialogTitle className="sr-only">
+            {selectedAsset?.displayName || 'Video Preview'}
+          </DialogTitle>
 
-          <div className="w-[min(96vw,1500px)] h-[min(94vh,1000px)] border border-border/60 bg-black/80 shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="w-[min(96vw,1500px)] h-[min(94vh,1000px)] border border-border/60 bg-black/80 shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="shrink-0 flex items-center gap-2 border-b border-border/60 bg-background/85 px-2 py-1.5 backdrop-blur-sm">
-              <p className="flex-1 min-w-0 text-sm text-foreground truncate" title={selectedAsset?.displayName || undefined}>
+              <p
+                className="flex-1 min-w-0 text-sm text-foreground truncate"
+                title={selectedAsset?.displayName || undefined}
+              >
                 {selectedAsset?.displayName || 'Video Preview'}
               </p>
               {selectedAsset?.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0"
-                >
+                <Button asChild variant="outline" size="sm" className="h-8 shrink-0">
                   <a
                     href={`https://www.youtube.com/watch?v=${selectedAsset.providerVideoId}`}
                     target="_blank"
@@ -1116,8 +1297,7 @@ export const AssetsPane = memo(function AssetsPane({
                       title="Download Bunny video"
                       aria-label="Download Bunny video"
                       disabled={
-                        activeDownloadAssetId === selectedAsset.id
-                        || isSelectedBunnyProcessing
+                        activeDownloadAssetId === selectedAsset.id || isSelectedBunnyProcessing
                       }
                     >
                       {activeDownloadAssetId === selectedAsset.id ? (
@@ -1132,7 +1312,9 @@ export const AssetsPane = memo(function AssetsPane({
                       <Download className="h-3 w-3 mr-2" />
                       Original
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => void downloadAsset(selectedAsset, 'compressed')}>
+                    <DropdownMenuItem
+                      onClick={() => void downloadAsset(selectedAsset, 'compressed')}
+                    >
                       <Download className="h-3 w-3 mr-2" />
                       Compressed
                     </DropdownMenuItem>
@@ -1151,32 +1333,35 @@ export const AssetsPane = memo(function AssetsPane({
             </div>
 
             <div className="flex-1 min-h-0 w-full p-2 sm:p-4">
-            {selectedAsset ? (
-              selectedAsset.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
-                <div className="w-full h-full rounded-md border overflow-hidden bg-black">
-                  <iframe
-                    ref={youtubeIframeRef}
-                    className="w-full h-full"
-                    src={`https://www.youtube.com/embed/${selectedAsset.providerVideoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1${typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''}`}
-                    title={selectedAsset.displayName}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    referrerPolicy="strict-origin-when-cross-origin"
-                    allowFullScreen
+              {selectedAsset ? (
+                selectedAsset.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
+                  <div className="w-full h-full rounded-md border overflow-hidden bg-black">
+                    <iframe
+                      ref={youtubeIframeRef}
+                      className="w-full h-full"
+                      src={`https://www.youtube.com/embed/${selectedAsset.providerVideoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1${typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''}`}
+                      title={selectedAsset.displayName}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <BunnyPreviewPlayer
+                    ref={bunnyPreviewPlayerRef}
+                    providerVideoId={selectedAsset.providerVideoId}
+                    isProcessing={isSelectedBunnyProcessing}
+                    onReadyToPlay={() => {
+                      if (!selectedBunnyAssetId) return;
+                      setBunnyReadyByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: true }));
+                      setBunnyProcessingByAssetId((prev) => ({
+                        ...prev,
+                        [selectedBunnyAssetId]: false,
+                      }));
+                    }}
                   />
-                </div>
-              ) : (
-                <BunnyPreviewPlayer
-                  ref={bunnyPreviewPlayerRef}
-                  providerVideoId={selectedAsset.providerVideoId}
-                  isProcessing={isSelectedBunnyProcessing}
-                  onReadyToPlay={() => {
-                    if (!selectedBunnyAssetId) return;
-                    setBunnyReadyByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: true }));
-                    setBunnyProcessingByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: false }));
-                  }}
-                />
-              )
-            ) : null}
+                )
+              ) : null}
             </div>
           </div>
         </DialogContent>

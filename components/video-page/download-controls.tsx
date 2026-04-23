@@ -10,7 +10,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import type { BunnyDownloadPreference, DownloadTarget, Version } from '@/components/video-page/types';
+import type {
+  BunnyDownloadPreference,
+  DownloadTarget,
+  Version,
+} from '@/components/video-page/types';
 
 interface DownloadControlsProps {
   activeVersion: Version | null | undefined;
@@ -39,8 +43,9 @@ export const DownloadControls = memo(function DownloadControls({
 }: DownloadControlsProps) {
   if (!activeVersion) return null;
 
-  const isVideoDownloadAvailable = videoCanDownload
-    && (activeVersion.providerId === 'bunny' || activeVersion.providerId === 'direct');
+  const isVideoDownloadAvailable =
+    videoCanDownload &&
+    (activeVersion.providerId === 'bunny' || activeVersion.providerId === 'direct');
 
   if (activeVersion.providerId === 'bunny') {
     return (
@@ -173,8 +178,9 @@ export const DownloadMenuItems = memo(function DownloadMenuItems({
 }: DownloadMenuItemsProps) {
   if (!activeVersion) return null;
 
-  const isVideoDownloadAvailable = videoCanDownload
-    && (activeVersion.providerId === 'bunny' || activeVersion.providerId === 'direct');
+  const isVideoDownloadAvailable =
+    videoCanDownload &&
+    (activeVersion.providerId === 'bunny' || activeVersion.providerId === 'direct');
 
   if (activeVersion.providerId === 'bunny') {
     return (

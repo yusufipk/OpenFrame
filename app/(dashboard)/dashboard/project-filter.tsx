@@ -3,7 +3,18 @@
 import { useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Plus, FolderOpen, Clock, Users, Globe, Lock, UserPlus, Building2, ArrowUp, ArrowDown } from 'lucide-react';
+import {
+  Plus,
+  FolderOpen,
+  Clock,
+  Users,
+  Globe,
+  Lock,
+  UserPlus,
+  Building2,
+  ArrowUp,
+  ArrowDown,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -62,13 +73,18 @@ function VisibilityIcon({ visibility }: { visibility: string }) {
 
 type SortOrder = 'desc' | 'asc';
 
-export function ProjectFilter({ projects, workspaces, totalPages, canCreateProjects }: ProjectFilterProps) {
+export function ProjectFilter({
+  projects,
+  workspaces,
+  totalPages,
+  canCreateProjects,
+}: ProjectFilterProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const selectedWorkspace = searchParams.get('ws') || 'all';
-  const sortOrder = searchParams.get('sort') as SortOrder || 'desc';
+  const sortOrder = (searchParams.get('sort') as SortOrder) || 'desc';
   const page = Number(searchParams.get('page')) || 1;
 
   const createQueryString = useCallback(

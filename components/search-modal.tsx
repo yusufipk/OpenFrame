@@ -230,96 +230,115 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
         </VisuallyHidden>
         {/* Single flex-col wrapper keeps the grid from producing a stray gap row */}
         <div className="flex flex-col">
+          {/* Search input */}
+          <div className="flex items-center border-b px-4">
+            <Search className="h-5 w-5 shrink-0 text-muted-foreground mr-3" />
+            <Input
+              ref={inputRef}
+              value={query}
+              onChange={handleChange}
+              placeholder="Search projects, workspaces, videos…"
+              className="border-0 bg-transparent dark:bg-transparent shadow-none focus-visible:ring-0 h-14 text-base px-0"
+            />
+            {loading && (
+              <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin ml-3" />
+            )}
+          </div>
 
-        {/* Search input */}
-        <div className="flex items-center border-b px-4">
-          <Search className="h-5 w-5 shrink-0 text-muted-foreground mr-3" />
-          <Input
-            ref={inputRef}
-            value={query}
-            onChange={handleChange}
-            placeholder="Search projects, workspaces, videos…"
-            className="border-0 bg-transparent dark:bg-transparent shadow-none focus-visible:ring-0 h-14 text-base px-0"
-          />
-          {loading && <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin ml-3" />}
-        </div>
+          {/* Results */}
+          <div className="h-[520px] overflow-y-auto">
+            {showInitial && (
+              <p className="text-sm text-muted-foreground text-center py-8 px-4">
+                Type at least 2 characters to search.
+              </p>
+            )}
 
-        {/* Results */}
-        <div className="h-[520px] overflow-y-auto">
-          {showInitial && (
-            <p className="text-sm text-muted-foreground text-center py-8 px-4">
-              Type at least 2 characters to search.
-            </p>
-          )}
+            {isEmpty && (
+              <p className="text-sm text-muted-foreground text-center py-8 px-4">
+                No results for &ldquo;{query}&rdquo;
+              </p>
+            )}
 
-          {isEmpty && (
-            <p className="text-sm text-muted-foreground text-center py-8 px-4">
-              No results for &ldquo;{query}&rdquo;
-            </p>
-          )}
+            {sections.map(({ kind, items, startIdx }) => {
+              const Icon = CategoryIcon[kind];
+              return (
+                <div key={kind}>
+                  <div className="px-3 pt-3 pb-1">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      {CATEGORY_LABELS[kind]}
+                    </span>
+                  </div>
+                  {items.map((item, localIdx) => {
+                    const globalIdx = startIdx + localIdx;
+                    const label = getItemLabel(item);
+                    const sub = getItemSub(item);
+                    const isActive = globalIdx === activeIdx;
 
-          {sections.map(({ kind, items, startIdx }) => {
-            const Icon = CategoryIcon[kind];
-            return (
-              <div key={kind}>
-                <div className="px-3 pt-3 pb-1">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    {CATEGORY_LABELS[kind]}
-                  </span>
-                </div>
-                {items.map((item, localIdx) => {
-                  const globalIdx = startIdx + localIdx;
-                  const label = getItemLabel(item);
-                  const sub = getItemSub(item);
-                  const isActive = globalIdx === activeIdx;
-
-                  return (
-                    <button
-                      key={`${kind}-${item.kind === 'project' ? item.data.id : item.kind === 'workspace' ? item.data.id : item.data.id}`}
-                      className={cn(
-                        'w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                        isActive ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
-                      )}
-                      onMouseEnter={() => setActiveIdx(globalIdx)}
-                      onClick={() => handleSelect(item)}
-                    >
-                      <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-accent-foreground/70' : 'text-muted-foreground')} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{label}</p>
-                        {sub && (
-                          <p className={cn('text-xs truncate', isActive ? 'text-accent-foreground/60' : 'text-muted-foreground')}>{sub}</p>
+                    return (
+                      <button
+                        key={`${kind}-${item.kind === 'project' ? item.data.id : item.kind === 'workspace' ? item.data.id : item.data.id}`}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors',
+                          isActive ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                         )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
+                        onMouseEnter={() => setActiveIdx(globalIdx)}
+                        onClick={() => handleSelect(item)}
+                      >
+                        <Icon
+                          className={cn(
+                            'h-4 w-4 shrink-0',
+                            isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'
+                          )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{label}</p>
+                          {sub && (
+                            <p
+                              className={cn(
+                                'text-xs truncate',
+                                isActive ? 'text-accent-foreground/60' : 'text-muted-foreground'
+                              )}
+                            >
+                              {sub}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
 
-          {sections.length > 0 && (
-            <div className="h-2" />
-          )}
+            {sections.length > 0 && <div className="h-2" />}
+          </div>
+
+          {/* Footer hint */}
+          <div className="border-t px-4 py-2.5 flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">
+                ↑
+              </kbd>
+              <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">
+                ↓
+              </kbd>
+              navigate
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">
+                ↵
+              </kbd>
+              open
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">
+                Esc
+              </kbd>
+              close
+            </span>
+          </div>
         </div>
-
-        {/* Footer hint */}
-        <div className="border-t px-4 py-2.5 flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">↑</kbd>
-            <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">↓</kbd>
-            navigate
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">↵</kbd>
-            open
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">Esc</kbd>
-            close
-          </span>
-        </div>
-
-        </div>{/* end flex-col wrapper */}
+        {/* end flex-col wrapper */}
       </DialogContent>
     </Dialog>
   );

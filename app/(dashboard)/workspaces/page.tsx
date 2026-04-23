@@ -2,13 +2,16 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { buildBillingAccessWhereInput, getBillingOverview } from '@/lib/billing';
-import { hasCollaboratorBillingBackedAccess, requireBillingAccessOrRedirect } from '@/lib/route-access';
+import {
+  hasCollaboratorBillingBackedAccess,
+  requireBillingAccessOrRedirect,
+} from '@/lib/route-access';
 import { WorkspacesClient } from './workspaces-client';
 
 export default async function WorkspacesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>
+  searchParams: Promise<{ page?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -52,7 +55,7 @@ export default async function WorkspacesPage({
           { ownerId: session.user.id, owner: buildBillingAccessWhereInput() },
           { members: { some: { userId: session.user.id } }, owner: buildBillingAccessWhereInput() },
         ],
-      }
+      },
     }),
     getBillingOverview(session.user.id),
   ]);
@@ -64,7 +67,7 @@ export default async function WorkspacesPage({
     name: w.name,
     description: w.description,
     updatedAt: w.updatedAt.toISOString(),
-    _count: w._count
+    _count: w._count,
   }));
 
   return (

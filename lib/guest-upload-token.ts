@@ -32,7 +32,8 @@ interface GuestUploadTokenSubject {
 const TRUSTED_IP_PATTERN = /^[\da-fA-F.:]+$/;
 
 function getGuestUploadTokenSecret(): string {
-  const secret = process.env.GUEST_UPLOAD_TOKEN_SECRET ?? process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  const secret =
+    process.env.GUEST_UPLOAD_TOKEN_SECRET ?? process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!secret) {
     throw new Error('Missing GUEST_UPLOAD_TOKEN_SECRET, AUTH_SECRET, or NEXTAUTH_SECRET.');
   }
@@ -40,7 +41,9 @@ function getGuestUploadTokenSecret(): string {
 }
 
 function signPayload(encodedPayload: string): string {
-  return createHmac('sha256', getGuestUploadTokenSecret()).update(encodedPayload).digest('base64url');
+  return createHmac('sha256', getGuestUploadTokenSecret())
+    .update(encodedPayload)
+    .digest('base64url');
 }
 
 function getCloudflareClientIp(request: Request): string | null {
@@ -65,18 +68,23 @@ function resolveTrustedClientIp(request: Request): string | null {
 function isValidPayload(value: unknown): value is GuestUploadTokenPayload {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Partial<GuestUploadTokenPayload>;
-  return payload.typ === GUEST_UPLOAD_TOKEN_TYPE
-    && typeof payload.pid === 'string'
-    && typeof payload.vid === 'string'
-    && typeof payload.iat === 'number'
-    && Number.isFinite(payload.iat)
-    && typeof payload.exp === 'number'
-    && Number.isFinite(payload.exp)
-    && (payload.intent === 'audio' || payload.intent === 'image' || payload.intent === 'bunny')
-    && typeof payload.ctx === 'string';
+  return (
+    payload.typ === GUEST_UPLOAD_TOKEN_TYPE &&
+    typeof payload.pid === 'string' &&
+    typeof payload.vid === 'string' &&
+    typeof payload.iat === 'number' &&
+    Number.isFinite(payload.iat) &&
+    typeof payload.exp === 'number' &&
+    Number.isFinite(payload.exp) &&
+    (payload.intent === 'audio' || payload.intent === 'image' || payload.intent === 'bunny') &&
+    typeof payload.ctx === 'string'
+  );
 }
 
-export function deriveGuestUploadContext(request: Request, shareToken: string | null): string | null {
+export function deriveGuestUploadContext(
+  request: Request,
+  shareToken: string | null
+): string | null {
   const ip = resolveTrustedClientIp(request);
   if (!ip) return null;
 
@@ -128,10 +136,12 @@ export function verifyGuestUploadToken(token: string, subject: GuestUploadTokenS
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) return false;
 
-    return payload.pid === subject.projectId
-      && payload.vid === subject.videoId
-      && payload.intent === subject.intent
-      && payload.ctx === subject.context;
+    return (
+      payload.pid === subject.projectId &&
+      payload.vid === subject.videoId &&
+      payload.intent === subject.intent &&
+      payload.ctx === subject.context
+    );
   } catch {
     return false;
   }
@@ -145,15 +155,11 @@ export async function enforceGuestUploadQuota(
 ): Promise<NextResponse | null> {
   const ip = resolveTrustedClientIp(request);
   if (!ip) {
-    return NextResponse.json(
-      { error: 'Missing trusted client IP header' },
-      { status: 403 }
-    );
+    return NextResponse.json({ error: 'Missing trusted client IP header' }, { status: 403 });
   }
 
-  const videoScopedMaxRequests = intent === 'bunny'
-    ? GUEST_BUNNY_UPLOAD_VIDEO_MAX_REQUESTS
-    : GUEST_UPLOAD_VIDEO_MAX_REQUESTS;
+  const videoScopedMaxRequests =
+    intent === 'bunny' ? GUEST_BUNNY_UPLOAD_VIDEO_MAX_REQUESTS : GUEST_UPLOAD_VIDEO_MAX_REQUESTS;
 
   const videoScoped = await checkRateLimit(
     `${ip}:guest-upload:${intent}:video:${videoId}`,

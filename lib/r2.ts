@@ -95,7 +95,8 @@ export async function ensureR2BucketExists(): Promise<void> {
     await r2Client.send(new HeadBucketCommand({ Bucket: R2_BUCKET_NAME }));
     return;
   } catch (error) {
-    const statusCode = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+    const statusCode = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata
+      ?.httpStatusCode;
     if (statusCode && statusCode !== 404 && statusCode !== 301 && statusCode !== 403) {
       throw error;
     }

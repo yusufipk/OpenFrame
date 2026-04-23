@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { Geist_Mono, JetBrains_Mono } from "next/font/google";
-import { Toaster } from "sonner";
-import { ThemeProvider } from "@/components/theme-provider";
-import { seoConfig } from "@/lib/seo";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { Geist_Mono, JetBrains_Mono } from 'next/font/google';
+import { Toaster } from 'sonner';
+import { ThemeProvider } from '@/components/theme-provider';
+import { seoConfig } from '@/lib/seo';
+import './globals.css';
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
@@ -31,20 +31,20 @@ export const metadata: Metadata = {
   authors: [{ name: seoConfig.name, url: seoConfig.url }],
   creator: seoConfig.name,
   publisher: seoConfig.name,
-  category: "technology",
-  referrer: "no-referrer",
+  category: 'technology',
+  referrer: 'no-referrer',
   alternates: {
-    canonical: "/",
+    canonical: '/',
   },
   icons: {
-    icon: [{ url: seoConfig.logo, type: "image/svg+xml" }],
+    icon: [{ url: seoConfig.logo, type: 'image/svg+xml' }],
     shortcut: [seoConfig.logo],
     apple: [{ url: seoConfig.logo }],
   },
-  manifest: "/manifest.webmanifest",
+  manifest: '/manifest.webmanifest',
   openGraph: {
-    type: "website",
-    locale: "en_US",
+    type: 'website',
+    locale: 'en_US',
     siteName: seoConfig.name,
     url: seoConfig.url,
     title: `${seoConfig.name} | ${seoConfig.title}`,
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: "summary_large_image",
+    card: 'summary_large_image',
     title: `${seoConfig.name} | ${seoConfig.title}`,
     description: seoConfig.description,
     images: [seoConfig.ogImage],
@@ -70,9 +70,9 @@ export const metadata: Metadata = {
     googleBot: {
       index: true,
       follow: true,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-      "max-video-preview": -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
     },
   },
   formatDetection: {
@@ -84,24 +84,24 @@ export const metadata: Metadata = {
 
 const structuredData = [
   {
-    "@context": "https://schema.org",
-    "@type": "Organization",
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
     name: seoConfig.name,
     url: seoConfig.url,
     logo: `${seoConfig.url}${seoConfig.logoPath}`,
     sameAs: [seoConfig.githubUrl],
   },
   {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
     name: seoConfig.name,
     url: seoConfig.url,
     description: seoConfig.description,
     publisher: {
-      "@type": "Organization",
+      '@type': 'Organization',
       name: seoConfig.name,
       logo: {
-        "@type": "ImageObject",
+        '@type': 'ImageObject',
         url: `${seoConfig.url}${seoConfig.logoPath}`,
       },
     },
@@ -114,21 +114,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${jetbrainsMono.variable} ${geistMono.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${jetbrainsMono.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
       <body className="antialiased min-h-screen bg-background font-sans">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <svg aria-hidden="true" className="fixed h-0 w-0">
             <filter id="openframe-noise">
-              <feTurbulence type="fractalNoise" baseFrequency="0.92" numOctaves="2" stitchTiles="stitch" />
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.92"
+                numOctaves="2"
+                stitchTiles="stitch"
+              />
             </filter>
           </svg>
           {children}

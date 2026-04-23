@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardHeader, CardContent } from "@/components/ui/card"
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 
 function WorkspaceCardSkeleton() {
   return (
@@ -20,7 +20,7 @@ function WorkspaceCardSkeleton() {
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export default function WorkspacesLoading() {
@@ -40,5 +40,5 @@ export default function WorkspacesLoading() {
         ))}
       </div>
     </div>
-  )
+  );
 }

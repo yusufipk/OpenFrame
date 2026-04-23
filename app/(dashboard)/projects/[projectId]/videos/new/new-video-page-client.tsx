@@ -4,14 +4,27 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Loader2, Link as LinkIcon, AlertCircle, CheckCircle2, UploadCloud, FileVideo } from 'lucide-react';
+import {
+  ArrowLeft,
+  Loader2,
+  Link as LinkIcon,
+  AlertCircle,
+  CheckCircle2,
+  UploadCloud,
+  FileVideo,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { parseVideoUrl, fetchVideoMetadata, getThumbnailUrl, type VideoSource } from '@/lib/video-providers';
+import {
+  parseVideoUrl,
+  fetchVideoMetadata,
+  getThumbnailUrl,
+  type VideoSource,
+} from '@/lib/video-providers';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import * as tus from 'tus-js-client';
 
@@ -60,7 +73,8 @@ export default function NewVideoPageClient({
     description: '',
   });
   const isUploadingFile = isLoading && uploadMode === 'file';
-  const leaveWarningMessage = 'A video upload is in progress. Leaving this page will interrupt it. Do you want to leave?';
+  const leaveWarningMessage =
+    'A video upload is in progress. Leaving this page will interrupt it. Do you want to leave?';
 
   useEffect(() => {
     pendingBunnyVideoIdRef.current = pendingBunnyVideoId;
@@ -70,45 +84,51 @@ export default function NewVideoPageClient({
     pendingBunnyUploadTokenRef.current = pendingBunnyUploadToken;
   }, [pendingBunnyUploadToken]);
 
-  const cleanupPendingBunnyVideo = useCallback(async (videoId: string, uploadToken: string, keepalive = false) => {
-    try {
-      await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, uploadToken }),
-        keepalive,
-      });
-    } catch (error) {
-      console.error('Failed to cleanup pending Bunny upload:', error);
-    } finally {
-      if (pendingBunnyVideoIdRef.current === videoId) {
-        pendingBunnyVideoIdRef.current = null;
-        setPendingBunnyVideoId(null);
-      }
-      if (pendingBunnyUploadTokenRef.current === uploadToken) {
-        pendingBunnyUploadTokenRef.current = null;
-        setPendingBunnyUploadToken(null);
-      }
-    }
-  }, [projectId]);
-
-  const abortAndCleanupPendingUpload = useCallback((keepalive = false) => {
-    const pendingVideoId = pendingBunnyVideoIdRef.current;
-    const pendingUploadToken = pendingBunnyUploadTokenRef.current;
-    if (!pendingVideoId || !pendingUploadToken) return;
-
-    if (activeTusUploadRef.current) {
+  const cleanupPendingBunnyVideo = useCallback(
+    async (videoId: string, uploadToken: string, keepalive = false) => {
       try {
-        activeTusUploadRef.current.abort(true);
-      } catch {
-        // Ignore abort failures; we'll still attempt cleanup.
+        await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId, uploadToken }),
+          keepalive,
+        });
+      } catch (error) {
+        console.error('Failed to cleanup pending Bunny upload:', error);
       } finally {
-        activeTusUploadRef.current = null;
+        if (pendingBunnyVideoIdRef.current === videoId) {
+          pendingBunnyVideoIdRef.current = null;
+          setPendingBunnyVideoId(null);
+        }
+        if (pendingBunnyUploadTokenRef.current === uploadToken) {
+          pendingBunnyUploadTokenRef.current = null;
+          setPendingBunnyUploadToken(null);
+        }
       }
-    }
+    },
+    [projectId]
+  );
 
-    void cleanupPendingBunnyVideo(pendingVideoId, pendingUploadToken, keepalive);
-  }, [cleanupPendingBunnyVideo]);
+  const abortAndCleanupPendingUpload = useCallback(
+    (keepalive = false) => {
+      const pendingVideoId = pendingBunnyVideoIdRef.current;
+      const pendingUploadToken = pendingBunnyUploadTokenRef.current;
+      if (!pendingVideoId || !pendingUploadToken) return;
+
+      if (activeTusUploadRef.current) {
+        try {
+          activeTusUploadRef.current.abort(true);
+        } catch {
+          // Ignore abort failures; we'll still attempt cleanup.
+        } finally {
+          activeTusUploadRef.current = null;
+        }
+      }
+
+      void cleanupPendingBunnyVideo(pendingVideoId, pendingUploadToken, keepalive);
+    },
+    [cleanupPendingBunnyVideo]
+  );
 
   useEffect(() => {
     if (!isUploadingFile) return;
@@ -206,38 +226,47 @@ export default function NewVideoPageClient({
     }
   };
 
-  const setSelectedVideoFile = useCallback((file: File) => {
-    if (!isVideoFile(file)) {
-      setSubmitError('Please select a valid video file.');
-      return;
-    }
+  const setSelectedVideoFile = useCallback(
+    (file: File) => {
+      if (!isVideoFile(file)) {
+        setSubmitError('Please select a valid video file.');
+        return;
+      }
 
-    setSelectedFile(file);
-    setSubmitError('');
+      setSelectedFile(file);
+      setSubmitError('');
 
-    if (!formData.title) {
-      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
-      setFormData((prev) => ({ ...prev, title: nameWithoutExt }));
-    }
-  }, [formData.title]);
+      if (!formData.title) {
+        const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
+        setFormData((prev) => ({ ...prev, title: nameWithoutExt }));
+      }
+    },
+    [formData.title]
+  );
 
-  const handleFileDragEnter = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    if (isLoading) return;
-    fileDragDepthRef.current += 1;
-    if (Array.from(event.dataTransfer.types).includes('Files')) {
-      setIsFileDragOver(true);
-    }
-  }, [isLoading]);
+  const handleFileDragEnter = useCallback(
+    (event: React.DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      if (isLoading) return;
+      fileDragDepthRef.current += 1;
+      if (Array.from(event.dataTransfer.types).includes('Files')) {
+        setIsFileDragOver(true);
+      }
+    },
+    [isLoading]
+  );
 
-  const handleFileDragOver = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    if (isLoading) return;
-    event.dataTransfer.dropEffect = 'copy';
-    if (Array.from(event.dataTransfer.types).includes('Files')) {
-      setIsFileDragOver(true);
-    }
-  }, [isLoading]);
+  const handleFileDragOver = useCallback(
+    (event: React.DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      if (isLoading) return;
+      event.dataTransfer.dropEffect = 'copy';
+      if (Array.from(event.dataTransfer.types).includes('Files')) {
+        setIsFileDragOver(true);
+      }
+    },
+    [isLoading]
+  );
 
   const handleFileDragLeave = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
@@ -247,26 +276,35 @@ export default function NewVideoPageClient({
     }
   }, []);
 
-  const handleFileDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    fileDragDepthRef.current = 0;
-    setIsFileDragOver(false);
-    if (isLoading) return;
+  const handleFileDrop = useCallback(
+    (event: React.DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      fileDragDepthRef.current = 0;
+      setIsFileDragOver(false);
+      if (isLoading) return;
 
-    const file = Array.from(event.dataTransfer.files)[0];
-    if (!file) return;
-    setSelectedVideoFile(file);
-  }, [isLoading, setSelectedVideoFile]);
+      const file = Array.from(event.dataTransfer.files)[0];
+      if (!file) return;
+      setSelectedVideoFile(file);
+    },
+    [isLoading, setSelectedVideoFile]
+  );
 
   const uploadToBunny = async (
     file: File
-  ): Promise<{ videoId: string; libraryId: string; providerId: string; url: string; uploadToken: string }> => {
+  ): Promise<{
+    videoId: string;
+    libraryId: string;
+    providerId: string;
+    url: string;
+    uploadToken: string;
+  }> => {
     // 1. Initialize Bunny Stream upload (creates video & gets signature)
     setUploadStatus('Initializing upload...');
     const initRes = await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: formData.title || file.name })
+      body: JSON.stringify({ title: formData.title || file.name }),
     });
 
     if (!initRes.ok) {
@@ -274,7 +312,9 @@ export default function NewVideoPageClient({
       throw new Error(data.error || 'Failed to initialize upload');
     }
 
-    const { data: { videoId, libraryId, signature, expirationTime, uploadToken } } = await initRes.json();
+    const {
+      data: { videoId, libraryId, signature, expirationTime, uploadToken },
+    } = await initRes.json();
     setPendingBunnyVideoId(videoId);
     setPendingBunnyUploadToken(uploadToken);
     pendingBunnyVideoIdRef.current = videoId;
@@ -414,7 +454,10 @@ export default function NewVideoPageClient({
       console.error('Failed to add video:', error);
       setSubmitError(error instanceof Error ? error.message : 'An unexpected error occurred');
       if (pendingBunnyVideoIdRef.current && pendingBunnyUploadTokenRef.current) {
-        await cleanupPendingBunnyVideo(pendingBunnyVideoIdRef.current, pendingBunnyUploadTokenRef.current);
+        await cleanupPendingBunnyVideo(
+          pendingBunnyVideoIdRef.current,
+          pendingBunnyUploadTokenRef.current
+        );
       }
     } finally {
       activeTusUploadRef.current = null;
@@ -455,17 +498,26 @@ export default function NewVideoPageClient({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={uploadMode} onValueChange={(v) => !isLoading && setUploadMode(v as 'url' | 'file')} className="mb-6">
-            <TabsList className={`grid w-full ${bunnyUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              <TabsTrigger value="url" disabled={isLoading}>Paste URL</TabsTrigger>
+          <Tabs
+            value={uploadMode}
+            onValueChange={(v) => !isLoading && setUploadMode(v as 'url' | 'file')}
+            className="mb-6"
+          >
+            <TabsList
+              className={`grid w-full ${bunnyUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}
+            >
+              <TabsTrigger value="url" disabled={isLoading}>
+                Paste URL
+              </TabsTrigger>
               {bunnyUploadsEnabled ? (
-                <TabsTrigger value="file" disabled={isLoading}>Direct Upload</TabsTrigger>
+                <TabsTrigger value="file" disabled={isLoading}>
+                  Direct Upload
+                </TabsTrigger>
               ) : null}
             </TabsList>
           </Tabs>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-
             {uploadMode === 'url' ? (
               <div className="space-y-2">
                 <Label htmlFor="url">Video URL</Label>
@@ -492,7 +544,9 @@ export default function NewVideoPageClient({
                 {videoSource && (
                   <p className="text-sm text-green-600 flex items-center gap-1">
                     <CheckCircle2 className="h-4 w-4" />
-                    {videoSource.providerId.charAt(0).toUpperCase() + videoSource.providerId.slice(1)} video detected
+                    {videoSource.providerId.charAt(0).toUpperCase() +
+                      videoSource.providerId.slice(1)}{' '}
+                    video detected
                     {isFetchingMeta && ' — fetching metadata...'}
                   </p>
                 )}
@@ -519,7 +573,9 @@ export default function NewVideoPageClient({
                       {selectedFile ? (
                         <>
                           <FileVideo className="w-10 h-10 mb-3 text-primary" />
-                          <p className="mb-2 text-sm text-foreground font-medium">{selectedFile.name}</p>
+                          <p className="mb-2 text-sm text-foreground font-medium">
+                            {selectedFile.name}
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
                           </p>
@@ -534,7 +590,14 @@ export default function NewVideoPageClient({
                         </>
                       )}
                     </div>
-                    <input id="file" type="file" accept="video/*" className="hidden" onChange={handleFileChange} disabled={isLoading} />
+                    <input
+                      id="file"
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={handleFileChange}
+                      disabled={isLoading}
+                    />
                   </label>
                 </div>
               </div>
@@ -561,7 +624,11 @@ export default function NewVideoPageClient({
               <Label htmlFor="title">Title</Label>
               <Input
                 id="title"
-                placeholder={isFetchingMeta ? 'Fetching title...' : 'Video title (will auto-fill from video if empty)'}
+                placeholder={
+                  isFetchingMeta
+                    ? 'Fetching title...'
+                    : 'Video title (will auto-fill from video if empty)'
+                }
                 value={formData.title}
                 onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
                 disabled={isLoading}
@@ -596,7 +663,10 @@ export default function NewVideoPageClient({
                 <p className="text-sm text-muted-foreground">{uploadStatus}</p>
                 {uploadProgress > 0 && uploadProgress < 100 && (
                   <div className="w-full bg-secondary rounded-full h-2">
-                    <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${uploadProgress}%` }}></div>
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all"
+                      style={{ width: `${uploadProgress}%` }}
+                    ></div>
                   </div>
                 )}
                 {isUploadingFile && (
@@ -608,11 +678,23 @@ export default function NewVideoPageClient({
             )}
 
             <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={isLoading || (uploadMode === 'url' && !videoSource) || (uploadMode === 'file' && !selectedFile)}>
+              <Button
+                type="submit"
+                disabled={
+                  isLoading ||
+                  (uploadMode === 'url' && !videoSource) ||
+                  (uploadMode === 'file' && !selectedFile)
+                }
+              >
                 {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Add Video
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.back()}
+                disabled={isLoading}
+              >
                 Cancel
               </Button>
             </div>

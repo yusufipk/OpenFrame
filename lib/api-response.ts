@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
 /**
  * Standardized API error response format
@@ -45,27 +45,27 @@ export const HttpStatus = {
  */
 export const ErrorCode = {
   // Authentication errors
-  UNAUTHORIZED: "UNAUTHORIZED",
-  FORBIDDEN: "FORBIDDEN",
-  INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  FORBIDDEN: 'FORBIDDEN',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
 
   // Resource errors
-  NOT_FOUND: "NOT_FOUND",
-  ALREADY_EXISTS: "ALREADY_EXISTS",
+  NOT_FOUND: 'NOT_FOUND',
+  ALREADY_EXISTS: 'ALREADY_EXISTS',
 
   // Validation errors
-  VALIDATION_ERROR: "VALIDATION_ERROR",
-  INVALID_INPUT: "INVALID_INPUT",
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  INVALID_INPUT: 'INVALID_INPUT',
 
   // Rate limiting
-  RATE_LIMITED: "RATE_LIMITED",
+  RATE_LIMITED: 'RATE_LIMITED',
 
   // Server errors
-  INTERNAL_ERROR: "INTERNAL_ERROR",
-  SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
 
   // Storage errors
-  STORAGE_LIMIT_EXCEEDED: "STORAGE_LIMIT_EXCEEDED",
+  STORAGE_LIMIT_EXCEEDED: 'STORAGE_LIMIT_EXCEEDED',
 } as const;
 
 /**
@@ -94,7 +94,7 @@ export function errorResponse(
     // Sanitize: only allow string arrays to prevent accidental data leakage
     const sanitized: Record<string, string[]> = {};
     for (const [key, value] of Object.entries(details)) {
-      if (Array.isArray(value) && value.every(v => typeof v === 'string')) {
+      if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
         sanitized[key] = value;
       }
     }
@@ -122,7 +122,7 @@ export function errorResponse(
 export function successResponse<T>(
   data: T,
   status: number = HttpStatus.OK,
-  meta?: ApiSuccessResponse["meta"]
+  meta?: ApiSuccessResponse['meta']
 ): NextResponse<ApiSuccessResponse<T>> {
   const body: ApiSuccessResponse<T> = { data };
   if (meta) body.meta = meta;
@@ -139,16 +139,16 @@ export function withCacheControl(response: Response, value: string): Response {
  * Common error response helpers
  */
 export const apiErrors = {
-  unauthorized: (message = "Unauthorized") =>
+  unauthorized: (message = 'Unauthorized') =>
     errorResponse(message, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED),
 
-  forbidden: (message = "Forbidden") =>
+  forbidden: (message = 'Forbidden') =>
     errorResponse(message, HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN),
 
-  notFound: (resource = "Resource") =>
+  notFound: (resource = 'Resource') =>
     errorResponse(`${resource} not found`, HttpStatus.NOT_FOUND, ErrorCode.NOT_FOUND),
 
-  badRequest: (message = "Bad request") =>
+  badRequest: (message = 'Bad request') =>
     errorResponse(message, HttpStatus.BAD_REQUEST, ErrorCode.INVALID_INPUT),
 
   validationError: (message: string, details?: Record<string, string[]>) =>
@@ -157,12 +157,13 @@ export const apiErrors = {
   conflict: (message: string) =>
     errorResponse(message, HttpStatus.CONFLICT, ErrorCode.ALREADY_EXISTS),
 
-  rateLimited: (message = "Too many requests") =>
+  rateLimited: (message = 'Too many requests') =>
     errorResponse(message, HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED),
 
-  internalError: (message = "Internal server error") =>
+  internalError: (message = 'Internal server error') =>
     errorResponse(message, HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR),
 
-  storageExceeded: (message = "Storage limit exceeded. Please delete some files to free up space.") =>
-    errorResponse(message, HttpStatus.INSUFFICIENT_STORAGE, ErrorCode.STORAGE_LIMIT_EXCEEDED),
+  storageExceeded: (
+    message = 'Storage limit exceeded. Please delete some files to free up space.'
+  ) => errorResponse(message, HttpStatus.INSUFFICIENT_STORAGE, ErrorCode.STORAGE_LIMIT_EXCEEDED),
 };

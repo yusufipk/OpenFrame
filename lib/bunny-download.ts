@@ -111,7 +111,10 @@ async function resolveBunnyOriginalSource(videoId: string): Promise<BunnyDownloa
   return null;
 }
 
-async function resolveBunnyCompressedSource(videoId: string, requestedQuality: number | null): Promise<BunnyDownloadSource> {
+async function resolveBunnyCompressedSource(
+  videoId: string,
+  requestedQuality: number | null
+): Promise<BunnyDownloadSource> {
   const hostname = resolveBunnyCdnHostname();
   if (!hostname) {
     return {
@@ -121,7 +124,11 @@ async function resolveBunnyCompressedSource(videoId: string, requestedQuality: n
     };
   }
 
-  if (typeof requestedQuality === 'number' && Number.isFinite(requestedQuality) && requestedQuality > 0) {
+  if (
+    typeof requestedQuality === 'number' &&
+    Number.isFinite(requestedQuality) &&
+    requestedQuality > 0
+  ) {
     const requestedUrl = `https://${hostname}/${videoId}/play_${requestedQuality}p.mp4`;
     if (await isRemoteFileAvailable(requestedUrl)) {
       return {
@@ -147,7 +154,11 @@ async function resolveBunnyCompressedSource(videoId: string, requestedQuality: n
   };
 }
 
-function buildSourceCacheKey(videoId: string, requestedQuality: number | null, preference: BunnyDownloadSourcePreference): string {
+function buildSourceCacheKey(
+  videoId: string,
+  requestedQuality: number | null,
+  preference: BunnyDownloadSourcePreference
+): string {
   return `${videoId}:${requestedQuality ?? 'none'}:${preference}`;
 }
 
