@@ -1,7 +1,7 @@
 ---
 name: Bug report
 about: Report a reproducible bug in OpenFrame
-title: "bug: "
+title: 'bug: '
 labels: [bug]
 assignees: []
 ---

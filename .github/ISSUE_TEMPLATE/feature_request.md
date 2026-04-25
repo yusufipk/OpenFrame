@@ -1,7 +1,7 @@
 ---
 name: Feature request
 about: Suggest an improvement for OpenFrame
-title: "feat: "
+title: 'feat: '
 labels: [enhancement]
 assignees: []
 ---

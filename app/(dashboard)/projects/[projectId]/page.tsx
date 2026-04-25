@@ -106,10 +106,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       where: { projectId: project.id },
       skip,
       take: pageSize,
-      orderBy: [
-        { updatedAt: sortOrder },
-        { id: sortOrder },
-      ],
+      orderBy: [{ updatedAt: sortOrder }, { id: sortOrder }],
       include: {
         versions: {
           where: { isActive: true },
