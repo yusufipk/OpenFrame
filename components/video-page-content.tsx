@@ -301,6 +301,8 @@ export function VideoPageContent({
     videoDuration,
     isPlaying,
     isMuted,
+    isFrameMode,
+    frameStepLabel,
     isDragging,
     playbackSpeed,
     qualityOptions,
@@ -318,6 +320,7 @@ export function VideoPageContent({
     handlePlayPause,
     handleSeekToTimestamp,
     handleMuteToggle,
+    handleFrameModeToggle,
     handleSkip,
     handleSpeedChange,
     handleQualityChange,
@@ -422,6 +425,10 @@ export function VideoPageContent({
     isUploadingAudio,
     imageBlob,
     setImageBlob,
+    commentRangeStart,
+    commentRangeEnd,
+    toggleCommentRangeSelection,
+    clearCommentRangeSelection,
     isUploadingImage,
     imageInputRef,
     handleAddComment,
@@ -442,6 +449,10 @@ export function VideoPageContent({
     replyAudioBlob,
     replyImageBlob,
     setReplyImageBlob,
+    replyRangeStart,
+    replyRangeEnd,
+    toggleReplyRangeSelection,
+    clearReplyRangeSelection,
     isUploadingReplyAudio,
     isUploadingReplyImage,
     replyImageInputRef,
@@ -471,7 +482,6 @@ export function VideoPageContent({
     setVideo,
     activeVersionId,
     activeVersion,
-    comments,
     currentTime,
     isGuest,
     normalizedGuestName,
@@ -495,6 +505,7 @@ export function VideoPageContent({
     return filteredComments.map((comment) => ({
       id: comment.id,
       timestamp: comment.timestamp,
+      timestampEnd: comment.timestampEnd,
       color: comment.tag?.color || (comment.isResolved ? '#22C55E' : '#22D3EE'),
       annotationData: comment.annotationData,
       preview: `${comment.tag ? ` [${comment.tag.name}]` : ''} - ${comment.content?.substring(0, 30) || '(voice note)'}...`,
@@ -783,7 +794,10 @@ export function VideoPageContent({
             setIsEditingAnnotation={setIsEditingAnnotation}
             currentTime={currentTime}
             duration={duration}
+            isFrameMode={isFrameMode}
+            frameStepLabel={frameStepLabel}
             handleSkip={handleSkip}
+            handleFrameModeToggle={handleFrameModeToggle}
             handleMuteToggle={handleMuteToggle}
             isMuted={isMuted}
             selectedQualityLabel={selectedQualityLabel}
@@ -849,6 +863,10 @@ export function VideoPageContent({
           setReplyingTo={setReplyingTo}
           replyText={replyText}
           setReplyText={setReplyText}
+          replyRangeStart={replyRangeStart}
+          replyRangeEnd={replyRangeEnd}
+          toggleReplyRangeSelection={toggleReplyRangeSelection}
+          clearReplyRangeSelection={clearReplyRangeSelection}
           handleReplyComment={commentsActions.onReplyComment}
           startReplyRecording={startReplyRecording}
           isReplyRecording={isReplyRecording}
@@ -903,6 +921,10 @@ export function VideoPageContent({
               setImageBlob={setImageBlob}
               commentText={commentText}
               setCommentText={setCommentText}
+              commentRangeStart={commentRangeStart}
+              commentRangeEnd={commentRangeEnd}
+              toggleCommentRangeSelection={toggleCommentRangeSelection}
+              clearCommentRangeSelection={clearCommentRangeSelection}
               playVoice={playVoice}
               playingVoiceId={playingVoiceId}
               voiceProgress={voiceProgress}

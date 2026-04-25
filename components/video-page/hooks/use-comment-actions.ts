@@ -17,6 +17,7 @@ import type { AnnotationCanvasHandle, AnnotationStroke } from '@/components/anno
 import type {
   Comment,
   CommentActionsConfig,
+  CommentReply,
   CommentTag,
   Version,
   VideoData,
@@ -31,7 +32,6 @@ interface UseCommentActionsParams extends CommentActionsConfig {
   setVideo: Dispatch<SetStateAction<VideoData | null>>;
   activeVersionId: string | null;
   activeVersion: (Version & { comments: Comment[] }) | undefined;
-  comments: Comment[];
   currentTime: number;
   isGuest: boolean;
   normalizedGuestName: string;
@@ -56,7 +56,6 @@ export function useCommentActions({
   setVideo,
   activeVersionId,
   activeVersion,
-  comments,
   currentTime,
   isGuest,
   normalizedGuestName,
@@ -83,6 +82,8 @@ export function useCommentActions({
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [imageBlob, setImageBlob] = useState<File | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [commentRangeStart, setCommentRangeStart] = useState<number | null>(null);
+  const [commentRangeEnd, setCommentRangeEnd] = useState<number | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -97,6 +98,8 @@ export function useCommentActions({
   const [isUploadingReplyAudio, setIsUploadingReplyAudio] = useState(false);
   const [replyImageBlob, setReplyImageBlob] = useState<File | null>(null);
   const [isUploadingReplyImage, setIsUploadingReplyImage] = useState(false);
+  const [replyRangeStart, setReplyRangeStart] = useState<number | null>(null);
+  const [replyRangeEnd, setReplyRangeEnd] = useState<number | null>(null);
   const replyImageInputRef = useRef<HTMLInputElement>(null);
   const replyMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const replyAudioChunksRef = useRef<Blob[]>([]);
@@ -113,6 +116,38 @@ export function useCommentActions({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const isMutatingRef = useRef(false);
+
+  const clearCommentRangeSelection = useCallback(() => {
+    setCommentRangeStart(null);
+    setCommentRangeEnd(null);
+  }, []);
+
+  const clearReplyRangeSelection = useCallback(() => {
+    setReplyRangeStart(null);
+    setReplyRangeEnd(null);
+  }, []);
+
+  const toggleCommentRangeSelection = useCallback(() => {
+    if (commentRangeStart === null || commentRangeEnd !== null) {
+      setCommentRangeStart(currentTime);
+      setCommentRangeEnd(null);
+      return;
+    }
+
+    setCommentRangeStart(Math.min(commentRangeStart, currentTime));
+    setCommentRangeEnd(Math.max(commentRangeStart, currentTime));
+  }, [commentRangeEnd, commentRangeStart, currentTime]);
+
+  const toggleReplyRangeSelection = useCallback(() => {
+    if (replyRangeStart === null || replyRangeEnd !== null) {
+      setReplyRangeStart(currentTime);
+      setReplyRangeEnd(null);
+      return;
+    }
+
+    setReplyRangeStart(Math.min(replyRangeStart, currentTime));
+    setReplyRangeEnd(Math.max(replyRangeStart, currentTime));
+  }, [currentTime, replyRangeEnd, replyRangeStart]);
 
   const getGuestUploadToken = useCallback(
     async (intent: 'audio' | 'image') => {
@@ -151,11 +186,13 @@ export function useCommentActions({
       }
 
       const tempId = `temp-${Date.now()}`;
+      const commentTimestamp = commentRangeStart ?? currentTime;
       const serializedAnnotation = effectiveStrokes ? JSON.stringify(effectiveStrokes) : null;
       const optimisticComment: Comment = {
         id: tempId,
         content: voiceData || imageBlob ? commentText.trim() || null : commentText,
-        timestamp: currentTime,
+        timestamp: commentTimestamp,
+        timestampEnd: commentRangeEnd,
         voiceUrl: voiceData?.url ?? null,
         voiceDuration: voiceData?.duration ?? null,
         imageUrl: imageBlob ? URL.createObjectURL(imageBlob) : null,
@@ -186,6 +223,7 @@ export function useCommentActions({
       setImageBlob(null);
       setAnnotationStrokes(null);
       setIsAnnotating(false);
+      clearCommentRangeSelection();
       setViewingAnnotation(effectiveStrokes || null);
 
       setIsSubmittingComment(true);
@@ -217,7 +255,8 @@ export function useCommentActions({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             content: voiceData || imageBlob ? commentText.trim() || null : commentText,
-            timestamp: currentTime,
+            timestamp: commentTimestamp,
+            ...(commentRangeEnd !== null && { timestampEnd: commentRangeEnd }),
             ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
             ...(imageData && { imageUrl: imageData.url }),
             ...(isGuest && normalizedGuestName && { guestName: normalizedGuestName }),
@@ -287,6 +326,8 @@ export function useCommentActions({
     },
     [
       commentText,
+      commentRangeEnd,
+      commentRangeStart,
       currentTime,
       activeVersion,
       activeVersionId,
@@ -304,6 +345,7 @@ export function useCommentActions({
       setSelectedTagId,
       setAnnotationStrokes,
       setIsAnnotating,
+      clearCommentRangeSelection,
       setViewingAnnotation,
       setVideo,
       fetchAssets,
@@ -594,10 +636,12 @@ export function useCommentActions({
       if (!activeVersion || !activeVersionId) return;
 
       const tempId = `temp-reply-${Date.now()}`;
-      const parentComment = comments.find((c) => c.id === parentId);
-      const optimisticReply = {
+      const replyTimestamp = replyRangeStart ?? currentTime;
+      const optimisticReply: CommentReply = {
         id: tempId,
         content: voiceData || replyImageBlob ? replyText.trim() || null : replyText,
+        timestamp: replyTimestamp,
+        timestampEnd: replyRangeEnd,
         voiceUrl: voiceData?.url ?? null,
         voiceDuration: voiceData?.duration ?? null,
         imageUrl: replyImageBlob ? URL.createObjectURL(replyImageBlob) : null,
@@ -634,6 +678,7 @@ export function useCommentActions({
       setReplyAudioBlob(null);
       setReplyRecordingTime(0);
       setReplyImageBlob(null);
+      clearReplyRangeSelection();
 
       setIsSubmittingReply(true);
       isMutatingRef.current = true;
@@ -664,7 +709,8 @@ export function useCommentActions({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             content: voiceData || submittedImageData ? replyText.trim() || null : replyText,
-            timestamp: parentComment?.timestamp ?? currentTime,
+            timestamp: replyTimestamp,
+            ...(replyRangeEnd !== null && { timestampEnd: replyRangeEnd }),
             parentId,
             ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
             ...(submittedImageData && { imageUrl: submittedImageData.url }),
@@ -752,9 +798,10 @@ export function useCommentActions({
     },
     [
       replyText,
+      replyRangeEnd,
+      replyRangeStart,
       activeVersion,
       activeVersionId,
-      comments,
       currentTime,
       isGuest,
       normalizedGuestName,
@@ -764,6 +811,7 @@ export function useCommentActions({
       getGuestUploadToken,
       setVideo,
       fetchAssets,
+      clearReplyRangeSelection,
     ]
   );
 
@@ -1099,6 +1147,10 @@ export function useCommentActions({
     isUploadingAudio,
     imageBlob,
     setImageBlob,
+    commentRangeStart,
+    commentRangeEnd,
+    toggleCommentRangeSelection,
+    clearCommentRangeSelection,
     isUploadingImage,
     imageInputRef,
     handleAddComment,
@@ -1120,6 +1172,10 @@ export function useCommentActions({
     replyAudioBlob,
     replyImageBlob,
     setReplyImageBlob,
+    replyRangeStart,
+    replyRangeEnd,
+    toggleReplyRangeSelection,
+    clearReplyRangeSelection,
     isUploadingReplyAudio,
     isUploadingReplyImage,
     replyImageInputRef,

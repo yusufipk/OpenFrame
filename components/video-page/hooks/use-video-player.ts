@@ -57,6 +57,8 @@ export function useVideoPlayer({
   const [videoDuration, setVideoDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isFrameMode, setIsFrameMode] = useState(false);
+  const [estimatedFrameRate, setEstimatedFrameRate] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -71,9 +73,68 @@ export function useVideoPlayer({
   const [cursorIdle, setCursorIdle] = useState(false);
   const cursorIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bunnyRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bunnyFrameCallbackIdRef = useRef<number | null>(null);
+  const bunnyFrameSampleRef = useRef<{ mediaTime: number; presentedFrames: number } | null>(null);
   const [isFullscreenMode, setIsFullscreenMode] = useState(false);
   const [showComments, setShowComments] = useState(true);
   const [isMobileCommentsOpen, setIsMobileCommentsOpen] = useState(false);
+
+  const frameStepSeconds = useMemo(() => {
+    if (estimatedFrameRate && Number.isFinite(estimatedFrameRate) && estimatedFrameRate > 0) {
+      return 1 / estimatedFrameRate;
+    }
+    return 1;
+  }, [estimatedFrameRate]);
+
+  const frameStepLabel = useMemo(() => {
+    if (estimatedFrameRate && Number.isFinite(estimatedFrameRate) && estimatedFrameRate > 0) {
+      return '1f';
+    }
+    return '1s';
+  }, [estimatedFrameRate]);
+
+  const stopBunnyFrameTracking = useCallback(() => {
+    const videoEl = videoRef.current;
+    const callbackId = bunnyFrameCallbackIdRef.current;
+    if (videoEl && callbackId !== null && typeof videoEl.cancelVideoFrameCallback === 'function') {
+      videoEl.cancelVideoFrameCallback(callbackId);
+    }
+    bunnyFrameCallbackIdRef.current = null;
+    bunnyFrameSampleRef.current = null;
+  }, [videoRef]);
+
+  const startBunnyFrameTracking = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || typeof videoEl.requestVideoFrameCallback !== 'function') return;
+
+    stopBunnyFrameTracking();
+
+    const trackFrameRate = (
+      _now: number,
+      metadata: { mediaTime: number; presentedFrames: number }
+    ) => {
+      const previousSample = bunnyFrameSampleRef.current;
+      bunnyFrameSampleRef.current = {
+        mediaTime: metadata.mediaTime,
+        presentedFrames: metadata.presentedFrames,
+      };
+
+      if (previousSample) {
+        const deltaFrames = metadata.presentedFrames - previousSample.presentedFrames;
+        const deltaTime = metadata.mediaTime - previousSample.mediaTime;
+        if (deltaFrames > 0 && deltaTime > 0) {
+          const nextFrameRate = deltaFrames / deltaTime;
+          if (Number.isFinite(nextFrameRate) && nextFrameRate >= 12 && nextFrameRate <= 120) {
+            setEstimatedFrameRate(nextFrameRate);
+          }
+        }
+      }
+
+      bunnyFrameCallbackIdRef.current = videoEl.requestVideoFrameCallback(trackFrameRate);
+    };
+
+    bunnyFrameCallbackIdRef.current = videoEl.requestVideoFrameCallback(trackFrameRate);
+  }, [stopBunnyFrameTracking, videoRef]);
 
   useEffect(() => {
     isDraggingRef.current = isDragging;
@@ -157,6 +218,7 @@ export function useVideoPlayer({
     setVideoDuration(0);
     setIsPlaying(false);
     setIsMuted(false);
+    setEstimatedFrameRate(null);
     setPlaybackSpeed(1);
     setQualityOptions((prev) => (versionChanged ? [] : prev));
     setSelectedQualityLevel(bunnySourcePreference === 'original' ? -2 : -1);
@@ -182,6 +244,7 @@ export function useVideoPlayer({
       clearTimeout(bunnyRetryTimerRef.current);
       bunnyRetryTimerRef.current = null;
     }
+    stopBunnyFrameTracking();
 
     const initPlayer = () => {
       if (isYoutube) {
@@ -343,6 +406,9 @@ export function useVideoPlayer({
             }
           }
           syncDuration();
+          if (!videoEl.paused) {
+            startBunnyFrameTracking();
+          }
         };
 
         const onPlay = () => {
@@ -351,15 +417,18 @@ export function useVideoPlayer({
             setBunnyPlaybackState('none');
           }
           syncDuration();
+          startBunnyFrameTracking();
         };
 
         const onPause = () => {
           setIsPlaying(false);
+          stopBunnyFrameTracking();
           saveProgress();
         };
 
         const onEnded = () => {
           setIsPlaying(false);
+          stopBunnyFrameTracking();
           saveProgress();
         };
 
@@ -535,6 +604,7 @@ export function useVideoPlayer({
           destroy: () => {
             destroyed = true;
             clearRetryTimer();
+            stopBunnyFrameTracking();
             videoEl.removeEventListener('loadedmetadata', onLoadedMetadata);
             videoEl.removeEventListener('play', onPlay);
             videoEl.removeEventListener('pause', onPause);
@@ -593,6 +663,7 @@ export function useVideoPlayer({
         clearTimeout(bunnyRetryTimerRef.current);
         bunnyRetryTimerRef.current = null;
       }
+      stopBunnyFrameTracking();
     };
   }, [
     activeProviderId,
@@ -606,6 +677,8 @@ export function useVideoPlayer({
     iframeRef,
     playerRef,
     scheduleWatchProgressSaveRef,
+    startBunnyFrameTracking,
+    stopBunnyFrameTracking,
     videoRef,
   ]);
 
@@ -667,6 +740,88 @@ export function useVideoPlayer({
     return videoDuration || activeVersion?.duration || 0;
   }, [videoDuration, activeVersion?.duration]);
 
+  const resolveSkipAmount = useCallback(
+    (seconds: number) => {
+      if (!isFrameMode) return seconds;
+      const direction = seconds === 0 ? 1 : Math.sign(seconds);
+      return frameStepSeconds * direction;
+    },
+    [frameStepSeconds, isFrameMode]
+  );
+
+  const handleFrameModeToggle = useCallback(() => {
+    setIsFrameMode((prev) => !prev);
+  }, []);
+
+  const handlePlayPause = useCallback(() => {
+    if (!playerRef.current) return;
+    if (isPlaying) {
+      playerRef.current.pauseVideo();
+    } else {
+      playerRef.current.playVideo();
+    }
+  }, [isPlaying, playerRef]);
+
+  const handleSeekToTimestamp = useCallback(
+    (
+      timestamp: number,
+      annotation?: string | null,
+      options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
+    ) => {
+      setCurrentTime(timestamp);
+      if (playerRef.current?.seekTo) {
+        const playerState = playerRef.current.getPlayerState?.();
+        const ytPlayingState = window.YT?.PlayerState?.PLAYING ?? 1;
+        const ytBufferingState = window.YT?.PlayerState?.BUFFERING ?? 3;
+        const wasPlayingBeforeSeek =
+          typeof playerState === 'number'
+            ? playerState === ytPlayingState || playerState === ytBufferingState
+            : isPlaying;
+        const hasRangeEnd = options?.timestampEnd !== undefined && options.timestampEnd !== null;
+        const shouldPauseAfterSeek = options?.pauseAfterSeek || hasRangeEnd;
+
+        playerRef.current.seekTo(timestamp, true);
+        if (shouldPauseAfterSeek) {
+          playerRef.current.pauseVideo();
+        } else if (wasPlayingBeforeSeek) {
+          playerRef.current.playVideo();
+        } else {
+          playerRef.current.pauseVideo();
+        }
+      }
+      if (annotation) {
+        try {
+          const parsed = JSON.parse(annotation);
+          const safe = validateAnnotationStrokes(parsed);
+          setViewingAnnotation(safe as AnnotationStroke[] | null);
+        } catch {
+          setViewingAnnotation(null);
+        }
+      } else {
+        setViewingAnnotation(null);
+      }
+    },
+    [isPlaying, playerRef, setViewingAnnotation]
+  );
+
+  const handleMuteToggle = useCallback(() => {
+    if (!playerRef.current) return;
+    if (isMuted) {
+      playerRef.current.unMute();
+    } else {
+      playerRef.current.mute();
+    }
+    setIsMuted(!isMuted);
+  }, [isMuted, playerRef]);
+
+  const handleSkip = useCallback(
+    (seconds: number) => {
+      const newTime = Math.max(0, Math.min(duration, currentTime + resolveSkipAmount(seconds)));
+      handleSeekToTimestamp(newTime);
+    },
+    [currentTime, duration, handleSeekToTimestamp, resolveSkipAmount]
+  );
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.querySelector('[data-slot="dialog-content"]')) {
@@ -692,23 +847,11 @@ export function useVideoPlayer({
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          if (playerRef.current) {
-            const newTime = Math.max(0, currentTime - 5);
-            if (playerRef.current.seekTo) {
-              playerRef.current.seekTo(newTime, true);
-            }
-            setCurrentTime(newTime);
-          }
+          handleSkip(-5);
           break;
         case 'ArrowRight':
           e.preventDefault();
-          if (playerRef.current) {
-            const newTime = Math.min(duration, currentTime + 5);
-            if (playerRef.current.seekTo) {
-              playerRef.current.seekTo(newTime, true);
-            }
-            setCurrentTime(newTime);
-          }
+          handleSkip(5);
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -797,72 +940,10 @@ export function useVideoPlayer({
     isMuted,
     playbackSpeed,
     speedOptions,
+    handleSkip,
     toggleFullscreen,
     playerRef,
   ]);
-
-  const handlePlayPause = useCallback(() => {
-    if (!playerRef.current) return;
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
-    } else {
-      playerRef.current.playVideo();
-    }
-  }, [isPlaying, playerRef]);
-
-  const handleSeekToTimestamp = useCallback(
-    (timestamp: number, annotation?: string | null, options?: { pauseAfterSeek?: boolean }) => {
-      setCurrentTime(timestamp);
-      if (playerRef.current?.seekTo) {
-        const playerState = playerRef.current.getPlayerState?.();
-        const ytPlayingState = window.YT?.PlayerState?.PLAYING ?? 1;
-        const ytBufferingState = window.YT?.PlayerState?.BUFFERING ?? 3;
-        const wasPlayingBeforeSeek =
-          typeof playerState === 'number'
-            ? playerState === ytPlayingState || playerState === ytBufferingState
-            : isPlaying;
-
-        playerRef.current.seekTo(timestamp, true);
-        if (options?.pauseAfterSeek) {
-          playerRef.current.pauseVideo();
-        } else if (wasPlayingBeforeSeek) {
-          playerRef.current.playVideo();
-        } else {
-          playerRef.current.pauseVideo();
-        }
-      }
-      if (annotation) {
-        try {
-          const parsed = JSON.parse(annotation);
-          const safe = validateAnnotationStrokes(parsed);
-          setViewingAnnotation(safe as AnnotationStroke[] | null);
-        } catch {
-          setViewingAnnotation(null);
-        }
-      } else {
-        setViewingAnnotation(null);
-      }
-    },
-    [isPlaying, playerRef, setViewingAnnotation]
-  );
-
-  const handleMuteToggle = useCallback(() => {
-    if (!playerRef.current) return;
-    if (isMuted) {
-      playerRef.current.unMute();
-    } else {
-      playerRef.current.mute();
-    }
-    setIsMuted(!isMuted);
-  }, [isMuted, playerRef]);
-
-  const handleSkip = useCallback(
-    (seconds: number) => {
-      const newTime = Math.max(0, Math.min(duration, currentTime + seconds));
-      handleSeekToTimestamp(newTime);
-    },
-    [currentTime, duration, handleSeekToTimestamp]
-  );
 
   const handleSpeedChange = useCallback(
     (speed: number) => {
@@ -965,6 +1046,9 @@ export function useVideoPlayer({
     setVideoDuration,
     isPlaying,
     isMuted,
+    isFrameMode,
+    frameStepSeconds,
+    frameStepLabel,
     isDragging,
     playbackSpeed,
     qualityOptions,
@@ -982,6 +1066,7 @@ export function useVideoPlayer({
     handlePlayPause,
     handleSeekToTimestamp,
     handleMuteToggle,
+    handleFrameModeToggle,
     handleSkip,
     handleSpeedChange,
     handleQualityChange,

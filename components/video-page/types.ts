@@ -78,6 +78,8 @@ export interface ApprovalRequest {
 export interface CommentReply {
   id: string;
   content: string | null;
+  timestamp: number;
+  timestampEnd: number | null;
   voiceUrl: string | null;
   voiceDuration: number | null;
   imageUrl: string | null;
@@ -94,6 +96,7 @@ export interface Comment {
   id: string;
   content: string | null;
   timestamp: number;
+  timestampEnd: number | null;
   voiceUrl: string | null;
   voiceDuration: number | null;
   imageUrl: string | null;
@@ -145,6 +148,7 @@ export type DownloadTarget = BunnyDownloadPreference | 'direct';
 export interface CommentMarker {
   id: string;
   timestamp: number;
+  timestampEnd: number | null;
   color: string;
   annotationData: string | null;
   preview: string;

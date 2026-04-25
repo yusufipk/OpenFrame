@@ -70,7 +70,10 @@ interface PlayerCoreProps {
   setIsEditingAnnotation: (value: boolean) => void;
   currentTime: number;
   duration: number;
+  isFrameMode: boolean;
+  frameStepLabel: string;
   handleSkip: (seconds: number) => void;
+  handleFrameModeToggle: () => void;
   handleMuteToggle: () => void;
   isMuted: boolean;
   selectedQualityLabel: string;
@@ -86,7 +89,11 @@ interface PlayerCoreProps {
   setIsMobileCommentsOpen: (value: boolean) => void;
   handleTimelineMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
   handleTimelineMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void;
-  handleSeekToTimestamp: (timestamp: number, annotation?: string | null) => void;
+  handleSeekToTimestamp: (
+    timestamp: number,
+    annotation?: string | null,
+    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
+  ) => void;
   commentMarkers: CommentMarker[];
 }
 
@@ -127,7 +134,10 @@ export const PlayerCore = memo(function PlayerCore({
   setIsEditingAnnotation,
   currentTime,
   duration,
+  isFrameMode,
+  frameStepLabel,
   handleSkip,
+  handleFrameModeToggle,
   handleMuteToggle,
   isMuted,
   selectedQualityLabel,
@@ -351,7 +361,7 @@ export const PlayerCore = memo(function PlayerCore({
             size="icon"
             className="h-8 w-8"
             onClick={() => handleSkip(-10)}
-            title="Back 10s"
+            title={isFrameMode ? `Back ${frameStepLabel}` : 'Back 10s'}
           >
             <SkipBack className="h-4 w-4" />
           </Button>
@@ -361,7 +371,7 @@ export const PlayerCore = memo(function PlayerCore({
             size="icon"
             className="h-8 w-8"
             onClick={() => handleSkip(10)}
-            title="Forward 10s"
+            title={isFrameMode ? `Forward ${frameStepLabel}` : 'Forward 10s'}
           >
             <SkipForward className="h-4 w-4" />
           </Button>
@@ -375,6 +385,16 @@ export const PlayerCore = memo(function PlayerCore({
           </span>
 
           <div className="ml-auto flex items-center">
+            <Button
+              variant={isFrameMode ? 'default' : 'ghost'}
+              size="sm"
+              className="h-8 gap-1 text-xs"
+              onClick={handleFrameModeToggle}
+              title="Toggle frame step mode"
+            >
+              Frame {frameStepLabel}
+            </Button>
+
             {activeProviderId === 'bunny' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -489,21 +509,70 @@ export const PlayerCore = memo(function PlayerCore({
             style={{ left: `calc(${duration > 0 ? (currentTime / duration) * 100 : 0}% - 2px)` }}
           />
 
-          {commentMarkers.map((comment) => (
-            <button
-              key={comment.id}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSeekToTimestamp(comment.timestamp, comment.annotationData);
-              }}
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-transform hover:scale-150 z-10"
-              style={{
-                left: `calc(${duration > 0 ? (comment.timestamp / duration) * 100 : 0}% - 6px)`,
-                backgroundColor: comment.color,
-              }}
-              title={`${formatTime(comment.timestamp)}${comment.preview}`}
-            />
-          ))}
+          {commentMarkers.map((comment) => {
+            const startPercent = duration > 0 ? (comment.timestamp / duration) * 100 : 0;
+            const hasRange =
+              comment.timestampEnd !== null && Number.isFinite(comment.timestampEnd)
+                ? comment.timestampEnd > comment.timestamp
+                : false;
+            const endPercent =
+              hasRange && comment.timestampEnd !== null
+                ? (comment.timestampEnd / duration) * 100
+                : 0;
+
+            if (hasRange && comment.timestampEnd !== null) {
+              return (
+                <button
+                  key={comment.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                      pauseAfterSeek: true,
+                      timestampEnd: comment.timestampEnd,
+                    });
+                  }}
+                  className="absolute top-1/2 z-10 h-4 -translate-y-1/2 transition-opacity hover:opacity-100"
+                  style={{
+                    left: `calc(${startPercent}% - 6px)`,
+                    width: `calc(${Math.max(endPercent - startPercent, 0)}% + 12px)`,
+                  }}
+                  title={`${formatTime(comment.timestamp)} - ${formatTime(comment.timestampEnd)}${comment.preview}`}
+                >
+                  <span
+                    className="absolute left-[6px] right-[6px] top-1/2 h-1 -translate-y-1/2 rounded-full opacity-70"
+                    style={{ backgroundColor: comment.color }}
+                  />
+                  <span
+                    className="absolute left-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-background/80"
+                    style={{ backgroundColor: comment.color }}
+                  />
+                  <span
+                    className="absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-background/80"
+                    style={{ backgroundColor: comment.color }}
+                  />
+                </button>
+              );
+            }
+
+            return (
+              <button
+                key={comment.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                    pauseAfterSeek: comment.timestampEnd !== null,
+                    timestampEnd: comment.timestampEnd,
+                  });
+                }}
+                className="absolute top-1/2 z-10 h-3 w-3 -translate-y-1/2 rounded-full transition-transform hover:scale-150"
+                style={{
+                  left: `calc(${startPercent}% - 6px)`,
+                  backgroundColor: comment.color,
+                }}
+                title={`${formatTime(comment.timestamp)}${comment.preview}`}
+              />
+            );
+          })}
         </div>
       </div>
     </>

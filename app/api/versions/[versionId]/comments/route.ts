@@ -275,9 +275,44 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('Timestamp is required');
     }
 
-    const parsedTimestamp = parseFloat(timestamp);
-    if (isNaN(parsedTimestamp)) {
-      return apiErrors.badRequest('Timestamp must be a valid number');
+    const maxTimestamp =
+      typeof version.duration === 'number' && Number.isFinite(version.duration)
+        ? version.duration
+        : null;
+
+    const parseCommentTimestamp = (value: unknown, fieldName: string) => {
+      const parsed = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return {
+          error: apiErrors.badRequest(`${fieldName} must be a finite non-negative number`),
+        };
+      }
+
+      if (maxTimestamp !== null && parsed > maxTimestamp) {
+        return {
+          error: apiErrors.badRequest(`${fieldName} must be less than or equal to video duration`),
+        };
+      }
+
+      return { value: parsed };
+    };
+
+    const parsedTimestampResult = parseCommentTimestamp(timestamp, 'Timestamp');
+    if ('error' in parsedTimestampResult) {
+      return parsedTimestampResult.error;
+    }
+    const parsedTimestamp = parsedTimestampResult.value;
+
+    let parsedTimestampEnd: number | null = null;
+    if (timestampEnd !== undefined && timestampEnd !== null) {
+      const parsedTimestampEndResult = parseCommentTimestamp(timestampEnd, 'Timestamp end');
+      if ('error' in parsedTimestampEndResult) {
+        return parsedTimestampEndResult.error;
+      }
+      parsedTimestampEnd = parsedTimestampEndResult.value;
+      if (parsedTimestampEnd < parsedTimestamp) {
+        return apiErrors.badRequest('Timestamp end must be greater than or equal to timestamp');
+      }
     }
 
     if (!content && !voiceUrl && !imageUrl && !annotationData) {
@@ -401,7 +436,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         data: {
           content: content?.trim() || null,
           timestamp: parsedTimestamp,
-          timestampEnd: timestampEnd ? parseFloat(timestampEnd) : null,
+          timestampEnd: parsedTimestampEnd,
           parentId: parentId || null,
           voiceUrl: voiceUrl || null,
           voiceDuration: voiceDuration || null,

@@ -37,6 +37,10 @@ interface CommentComposerProps {
   setImageBlob: (blob: File | null) => void;
   commentText: string;
   setCommentText: (value: string) => void;
+  commentRangeStart: number | null;
+  commentRangeEnd: number | null;
+  toggleCommentRangeSelection: () => void;
+  clearCommentRangeSelection: () => void;
   playVoice: (commentId: string, voiceUrl: string, knownDuration?: number) => void;
   playingVoiceId: string | null;
   voiceProgress: number;
@@ -76,6 +80,10 @@ export const CommentComposer = memo(function CommentComposer({
   setImageBlob,
   commentText,
   setCommentText,
+  commentRangeStart,
+  commentRangeEnd,
+  toggleCommentRangeSelection,
+  clearCommentRangeSelection,
   playVoice,
   playingVoiceId,
   voiceProgress,
@@ -103,6 +111,16 @@ export const CommentComposer = memo(function CommentComposer({
   pauseVideoForAnnotation,
   assets,
 }: CommentComposerProps) {
+  const rangeButtonLabel =
+    commentRangeStart === null || commentRangeEnd !== null ? 'Set In' : 'Set Out';
+  const hasCommentRange = commentRangeStart !== null;
+  const commentRangeLabel =
+    commentRangeStart !== null
+      ? commentRangeEnd !== null
+        ? `${formatTime(commentRangeStart)} - ${formatTime(commentRangeEnd)}`
+        : `In ${formatTime(commentRangeStart)}`
+      : null;
+
   return (
     <div className="shrink-0 p-4 border-t bg-background">
       {isRecording ? (
@@ -192,6 +210,31 @@ export const CommentComposer = memo(function CommentComposer({
             rows={1}
             className="resize-none text-sm"
           />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant={hasCommentRange ? 'default' : 'outline'}
+              className="h-7 text-xs"
+              onClick={toggleCommentRangeSelection}
+            >
+              {rangeButtonLabel}
+            </Button>
+            {commentRangeLabel && (
+              <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
+                {commentRangeLabel}
+              </span>
+            )}
+            {hasCommentRange && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={clearCommentRangeSelection}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
           <Button
             size="sm"
             onClick={submitCommentWithMedia}
@@ -250,6 +293,31 @@ export const CommentComposer = memo(function CommentComposer({
               </div>
             </div>
           )}
+          <div className="mb-2 flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant={hasCommentRange ? 'default' : 'outline'}
+              className="h-7 text-xs"
+              onClick={toggleCommentRangeSelection}
+            >
+              {rangeButtonLabel}
+            </Button>
+            {commentRangeLabel && (
+              <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
+                {commentRangeLabel}
+              </span>
+            )}
+            {hasCommentRange && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={clearCommentRangeSelection}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
           <div className="flex gap-2 items-stretch">
             <div className="flex-1 min-w-0">
               <MentionTextarea
