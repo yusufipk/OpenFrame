@@ -57,7 +57,7 @@ export function ProjectContentClient({
   canEdit,
   isOwner,
   totalPages,
-  currentPage
+  currentPage,
 }: ProjectContentClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -109,7 +109,10 @@ export function ProjectContentClient({
           <div className="flex items-center gap-2">
             {project.workspace && (
               <Link href={`/workspaces/${project.workspace.id}`}>
-                <Badge variant="secondary" className="flex items-center gap-1 hover:bg-accent transition-colors">
+                <Badge
+                  variant="secondary"
+                  className="flex items-center gap-1 hover:bg-accent transition-colors"
+                >
                   <Building2 className="h-3 w-3" />
                   {project.workspace.name}
                 </Badge>
@@ -215,16 +218,13 @@ export function ProjectContentClient({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-8 flex items-center justify-end space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={currentPage <= 1}
-            asChild={currentPage > 1}
-          >
+          <Button variant="outline" size="sm" disabled={currentPage <= 1} asChild={currentPage > 1}>
             {currentPage > 1 ? (
-              <Link href={`?${createQueryString('page', (currentPage - 1).toString())}`}>Previous</Link>
+              <Link href={`?${createQueryString('page', (currentPage - 1).toString())}`}>
+                Previous
+              </Link>
             ) : (
-              "Previous"
+              'Previous'
             )}
           </Button>
           <span className="text-sm font-medium">
@@ -239,7 +239,7 @@ export function ProjectContentClient({
             {currentPage < totalPages ? (
               <Link href={`?${createQueryString('page', (currentPage + 1).toString())}`}>Next</Link>
             ) : (
-              "Next"
+              'Next'
             )}
           </Button>
         </div>

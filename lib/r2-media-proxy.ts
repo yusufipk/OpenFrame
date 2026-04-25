@@ -1,4 +1,8 @@
-import { GetObjectCommand, type GetObjectCommandInput, type GetObjectCommandOutput } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  type GetObjectCommandInput,
+  type GetObjectCommandOutput,
+} from '@aws-sdk/client-s3';
 import { Readable } from 'node:stream';
 import { NextResponse } from 'next/server';
 import { apiErrors } from '@/lib/api-response';
@@ -42,7 +46,9 @@ function isNotFoundError(error: unknown): boolean {
 
 function isInvalidRangeError(error: unknown): boolean {
   const err = error as R2LikeError | null | undefined;
-  return err?.name === 'InvalidRange' || err?.Code === 'InvalidRange' || getErrorStatus(error) === 416;
+  return (
+    err?.name === 'InvalidRange' || err?.Code === 'InvalidRange' || getErrorStatus(error) === 416
+  );
 }
 
 function isPreconditionFailed(error: unknown): boolean {
@@ -68,7 +74,11 @@ function toWebStream(body: unknown): ReadableStream<Uint8Array> | null {
   return null;
 }
 
-function setIfPresent(headers: Headers, key: string, value: string | number | null | undefined): void {
+function setIfPresent(
+  headers: Headers,
+  key: string,
+  value: string | number | null | undefined
+): void {
   if (value === undefined || value === null) return;
   headers.set(key, String(value));
 }

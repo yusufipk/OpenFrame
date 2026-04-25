@@ -64,13 +64,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const shareSession = getShareSessionFromRequest(request, video.id);
     const shareAccess = shareSession
       ? await validateShareLinkAccess({
-        token: shareSession.token,
-        projectId: video.projectId,
-        videoId: video.id,
-        requiredPermission: 'COMMENT',
-        passwordVerified: shareSession.passwordVerified,
-      })
-      : { hasAccess: false, canComment: false, canDownload: false, allowGuests: false, requiresPassword: false };
+          token: shareSession.token,
+          projectId: video.projectId,
+          videoId: video.id,
+          requiredPermission: 'COMMENT',
+          passwordVerified: shareSession.passwordVerified,
+        })
+      : {
+          hasAccess: false,
+          canComment: false,
+          canDownload: false,
+          allowGuests: false,
+          requiresPassword: false,
+        };
 
     const canCommentWithMembership = !!session?.user?.id && access.hasAccess;
     const canCommentWithShareLink = shareAccess.canComment && shareAccess.allowGuests;

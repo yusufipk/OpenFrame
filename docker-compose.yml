@@ -12,10 +12,10 @@ services:
       - .env.docker
     environment:
       DOCKER_DB_HOST: postgres
-      DOCKER_DB_PORT: "5432"
+      DOCKER_DB_PORT: '5432'
       MINIO_HEALTHCHECK_URL: http://minio:9000/minio/health/live
     ports:
-      - "3000:3000"
+      - '3000:3000'
     restart: unless-stopped
 
   postgres:
@@ -23,19 +23,19 @@ services:
     env_file:
       - .env.docker
     command:
-      - "postgres"
-      - "-c" 
-      - "max_connections=200"
-      - "-c"
-      - "shared_buffers=256MB"
-      - "-c"
-      - "work_mem=16MB"
-      - "-c"
-      - "effective_cache_size=1GB"
-      - "-c"
-      - "maintenance_work_mem=128MB"
+      - 'postgres'
+      - '-c'
+      - 'max_connections=200'
+      - '-c'
+      - 'shared_buffers=256MB'
+      - '-c'
+      - 'work_mem=16MB'
+      - '-c'
+      - 'effective_cache_size=1GB'
+      - '-c'
+      - 'maintenance_work_mem=128MB'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -49,13 +49,13 @@ services:
     env_file:
       - .env.docker
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
       interval: 5s
       timeout: 5s
       retries: 20
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
     volumes:
       - minio-data:/data
     restart: unless-stopped

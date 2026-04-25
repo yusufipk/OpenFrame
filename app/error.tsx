@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { AlertTriangle } from "lucide-react";
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle } from 'lucide-react';
 
 export default function RootError({
   error,
@@ -12,7 +12,7 @@ export default function RootError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Root error:", error);
+    console.error('Root error:', error);
   }, [error]);
 
   return (
@@ -23,17 +23,13 @@ export default function RootError({
         <p className="text-muted-foreground max-w-md">
           An unexpected error occurred. We&apos;ve been notified and are working to fix it.
         </p>
-        {error.digest && (
-          <p className="text-muted-foreground text-xs">
-            Error ID: {error.digest}
-          </p>
-        )}
+        {error.digest && <p className="text-muted-foreground text-xs">Error ID: {error.digest}</p>}
       </div>
       <div className="flex gap-2">
         <Button onClick={reset} variant="default">
           Try again
         </Button>
-        <Button onClick={() => window.location.href = "/"} variant="outline">
+        <Button onClick={() => (window.location.href = '/')} variant="outline">
           Go home
         </Button>
       </div>

@@ -9,11 +9,7 @@ interface UseVideoPageDataParams {
   propProjectId?: string;
 }
 
-export function useVideoPageData({
-  mode,
-  videoId,
-  propProjectId,
-}: UseVideoPageDataParams) {
+export function useVideoPageData({ mode, videoId, propProjectId }: UseVideoPageDataParams) {
   const [video, setVideo] = useState<VideoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -79,11 +75,11 @@ export function useVideoPageData({
 
       return {
         ...prev,
-        versions: prev.versions.map((version) => (
+        versions: prev.versions.map((version) =>
           version.id === versionId
             ? { ...version, comments: commentsList, _count: { comments: totalComments } }
             : version
-        )),
+        ),
       };
     });
   }, []);
@@ -94,9 +90,10 @@ export function useVideoPageData({
         const res = await fetch(apiBasePath, { cache: 'no-store' });
         if (!res.ok) {
           const errorText = mode === 'dashboard' ? await res.text() : '';
-          setError(mode === 'dashboard'
-            ? `Failed to load video: ${res.status} ${errorText}`
-            : 'Video not found or access denied'
+          setError(
+            mode === 'dashboard'
+              ? `Failed to load video: ${res.status} ${errorText}`
+              : 'Video not found or access denied'
           );
           setLoading(false);
           return;
@@ -114,7 +111,8 @@ export function useVideoPageData({
         };
 
         setVideo(normalizedData);
-        const active = normalizedData.versions?.find((v) => v.isActive) || normalizedData.versions?.[0];
+        const active =
+          normalizedData.versions?.find((v) => v.isActive) || normalizedData.versions?.[0];
         if (active) setActiveVersionId(active.id);
       } catch (err) {
         console.error('Error fetching video:', err);

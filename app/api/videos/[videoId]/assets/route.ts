@@ -25,7 +25,12 @@ import {
   sanitizeAssetDisplayName,
 } from '@/lib/video-assets';
 import { logError } from '@/lib/logger';
-import { enforceStorageQuota, reserveStorageQuota, releaseStorageReservation, PLAN_STORAGE_LIMIT_BYTES } from '@/lib/storage-quota';
+import {
+  enforceStorageQuota,
+  reserveStorageQuota,
+  releaseStorageReservation,
+  PLAN_STORAGE_LIMIT_BYTES,
+} from '@/lib/storage-quota';
 import { getCachedUserBunnyStorage } from '@/lib/admin-stats';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 
@@ -69,10 +74,7 @@ type YouTubeTitleCacheRecord = {
 const youtubeTitleCache = new Map<string, YouTubeTitleCacheRecord>();
 
 function isAllowedBunnyMediaUrl(url: string): boolean {
-  const allowedHosts = new Set<string>([
-    'iframe.mediadelivery.net',
-    'video.bunnycdn.com',
-  ]);
+  const allowedHosts = new Set<string>(['iframe.mediadelivery.net', 'video.bunnycdn.com']);
   const bunnyCdnHostname = resolveServerBunnyCdnHostname();
   if (bunnyCdnHostname) {
     allowedHosts.add(bunnyCdnHostname);
@@ -87,7 +89,11 @@ function isAllowedBunnyMediaUrl(url: string): boolean {
   }
 }
 
-function shapeAssetForViewer(asset: AssetWithViewerFields, canExposeSource: boolean, canDelete: boolean) {
+function shapeAssetForViewer(
+  asset: AssetWithViewerFields,
+  canExposeSource: boolean,
+  canDelete: boolean
+) {
   return {
     id: asset.id,
     videoId: asset.videoId,
@@ -161,10 +167,12 @@ async function isFreshImageAttachment(url: string): Promise<AttachmentCheck> {
   if (!key) return { isFresh: false, sizeBytes: BigInt(0) };
 
   try {
-    const head = await r2Client.send(new HeadObjectCommand({
-      Bucket: R2_BUCKET_NAME,
-      Key: key,
-    }));
+    const head = await r2Client.send(
+      new HeadObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: key,
+      })
+    );
     if (!head.LastModified) return { isFresh: false, sizeBytes: BigInt(0) };
     const isFresh = Date.now() - head.LastModified.getTime() <= UNATTACHED_UPLOAD_TTL_MS;
     return { isFresh, sizeBytes: BigInt(head.ContentLength ?? 0) };
@@ -178,10 +186,12 @@ async function isFreshAudioAttachment(url: string): Promise<AttachmentCheck> {
   if (!key) return { isFresh: false, sizeBytes: BigInt(0) };
 
   try {
-    const head = await r2Client.send(new HeadObjectCommand({
-      Bucket: R2_BUCKET_NAME,
-      Key: key,
-    }));
+    const head = await r2Client.send(
+      new HeadObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: key,
+      })
+    );
     if (!head.LastModified) return { isFresh: false, sizeBytes: BigInt(0) };
     const isFresh = Date.now() - head.LastModified.getTime() <= UNATTACHED_UPLOAD_TTL_MS;
     return { isFresh, sizeBytes: BigInt(head.ContentLength ?? 0) };
@@ -201,7 +211,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (!context) return apiErrors.notFound('Video');
     if (!context.hasViewAccess) return apiErrors.forbidden('Access denied');
 
-    const requestedLimit = parsePaginationParam(request.nextUrl.searchParams.get('limit'), ASSET_LIST_DEFAULT_LIMIT);
+    const requestedLimit = parsePaginationParam(
+      request.nextUrl.searchParams.get('limit'),
+      ASSET_LIST_DEFAULT_LIMIT
+    );
     const requestedOffset = parsePaginationParam(request.nextUrl.searchParams.get('offset'), 0);
     const limit = Math.min(ASSET_LIST_MAX_LIMIT, Math.max(1, requestedLimit));
     const offset = requestedOffset;
@@ -215,10 +228,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const etag = `"assets:${videoId}:${limit}:${offset}:${includeDeleteMetadata ? 1 : 0}:${context.canDownloadAssets ? 1 : 0}:${assetsRevision._count.id}:${assetsRevision._max.updatedAt?.getTime() ?? 0}"`;
     const ifNoneMatch = request.headers.get('if-none-match');
     if (ifNoneMatch) {
-      const matches = ifNoneMatch
-        .split(',')
-        .map(normalizeEtag)
-        .includes(normalizeEtag(etag));
+      const matches = ifNoneMatch.split(',').map(normalizeEtag).includes(normalizeEtag(etag));
       if (matches) {
         const notModified = new NextResponse(null, { status: 304 });
         notModified.headers.set('ETag', etag);
@@ -254,12 +264,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const pagedAssets = hasMore ? assets.slice(0, limit) : assets;
 
     const response = successResponse({
-      assets: pagedAssets.map((asset) => shapeAssetForViewer(
-        asset,
-        // R2_AUDIO proxy URLs have no auth gate — expose them to any viewer so guests can preview audio
-        context.canDownloadAssets || (asset.provider === VideoAssetProvider.R2_AUDIO && context.hasViewAccess),
-        includeDeleteMetadata ? canDeleteAssetForViewer(asset, context) : false
-      )),
+      assets: pagedAssets.map((asset) =>
+        shapeAssetForViewer(
+          asset,
+          // R2_AUDIO proxy URLs have no auth gate — expose them to any viewer so guests can preview audio
+          context.canDownloadAssets ||
+            (asset.provider === VideoAssetProvider.R2_AUDIO && context.hasViewAccess),
+          includeDeleteMetadata ? canDeleteAssetForViewer(asset, context) : false
+        )
+      ),
       pagination: {
         limit,
         offset,
@@ -378,7 +391,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       providerVideoId = parsedSource.videoId;
       const youtubeTitle = await fetchYouTubeTitle(providerVideoId);
-      displayName = sanitizeAssetDisplayName(requestedDisplayName, youtubeTitle || `YouTube ${providerVideoId}`);
+      displayName = sanitizeAssetDisplayName(
+        requestedDisplayName,
+        youtubeTitle || `YouTube ${providerVideoId}`
+      );
       sourceUrl = parsedSource.originalUrl;
       thumbnailUrl = getThumbnailUrl(parsedSource, 'large');
       kind = 'VIDEO';
@@ -386,7 +402,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (provider === VideoAssetProvider.BUNNY) {
       sourceUrl = typeof body?.sourceUrl === 'string' ? body.sourceUrl.trim() : '';
-      providerVideoId = typeof body?.providerVideoId === 'string' ? body.providerVideoId.trim() : '';
+      providerVideoId =
+        typeof body?.providerVideoId === 'string' ? body.providerVideoId.trim() : '';
       const uploadToken = typeof body?.uploadToken === 'string' ? body.uploadToken.trim() : '';
       thumbnailUrl = typeof body?.thumbnailUrl === 'string' ? body.thumbnailUrl.trim() : null;
 
@@ -515,10 +532,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           thumbnailUrl,
           sizeBytes: assetSizeBytes,
           uploadedByUserId: context.viewerUserId,
-          uploadedByGuestIdentityId: context.viewerUserId ? null : guestIdentity?.identityId ?? null,
+          uploadedByGuestIdentityId: context.viewerUserId
+            ? null
+            : (guestIdentity?.identityId ?? null),
           uploadedByGuestName: context.viewerUserId
             ? null
-            : sanitizeAssetDisplayName(typeof body?.guestName === 'string' ? body.guestName : null, 'Guest'),
+            : sanitizeAssetDisplayName(
+                typeof body?.guestName === 'string' ? body.guestName : null,
+                'Guest'
+              ),
           billedUserId,
         },
         select: {
@@ -540,11 +562,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
     });
 
-    const response = successResponse(shapeAssetForViewer(
-      created,
-      context.canDownloadAssets,
-      true
-    ), 201);
+    const response = successResponse(
+      shapeAssetForViewer(created, context.canDownloadAssets, true),
+      201
+    );
     if (isGuest && guestIdentity?.shouldSetCookie) {
       setGuestIdentityCookie(response, guestIdentity.identityId);
     }

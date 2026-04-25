@@ -79,7 +79,11 @@ export function buildBillingAccessWhereInput(now: Date = new Date()): Prisma.Use
 
   return {
     OR: [
-      { subscriptionStatus: { in: [BillingSubscriptionStatus.ACTIVE, BillingSubscriptionStatus.TRIALING] } },
+      {
+        subscriptionStatus: {
+          in: [BillingSubscriptionStatus.ACTIVE, BillingSubscriptionStatus.TRIALING],
+        },
+      },
       { trialEndsAt: { gt: now } },
       { stripeCurrentPeriodEnd: { gt: now } },
     ],
@@ -98,10 +102,7 @@ export function buildExpiredBillingWhereInput(now: Date = new Date()): Prisma.Us
         OR: [
           { billingAccessEndedAt: { lte: cleanupCutoff } },
           {
-            AND: [
-              { billingAccessEndedAt: null },
-              { trialEndsAt: { lte: cleanupCutoff } },
-            ],
+            AND: [{ billingAccessEndedAt: null }, { trialEndsAt: { lte: cleanupCutoff } }],
           },
         ],
       },
@@ -174,51 +175,52 @@ export async function getStripeCheckoutState(userId: string) {
 }
 
 export async function getWorkspaceCreationEligibility(userId: string) {
-  const [user, ownedWorkspaceCount, invitedWorkspaceCount, projectOnlyCollaborationCount] = await Promise.all([
-    db.user.findUnique({
-      where: { id: userId },
-      select: {
-        subscriptionStatus: true,
-        trialEndsAt: true,
-        billingTrialConsumedAt: true,
-        stripeCustomerId: true,
-        stripeSubscriptionId: true,
-        stripePriceId: true,
-        stripeCurrentPeriodEnd: true,
-        stripeCancelAtPeriodEnd: true,
-        stripeCancelAt: true,
-        billingAccessEndedAt: true,
-      },
-    }),
-    db.workspace.count({
-      where: { ownerId: userId },
-    }),
-    db.workspaceMember.count({
-      where: {
-        userId,
-        workspace: {
-          ownerId: {
-            not: userId,
-          },
+  const [user, ownedWorkspaceCount, invitedWorkspaceCount, projectOnlyCollaborationCount] =
+    await Promise.all([
+      db.user.findUnique({
+        where: { id: userId },
+        select: {
+          subscriptionStatus: true,
+          trialEndsAt: true,
+          billingTrialConsumedAt: true,
+          stripeCustomerId: true,
+          stripeSubscriptionId: true,
+          stripePriceId: true,
+          stripeCurrentPeriodEnd: true,
+          stripeCancelAtPeriodEnd: true,
+          stripeCancelAt: true,
+          billingAccessEndedAt: true,
         },
-      },
-    }),
-    db.projectMember.count({
-      where: {
-        userId,
-        project: {
-          ownerId: {
-            not: userId,
-          },
+      }),
+      db.workspace.count({
+        where: { ownerId: userId },
+      }),
+      db.workspaceMember.count({
+        where: {
+          userId,
           workspace: {
             ownerId: {
               not: userId,
             },
           },
         },
-      },
-    }),
-  ]);
+      }),
+      db.projectMember.count({
+        where: {
+          userId,
+          project: {
+            ownerId: {
+              not: userId,
+            },
+            workspace: {
+              ownerId: {
+                not: userId,
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
   if (!user) {
     throw new Error(`User ${userId} not found`);
@@ -227,7 +229,9 @@ export async function getWorkspaceCreationEligibility(userId: string) {
   const billingAccess = hasBillingAccess(user);
   const collaborationCount = invitedWorkspaceCount + projectOnlyCollaborationCount;
   const canCreateWorkspace =
-    !isStripeFeatureEnabled() || billingAccess || (ownedWorkspaceCount === 0 && collaborationCount === 0);
+    !isStripeFeatureEnabled() ||
+    billingAccess ||
+    (ownedWorkspaceCount === 0 && collaborationCount === 0);
 
   let reason: string | null = null;
   if (!canCreateWorkspace && isStripeFeatureEnabled()) {
@@ -235,8 +239,7 @@ export async function getWorkspaceCreationEligibility(userId: string) {
       reason =
         'You are currently collaborating in someone else’s workspace or project. Start a subscription to create a workspace of your own.';
     } else {
-      reason =
-        'Your trial has ended. Start a subscription to create and keep owning workspaces.';
+      reason = 'Your trial has ended. Start a subscription to create and keep owning workspaces.';
     }
   }
 
@@ -318,9 +321,16 @@ function getStripeTimestamp(value: unknown): number | null {
   return typeof value === 'number' ? value : null;
 }
 
-function getInactiveBillingAccessEndedAt(subscription: Stripe.Subscription, currentPeriodEnd: number | null) {
-  const endedAt = getStripeTimestamp((subscription as Stripe.Subscription & { ended_at?: unknown }).ended_at);
-  const canceledAt = getStripeTimestamp((subscription as Stripe.Subscription & { canceled_at?: unknown }).canceled_at);
+function getInactiveBillingAccessEndedAt(
+  subscription: Stripe.Subscription,
+  currentPeriodEnd: number | null
+) {
+  const endedAt = getStripeTimestamp(
+    (subscription as Stripe.Subscription & { ended_at?: unknown }).ended_at
+  );
+  const canceledAt = getStripeTimestamp(
+    (subscription as Stripe.Subscription & { canceled_at?: unknown }).canceled_at
+  );
   const reference = currentPeriodEnd ?? endedAt ?? canceledAt;
 
   return reference ? new Date(reference * 1000) : new Date();
@@ -329,14 +339,14 @@ function getInactiveBillingAccessEndedAt(subscription: Stripe.Subscription, curr
 function getEntitledStripePriceId(subscription: Stripe.Subscription) {
   const configuredPriceId = getStripePriceId();
 
-  return subscription.items.data.find((item) => item.price.id === configuredPriceId)?.price.id ?? null;
+  return (
+    subscription.items.data.find((item) => item.price.id === configuredPriceId)?.price.id ?? null
+  );
 }
 
 export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscription) {
   const customerId =
-    typeof subscription.customer === 'string'
-      ? subscription.customer
-      : subscription.customer.id;
+    typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
 
   const user = await db.user.findUnique({
     where: { stripeCustomerId: customerId },
@@ -371,14 +381,13 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
   const mappedStatus = hasEntitledPrice
     ? mapStripeSubscriptionStatus(subscription.status)
     : BillingSubscriptionStatus.FREE;
-  const effectiveCurrentPeriodEnd = hasEntitledPrice && currentPeriodEnd
-    ? new Date(currentPeriodEnd * 1000)
-    : null;
-  const effectiveTrialEnd = hasEntitledPrice && trialEnd
-    ? new Date(trialEnd * 1000)
-    : null;
-  const hasAccess = hasEntitledPrice
-    && (hasActiveSubscription(mappedStatus) || Boolean(currentPeriodEnd && currentPeriodEnd * 1000 > Date.now()));
+  const effectiveCurrentPeriodEnd =
+    hasEntitledPrice && currentPeriodEnd ? new Date(currentPeriodEnd * 1000) : null;
+  const effectiveTrialEnd = hasEntitledPrice && trialEnd ? new Date(trialEnd * 1000) : null;
+  const hasAccess =
+    hasEntitledPrice &&
+    (hasActiveSubscription(mappedStatus) ||
+      Boolean(currentPeriodEnd && currentPeriodEnd * 1000 > Date.now()));
 
   return db.user.update({
     where: { id: user.id },
@@ -390,9 +399,10 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
       stripeCancelAt: cancelAt ? new Date(cancelAt * 1000) : null,
       subscriptionStatus: mappedStatus,
       trialEndsAt: effectiveTrialEnd,
-      billingTrialConsumedAt: hasEntitledPrice && trialEnd
-        ? (user.billingTrialConsumedAt ?? new Date())
-        : user.billingTrialConsumedAt,
+      billingTrialConsumedAt:
+        hasEntitledPrice && trialEnd
+          ? (user.billingTrialConsumedAt ?? new Date())
+          : user.billingTrialConsumedAt,
       billingAccessEndedAt: hasAccess
         ? null
         : getInactiveBillingAccessEndedAt(subscription, hasEntitledPrice ? currentPeriodEnd : null),

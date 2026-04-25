@@ -1,9 +1,7 @@
 import type { VideoProvider, VideoMetadata, EmbedOptions } from './types';
 
 // Direct video URL patterns (for future self-hosted videos)
-const DIRECT_VIDEO_PATTERNS = [
-  /\.(mp4|webm|ogg|mov)(\?.*)?$/i,
-];
+const DIRECT_VIDEO_PATTERNS = [/\.(mp4|webm|ogg|mov)(\?.*)?$/i];
 
 // Security: Validate URL protocol to prevent XSS
 function isValidVideoUrl(url: string): boolean {
@@ -13,7 +11,7 @@ function isValidVideoUrl(url: string): boolean {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return false;
     }
-    return DIRECT_VIDEO_PATTERNS.some(pattern => pattern.test(url));
+    return DIRECT_VIDEO_PATTERNS.some((pattern) => pattern.test(url));
   } catch {
     return false;
   }
@@ -42,9 +40,9 @@ export const directProvider: VideoProvider = {
     // For direct videos, we'll use HTML5 video player
     // The videoId IS the URL for direct uploads
     const params = new URLSearchParams();
-    
+
     if (options.startTime) params.set('t', String(Math.floor(options.startTime)));
-    
+
     const queryString = params.toString();
     return `${videoId}${queryString ? `#t=${options.startTime}` : ''}`;
   },
@@ -61,7 +59,7 @@ export const directProvider: VideoProvider = {
     // This is a placeholder implementation
     const filename = videoId.split('/').pop() || 'Video';
     const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-    
+
     return {
       title: nameWithoutExt,
       thumbnailUrl: this.getThumbnailUrl(videoId),

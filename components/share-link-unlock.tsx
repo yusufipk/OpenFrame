@@ -53,7 +53,9 @@ export function ShareLinkUnlock({ videoId }: ShareLinkUnlockProps) {
             <Lock className="h-6 w-6 text-primary" />
           </div>
           <h1 className="text-xl font-semibold">Password Required</h1>
-          <p className="text-sm text-muted-foreground mt-1">Enter the password to continue to the shared video.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Enter the password to continue to the shared video.
+          </p>
         </div>
 
         <div className="space-y-3">
@@ -79,7 +81,11 @@ export function ShareLinkUnlock({ videoId }: ShareLinkUnlockProps) {
         </div>
 
         <p className="text-xs text-muted-foreground text-center mt-4">
-          Or <Link href="/login" className="underline hover:text-foreground">sign in</Link> with your account
+          Or{' '}
+          <Link href="/login" className="underline hover:text-foreground">
+            sign in
+          </Link>{' '}
+          with your account
         </p>
       </div>
     </div>

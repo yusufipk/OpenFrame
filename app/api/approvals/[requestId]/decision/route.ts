@@ -41,7 +41,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           include: {
             video: {
               include: {
-                project: { select: { id: true, name: true, ownerId: true, workspaceId: true, visibility: true } },
+                project: {
+                  select: {
+                    id: true,
+                    name: true,
+                    ownerId: true,
+                    workspaceId: true,
+                    visibility: true,
+                  },
+                },
               },
             },
           },
@@ -66,102 +74,105 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.conflict('You have already responded to this request');
     }
 
-    const updated = await db.$transaction(async (tx) => {
-      const currentRequest = await tx.approvalRequest.findUnique({
-        where: { id: requestId },
-        include: {
-          decisions: {
-            orderBy: { createdAt: 'asc' },
-            include: {
-              approver: { select: { id: true, name: true, email: true, image: true } },
+    const updated = await db.$transaction(
+      async (tx) => {
+        const currentRequest = await tx.approvalRequest.findUnique({
+          where: { id: requestId },
+          include: {
+            decisions: {
+              orderBy: { createdAt: 'asc' },
+              include: {
+                approver: { select: { id: true, name: true, email: true, image: true } },
+              },
             },
-          },
-          requestedBy: { select: { id: true, name: true, email: true, image: true } },
-          version: {
-            include: {
-              video: {
-                include: {
-                  project: { select: { id: true, name: true } },
+            requestedBy: { select: { id: true, name: true, email: true, image: true } },
+            version: {
+              include: {
+                video: {
+                  include: {
+                    project: { select: { id: true, name: true } },
+                  },
                 },
               },
             },
           },
-        },
-      });
-      if (!currentRequest) {
-        throw new Error('__NOT_FOUND__');
-      }
-      if (currentRequest.status !== 'PENDING') {
-        throw new Error('__NOT_PENDING__');
-      }
+        });
+        if (!currentRequest) {
+          throw new Error('__NOT_FOUND__');
+        }
+        if (currentRequest.status !== 'PENDING') {
+          throw new Error('__NOT_PENDING__');
+        }
 
-      const decisionRow = await tx.approvalDecision.findUnique({
-        where: { requestId_approverId: { requestId, approverId: session.user.id } },
-        select: { status: true },
-      });
-      if (!decisionRow) throw new Error('__NOT_APPROVER__');
-      if (decisionRow.status !== 'PENDING') throw new Error('__ALREADY_RESPONDED__');
+        const decisionRow = await tx.approvalDecision.findUnique({
+          where: { requestId_approverId: { requestId, approverId: session.user.id } },
+          select: { status: true },
+        });
+        if (!decisionRow) throw new Error('__NOT_APPROVER__');
+        if (decisionRow.status !== 'PENDING') throw new Error('__ALREADY_RESPONDED__');
 
-      await tx.approvalDecision.update({
-        where: { requestId_approverId: { requestId, approverId: session.user.id } },
-        data: {
-          status: decision,
-          note: note || null,
-          respondedAt: new Date(),
-        },
-      });
-
-      if (decision === 'REJECTED') {
-        await tx.approvalRequest.update({
-          where: { id: requestId },
+        await tx.approvalDecision.update({
+          where: { requestId_approverId: { requestId, approverId: session.user.id } },
           data: {
-            status: 'REJECTED',
-            resolvedAt: new Date(),
+            status: decision,
+            note: note || null,
+            respondedAt: new Date(),
           },
         });
-      } else {
-        const pendingCount = await tx.approvalDecision.count({
-          where: { requestId, status: 'PENDING' },
-        });
-        const rejectedCount = await tx.approvalDecision.count({
-          where: { requestId, status: 'REJECTED' },
-        });
-        if (pendingCount === 0 && rejectedCount === 0) {
+
+        if (decision === 'REJECTED') {
           await tx.approvalRequest.update({
             where: { id: requestId },
             data: {
-              status: 'APPROVED',
+              status: 'REJECTED',
               resolvedAt: new Date(),
             },
           });
+        } else {
+          const pendingCount = await tx.approvalDecision.count({
+            where: { requestId, status: 'PENDING' },
+          });
+          const rejectedCount = await tx.approvalDecision.count({
+            where: { requestId, status: 'REJECTED' },
+          });
+          if (pendingCount === 0 && rejectedCount === 0) {
+            await tx.approvalRequest.update({
+              where: { id: requestId },
+              data: {
+                status: 'APPROVED',
+                resolvedAt: new Date(),
+              },
+            });
+          }
         }
-      }
 
-      return tx.approvalRequest.findUnique({
-        where: { id: requestId },
-        include: {
-          requestedBy: { select: { id: true, name: true, email: true, image: true } },
-          canceledBy: { select: { id: true, name: true, email: true, image: true } },
-          decisions: {
-            orderBy: { createdAt: 'asc' },
-            include: {
-              approver: { select: { id: true, name: true, email: true, image: true } },
+        return tx.approvalRequest.findUnique({
+          where: { id: requestId },
+          include: {
+            requestedBy: { select: { id: true, name: true, email: true, image: true } },
+            canceledBy: { select: { id: true, name: true, email: true, image: true } },
+            decisions: {
+              orderBy: { createdAt: 'asc' },
+              include: {
+                approver: { select: { id: true, name: true, email: true, image: true } },
+              },
             },
-          },
-          version: {
-            include: {
-              video: {
-                include: {
-                  project: { select: { id: true, name: true } },
+            version: {
+              include: {
+                video: {
+                  include: {
+                    project: { select: { id: true, name: true } },
+                  },
                 },
               },
             },
           },
-        },
-      });
-    }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    });
+        });
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      }
+    );
 
     if (!updated) return apiErrors.notFound('Approval request');
 
@@ -212,9 +223,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message === '__NOT_PENDING__') return apiErrors.conflict('This approval request is no longer pending');
-      if (error.message === '__ALREADY_RESPONDED__') return apiErrors.conflict('You have already responded to this request');
-      if (error.message === '__NOT_APPROVER__') return apiErrors.forbidden('You are not an approver on this request');
+      if (error.message === '__NOT_PENDING__')
+        return apiErrors.conflict('This approval request is no longer pending');
+      if (error.message === '__ALREADY_RESPONDED__')
+        return apiErrors.conflict('You have already responded to this request');
+      if (error.message === '__NOT_APPROVER__')
+        return apiErrors.forbidden('You are not an approver on this request');
       if (error.message === '__NOT_FOUND__') return apiErrors.notFound('Approval request');
     }
     if (isSerializableConflict(error)) {

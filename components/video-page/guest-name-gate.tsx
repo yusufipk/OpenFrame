@@ -41,11 +41,7 @@ export const GuestNameGate = memo(function GuestNameGate({
             }}
             autoFocus
           />
-          <Button
-            className="w-full"
-            disabled={!guestName.trim()}
-            onClick={onConfirm}
-          >
+          <Button className="w-full" disabled={!guestName.trim()} onClick={onConfirm}>
             Continue
           </Button>
         </div>

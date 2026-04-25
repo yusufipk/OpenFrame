@@ -95,9 +95,7 @@ export default function NewWorkspacePage({
                     id="name"
                     placeholder="e.g., My Studio"
                     value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
                     disabled={isLoading}
                   />
@@ -112,9 +110,7 @@ export default function NewWorkspacePage({
                     id="description"
                     placeholder="What is this workspace for?"
                     value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={3}
                     disabled={isLoading}
                   />
@@ -140,7 +136,8 @@ export default function NewWorkspacePage({
             ) : (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">
-                  You can still create and manage projects inside workspaces where you are already a member.
+                  You can still create and manage projects inside workspaces where you are already a
+                  member.
                 </p>
                 <Button asChild className="w-full">
                   <Link href="/settings">Open Billing Settings</Link>

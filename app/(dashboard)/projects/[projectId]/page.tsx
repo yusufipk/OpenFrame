@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import {
-  ArrowLeft,
-} from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { GuestGate } from '@/components/guest-gate';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -108,10 +106,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       where: { projectId: project.id },
       skip,
       take: pageSize,
-      orderBy: [
-        { updatedAt: sortOrder },
-        { id: sortOrder },
-      ],
+      orderBy: [{ updatedAt: sortOrder }, { id: sortOrder }],
       include: {
         versions: {
           where: { isActive: true },
@@ -124,8 +119,8 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       },
     }),
     db.video.count({
-      where: { projectId: project.id }
-    })
+      where: { projectId: project.id },
+    }),
   ]);
 
   const totalPages = Math.ceil(totalVideos / pageSize);
@@ -136,7 +131,8 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
     return {
       id: video.id,
       title: video.title,
-      thumbnailUrl: activeVersion?.thumbnailUrl || 'https://via.placeholder.com/320x180?text=No+Thumbnail',
+      thumbnailUrl:
+        activeVersion?.thumbnailUrl || 'https://via.placeholder.com/320x180?text=No+Thumbnail',
       currentVersion: video._count.versions,
       commentCount: activeVersion?._count.comments || 0,
       duration: formatDuration(activeVersion?.duration),
@@ -145,7 +141,12 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
     };
   });
 
-  const canEdit = access.canEdit && (isOwner || project.members[0]?.role === 'ADMIN' || workspaceRole === 'OWNER' || workspaceRole === 'ADMIN');
+  const canEdit =
+    access.canEdit &&
+    (isOwner ||
+      project.members[0]?.role === 'ADMIN' ||
+      workspaceRole === 'OWNER' ||
+      workspaceRole === 'ADMIN');
   const isAuthenticated = !!session?.user?.id;
 
   const projectData = {

@@ -1,6 +1,6 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Film, XCircle } from "lucide-react";
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Film, XCircle } from 'lucide-react';
 
 export default function WatchNotFound() {
   return (
@@ -12,7 +12,8 @@ export default function WatchNotFound() {
         </div>
         <h1 className="text-2xl font-bold">Video Not Found</h1>
         <p className="text-muted-foreground max-w-md">
-          The video you&apos;re looking for doesn&apos;t exist, has been removed, or the link may be expired.
+          The video you&apos;re looking for doesn&apos;t exist, has been removed, or the link may be
+          expired.
         </p>
       </div>
       <div className="flex gap-2">

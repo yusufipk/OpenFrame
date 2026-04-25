@@ -48,7 +48,10 @@ function buildBunnySourceCacheKey(
   return `${videoId}:${requestedQuality ?? 'none'}:${sourcePreference}`;
 }
 
-function getCachedBunnyDownloadSource(cacheKey: string, now: number): BunnyDownloadSource | null | undefined {
+function getCachedBunnyDownloadSource(
+  cacheKey: string,
+  now: number
+): BunnyDownloadSource | null | undefined {
   const cached = bunnyDownloadSourceCache.get(cacheKey);
   if (!cached) return undefined;
 
@@ -60,7 +63,11 @@ function getCachedBunnyDownloadSource(cacheKey: string, now: number): BunnyDownl
   return cached.source;
 }
 
-function setCachedBunnyDownloadSource(cacheKey: string, source: BunnyDownloadSource | null, now: number): void {
+function setCachedBunnyDownloadSource(
+  cacheKey: string,
+  source: BunnyDownloadSource | null,
+  now: number
+): void {
   if (bunnyDownloadSourceCache.size >= BUNNY_SOURCE_CACHE_MAX_ENTRIES) {
     // Evict the oldest entry (Maps preserve insertion order)
     const firstKey = bunnyDownloadSourceCache.keys().next().value;
@@ -146,7 +153,10 @@ async function resolveBunnyOriginalSource(videoId: string): Promise<BunnyDownloa
   return null;
 }
 
-async function resolveBunnyCompressedSource(videoId: string, requestedQuality: number | null): Promise<BunnyDownloadSource> {
+async function resolveBunnyCompressedSource(
+  videoId: string,
+  requestedQuality: number | null
+): Promise<BunnyDownloadSource> {
   const hostname = resolveBunnyCdnHostname();
   if (!hostname) {
     return {
@@ -156,7 +166,11 @@ async function resolveBunnyCompressedSource(videoId: string, requestedQuality: n
     };
   }
 
-  if (typeof requestedQuality === 'number' && Number.isFinite(requestedQuality) && requestedQuality > 0) {
+  if (
+    typeof requestedQuality === 'number' &&
+    Number.isFinite(requestedQuality) &&
+    requestedQuality > 0
+  ) {
     const requestedUrl = `https://${hostname}/${videoId}/play_${requestedQuality}p.mp4`;
     if (await isRemoteFileAvailable(requestedUrl)) {
       return {
@@ -243,9 +257,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const rawQuality = searchParams.get('quality');
     const sourceParam = searchParams.get('source');
     const sourcePreference: BunnyDownloadSourcePreference =
-      sourceParam === null ? 'auto' : sourceParam === 'original' || sourceParam === 'compressed'
-        ? sourceParam
-        : 'auto';
+      sourceParam === null
+        ? 'auto'
+        : sourceParam === 'original' || sourceParam === 'compressed'
+          ? sourceParam
+          : 'auto';
 
     const version = await db.videoVersion.findUnique({
       where: { id: versionId },
@@ -275,13 +291,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const shareSession = getShareSessionFromRequest(request, version.video.id);
     const shareAccess = shareSession
       ? await validateShareLinkAccess({
-        token: shareSession.token,
-        projectId: version.video.projectId,
-        videoId: version.video.id,
-        requiredPermission: 'VIEW',
-        passwordVerified: shareSession.passwordVerified,
-      })
-      : { hasAccess: false, canComment: false, canDownload: false, allowGuests: false, requiresPassword: false };
+          token: shareSession.token,
+          projectId: version.video.projectId,
+          videoId: version.video.id,
+          requiredPermission: 'VIEW',
+          passwordVerified: shareSession.passwordVerified,
+        })
+      : {
+          hasAccess: false,
+          canComment: false,
+          canDownload: false,
+          allowGuests: false,
+          requiresPassword: false,
+        };
     const canDownloadViaShareLink = shareAccess.hasAccess && shareAccess.canDownload;
     if (!access.hasAccess && !canDownloadViaShareLink) {
       return apiErrors.forbidden('Access denied');
@@ -299,7 +321,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       rawQuality !== null &&
       (!Number.isFinite(requestedQuality) || !BUNNY_ALLOWED_QUALITIES.has(requestedQuality))
     ) {
-      return apiErrors.badRequest('Invalid quality. Allowed values: 2160, 1440, 1080, 720, 480, 360, 240');
+      return apiErrors.badRequest(
+        'Invalid quality. Allowed values: 2160, 1440, 1080, 720, 480, 360, 240'
+      );
     }
 
     if (rawQuality !== null && sourcePreference === 'original') {
@@ -349,7 +373,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           workspaceId: version.video.project.workspace.id,
           billedUserId: version.video.project.workspace.ownerId,
           downloaderUserId: session?.user?.id ?? null,
-          source: source.sourceType === 'original' ? DownloadEgressSource.ORIGINAL : DownloadEgressSource.COMPRESSED,
+          source:
+            source.sourceType === 'original'
+              ? DownloadEgressSource.ORIGINAL
+              : DownloadEgressSource.COMPRESSED,
           quality: source.quality,
           estimatedBytes,
         },

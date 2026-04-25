@@ -26,42 +26,57 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     const { feedbackId } = await params;
-    const userFeedbackDelegate = (db as unknown as {
-      userFeedback?: {
-        findUnique: (args: unknown) => Promise<{
-          id: string;
-          screenshotUrl: string | null;
-          screenshots?: Array<{ url: string }>;
-        } | null>;
-        delete: (args: { where: { id: string } }) => Promise<{ id: string }>;
-        findFirst: (args: { where: { screenshotUrl: string }; select: { id: true } }) => Promise<{ id: string } | null>;
-      };
-      userFeedbackScreenshot?: {
-        findFirst: (args: { where: { url: string }; select: { id: true } }) => Promise<{ id: string } | null>;
-      };
-    }).userFeedback;
-    const userFeedbackScreenshotDelegate = (db as unknown as {
-      userFeedbackScreenshot?: {
-        findFirst: (args: { where: { url: string }; select: { id: true } }) => Promise<{ id: string } | null>;
-      };
-    }).userFeedbackScreenshot;
+    const userFeedbackDelegate = (
+      db as unknown as {
+        userFeedback?: {
+          findUnique: (args: unknown) => Promise<{
+            id: string;
+            screenshotUrl: string | null;
+            screenshots?: Array<{ url: string }>;
+          } | null>;
+          delete: (args: { where: { id: string } }) => Promise<{ id: string }>;
+          findFirst: (args: {
+            where: { screenshotUrl: string };
+            select: { id: true };
+          }) => Promise<{ id: string } | null>;
+        };
+        userFeedbackScreenshot?: {
+          findFirst: (args: {
+            where: { url: string };
+            select: { id: true };
+          }) => Promise<{ id: string } | null>;
+        };
+      }
+    ).userFeedback;
+    const userFeedbackScreenshotDelegate = (
+      db as unknown as {
+        userFeedbackScreenshot?: {
+          findFirst: (args: {
+            where: { url: string };
+            select: { id: true };
+          }) => Promise<{ id: string } | null>;
+        };
+      }
+    ).userFeedbackScreenshot;
 
     if (!userFeedbackDelegate) {
       return apiErrors.internalError('Feedback model is not available yet');
     }
 
-    let feedbackRecord = await userFeedbackDelegate.findUnique({
-      where: { id: feedbackId },
-      include: {
-        screenshots: {
-          select: { url: true },
+    let feedbackRecord = await userFeedbackDelegate
+      .findUnique({
+        where: { id: feedbackId },
+        include: {
+          screenshots: {
+            select: { url: true },
+          },
         },
-      },
-    }).catch((error) => {
-      const message = error instanceof Error ? error.message : '';
-      if (message.includes('Unknown field `screenshots`')) return null;
-      throw error;
-    });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : '';
+        if (message.includes('Unknown field `screenshots`')) return null;
+        throw error;
+      });
 
     if (!feedbackRecord) {
       feedbackRecord = await userFeedbackDelegate.findUnique({
@@ -88,31 +103,34 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         const filename = extractImageFilenameFromProxyUrl(url);
         if (!filename) return;
 
-        const [commentReferenced, feedbackReferenced, feedbackAttachmentReferenced] = await Promise.all([
-          db.comment.findFirst({
-            where: { imageUrl: url },
-            select: { id: true },
-          }),
-          userFeedbackDelegate.findFirst({
-            where: { screenshotUrl: url },
-            select: { id: true },
-          }),
-          userFeedbackScreenshotDelegate
-            ? userFeedbackScreenshotDelegate.findFirst({
-              where: { url },
+        const [commentReferenced, feedbackReferenced, feedbackAttachmentReferenced] =
+          await Promise.all([
+            db.comment.findFirst({
+              where: { imageUrl: url },
               select: { id: true },
-            })
-            : Promise.resolve(null),
-        ]);
+            }),
+            userFeedbackDelegate.findFirst({
+              where: { screenshotUrl: url },
+              select: { id: true },
+            }),
+            userFeedbackScreenshotDelegate
+              ? userFeedbackScreenshotDelegate.findFirst({
+                  where: { url },
+                  select: { id: true },
+                })
+              : Promise.resolve(null),
+          ]);
 
         if (commentReferenced || feedbackReferenced || feedbackAttachmentReferenced) return;
 
-        await r2Client.send(
-          new DeleteObjectCommand({
-            Bucket: R2_BUCKET_NAME,
-            Key: `images/${filename}`,
-          })
-        ).catch(() => undefined);
+        await r2Client
+          .send(
+            new DeleteObjectCommand({
+              Bucket: R2_BUCKET_NAME,
+              Key: `images/${filename}`,
+            })
+          )
+          .catch(() => undefined);
       })
     );
 

@@ -55,9 +55,7 @@ export function WorkspacesClient({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Workspaces</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your workspaces and their projects
-          </p>
+          <p className="text-muted-foreground mt-1">Manage your workspaces and their projects</p>
           {!workspaceCreation.canCreateWorkspace && workspaceCreation.reason ? (
             <p className="text-sm text-amber-700 dark:text-amber-400 mt-2">
               {workspaceCreation.reason}
@@ -73,9 +71,7 @@ export function WorkspacesClient({
           </Button>
         ) : (
           <Button asChild className="w-full sm:w-auto">
-            <Link href="/settings">
-              Upgrade to Create Workspace
-            </Link>
+            <Link href="/settings">Upgrade to Create Workspace</Link>
           </Button>
         )}
       </div>

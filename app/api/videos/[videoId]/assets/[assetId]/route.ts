@@ -6,10 +6,7 @@ import { db } from '@/lib/db';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
-import {
-  canDeleteAssetForViewer,
-  getVideoAssetAccessContext,
-} from '@/lib/video-assets';
+import { canDeleteAssetForViewer, getVideoAssetAccessContext } from '@/lib/video-assets';
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string; assetId: string }> };
@@ -72,12 +69,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       r2CleanupResult = await deleteMediaFilesBestEffort([asset.sourceUrl]);
     }
 
-    let bunnyCleanupResult: Awaited<ReturnType<typeof cleanupBunnyStreamVideosBestEffort>> | undefined;
+    let bunnyCleanupResult:
+      | Awaited<ReturnType<typeof cleanupBunnyStreamVideosBestEffort>>
+      | undefined;
     if (asset.provider === VideoAssetProvider.BUNNY && asset.providerVideoId) {
-      bunnyCleanupResult = await cleanupBunnyStreamVideosBestEffort([{
-        providerId: 'bunny',
-        videoId: asset.providerVideoId,
-      }]);
+      bunnyCleanupResult = await cleanupBunnyStreamVideosBestEffort([
+        {
+          providerId: 'bunny',
+          videoId: asset.providerVideoId,
+        },
+      ]);
     }
 
     const cleanupInput = {

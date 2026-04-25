@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { AlertTriangle } from "lucide-react";
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle } from 'lucide-react';
 
 export default function DashboardError({
   error,
@@ -12,7 +12,7 @@ export default function DashboardError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Dashboard error:", error);
+    console.error('Dashboard error:', error);
   }, [error]);
 
   return (
@@ -23,17 +23,13 @@ export default function DashboardError({
         <p className="text-muted-foreground max-w-md">
           Something went wrong loading the dashboard. Your projects and videos are safe.
         </p>
-        {error.digest && (
-          <p className="text-muted-foreground text-xs">
-            Error ID: {error.digest}
-          </p>
-        )}
+        {error.digest && <p className="text-muted-foreground text-xs">Error ID: {error.digest}</p>}
       </div>
       <div className="flex gap-2">
         <Button onClick={reset} variant="default">
           Try again
         </Button>
-        <Button onClick={() => window.location.href = "/dashboard"} variant="outline">
+        <Button onClick={() => (window.location.href = '/dashboard')} variant="outline">
           Go to dashboard
         </Button>
       </div>

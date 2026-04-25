@@ -51,11 +51,9 @@ export function ApprovalRequestDialog({
   );
 
   const toggleApprover = (userId: string) => {
-    setSelectedApproverIds((current) => (
-      current.includes(userId)
-        ? current.filter((id) => id !== userId)
-        : [...current, userId]
-    ));
+    setSelectedApproverIds((current) =>
+      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]
+    );
   };
 
   const handleCreate = async () => {
@@ -74,9 +72,7 @@ export function ApprovalRequestDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Request Approval</DialogTitle>
-          <DialogDescription>
-            Select one or more approvers for this version.
-          </DialogDescription>
+          <DialogDescription>Select one or more approvers for this version.</DialogDescription>
         </DialogHeader>
 
         {isBlockedByPendingRequest ? (
@@ -93,14 +89,23 @@ export function ApprovalRequestDialog({
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Approvers ({selectedApproverIds.length} selected)</p>
-            <Button size="sm" variant="ghost" onClick={onRefreshCandidates} disabled={isLoadingCandidates}>
+            <p className="text-xs text-muted-foreground">
+              Approvers ({selectedApproverIds.length} selected)
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onRefreshCandidates}
+              disabled={isLoadingCandidates}
+            >
               {isLoadingCandidates ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
             </Button>
           </div>
           <div className="max-h-56 overflow-y-auto rounded-md border p-2 space-y-1">
             {selectableCandidates.length === 0 ? (
-              <p className="text-sm text-muted-foreground px-2 py-3">No eligible approvers found.</p>
+              <p className="text-sm text-muted-foreground px-2 py-3">
+                No eligible approvers found.
+              </p>
             ) : (
               selectableCandidates.map((candidate) => {
                 const selected = selectedApproverIds.includes(candidate.id);
@@ -116,11 +121,17 @@ export function ApprovalRequestDialog({
                       <div className="flex items-center gap-2 min-w-0">
                         <Avatar className="h-7 w-7">
                           <AvatarImage src={candidate.image ?? undefined} />
-                          <AvatarFallback>{(candidate.name || candidate.email || 'U').charAt(0).toUpperCase()}</AvatarFallback>
+                          <AvatarFallback>
+                            {(candidate.name || candidate.email || 'U').charAt(0).toUpperCase()}
+                          </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{candidate.name || 'Unnamed'}</p>
-                          <p className="text-xs text-muted-foreground truncate">{candidate.email || 'No email'}</p>
+                          <p className="text-sm font-medium truncate">
+                            {candidate.name || 'Unnamed'}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {candidate.email || 'No email'}
+                          </p>
                         </div>
                       </div>
                       {selected ? (
@@ -152,7 +163,9 @@ export function ApprovalRequestDialog({
         <DialogFooter>
           <Button
             onClick={handleCreate}
-            disabled={isSubmittingRequest || isBlockedByPendingRequest || selectedApproverIds.length === 0}
+            disabled={
+              isSubmittingRequest || isBlockedByPendingRequest || selectedApproverIds.length === 0
+            }
           >
             {isSubmittingRequest ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Create Request

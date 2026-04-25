@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -67,7 +67,7 @@
   --input: oklch(0.923 0.003 48.717);
   --ring: oklch(0.709 0.01 56.259);
   --chart-1: oklch(0.87 0.12 207);
-  --chart-2: oklch(0.80 0.13 212);
+  --chart-2: oklch(0.8 0.13 212);
   --chart-3: oklch(0.71 0.13 215);
   --chart-4: oklch(0.61 0.11 222);
   --chart-5: oklch(0.52 0.09 223);
@@ -90,28 +90,28 @@
   --popover: oklch(0.216 0.006 56.043);
   --popover-foreground: oklch(0.985 0.001 106.423);
   --primary: oklch(0.71 0.13 215);
-  --primary-foreground: oklch(0.30 0.05 230);
+  --primary-foreground: oklch(0.3 0.05 230);
   --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.268 0.007 34.298);
   --muted-foreground: oklch(0.709 0.01 56.259);
   --accent: oklch(0.71 0.13 215);
-  --accent-foreground: oklch(0.30 0.05 230);
+  --accent-foreground: oklch(0.3 0.05 230);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.553 0.013 58.071);
   --chart-1: oklch(0.87 0.12 207);
-  --chart-2: oklch(0.80 0.13 212);
+  --chart-2: oklch(0.8 0.13 212);
   --chart-3: oklch(0.71 0.13 215);
   --chart-4: oklch(0.61 0.11 222);
   --chart-5: oklch(0.52 0.09 223);
   --sidebar: oklch(0.216 0.006 56.043);
   --sidebar-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-primary: oklch(0.80 0.13 212);
-  --sidebar-primary-foreground: oklch(0.30 0.05 230);
+  --sidebar-primary: oklch(0.8 0.13 212);
+  --sidebar-primary-foreground: oklch(0.3 0.05 230);
   --sidebar-accent: oklch(0.71 0.13 215);
-  --sidebar-accent-foreground: oklch(0.30 0.05 230);
+  --sidebar-accent-foreground: oklch(0.3 0.05 230);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.553 0.013 58.071);
 }
@@ -136,7 +136,7 @@
 }
 
 .noise-overlay::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   background: var(--foreground);

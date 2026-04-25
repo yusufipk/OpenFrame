@@ -3,7 +3,12 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import * as tus from 'tus-js-client';
-import { parseVideoUrl, getThumbnailUrl, fetchVideoMetadata, type VideoSource } from '@/lib/video-providers';
+import {
+  parseVideoUrl,
+  getThumbnailUrl,
+  fetchVideoMetadata,
+  type VideoSource,
+} from '@/lib/video-providers';
 import type { VersionActionsConfig, VideoData } from '@/components/video-page/types';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
@@ -94,7 +99,9 @@ export function useVersionActions({
         });
 
         if (!initRes.ok) throw new Error('Failed to initialize upload');
-        const { data: { videoId: bunnyVideoId, libraryId, signature, expirationTime, uploadToken } } = await initRes.json();
+        const {
+          data: { videoId: bunnyVideoId, libraryId, signature, expirationTime, uploadToken },
+        } = await initRes.json();
         uploadedBunnyVideoId = bunnyVideoId;
         uploadedBunnyUploadToken = uploadToken;
 
@@ -179,7 +186,10 @@ export function useVersionActions({
         await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: uploadedBunnyVideoId, uploadToken: uploadedBunnyUploadToken }),
+          body: JSON.stringify({
+            videoId: uploadedBunnyVideoId,
+            uploadToken: uploadedBunnyUploadToken,
+          }),
         }).catch((cleanupError) => {
           console.error('Failed to cleanup pending Bunny version upload:', cleanupError);
         });

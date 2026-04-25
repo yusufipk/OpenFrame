@@ -50,7 +50,9 @@ export function useApprovals({ projectId, activeVersionId, currentUserId }: UseA
     setIsLoadingCandidates(true);
     setError('');
     try {
-      const res = await fetch(`/api/projects/${projectId}/approval-candidates`, { cache: 'no-store' });
+      const res = await fetch(`/api/projects/${projectId}/approval-candidates`, {
+        cache: 'no-store',
+      });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(payload?.error || 'Failed to fetch approvers');
@@ -64,80 +66,85 @@ export function useApprovals({ projectId, activeVersionId, currentUserId }: UseA
     }
   }, [projectId]);
 
-  const createRequest = useCallback(async (approverIds: string[], message?: string) => {
-    if (!activeVersionId) return false;
-    setIsSubmittingRequest(true);
-    setError('');
-    try {
-      const res = await fetch(`/api/versions/${activeVersionId}/approvals`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approverIds, message: message || undefined }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(payload?.error || 'Failed to create approval request');
+  const createRequest = useCallback(
+    async (approverIds: string[], message?: string) => {
+      if (!activeVersionId) return false;
+      setIsSubmittingRequest(true);
+      setError('');
+      try {
+        const res = await fetch(`/api/versions/${activeVersionId}/approvals`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approverIds, message: message || undefined }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(payload?.error || 'Failed to create approval request');
+          return false;
+        }
+        await fetchRequests();
+        return true;
+      } catch {
+        setError('Failed to create approval request');
         return false;
+      } finally {
+        setIsSubmittingRequest(false);
       }
-      await fetchRequests();
-      return true;
-    } catch {
-      setError('Failed to create approval request');
-      return false;
-    } finally {
-      setIsSubmittingRequest(false);
-    }
-  }, [activeVersionId, fetchRequests]);
+    },
+    [activeVersionId, fetchRequests]
+  );
 
-  const submitDecision = useCallback(async (
-    requestId: string,
-    decision: 'APPROVED' | 'REJECTED',
-    note?: string
-  ) => {
-    setIsSubmittingDecision(true);
-    setError('');
-    try {
-      const res = await fetch(`/api/approvals/${requestId}/decision`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, note: note || undefined }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(payload?.error || 'Failed to submit approval decision');
+  const submitDecision = useCallback(
+    async (requestId: string, decision: 'APPROVED' | 'REJECTED', note?: string) => {
+      setIsSubmittingDecision(true);
+      setError('');
+      try {
+        const res = await fetch(`/api/approvals/${requestId}/decision`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision, note: note || undefined }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(payload?.error || 'Failed to submit approval decision');
+          return false;
+        }
+        await fetchRequests();
+        return true;
+      } catch {
+        setError('Failed to submit approval decision');
         return false;
+      } finally {
+        setIsSubmittingDecision(false);
       }
-      await fetchRequests();
-      return true;
-    } catch {
-      setError('Failed to submit approval decision');
-      return false;
-    } finally {
-      setIsSubmittingDecision(false);
-    }
-  }, [fetchRequests]);
+    },
+    [fetchRequests]
+  );
 
-  const cancelRequest = useCallback(async (requestId: string) => {
-    setIsCancelingRequest(true);
-    setError('');
-    try {
-      const res = await fetch(`/api/approvals/${requestId}/cancel`, {
-        method: 'POST',
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(payload?.error || 'Failed to cancel approval request');
+  const cancelRequest = useCallback(
+    async (requestId: string) => {
+      setIsCancelingRequest(true);
+      setError('');
+      try {
+        const res = await fetch(`/api/approvals/${requestId}/cancel`, {
+          method: 'POST',
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(payload?.error || 'Failed to cancel approval request');
+          return false;
+        }
+        await fetchRequests();
+        return true;
+      } catch {
+        setError('Failed to cancel approval request');
         return false;
+      } finally {
+        setIsCancelingRequest(false);
       }
-      await fetchRequests();
-      return true;
-    } catch {
-      setError('Failed to cancel approval request');
-      return false;
-    } finally {
-      setIsCancelingRequest(false);
-    }
-  }, [fetchRequests]);
+    },
+    [fetchRequests]
+  );
 
   const activePendingRequest = useMemo(
     () => requests.find((request) => request.status === 'PENDING') || null,
@@ -146,9 +153,11 @@ export function useApprovals({ projectId, activeVersionId, currentUserId }: UseA
 
   const myPendingDecision = useMemo(() => {
     if (!currentUserId || !activePendingRequest) return null;
-    return activePendingRequest.decisions.find(
-      (decision) => decision.approverId === currentUserId && decision.status === 'PENDING'
-    ) || null;
+    return (
+      activePendingRequest.decisions.find(
+        (decision) => decision.approverId === currentUserId && decision.status === 'PENDING'
+      ) || null
+    );
   }, [activePendingRequest, currentUserId]);
 
   return {

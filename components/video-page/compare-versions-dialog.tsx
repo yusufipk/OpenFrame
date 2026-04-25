@@ -4,7 +4,13 @@ import { memo } from 'react';
 import { CheckCircle2, GitCompareArrows } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import type { Version } from '@/components/video-page/types';
 
@@ -30,9 +36,7 @@ export const CompareVersionsDialog = memo(function CompareVersionsDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Select Versions to Compare</DialogTitle>
-          <DialogDescription>
-            Choose 2 or more versions to compare side by side.
-          </DialogDescription>
+          <DialogDescription>Choose 2 or more versions to compare side by side.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
           {versions
@@ -46,9 +50,7 @@ export const CompareVersionsDialog = memo(function CompareVersionsDialog({
                   type="button"
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors',
-                    isSelected
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:bg-accent/50'
+                    isSelected ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'
                   )}
                   onClick={() => onToggleVersion(v.id)}
                 >
@@ -60,9 +62,7 @@ export const CompareVersionsDialog = memo(function CompareVersionsDialog({
                         : 'border-muted-foreground/40'
                     )}
                   >
-                    {isSelected && (
-                      <CheckCircle2 className="h-3 w-3" />
-                    )}
+                    {isSelected && <CheckCircle2 className="h-3 w-3" />}
                   </div>
                   <Badge variant="secondary">v{v.versionNumber}</Badge>
                   <span className="text-sm font-medium truncate">

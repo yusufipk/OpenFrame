@@ -83,7 +83,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const tokenForAttempt = shareTokenFromBody || pendingToken;
 
   if (!tokenForAttempt) {
-    return NextResponse.json({ error: 'Share session expired. Open the share link again.' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Share session expired. Open the share link again.' },
+      { status: 401 }
+    );
   }
 
   // Additional throttle bound to token+IP to reduce password guessing against one link.

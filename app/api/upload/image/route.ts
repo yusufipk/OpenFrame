@@ -9,169 +9,181 @@ import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import {
-    detectImageMime,
-    getImageExtension,
-    isAllowedImageType,
-    normalizeImageMime,
+  detectImageMime,
+  getImageExtension,
+  isAllowedImageType,
+  normalizeImageMime,
 } from '@/lib/image-upload-validation';
 import {
-    deriveGuestUploadContext,
-    enforceGuestUploadQuota,
-    verifyGuestUploadToken,
+  deriveGuestUploadContext,
+  enforceGuestUploadQuota,
+  verifyGuestUploadToken,
 } from '@/lib/guest-upload-token';
 import { logError } from '@/lib/logger';
 import { reserveStorageQuota, releaseStorageReservation } from '@/lib/storage-quota';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + (512 * 1024); // file + multipart overhead
+const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + 512 * 1024; // file + multipart overhead
 
 export async function POST(request: NextRequest) {
-    try {
-        // Check Content-Length header BEFORE loading the file
-        const contentLength = request.headers.get('content-length');
-        if (!contentLength) {
-            return apiErrors.badRequest('Missing Content-Length header');
-        }
-        const bodySize = parseInt(contentLength, 10);
-        if (isNaN(bodySize) || bodySize <= 0) {
-            return apiErrors.badRequest('Invalid Content-Length header');
-        }
-        if (bodySize > MAX_MULTIPART_BODY_SIZE) {
-            return apiErrors.badRequest('File too large. Maximum size is 10MB.');
-        }
-
-        // Rate limit
-        const limited = await rateLimit(request, 'image-upload');
-        if (limited) return limited;
-
-        const session = await auth();
-
-        const formData = await request.formData();
-        const files = formData.getAll('image');
-        if (files.length !== 1) {
-            return apiErrors.badRequest('No image file provided');
-        }
-        const file = files[0];
-        const videoId = formData.get('videoId');
-        const uploadToken = formData.get('uploadToken');
-
-        if (!(file instanceof File)) {
-            return apiErrors.badRequest('No image file provided');
-        }
-        if (typeof videoId !== 'string' || !videoId.trim()) {
-            return apiErrors.badRequest('videoId is required');
-        }
-
-        const safeVideoId = videoId.trim();
-        const video = await db.video.findUnique({
-            where: { id: safeVideoId },
-            include: {
-                project: {
-                    include: { workspace: { select: { ownerId: true } } },
-                },
-            },
-        });
-        if (!video) {
-            return apiErrors.notFound('Video');
-        }
-
-        const access = await checkProjectAccess(video.project, session?.user?.id);
-        const shareSession = getShareSessionFromRequest(request, safeVideoId);
-        const shareAccess = shareSession
-            ? await validateShareLinkAccess({
-                token: shareSession.token,
-                projectId: video.projectId,
-                videoId: safeVideoId,
-                requiredPermission: 'COMMENT',
-                passwordVerified: shareSession.passwordVerified,
-            })
-            : { hasAccess: false, canComment: false, canDownload: false, allowGuests: false, requiresPassword: false };
-        const canCommentWithMembership = !!session?.user?.id && access.hasAccess;
-        const canCommentWithShareLink = shareAccess.canComment && (session?.user?.id ? true : shareAccess.allowGuests);
-        if (!canCommentWithMembership && !canCommentWithShareLink) {
-            return apiErrors.forbidden('Access denied');
-        }
-
-        if (!session?.user?.id) {
-            if (typeof uploadToken !== 'string' || !uploadToken.trim()) {
-                return apiErrors.badRequest('uploadToken is required for guest uploads');
-            }
-
-            const expectedContext = deriveGuestUploadContext(request, shareSession?.token ?? null);
-            if (!expectedContext) {
-                return apiErrors.forbidden('Missing trusted client IP header');
-            }
-
-            const isValidUploadToken = verifyGuestUploadToken(uploadToken.trim(), {
-                projectId: video.projectId,
-                videoId: safeVideoId,
-                intent: 'image',
-                context: expectedContext,
-            });
-            if (!isValidUploadToken) {
-                return apiErrors.forbidden('Invalid upload token');
-            }
-
-            const quotaError = await enforceGuestUploadQuota(request, safeVideoId, 'image', shareSession?.token ?? null);
-            if (quotaError) return quotaError;
-        }
-
-        // Double-check file size (defense in depth - Content-Length can be spoofed)
-        if (file.size > MAX_FILE_SIZE) {
-            return apiErrors.badRequest('File too large. Maximum size is 10MB.');
-        }
-
-        // Enforce per-user storage quota before uploading.
-        // All paths use the advisory-locked reservation so concurrent uploads always
-        // see each other's in-flight sizes, eliminating the TOCTOU race.
-        const workspaceOwnerId = video.project.workspace.ownerId;
-        const reserveResult = await reserveStorageQuota(workspaceOwnerId, BigInt(file.size));
-        if ('error' in reserveResult) return reserveResult.error;
-        const reservationId = reserveResult.reservationId;
-
-        // Check content type
-        const normalizedMime = normalizeImageMime(file.type);
-        if (normalizedMime && !isAllowedImageType(normalizedMime)) {
-            await releaseStorageReservation(reservationId);
-            return apiErrors.badRequest(`Unsupported image format: ${file.type}`);
-        }
-
-        // Convert to buffer
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const detectedMime = detectImageMime(buffer);
-        if (!detectedMime) {
-            await releaseStorageReservation(reservationId);
-            return apiErrors.badRequest('Uploaded file content does not match an allowed image type');
-        }
-
-        // Generate unique filename
-        const ext = getImageExtension(detectedMime);
-        const filename = `${randomUUID()}.${ext}`;
-        const key = `images/${filename}`;
-
-        try {
-            // Upload to R2
-            await r2Client.send(
-                new PutObjectCommand({
-                    Bucket: R2_BUCKET_NAME,
-                    Key: key,
-                    Body: buffer,
-                    ContentType: detectedMime,
-                })
-            );
-        } catch (uploadError) {
-            await releaseStorageReservation(reservationId);
-            throw uploadError;
-        }
-
-        // Return the URL through our proxy endpoint
-        const imageUrl = `/api/upload/image/${filename}`;
-
-        const response = successResponse({ url: imageUrl, reservationId }, 201);
-        return withCacheControl(response, 'private, no-store');
-    } catch (error) {
-        logError('Error uploading image:', error);
-        return apiErrors.internalError('Failed to upload image');
+  try {
+    // Check Content-Length header BEFORE loading the file
+    const contentLength = request.headers.get('content-length');
+    if (!contentLength) {
+      return apiErrors.badRequest('Missing Content-Length header');
     }
+    const bodySize = parseInt(contentLength, 10);
+    if (isNaN(bodySize) || bodySize <= 0) {
+      return apiErrors.badRequest('Invalid Content-Length header');
+    }
+    if (bodySize > MAX_MULTIPART_BODY_SIZE) {
+      return apiErrors.badRequest('File too large. Maximum size is 10MB.');
+    }
+
+    // Rate limit
+    const limited = await rateLimit(request, 'image-upload');
+    if (limited) return limited;
+
+    const session = await auth();
+
+    const formData = await request.formData();
+    const files = formData.getAll('image');
+    if (files.length !== 1) {
+      return apiErrors.badRequest('No image file provided');
+    }
+    const file = files[0];
+    const videoId = formData.get('videoId');
+    const uploadToken = formData.get('uploadToken');
+
+    if (!(file instanceof File)) {
+      return apiErrors.badRequest('No image file provided');
+    }
+    if (typeof videoId !== 'string' || !videoId.trim()) {
+      return apiErrors.badRequest('videoId is required');
+    }
+
+    const safeVideoId = videoId.trim();
+    const video = await db.video.findUnique({
+      where: { id: safeVideoId },
+      include: {
+        project: {
+          include: { workspace: { select: { ownerId: true } } },
+        },
+      },
+    });
+    if (!video) {
+      return apiErrors.notFound('Video');
+    }
+
+    const access = await checkProjectAccess(video.project, session?.user?.id);
+    const shareSession = getShareSessionFromRequest(request, safeVideoId);
+    const shareAccess = shareSession
+      ? await validateShareLinkAccess({
+          token: shareSession.token,
+          projectId: video.projectId,
+          videoId: safeVideoId,
+          requiredPermission: 'COMMENT',
+          passwordVerified: shareSession.passwordVerified,
+        })
+      : {
+          hasAccess: false,
+          canComment: false,
+          canDownload: false,
+          allowGuests: false,
+          requiresPassword: false,
+        };
+    const canCommentWithMembership = !!session?.user?.id && access.hasAccess;
+    const canCommentWithShareLink =
+      shareAccess.canComment && (session?.user?.id ? true : shareAccess.allowGuests);
+    if (!canCommentWithMembership && !canCommentWithShareLink) {
+      return apiErrors.forbidden('Access denied');
+    }
+
+    if (!session?.user?.id) {
+      if (typeof uploadToken !== 'string' || !uploadToken.trim()) {
+        return apiErrors.badRequest('uploadToken is required for guest uploads');
+      }
+
+      const expectedContext = deriveGuestUploadContext(request, shareSession?.token ?? null);
+      if (!expectedContext) {
+        return apiErrors.forbidden('Missing trusted client IP header');
+      }
+
+      const isValidUploadToken = verifyGuestUploadToken(uploadToken.trim(), {
+        projectId: video.projectId,
+        videoId: safeVideoId,
+        intent: 'image',
+        context: expectedContext,
+      });
+      if (!isValidUploadToken) {
+        return apiErrors.forbidden('Invalid upload token');
+      }
+
+      const quotaError = await enforceGuestUploadQuota(
+        request,
+        safeVideoId,
+        'image',
+        shareSession?.token ?? null
+      );
+      if (quotaError) return quotaError;
+    }
+
+    // Double-check file size (defense in depth - Content-Length can be spoofed)
+    if (file.size > MAX_FILE_SIZE) {
+      return apiErrors.badRequest('File too large. Maximum size is 10MB.');
+    }
+
+    // Enforce per-user storage quota before uploading.
+    // All paths use the advisory-locked reservation so concurrent uploads always
+    // see each other's in-flight sizes, eliminating the TOCTOU race.
+    const workspaceOwnerId = video.project.workspace.ownerId;
+    const reserveResult = await reserveStorageQuota(workspaceOwnerId, BigInt(file.size));
+    if ('error' in reserveResult) return reserveResult.error;
+    const reservationId = reserveResult.reservationId;
+
+    // Check content type
+    const normalizedMime = normalizeImageMime(file.type);
+    if (normalizedMime && !isAllowedImageType(normalizedMime)) {
+      await releaseStorageReservation(reservationId);
+      return apiErrors.badRequest(`Unsupported image format: ${file.type}`);
+    }
+
+    // Convert to buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const detectedMime = detectImageMime(buffer);
+    if (!detectedMime) {
+      await releaseStorageReservation(reservationId);
+      return apiErrors.badRequest('Uploaded file content does not match an allowed image type');
+    }
+
+    // Generate unique filename
+    const ext = getImageExtension(detectedMime);
+    const filename = `${randomUUID()}.${ext}`;
+    const key = `images/${filename}`;
+
+    try {
+      // Upload to R2
+      await r2Client.send(
+        new PutObjectCommand({
+          Bucket: R2_BUCKET_NAME,
+          Key: key,
+          Body: buffer,
+          ContentType: detectedMime,
+        })
+      );
+    } catch (uploadError) {
+      await releaseStorageReservation(reservationId);
+      throw uploadError;
+    }
+
+    // Return the URL through our proxy endpoint
+    const imageUrl = `/api/upload/image/${filename}`;
+
+    const response = successResponse({ url: imageUrl, reservationId }, 201);
+    return withCacheControl(response, 'private, no-store');
+  } catch (error) {
+    logError('Error uploading image:', error);
+    return apiErrors.internalError('Failed to upload image');
+  }
 }

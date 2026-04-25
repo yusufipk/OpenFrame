@@ -29,7 +29,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           include: {
             video: {
               include: {
-                project: { select: { id: true, ownerId: true, workspaceId: true, visibility: true } },
+                project: {
+                  select: { id: true, ownerId: true, workspaceId: true, visibility: true },
+                },
               },
             },
           },
@@ -38,7 +40,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     if (!approvalRequest) return apiErrors.notFound('Approval request');
 
-    const access = await checkProjectAccess(approvalRequest.version.video.project, session.user.id, { intent: 'manage' });
+    const access = await checkProjectAccess(
+      approvalRequest.version.video.project,
+      session.user.id,
+      { intent: 'manage' }
+    );
     const canCancel = approvalRequest.requestedById === session.user.id || access.canEdit;
     if (!canCancel) return apiErrors.forbidden('Access denied');
 
@@ -46,33 +52,36 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.conflict('Only pending approval requests can be canceled');
     }
 
-    const updated = await db.$transaction(async (tx) => {
-      const current = await tx.approvalRequest.findUnique({
-        where: { id: requestId },
-        select: { status: true },
-      });
-      if (!current) throw new Error('__NOT_FOUND__');
-      if (current.status !== 'PENDING') throw new Error('__NOT_PENDING__');
+    const updated = await db.$transaction(
+      async (tx) => {
+        const current = await tx.approvalRequest.findUnique({
+          where: { id: requestId },
+          select: { status: true },
+        });
+        if (!current) throw new Error('__NOT_FOUND__');
+        if (current.status !== 'PENDING') throw new Error('__NOT_PENDING__');
 
-      return tx.approvalRequest.update({
-        where: { id: requestId },
-        data: {
-          status: 'CANCELED',
-          canceledAt: new Date(),
-          canceledById: session.user.id,
-        },
-        include: {
-          requestedBy: { select: { id: true, name: true, email: true, image: true } },
-          canceledBy: { select: { id: true, name: true, email: true, image: true } },
-          decisions: {
-            orderBy: { createdAt: 'asc' },
-            include: { approver: { select: { id: true, name: true, email: true, image: true } } },
+        return tx.approvalRequest.update({
+          where: { id: requestId },
+          data: {
+            status: 'CANCELED',
+            canceledAt: new Date(),
+            canceledById: session.user.id,
           },
-        },
-      });
-    }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    });
+          include: {
+            requestedBy: { select: { id: true, name: true, email: true, image: true } },
+            canceledBy: { select: { id: true, name: true, email: true, image: true } },
+            decisions: {
+              orderBy: { createdAt: 'asc' },
+              include: { approver: { select: { id: true, name: true, email: true, image: true } } },
+            },
+          },
+        });
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      }
+    );
 
     const response = successResponse({ request: updated });
     return withCacheControl(response, 'private, no-store');

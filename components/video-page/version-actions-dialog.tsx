@@ -1,10 +1,25 @@
 'use client';
 
 import { memo } from 'react';
-import { AlertCircle, CheckCircle2, FileVideo, Link as LinkIcon, Loader2, Plus, UploadCloud } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileVideo,
+  Link as LinkIcon,
+  Loader2,
+  Plus,
+  UploadCloud,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -67,8 +82,14 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 mt-2">
-          <Tabs value={newVersionMode} onValueChange={(v) => onNewVersionModeChange(v as 'url' | 'file')} className="mb-2">
-            <TabsList className={`grid w-full ${bunnyUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <Tabs
+            value={newVersionMode}
+            onValueChange={(v) => onNewVersionModeChange(v as 'url' | 'file')}
+            className="mb-2"
+          >
+            <TabsList
+              className={`grid w-full ${bunnyUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}
+            >
               <TabsTrigger value="url">Link URL</TabsTrigger>
               {bunnyUploadsEnabled ? <TabsTrigger value="file">Upload File</TabsTrigger> : null}
             </TabsList>
@@ -106,12 +127,17 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
             <div className="space-y-2">
               <Label htmlFor="versionFile">Video File</Label>
               <div className="flex items-center justify-center w-full">
-                <label htmlFor="versionFile" className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors ${newVersionFile ? 'border-primary' : 'border-border'}`}>
+                <label
+                  htmlFor="versionFile"
+                  className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors ${newVersionFile ? 'border-primary' : 'border-border'}`}
+                >
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
                     {newVersionFile ? (
                       <>
                         <FileVideo className="w-8 h-8 mb-2 text-primary" />
-                        <p className="mb-1 text-sm text-foreground font-medium truncate max-w-[200px]">{newVersionFile.name}</p>
+                        <p className="mb-1 text-sm text-foreground font-medium truncate max-w-[200px]">
+                          {newVersionFile.name}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {(newVersionFile.size / (1024 * 1024)).toFixed(2)} MB
                         </p>
@@ -126,14 +152,21 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
                       </>
                     )}
                   </div>
-                  <input id="versionFile" type="file" accept="video/*" className="hidden" onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file && file.type.startsWith('video/')) {
-                      onNewVersionFileChange(file);
-                    } else {
-                      toast.error('Please select a valid video file');
-                    }
-                  }} disabled={isCreatingVersion} />
+                  <input
+                    id="versionFile"
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file && file.type.startsWith('video/')) {
+                        onNewVersionFileChange(file);
+                      } else {
+                        toast.error('Please select a valid video file');
+                      }
+                    }}
+                    disabled={isCreatingVersion}
+                  />
                 </label>
               </div>
             </div>
@@ -154,7 +187,10 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
               <p className="text-sm text-muted-foreground">{newVersionUploadStatus}</p>
               {newVersionUploadProgress > 0 && newVersionUploadProgress < 100 && (
                 <div className="w-full bg-secondary rounded-full h-2">
-                  <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${newVersionUploadProgress}%` }}></div>
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${newVersionUploadProgress}%` }}
+                  ></div>
                 </div>
               )}
             </div>
@@ -162,7 +198,11 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
 
           <Button
             onClick={onCreateVersion}
-            disabled={(newVersionMode === 'url' && !newVersionSource) || (newVersionMode === 'file' && !newVersionFile) || isCreatingVersion}
+            disabled={
+              (newVersionMode === 'url' && !newVersionSource) ||
+              (newVersionMode === 'file' && !newVersionFile) ||
+              isCreatingVersion
+            }
             className="w-full"
           >
             {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

@@ -12,7 +12,9 @@ function normalizeBunnyCdnHostname(raw: string | null | undefined): string | nul
 }
 
 export function resolveServerBunnyCdnHostname(): string | null {
-  return normalizeBunnyCdnHostname(process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL);
+  return normalizeBunnyCdnHostname(
+    process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL
+  );
 }
 
 export function resolvePublicBunnyCdnHostname(): string | null {

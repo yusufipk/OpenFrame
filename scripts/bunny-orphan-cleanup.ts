@@ -21,7 +21,8 @@ type BunnyVideo = {
 
 function getBunnyConfig(): BunnyConfig {
   const apiKey = process.env.BUNNY_STREAM_API_KEY;
-  const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || process.env.NEXT_PUBLIC_BUNNY_STREAM_LIBRARY_ID;
+  const libraryId =
+    process.env.BUNNY_STREAM_LIBRARY_ID || process.env.NEXT_PUBLIC_BUNNY_STREAM_LIBRARY_ID;
 
   if (!apiKey || !libraryId) {
     throw new Error('Missing BUNNY_STREAM_API_KEY or BUNNY_STREAM_LIBRARY_ID.');
@@ -72,7 +73,10 @@ function parseUploadedAt(item: unknown): Date | null {
   return null;
 }
 
-async function fetchBunnyPage(config: BunnyConfig, page: number): Promise<{ items: unknown[]; totalItems: number | null }> {
+async function fetchBunnyPage(
+  config: BunnyConfig,
+  page: number
+): Promise<{ items: unknown[]; totalItems: number | null }> {
   const response = await fetch(
     `${BUNNY_API_BASE}/library/${config.libraryId}/videos?page=${page}&itemsPerPage=${ITEMS_PER_PAGE}`,
     {
@@ -95,16 +99,23 @@ async function fetchBunnyPage(config: BunnyConfig, page: number): Promise<{ item
 
   const items = Array.isArray(record.items)
     ? record.items
-    : (Array.isArray(record.Items) ? record.Items : []);
+    : Array.isArray(record.Items)
+      ? record.Items
+      : [];
 
-  const totalItems = typeof record.totalItems === 'number'
-    ? record.totalItems
-    : (typeof record.TotalItems === 'number' ? record.TotalItems : null);
+  const totalItems =
+    typeof record.totalItems === 'number'
+      ? record.totalItems
+      : typeof record.TotalItems === 'number'
+        ? record.TotalItems
+        : null;
 
   return { items, totalItems };
 }
 
-async function listBunnyVideos(config: BunnyConfig): Promise<{ videos: BunnyVideo[]; scanned: number; skippedInvalid: number }> {
+async function listBunnyVideos(
+  config: BunnyConfig
+): Promise<{ videos: BunnyVideo[]; scanned: number; skippedInvalid: number }> {
   const videos: BunnyVideo[] = [];
   let scanned = 0;
   let skippedInvalid = 0;
@@ -171,7 +182,10 @@ async function findReferencedVideoIds(videoIds: string[]): Promise<Set<string>> 
   return referenced;
 }
 
-async function deleteBunnyVideo(config: BunnyConfig, videoId: string): Promise<'deleted' | 'already_missing'> {
+async function deleteBunnyVideo(
+  config: BunnyConfig,
+  videoId: string
+): Promise<'deleted' | 'already_missing'> {
   const response = await fetch(
     `${BUNNY_API_BASE}/library/${config.libraryId}/videos/${encodeURIComponent(videoId)}`,
     {
@@ -186,7 +200,9 @@ async function deleteBunnyVideo(config: BunnyConfig, videoId: string): Promise<'
   if (response.ok) return 'deleted';
 
   const body = await response.text().catch(() => '');
-  throw new Error(`Bunny delete API failed for ${videoId} (${response.status}): ${body.slice(0, 300)}`);
+  throw new Error(
+    `Bunny delete API failed for ${videoId} (${response.status}): ${body.slice(0, 300)}`
+  );
 }
 
 async function main() {
@@ -200,8 +216,12 @@ async function main() {
   console.log(`[bunny-orphan-cleanup] Grace period: ${graceHours}h`);
 
   const expiredBillingCleanup = await cleanupExpiredBillingWorkspaces({ dryRun });
-  console.log(`[bunny-orphan-cleanup] Expired owner workspaces scanned: ${expiredBillingCleanup.scanned}`);
-  console.log(`[bunny-orphan-cleanup] Expired owner workspaces deleted: ${expiredBillingCleanup.deleted}`);
+  console.log(
+    `[bunny-orphan-cleanup] Expired owner workspaces scanned: ${expiredBillingCleanup.scanned}`
+  );
+  console.log(
+    `[bunny-orphan-cleanup] Expired owner workspaces deleted: ${expiredBillingCleanup.deleted}`
+  );
 
   const { videos, scanned, skippedInvalid } = await listBunnyVideos(config);
   const eligible = videos.filter((video) => video.uploadedAt.getTime() <= cutoff);

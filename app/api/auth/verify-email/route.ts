@@ -7,26 +7,26 @@ import { logError } from '@/lib/logger';
 const TOKEN_REGEX = /^[0-9a-f]{64}$/;
 
 export async function GET(request: NextRequest) {
-    try {
-        // Rate-limit by IP to prevent token enumeration attacks.
-        const limited = await rateLimit(request, 'verify-email');
-        if (limited) return limited;
+  try {
+    // Rate-limit by IP to prevent token enumeration attacks.
+    const limited = await rateLimit(request, 'verify-email');
+    if (limited) return limited;
 
-        const token = request.nextUrl.searchParams.get('token');
+    const token = request.nextUrl.searchParams.get('token');
 
-        if (!token || !TOKEN_REGEX.test(token.trim())) {
-            return NextResponse.redirect(new URL('/login?error=InvalidVerificationToken', request.url));
-        }
-
-        const email = await consumeVerificationToken(token.trim());
-
-        if (!email) {
-            return NextResponse.redirect(new URL('/login?error=InvalidVerificationToken', request.url));
-        }
-
-        return NextResponse.redirect(new URL('/login?verified=true', request.url));
-    } catch (err) {
-        logError('Email verification error:', err);
-        return NextResponse.redirect(new URL('/login?error=VerificationFailed', request.url));
+    if (!token || !TOKEN_REGEX.test(token.trim())) {
+      return NextResponse.redirect(new URL('/login?error=InvalidVerificationToken', request.url));
     }
+
+    const email = await consumeVerificationToken(token.trim());
+
+    if (!email) {
+      return NextResponse.redirect(new URL('/login?error=InvalidVerificationToken', request.url));
+    }
+
+    return NextResponse.redirect(new URL('/login?verified=true', request.url));
+  } catch (err) {
+    logError('Email verification error:', err);
+    return NextResponse.redirect(new URL('/login?error=VerificationFailed', request.url));
+  }
 }

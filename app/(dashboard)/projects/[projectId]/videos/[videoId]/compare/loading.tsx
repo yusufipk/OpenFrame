@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton"
-import { Separator } from "@/components/ui/separator"
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
 
 function PlayerPanelSkeleton() {
   return (
@@ -12,7 +12,7 @@ function PlayerPanelSkeleton() {
         <Skeleton className="h-4 w-24 mx-auto" />
       </div>
     </div>
-  )
+  );
 }
 
 export default function CompareLoading() {
@@ -35,5 +35,5 @@ export default function CompareLoading() {
         <PlayerPanelSkeleton />
       </div>
     </div>
-  )
+  );
 }

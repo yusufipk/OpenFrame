@@ -50,7 +50,10 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function formatBunnyQualityLabel(level: { height?: number; bitrate?: number }, index: number): string {
+function formatBunnyQualityLabel(
+  level: { height?: number; bitrate?: number },
+  index: number
+): string {
   if (typeof level.height === 'number' && level.height > 0) {
     return `${level.height}p`;
   }
@@ -85,12 +88,9 @@ export function VideoPageContent({
   const timelineRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
-  const scheduleWatchProgressSaveRef = useRef<(input: {
-    progress: number;
-    duration?: number;
-    immediate?: boolean;
-    force?: boolean;
-  }) => void>(() => {});
+  const scheduleWatchProgressSaveRef = useRef<
+    (input: { progress: number; duration?: number; immediate?: boolean; force?: boolean }) => void
+  >(() => {});
 
   const {
     playingVoiceId,
@@ -208,13 +208,16 @@ export function VideoPageContent({
 
   // Cursor idle detection: hide overlay when cursor idle for 3s while playing
   // Memoize version selection handler to prevent recreating on each render
-  const handleVersionSelect = useCallback((versionId: string) => {
-    setActiveVersionId(versionId);
-  }, [setActiveVersionId]);
+  const handleVersionSelect = useCallback(
+    (versionId: string) => {
+      setActiveVersionId(versionId);
+    },
+    [setActiveVersionId]
+  );
 
   // Memoize toggle show resolved handler
   const handleToggleShowResolved = useCallback(() => {
-    setShowResolved(prev => !prev);
+    setShowResolved((prev) => !prev);
   }, []);
 
   const handleAssetMentionClick = useCallback((assetId: string) => {
@@ -258,9 +261,11 @@ export function VideoPageContent({
 
   // Memoize active version lookup to avoid recalculating on every render
   const activeVersion = useMemo(() => {
-    return video?.versions?.find((v) => v.id === activeVersionId) ||
+    return (
+      video?.versions?.find((v) => v.id === activeVersionId) ||
       video?.versions?.find((v) => v.isActive) ||
-      video?.versions?.[0];
+      video?.versions?.[0]
+    );
   }, [video?.versions, activeVersionId]);
   const activeProviderId = activeVersion?.providerId;
   const activeVersionDuration = activeVersion?.duration;
@@ -526,11 +531,15 @@ export function VideoPageContent({
   });
 
   const containerHeight = 'h-screen';
-  const backHref = mode === 'dashboard'
-    ? `/projects/${propProjectId}`
-    : (video?.projectId ? `/projects/${video.projectId}` : '/');
+  const backHref =
+    mode === 'dashboard'
+      ? `/projects/${propProjectId}`
+      : video?.projectId
+        ? `/projects/${video.projectId}`
+        : '/';
   const isBunnyVersion = activeVersion?.providerId === 'bunny';
-  const showBunnyProcessingOverlay = isBunnyVersion && bunnyPlaybackState === 'processing' && !isReady;
+  const showBunnyProcessingOverlay =
+    isBunnyVersion && bunnyPlaybackState === 'processing' && !isReady;
   const showBunnyErrorOverlay = isBunnyVersion && bunnyPlaybackState === 'error';
 
   const confirmGuestName = useCallback(() => {
@@ -592,34 +601,60 @@ export function VideoPageContent({
     }
   }, []);
 
-  const headerActions: VideoPageHeaderActions = useMemo(() => ({
-    onVersionSelect: handleVersionSelect,
-    onDeleteCurrentVersionClick: handleDeleteCurrentVersionClick,
-    onDownload: startDownload,
-    onOpenCompare: handleOpenCompare,
-    onCreateVersion: handleCreateVersion,
-  }), [handleVersionSelect, handleDeleteCurrentVersionClick, startDownload, handleOpenCompare, handleCreateVersion]);
+  const headerActions: VideoPageHeaderActions = useMemo(
+    () => ({
+      onVersionSelect: handleVersionSelect,
+      onDeleteCurrentVersionClick: handleDeleteCurrentVersionClick,
+      onDownload: startDownload,
+      onOpenCompare: handleOpenCompare,
+      onCreateVersion: handleCreateVersion,
+    }),
+    [
+      handleVersionSelect,
+      handleDeleteCurrentVersionClick,
+      startDownload,
+      handleOpenCompare,
+      handleCreateVersion,
+    ]
+  );
 
-  const commentsActions: VideoPageCommentsActions = useMemo(() => ({
-    onExportComments: exportComments,
-    onResolveComment: handleResolveComment,
-    onEditComment: handleEditComment,
-    onDeleteComment: handleDeleteComment,
-    onReplyComment: handleReplyComment,
-    onSubmitReplyWithMedia: submitReplyWithMedia,
-    onStartEditAnnotation: handleStartEditAnnotation,
-  }), [exportComments, handleResolveComment, handleEditComment, handleDeleteComment, handleReplyComment, submitReplyWithMedia, handleStartEditAnnotation]);
+  const commentsActions: VideoPageCommentsActions = useMemo(
+    () => ({
+      onExportComments: exportComments,
+      onResolveComment: handleResolveComment,
+      onEditComment: handleEditComment,
+      onDeleteComment: handleDeleteComment,
+      onReplyComment: handleReplyComment,
+      onSubmitReplyWithMedia: submitReplyWithMedia,
+      onStartEditAnnotation: handleStartEditAnnotation,
+    }),
+    [
+      exportComments,
+      handleResolveComment,
+      handleEditComment,
+      handleDeleteComment,
+      handleReplyComment,
+      submitReplyWithMedia,
+      handleStartEditAnnotation,
+    ]
+  );
 
-  const composerActions: VideoPageComposerActions = useMemo(() => ({
-    onSubmitCommentWithMedia: submitCommentWithMedia,
-    onAddComment: handleAddComment,
-    onPauseVideoForAnnotation: pauseVideoForAnnotation,
-  }), [submitCommentWithMedia, handleAddComment, pauseVideoForAnnotation]);
+  const composerActions: VideoPageComposerActions = useMemo(
+    () => ({
+      onSubmitCommentWithMedia: submitCommentWithMedia,
+      onAddComment: handleAddComment,
+      onPauseVideoForAnnotation: pauseVideoForAnnotation,
+    }),
+    [submitCommentWithMedia, handleAddComment, pauseVideoForAnnotation]
+  );
 
-  const compareActions: VideoPageCompareActions = useMemo(() => ({
-    onToggleVersion: toggleCompareVersion,
-    onCompare: handleCompareConfirm,
-  }), [toggleCompareVersion, handleCompareConfirm]);
+  const compareActions: VideoPageCompareActions = useMemo(
+    () => ({
+      onToggleVersion: toggleCompareVersion,
+      onCompare: handleCompareConfirm,
+    }),
+    [toggleCompareVersion, handleCompareConfirm]
+  );
 
   if (loading) {
     return (
@@ -662,7 +697,7 @@ export function VideoPageContent({
       onMouseLeave={() => isDragging && handleTimelineMouseUp()}
     >
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
-        <div className={cn("flex-1 w-full flex flex-col min-h-0", isFullscreenMode && "relative")}>
+        <div className={cn('flex-1 w-full flex flex-col min-h-0', isFullscreenMode && 'relative')}>
           <VideoPageHeader
             mode={mode}
             backHref={backHref}
@@ -835,7 +870,7 @@ export function VideoPageContent({
           onAssetMentionClick={handleAssetMentionClick}
           activePane={activeSidePane}
           setActivePane={setActiveSidePane}
-          assetsPane={(
+          assetsPane={
             <AssetsPane
               videoId={videoId}
               assets={assets}
@@ -855,8 +890,8 @@ export function VideoPageContent({
               highlightedAssetId={highlightedAssetId}
               onHighlightedAssetHandled={() => setHighlightedAssetId(null)}
             />
-          )}
-          composer={(
+          }
+          composer={
             <CommentComposer
               isRecording={isRecording}
               recordingTime={recordingTime}
@@ -895,15 +930,11 @@ export function VideoPageContent({
               pauseVideoForAnnotation={composerActions.onPauseVideoForAnnotation}
               assets={assets}
             />
-          )}
+          }
         />
-
       </div>
 
-      <ImagePreviewDialog
-        previewImage={previewImage}
-        onClose={() => setPreviewImage(null)}
-      />
+      <ImagePreviewDialog previewImage={previewImage} onClose={() => setPreviewImage(null)} />
 
       <CompareVersionsDialog
         open={showCompareDialog}
@@ -945,6 +976,6 @@ export function VideoPageContent({
           />
         </>
       ) : null}
-    </div >
+    </div>
   );
 }

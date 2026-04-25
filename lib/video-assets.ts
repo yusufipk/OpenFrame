@@ -9,8 +9,10 @@ import { validateShareLinkAccess } from '@/lib/share-links';
 const IMAGE_PROXY_PREFIX = '/api/upload/image/';
 const AUDIO_PROXY_PREFIX = '/api/upload/audio/';
 
-export const SAFE_IMAGE_PROXY_PATH = /^\/api\/upload\/image\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
-export const SAFE_AUDIO_PROXY_PATH = /^\/api\/upload\/audio\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+export const SAFE_IMAGE_PROXY_PATH =
+  /^\/api\/upload\/image\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+export const SAFE_AUDIO_PROXY_PATH =
+  /^\/api\/upload\/audio\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
 export const SAFE_BUNNY_VIDEO_ID = /^[A-Za-z0-9_-]{8,128}$/;
 
 export type VideoAssetAccessContext = {
@@ -38,7 +40,10 @@ export type VideoAssetAccessContext = {
   viewerGuestIdentityId: string | null;
 };
 
-export function sanitizeAssetDisplayName(value: string | null | undefined, fallback: string): string {
+export function sanitizeAssetDisplayName(
+  value: string | null | undefined,
+  fallback: string
+): string {
   const raw = typeof value === 'string' ? value : '';
   const normalized = raw
     .replace(/[\u0000-\u001F\u007F]/g, '')
@@ -89,15 +94,18 @@ export function mediaUrlToR2Key(url: string): string | null {
 
 export function canDeleteAssetForViewer(
   asset: Pick<VideoAsset, 'uploadedByUserId' | 'uploadedByGuestIdentityId'>,
-  viewer: Pick<VideoAssetAccessContext, 'canManageAssets' | 'viewerUserId' | 'viewerGuestIdentityId'>
+  viewer: Pick<
+    VideoAssetAccessContext,
+    'canManageAssets' | 'viewerUserId' | 'viewerGuestIdentityId'
+  >
 ): boolean {
   if (viewer.canManageAssets) return true;
   if (viewer.viewerUserId && asset.uploadedByUserId === viewer.viewerUserId) return true;
   if (
-    !viewer.viewerUserId
-    && viewer.viewerGuestIdentityId
-    && asset.uploadedByGuestIdentityId
-    && asset.uploadedByGuestIdentityId === viewer.viewerGuestIdentityId
+    !viewer.viewerUserId &&
+    viewer.viewerGuestIdentityId &&
+    asset.uploadedByGuestIdentityId &&
+    asset.uploadedByGuestIdentityId === viewer.viewerGuestIdentityId
   ) {
     return true;
   }
@@ -140,17 +148,25 @@ export async function getVideoAssetAccessContext(
   const shareSession = getShareSessionFromRequest(request, video.id);
   const shareAccess = shareSession
     ? await validateShareLinkAccess({
-      token: shareSession.token,
-      projectId: video.projectId,
-      videoId: video.id,
-      requiredPermission,
-      passwordVerified: shareSession.passwordVerified,
-    })
-    : { hasAccess: false, canComment: false, canDownload: false, allowGuests: false, requiresPassword: false, link: null };
+        token: shareSession.token,
+        projectId: video.projectId,
+        videoId: video.id,
+        requiredPermission,
+        passwordVerified: shareSession.passwordVerified,
+      })
+    : {
+        hasAccess: false,
+        canComment: false,
+        canDownload: false,
+        allowGuests: false,
+        requiresPassword: false,
+        link: null,
+      };
 
   const hasViewAccess = access.hasAccess || shareAccess.hasAccess;
   const canCommentWithMembership = !!session?.user?.id && access.hasAccess;
-  const canCommentWithShare = shareAccess.canComment && (session?.user?.id ? true : shareAccess.allowGuests);
+  const canCommentWithShare =
+    shareAccess.canComment && (session?.user?.id ? true : shareAccess.allowGuests);
   const canUploadAssets = canCommentWithMembership || canCommentWithShare;
   const canDownloadAssets = !!session?.user?.id && hasViewAccess;
 

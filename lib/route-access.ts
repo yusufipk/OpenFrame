@@ -21,7 +21,11 @@ function redirectForBilling() {
   redirect(BILLING_REDIRECT);
 }
 
-function ensureGuestPolicy(options: { userId?: string; intent: AccessIntent; allowPublicView: boolean }) {
+function ensureGuestPolicy(options: {
+  userId?: string;
+  intent: AccessIntent;
+  allowPublicView: boolean;
+}) {
   const { userId, intent, allowPublicView } = options;
   if (userId) return;
 
@@ -66,9 +70,7 @@ export async function requireAuthOrRedirect() {
   return session;
 }
 
-export async function requireBillingAccessOrRedirect(options?: {
-  userId?: string;
-}) {
+export async function requireBillingAccessOrRedirect(options?: { userId?: string }) {
   const resolvedUserId = options?.userId ?? (await auth())?.user?.id;
 
   if (!resolvedUserId) {
@@ -99,10 +101,7 @@ export async function hasCollaboratorBillingBackedAccess(userId: string) {
     db.workspace.count({
       where: {
         owner: buildBillingAccessWhereInput(now),
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
+        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
       },
     }),
     db.project.count({

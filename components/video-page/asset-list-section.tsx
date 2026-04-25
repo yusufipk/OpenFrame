@@ -68,9 +68,10 @@ export const AssetListSection = memo(function AssetListSection({
   return (
     <div className="space-y-2">
       {assets.map((asset) => {
-        const isBunnyProcessing = asset.provider === 'BUNNY'
-          && !!bunnyProcessingByAssetId[asset.id]
-          && !bunnyReadyByAssetId[asset.id];
+        const isBunnyProcessing =
+          asset.provider === 'BUNNY' &&
+          !!bunnyProcessingByAssetId[asset.id] &&
+          !bunnyReadyByAssetId[asset.id];
         return (
           <div
             key={asset.id}
@@ -96,22 +97,42 @@ export const AssetListSection = memo(function AssetListSection({
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                {asset.uploadedByUser?.name || asset.uploadedByGuestName || 'Unknown'} • {new Date(asset.createdAt).toLocaleDateString()}
+                {asset.uploadedByUser?.name || asset.uploadedByGuestName || 'Unknown'} •{' '}
+                {new Date(asset.createdAt).toLocaleDateString()}
               </p>
               <div className="pt-1 flex items-center gap-1">
                 <Button
                   size="icon"
                   variant="outline"
                   className="h-7 w-7"
-                  title={asset.kind === 'VIDEO' ? 'Play video' : asset.kind === 'AUDIO' ? 'Play recording' : 'View image'}
-                  aria-label={asset.kind === 'VIDEO' ? 'Play video' : asset.kind === 'AUDIO' ? 'Play recording' : 'View image'}
+                  title={
+                    asset.kind === 'VIDEO'
+                      ? 'Play video'
+                      : asset.kind === 'AUDIO'
+                        ? 'Play recording'
+                        : 'View image'
+                  }
+                  aria-label={
+                    asset.kind === 'VIDEO'
+                      ? 'Play video'
+                      : asset.kind === 'AUDIO'
+                        ? 'Play recording'
+                        : 'View image'
+                  }
                   onClick={() => onViewAsset(asset)}
                 >
-                  {asset.kind === 'IMAGE' ? <ImageIcon className="h-3 w-3" /> : asset.kind === 'AUDIO' ? <Volume2 className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                  {asset.kind === 'IMAGE' ? (
+                    <ImageIcon className="h-3 w-3" />
+                  ) : asset.kind === 'AUDIO' ? (
+                    <Volume2 className="h-3 w-3" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
                 </Button>
 
-                {canDownloadAssets && asset.provider !== 'YOUTUBE' && (
-                  asset.provider === 'BUNNY' && asset.kind !== 'AUDIO' ? (
+                {canDownloadAssets &&
+                  asset.provider !== 'YOUTUBE' &&
+                  (asset.provider === 'BUNNY' && asset.kind !== 'AUDIO' ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -122,7 +143,11 @@ export const AssetListSection = memo(function AssetListSection({
                           aria-label="Download asset"
                           disabled={activeDownloadAssetId === asset.id || isBunnyProcessing}
                         >
-                          {activeDownloadAssetId === asset.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                          {activeDownloadAssetId === asset.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Download className="h-3 w-3" />
+                          )}
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
@@ -146,10 +171,13 @@ export const AssetListSection = memo(function AssetListSection({
                       disabled={activeDownloadAssetId === asset.id || isBunnyProcessing}
                       onClick={() => onDownloadAsset(asset)}
                     >
-                      {activeDownloadAssetId === asset.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                      {activeDownloadAssetId === asset.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Download className="h-3 w-3" />
+                      )}
                     </Button>
-                  )
-                )}
+                  ))}
 
                 {asset.canDelete && (
                   <Button
@@ -161,7 +189,11 @@ export const AssetListSection = memo(function AssetListSection({
                     disabled={activeDeleteAssetId === asset.id}
                     onClick={() => onDeleteAsset(asset.id)}
                   >
-                    {activeDeleteAssetId === asset.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    {activeDeleteAssetId === asset.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
                   </Button>
                 )}
               </div>

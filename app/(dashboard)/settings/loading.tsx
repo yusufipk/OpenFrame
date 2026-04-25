@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardHeader, CardContent } from "@/components/ui/card"
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 
 function SettingsCardSkeleton({ rows }: { rows: number }) {
   return (
@@ -20,7 +20,7 @@ function SettingsCardSkeleton({ rows }: { rows: number }) {
         ))}
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export default function SettingsLoading() {
@@ -68,5 +68,5 @@ export default function SettingsLoading() {
         </div>
       </div>
     </div>
-  )
+  );
 }

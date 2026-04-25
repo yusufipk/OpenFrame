@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardContent } from "@/components/ui/card"
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent } from '@/components/ui/card';
 
 function VideoCardSkeleton() {
   return (
@@ -14,7 +14,7 @@ function VideoCardSkeleton() {
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export default function ProjectLoading() {
@@ -49,5 +49,5 @@ export default function ProjectLoading() {
         ))}
       </div>
     </div>
-  )
+  );
 }

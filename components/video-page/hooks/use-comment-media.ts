@@ -24,9 +24,10 @@ export function useCommentMedia() {
     const tick = () => {
       const audio = audioPlayerRef.current;
       if (audio) {
-        const dur = isFinite(audio.duration) && audio.duration > 0
-          ? audio.duration
-          : voiceKnownDurationRef.current;
+        const dur =
+          isFinite(audio.duration) && audio.duration > 0
+            ? audio.duration
+            : voiceKnownDurationRef.current;
         if (dur > 0) {
           setVoiceProgress((audio.currentTime / dur) * 100);
           setVoiceCurrentTime(audio.currentTime);
@@ -37,54 +38,57 @@ export function useCommentMedia() {
     voiceRafRef.current = requestAnimationFrame(tick);
   }, [stopVoiceTracking]);
 
-  const playVoice = useCallback((commentId: string, voiceUrl: string, knownDuration?: number) => {
-    if (playingVoiceId === commentId) {
+  const playVoice = useCallback(
+    (commentId: string, voiceUrl: string, knownDuration?: number) => {
+      if (playingVoiceId === commentId) {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.pause();
+          audioPlayerRef.current = null;
+        }
+        stopVoiceTracking();
+        setPlayingVoiceId(null);
+        setVoiceProgress(0);
+        setVoiceCurrentTime(0);
+        return;
+      }
+
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
-        audioPlayerRef.current = null;
       }
       stopVoiceTracking();
-      setPlayingVoiceId(null);
+
+      voiceKnownDurationRef.current = knownDuration || 0;
+      const audio = new Audio(voiceUrl);
+      audio.playbackRate = voicePlaybackRate;
+      audioPlayerRef.current = audio;
+      setPlayingVoiceId(commentId);
       setVoiceProgress(0);
       setVoiceCurrentTime(0);
-      return;
-    }
 
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-    }
-    stopVoiceTracking();
+      audio.onplay = () => {
+        startVoiceTracking();
+      };
 
-    voiceKnownDurationRef.current = knownDuration || 0;
-    const audio = new Audio(voiceUrl);
-    audio.playbackRate = voicePlaybackRate;
-    audioPlayerRef.current = audio;
-    setPlayingVoiceId(commentId);
-    setVoiceProgress(0);
-    setVoiceCurrentTime(0);
+      audio.onended = () => {
+        stopVoiceTracking();
+        setPlayingVoiceId(null);
+        setVoiceProgress(0);
+        setVoiceCurrentTime(0);
+        audioPlayerRef.current = null;
+      };
 
-    audio.onplay = () => {
-      startVoiceTracking();
-    };
+      audio.onerror = () => {
+        stopVoiceTracking();
+        setPlayingVoiceId(null);
+        setVoiceProgress(0);
+        setVoiceCurrentTime(0);
+        audioPlayerRef.current = null;
+      };
 
-    audio.onended = () => {
-      stopVoiceTracking();
-      setPlayingVoiceId(null);
-      setVoiceProgress(0);
-      setVoiceCurrentTime(0);
-      audioPlayerRef.current = null;
-    };
-
-    audio.onerror = () => {
-      stopVoiceTracking();
-      setPlayingVoiceId(null);
-      setVoiceProgress(0);
-      setVoiceCurrentTime(0);
-      audioPlayerRef.current = null;
-    };
-
-    void audio.play();
-  }, [playingVoiceId, voicePlaybackRate, startVoiceTracking, stopVoiceTracking]);
+      void audio.play();
+    },
+    [playingVoiceId, voicePlaybackRate, startVoiceTracking, stopVoiceTracking]
+  );
 
   const stopVoice = useCallback(() => {
     if (audioPlayerRef.current) {

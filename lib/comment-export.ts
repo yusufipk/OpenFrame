@@ -210,7 +210,9 @@ export function buildCommentsCsv(
         row.hasImageAttachment,
         row.hasAnnotation,
         row.createdAtIso,
-      ].map(csvCell).join(',')
+      ]
+        .map(csvCell)
+        .join(',')
     );
   }
 
@@ -242,7 +244,9 @@ export function buildCommentsPdf(
       `image=${row.hasImageAttachment ? 'yes' : 'no'}`,
       `annotation=${row.hasAnnotation ? 'yes' : 'no'}`,
       row.tag ? `tag=${row.tag}` : null,
-    ].filter((item): item is string => item !== null).join(', ');
+    ]
+      .filter((item): item is string => item !== null)
+      .join(', ');
 
     lines.push(base);
     lines.push(`   ${details}`);

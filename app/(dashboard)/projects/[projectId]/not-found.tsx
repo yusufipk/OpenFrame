@@ -1,6 +1,6 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { FolderX } from "lucide-react";
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { FolderX } from 'lucide-react';
 
 export default function ProjectNotFound() {
   return (
@@ -9,7 +9,8 @@ export default function ProjectNotFound() {
         <FolderX className="h-12 w-12 text-muted-foreground" />
         <h1 className="text-2xl font-bold">Project Not Found</h1>
         <p className="text-muted-foreground max-w-md">
-          The project you&apos;re looking for doesn&apos;t exist or you don&apos;t have access to it.
+          The project you&apos;re looking for doesn&apos;t exist or you don&apos;t have access to
+          it.
         </p>
       </div>
       <div className="flex gap-2">

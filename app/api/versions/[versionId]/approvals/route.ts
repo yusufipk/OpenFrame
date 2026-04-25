@@ -75,28 +75,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       include: {
         video: {
           include: {
-            project: { select: { id: true, name: true, ownerId: true, workspaceId: true, visibility: true } },
+            project: {
+              select: { id: true, name: true, ownerId: true, workspaceId: true, visibility: true },
+            },
           },
         },
       },
     });
     if (!version) return apiErrors.notFound('Version');
 
-    const access = await checkProjectAccess(version.video.project, session.user.id, { intent: 'manage' });
+    const access = await checkProjectAccess(version.video.project, session.user.id, {
+      intent: 'manage',
+    });
     if (!access.canEdit) return apiErrors.forbidden('Access denied');
 
-    const body = await request.json().catch(() => ({})) as { approverIds?: unknown; message?: unknown };
+    const body = (await request.json().catch(() => ({}))) as {
+      approverIds?: unknown;
+      message?: unknown;
+    };
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     if (message.length > 2000) {
       return apiErrors.badRequest('Message must be 2000 characters or fewer');
     }
 
     const rawApproverIds = Array.isArray(body.approverIds) ? body.approverIds : [];
-    const approverIds = Array.from(new Set(
-      rawApproverIds
-        .filter((approverId): approverId is string => typeof approverId === 'string' && approverId.trim().length > 0)
-        .map((approverId) => approverId.trim())
-    ));
+    const approverIds = Array.from(
+      new Set(
+        rawApproverIds
+          .filter(
+            (approverId): approverId is string =>
+              typeof approverId === 'string' && approverId.trim().length > 0
+          )
+          .map((approverId) => approverId.trim())
+      )
+    );
 
     if (approverIds.length === 0) {
       return apiErrors.badRequest('At least one approver is required');
@@ -114,43 +126,46 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('One or more approvers are not eligible for this project');
     }
 
-    const created = await db.$transaction(async (tx) => {
-      const existingPending = await tx.approvalRequest.findFirst({
-        where: { versionId, status: 'PENDING' },
-        select: { id: true },
-      });
-      if (existingPending) {
-        throw new Error('__PENDING_REQUEST_EXISTS__');
-      }
+    const created = await db.$transaction(
+      async (tx) => {
+        const existingPending = await tx.approvalRequest.findFirst({
+          where: { versionId, status: 'PENDING' },
+          select: { id: true },
+        });
+        if (existingPending) {
+          throw new Error('__PENDING_REQUEST_EXISTS__');
+        }
 
-      return tx.approvalRequest.create({
-        data: {
-          versionId,
-          requestedById: session.user.id,
-          message: message || null,
-          decisions: {
-            createMany: {
-              data: approverIds.map((approverId) => ({
-              approverId,
-              status: 'PENDING',
-              })),
+        return tx.approvalRequest.create({
+          data: {
+            versionId,
+            requestedById: session.user.id,
+            message: message || null,
+            decisions: {
+              createMany: {
+                data: approverIds.map((approverId) => ({
+                  approverId,
+                  status: 'PENDING',
+                })),
+              },
             },
           },
-        },
-        include: {
-          requestedBy: { select: { id: true, name: true, email: true, image: true } },
-          canceledBy: { select: { id: true, name: true, email: true, image: true } },
-          decisions: {
-            orderBy: { createdAt: 'asc' },
-            include: {
-              approver: { select: { id: true, name: true, email: true, image: true } },
+          include: {
+            requestedBy: { select: { id: true, name: true, email: true, image: true } },
+            canceledBy: { select: { id: true, name: true, email: true, image: true } },
+            decisions: {
+              orderBy: { createdAt: 'asc' },
+              include: {
+                approver: { select: { id: true, name: true, email: true, image: true } },
+              },
             },
           },
-        },
-      });
-    }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    });
+        });
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      }
+    );
 
     const requesterName = session.user.name || 'A team member';
     const versionLabel = version.versionLabel || `Version ${version.versionNumber}`;

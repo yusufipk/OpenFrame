@@ -77,12 +77,12 @@ export async function GET(
       const shareSession = getShareSessionFromRequest(request, video.id);
       const shareAccess = shareSession
         ? await validateShareLinkAccess({
-          token: shareSession.token,
-          projectId: video.projectId,
-          videoId: video.id,
-          requiredPermission: 'VIEW',
-          passwordVerified: shareSession.passwordVerified,
-        })
+            token: shareSession.token,
+            projectId: video.projectId,
+            videoId: video.id,
+            requiredPermission: 'VIEW',
+            passwordVerified: shareSession.passwordVerified,
+          })
         : null;
 
       if (!shareAccess?.hasAccess) {

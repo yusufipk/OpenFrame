@@ -34,7 +34,8 @@ export async function GET() {
         cancelAt: billing.subscription.cancelAt?.toISOString() ?? null,
         trialEndsAt: billing.subscription.trialEndsAt?.toISOString() ?? null,
         billingAccessEndedAt: billing.subscription.billingAccessEndedAt?.toISOString() ?? null,
-        storageCleanupEligibleAt: billing.subscription.storageCleanupEligibleAt?.toISOString() ?? null,
+        storageCleanupEligibleAt:
+          billing.subscription.storageCleanupEligibleAt?.toISOString() ?? null,
       },
       workspaceCreation: billing.workspaceCreation,
     });

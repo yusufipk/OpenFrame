@@ -24,7 +24,12 @@ interface Workspace {
   name: string;
 }
 
-const visibilityOptions: { value: Visibility; label: string; description: string; icon: React.ReactNode }[] = [
+const visibilityOptions: {
+  value: Visibility;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+}[] = [
   {
     value: 'PRIVATE',
     label: 'Private',
@@ -71,7 +76,7 @@ export default function NewProjectPage() {
           setWorkspaces(workspacesData);
           // Auto-select if only one workspace and none preselected
           if (!preselectedWorkspace && workspacesData.length === 1) {
-            setFormData(prev => ({ ...prev, workspaceId: workspacesData[0].id }));
+            setFormData((prev) => ({ ...prev, workspaceId: workspacesData[0].id }));
           }
         }
       } catch {
@@ -160,7 +165,7 @@ export default function NewProjectPage() {
                 ) : (
                   <Select
                     value={formData.workspaceId}
-                    onValueChange={(v) => setFormData(prev => ({ ...prev, workspaceId: v }))}
+                    onValueChange={(v) => setFormData((prev) => ({ ...prev, workspaceId: v }))}
                   >
                     <SelectTrigger className="h-11">
                       <SelectValue placeholder="Select a workspace" />
@@ -187,7 +192,7 @@ export default function NewProjectPage() {
                   id="name"
                   placeholder="e.g. Product Demo Q1"
                   value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                   required
                   disabled={isLoading}
                   className="h-11"
@@ -203,7 +208,9 @@ export default function NewProjectPage() {
                   id="description"
                   placeholder="Brief description of what this project is about..."
                   value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, description: e.target.value }))
+                  }
                   rows={3}
                   disabled={isLoading}
                   className="resize-none"
@@ -217,29 +224,34 @@ export default function NewProjectPage() {
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, visibility: option.value }))}
+                      onClick={() => setFormData((prev) => ({ ...prev, visibility: option.value }))}
                       disabled={isLoading}
-                      className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${formData.visibility === option.value
+                      className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                        formData.visibility === option.value
                           ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                           : 'border-border hover:border-border/80 hover:bg-accent/50'
-                        }`}
+                      }`}
                     >
-                      <div className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${formData.visibility === option.value
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground'
-                        }`}>
+                      <div
+                        className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
+                          formData.visibility === option.value
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
                         {option.icon}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-medium">{option.label}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {option.description}
-                        </div>
+                        <div className="text-sm text-muted-foreground">{option.description}</div>
                       </div>
-                      <div className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${formData.visibility === option.value
-                          ? 'border-primary bg-primary'
-                          : 'border-muted-foreground/30'
-                        }`}>
+                      <div
+                        className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          formData.visibility === option.value
+                            ? 'border-primary bg-primary'
+                            : 'border-muted-foreground/30'
+                        }`}
+                      >
                         {formData.visibility === option.value && (
                           <div className="w-2 h-2 rounded-full bg-primary-foreground" />
                         )}

@@ -28,7 +28,11 @@ export function useWatchProgress({
   const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressWriteInFlightRef = useRef(false);
-  const pendingProgressPayloadRef = useRef<{ progress: number; duration: number; force: boolean } | null>(null);
+  const pendingProgressPayloadRef = useRef<{
+    progress: number;
+    duration: number;
+    force: boolean;
+  } | null>(null);
   const lastSavedProgressRef = useRef<number>(0);
   const lastPathnameRef = useRef<string>(pathname);
 
@@ -69,51 +73,49 @@ export function useWatchProgress({
     }
   }, [isAuthenticated, activeVersionId, videoId]);
 
-  const scheduleWatchProgressSave = useCallback((input: {
-    progress: number;
-    duration?: number;
-    immediate?: boolean;
-    force?: boolean;
-  }) => {
-    if (!isAuthenticated || !activeVersionId) return;
+  const scheduleWatchProgressSave = useCallback(
+    (input: { progress: number; duration?: number; immediate?: boolean; force?: boolean }) => {
+      if (!isAuthenticated || !activeVersionId) return;
 
-    const progress = Math.max(0, input.progress);
-    if (progress <= 0) return;
+      const progress = Math.max(0, input.progress);
+      if (progress <= 0) return;
 
-    const duration = Math.max(0, input.duration ?? videoDurationRef.current ?? 0);
-    const force = input.force ?? false;
+      const duration = Math.max(0, input.duration ?? videoDurationRef.current ?? 0);
+      const force = input.force ?? false;
 
-    if (!force && Math.abs(progress - lastSavedProgressRef.current) < 2) {
-      return;
-    }
+      if (!force && Math.abs(progress - lastSavedProgressRef.current) < 2) {
+        return;
+      }
 
-    const existingPayload = pendingProgressPayloadRef.current;
-    pendingProgressPayloadRef.current = existingPayload
-      ? {
-          progress: Math.max(existingPayload.progress, progress),
-          duration: Math.max(existingPayload.duration, duration),
-          force: existingPayload.force || force,
+      const existingPayload = pendingProgressPayloadRef.current;
+      pendingProgressPayloadRef.current = existingPayload
+        ? {
+            progress: Math.max(existingPayload.progress, progress),
+            duration: Math.max(existingPayload.duration, duration),
+            force: existingPayload.force || force,
+          }
+        : { progress, duration, force };
+
+      if (input.immediate) {
+        if (progressDebounceTimerRef.current) {
+          clearTimeout(progressDebounceTimerRef.current);
+          progressDebounceTimerRef.current = null;
         }
-      : { progress, duration, force };
+        void flushScheduledWatchProgress();
+        return;
+      }
 
-    if (input.immediate) {
       if (progressDebounceTimerRef.current) {
         clearTimeout(progressDebounceTimerRef.current);
-        progressDebounceTimerRef.current = null;
       }
-      void flushScheduledWatchProgress();
-      return;
-    }
 
-    if (progressDebounceTimerRef.current) {
-      clearTimeout(progressDebounceTimerRef.current);
-    }
-
-    progressDebounceTimerRef.current = setTimeout(() => {
-      progressDebounceTimerRef.current = null;
-      void flushScheduledWatchProgress();
-    }, 800);
-  }, [isAuthenticated, activeVersionId, flushScheduledWatchProgress]);
+      progressDebounceTimerRef.current = setTimeout(() => {
+        progressDebounceTimerRef.current = null;
+        void flushScheduledWatchProgress();
+      }, 800);
+    },
+    [isAuthenticated, activeVersionId, flushScheduledWatchProgress]
+  );
 
   useEffect(() => {
     return () => {
@@ -138,28 +140,31 @@ export function useWatchProgress({
     }
   }, [videoId, activeVersionId]);
 
-  const loadWatchProgress = useCallback(async (showPrompt = true) => {
-    if (!isAuthenticated || !activeVersionId) return;
+  const loadWatchProgress = useCallback(
+    async (showPrompt = true) => {
+      if (!isAuthenticated || !activeVersionId) return;
 
-    setSavedProgress(null);
-    setShowResumePrompt(false);
+      setSavedProgress(null);
+      setShowResumePrompt(false);
 
-    try {
-      const res = await fetch(`/api/watch/${videoId}/progress`, { cache: 'no-store' });
-      if (res.ok) {
-        const response = await res.json();
-        const progress = response.data?.progress || 0;
-        const percentage = response.data?.percentage || 0;
+      try {
+        const res = await fetch(`/api/watch/${videoId}/progress`, { cache: 'no-store' });
+        if (res.ok) {
+          const response = await res.json();
+          const progress = response.data?.progress || 0;
+          const percentage = response.data?.percentage || 0;
 
-        if (showPrompt && percentage > 5 && percentage < 95) {
-          setSavedProgress(progress);
-          setShowResumePrompt(true);
+          if (showPrompt && percentage > 5 && percentage < 95) {
+            setSavedProgress(progress);
+            setShowResumePrompt(true);
+          }
         }
+      } catch (err) {
+        console.error('Error loading watch progress:', err);
       }
-    } catch (err) {
-      console.error('Error loading watch progress:', err);
-    }
-  }, [isAuthenticated, activeVersionId, videoId]);
+    },
+    [isAuthenticated, activeVersionId, videoId]
+  );
 
   useEffect(() => {
     loadWatchProgress();
@@ -194,7 +199,14 @@ export function useWatchProgress({
         progressSaveTimerRef.current = null;
       }
     };
-  }, [isAuthenticated, isReady, videoDuration, activeVersionId, scheduleWatchProgressSave, playerRef]);
+  }, [
+    isAuthenticated,
+    isReady,
+    videoDuration,
+    activeVersionId,
+    scheduleWatchProgressSave,
+    playerRef,
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -211,11 +223,16 @@ export function useWatchProgress({
           clearTimeout(progressDebounceTimerRef.current);
           progressDebounceTimerRef.current = null;
         }
-        const data = new Blob([JSON.stringify({
-          progress: finalProgress,
-          duration: finalDuration,
-          versionId: activeVersionId,
-        })], { type: 'application/json' });
+        const data = new Blob(
+          [
+            JSON.stringify({
+              progress: finalProgress,
+              duration: finalDuration,
+              versionId: activeVersionId,
+            }),
+          ],
+          { type: 'application/json' }
+        );
         navigator.sendBeacon(`/api/watch/${videoId}/progress`, data);
       }
     };
@@ -240,7 +257,15 @@ export function useWatchProgress({
       window.removeEventListener('beforeunload', saveProgressOnLeave);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isAuthenticated, currentTime, videoDuration, activeVersionId, videoId, scheduleWatchProgressSave, playerRef]);
+  }, [
+    isAuthenticated,
+    currentTime,
+    videoDuration,
+    activeVersionId,
+    videoId,
+    scheduleWatchProgressSave,
+    playerRef,
+  ]);
 
   const handleResumeFromSaved = useCallback(() => {
     if (savedProgress !== null && playerRef.current) {

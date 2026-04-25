@@ -55,7 +55,11 @@ export function GuestGate({ children }: { children: ReactNode }) {
             }}
             autoFocus
           />
-          <Button className="w-full" disabled={!guestName.trim() || guestName.trim().length > 100} onClick={confirm}>
+          <Button
+            className="w-full"
+            disabled={!guestName.trim() || guestName.trim().length > 100}
+            onClick={confirm}
+          >
             Continue
           </Button>
         </div>

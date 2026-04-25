@@ -151,7 +151,9 @@ export function MembersManagementPage({
       }
 
       if (data.user) {
-        setSuccess(`Invited ${data.user.name || data.user.email || inviteEmail} as ${inviteRole.toLowerCase()}`);
+        setSuccess(
+          `Invited ${data.user.name || data.user.email || inviteEmail} as ${inviteRole.toLowerCase()}`
+        );
       } else {
         setSuccess(data.message || `Invitation sent to ${inviteEmail}`);
       }
@@ -267,7 +269,9 @@ export function MembersManagementPage({
         <CardContent>
           <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3 sm:items-end">
             <div className="w-full sm:flex-1">
-              <Label htmlFor="email" className="mb-2 block">Email Address</Label>
+              <Label htmlFor="email" className="mb-2 block">
+                Email Address
+              </Label>
               <Input
                 id="email"
                 type="email"
@@ -280,7 +284,10 @@ export function MembersManagementPage({
             </div>
             <div className="w-full sm:w-40">
               <Label className="mb-2 block">Role</Label>
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'ADMIN' | 'COMMENTATOR')}>
+              <Select
+                value={inviteRole}
+                onValueChange={(v) => setInviteRole(v as 'ADMIN' | 'COMMENTATOR')}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -341,11 +348,16 @@ export function MembersManagementPage({
           )}
 
           {members.map((member) => (
-            <div key={member.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0 p-3 rounded-lg border">
+            <div
+              key={member.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0 p-3 rounded-lg border"
+            >
               <div className="flex items-center gap-3">
                 <Avatar className="h-9 w-9">
                   <AvatarImage src={member.user.image ?? undefined} />
-                  <AvatarFallback>{member.user.name?.charAt(0).toUpperCase() ?? 'U'}</AvatarFallback>
+                  <AvatarFallback>
+                    {member.user.name?.charAt(0).toUpperCase() ?? 'U'}
+                  </AvatarFallback>
                 </Avatar>
                 <div>
                   <p className="text-sm font-medium">{member.user.name || 'Unnamed'}</p>
@@ -353,10 +365,7 @@ export function MembersManagementPage({
                 </div>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Select
-                  value={member.role}
-                  onValueChange={(v) => handleRoleChange(member.id, v)}
-                >
+                <Select value={member.role} onValueChange={(v) => handleRoleChange(member.id, v)}>
                   <SelectTrigger className="w-full sm:w-36 h-8">
                     <SelectValue />
                   </SelectTrigger>
@@ -401,17 +410,19 @@ export function MembersManagementPage({
             <Clock3 className="h-5 w-5" />
             Pending Invitations
           </CardTitle>
-          <CardDescription>
-            Invitations that were sent but not accepted yet.
-          </CardDescription>
+          <CardDescription>Invitations that were sent but not accepted yet.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {pendingInvitations.map((invitation) => (
-            <div key={invitation.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-lg border">
+            <div
+              key={invitation.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-lg border"
+            >
               <div>
                 <p className="text-sm font-medium">{invitation.email}</p>
                 <p className="text-xs text-muted-foreground">
-                  {invitation.role === 'ADMIN' ? 'Admin' : 'Commentator'} · Sent by {invitation.invitedBy.name || invitation.invitedBy.email || 'Unknown'}
+                  {invitation.role === 'ADMIN' ? 'Admin' : 'Commentator'} · Sent by{' '}
+                  {invitation.invitedBy.name || invitation.invitedBy.email || 'Unknown'}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Expires {new Date(invitation.expiresAt).toLocaleString()}

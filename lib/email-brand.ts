@@ -63,11 +63,15 @@ export function brandedEmailTemplate(
           ${body}
         </td></tr>
 
-        ${(footerText || (footerLinkText && footerLinkUrl)) ? `
+        ${
+          footerText || (footerLinkText && footerLinkUrl)
+            ? `
         <tr><td style="padding:20px 0 0;text-align:center;">
           ${footerText ? `<p style="margin:0 0 6px;font-size:11px;color:${EMAIL_COLORS.textDim};">${footerText}</p>` : ''}
-          ${(footerLinkText && footerLinkUrl) ? `<a href="${escapeAttr(footerLinkUrl)}" style="font-size:11px;color:${EMAIL_COLORS.accent};text-decoration:underline;">${escapeHtml(footerLinkText)}</a>` : ''}
-        </td></tr>` : ''}
+          ${footerLinkText && footerLinkUrl ? `<a href="${escapeAttr(footerLinkUrl)}" style="font-size:11px;color:${EMAIL_COLORS.accent};text-decoration:underline;">${escapeHtml(footerLinkText)}</a>` : ''}
+        </td></tr>`
+            : ''
+        }
       </table>
     </td></tr>
   </table>

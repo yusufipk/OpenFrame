@@ -33,14 +33,16 @@ function signPayload(payload: string, secret: string): string {
 function isValidPayload(value: unknown): value is BunnyUploadTokenPayload {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Partial<BunnyUploadTokenPayload>;
-  return payload.typ === BUNNY_UPLOAD_TOKEN_TYPE
-    && typeof payload.uid === 'string'
-    && typeof payload.pid === 'string'
-    && typeof payload.vid === 'string'
-    && typeof payload.iat === 'number'
-    && Number.isFinite(payload.iat)
-    && typeof payload.exp === 'number'
-    && Number.isFinite(payload.exp);
+  return (
+    payload.typ === BUNNY_UPLOAD_TOKEN_TYPE &&
+    typeof payload.uid === 'string' &&
+    typeof payload.pid === 'string' &&
+    typeof payload.vid === 'string' &&
+    typeof payload.iat === 'number' &&
+    Number.isFinite(payload.iat) &&
+    typeof payload.exp === 'number' &&
+    Number.isFinite(payload.exp)
+  );
 }
 
 export function createBunnyUploadToken(
@@ -86,9 +88,11 @@ export function verifyBunnyUploadToken(token: string, subject: BunnyUploadTokenS
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) return false;
 
-    return payload.uid === subject.userId
-      && payload.pid === subject.projectId
-      && payload.vid === subject.videoId;
+    return (
+      payload.uid === subject.userId &&
+      payload.pid === subject.projectId &&
+      payload.vid === subject.videoId
+    );
   } catch {
     return false;
   }

@@ -7,11 +7,8 @@ interface Window {
 
 declare namespace YT {
   class Player {
-    constructor(
-      elementId: string | HTMLElement | null,
-      options?: PlayerOptions
-    );
-    
+    constructor(elementId: string | HTMLElement | null, options?: PlayerOptions);
+
     playVideo(): void;
     pauseVideo(): void;
     stopVideo(): void;

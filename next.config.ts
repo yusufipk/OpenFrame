@@ -1,5 +1,5 @@
-import type { NextConfig } from "next";
-import type { RemotePattern } from "next/dist/shared/lib/image-config";
+import type { NextConfig } from 'next';
+import type { RemotePattern } from 'next/dist/shared/lib/image-config';
 
 function resolveBunnyCdnHostname(): string | null {
   const raw = process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL;

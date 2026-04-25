@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/ui/skeleton"
-import { Separator } from "@/components/ui/separator"
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
 
 function CommentSkeleton() {
   return (
@@ -14,7 +14,7 @@ function CommentSkeleton() {
       <Skeleton className="h-4 w-full mb-1" />
       <Skeleton className="h-4 w-2/3" />
     </div>
-  )
+  );
 }
 
 export default function WatchLoading() {
@@ -77,5 +77,5 @@ export default function WatchLoading() {
         </div>
       </div>
     </div>
-  )
+  );
 }

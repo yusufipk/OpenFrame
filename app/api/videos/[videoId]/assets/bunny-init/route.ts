@@ -43,12 +43,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const shareSession = getShareSessionFromRequest(request, context.video.id);
     if (!context.viewerUserId) {
-      const quotaError = await enforceGuestUploadQuota(request, context.video.id, 'bunny', shareSession?.token ?? null);
+      const quotaError = await enforceGuestUploadQuota(
+        request,
+        context.video.id,
+        'bunny',
+        shareSession?.token ?? null
+      );
       if (quotaError) return quotaError;
     }
 
     const apiKey = process.env.BUNNY_STREAM_API_KEY;
-    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || process.env.NEXT_PUBLIC_BUNNY_STREAM_LIBRARY_ID;
+    const libraryId =
+      process.env.BUNNY_STREAM_LIBRARY_ID || process.env.NEXT_PUBLIC_BUNNY_STREAM_LIBRARY_ID;
     if (!apiKey || !libraryId) {
       return apiErrors.internalError('Bunny Stream is not configured correctly');
     }
@@ -81,23 +87,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     let uploadToken = '';
     if (context.viewerUserId) {
-      uploadToken = createBunnyUploadToken({
-        userId: context.viewerUserId,
-        projectId: context.video.projectId,
-        videoId: bunnyVideoId,
-      }, 3600);
+      uploadToken = createBunnyUploadToken(
+        {
+          userId: context.viewerUserId,
+          projectId: context.video.projectId,
+          videoId: bunnyVideoId,
+        },
+        3600
+      );
     } else {
       const expectedContext = deriveGuestUploadContext(request, shareSession?.token ?? null);
       if (!expectedContext) {
         return apiErrors.forbidden('Missing trusted client IP header');
       }
 
-      uploadToken = createGuestUploadToken({
-        projectId: context.video.projectId,
-        videoId: context.video.id,
-        intent: 'bunny',
-        context: expectedContext,
-      }, 3600);
+      uploadToken = createGuestUploadToken(
+        {
+          projectId: context.video.projectId,
+          videoId: context.video.id,
+          intent: 'bunny',
+          context: expectedContext,
+        },
+        3600
+      );
     }
 
     const response = successResponse({

@@ -148,9 +148,7 @@ export default function WorkspaceSettingsPageClient({
 
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Workspace Settings</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage workspace configuration
-        </p>
+        <p className="text-muted-foreground mt-1">Manage workspace configuration</p>
       </div>
 
       <Card className="mb-8">
@@ -215,9 +213,7 @@ export default function WorkspaceSettingsPageClient({
           <Card className="border-destructive/50">
             <CardHeader>
               <CardTitle className="text-destructive">Danger Zone</CardTitle>
-              <CardDescription>
-                Irreversible actions. Proceed with caution.
-              </CardDescription>
+              <CardDescription>Irreversible actions. Proceed with caution.</CardDescription>
             </CardHeader>
             <CardContent>
               <AlertDialog>
@@ -234,11 +230,13 @@ export default function WorkspaceSettingsPageClient({
                       <div className="space-y-4">
                         <p>
                           This will permanently delete this workspace and everything inside it
-                          (projects, videos, comments, images, and voice notes). This action cannot be undone.
+                          (projects, videos, comments, images, and voice notes). This action cannot
+                          be undone.
                         </p>
                         <div className="space-y-2">
                           <Label htmlFor="delete-workspace-confirm">
-                            Type <strong className="text-foreground">{workspace.name}</strong> to confirm
+                            Type <strong className="text-foreground">{workspace.name}</strong> to
+                            confirm
                           </Label>
                           <Input
                             id="delete-workspace-confirm"

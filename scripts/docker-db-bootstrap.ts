@@ -104,11 +104,15 @@ async function main() {
     const failedMigrations = migrationRows.filter((row) => !row.finished_at && !row.rolled_back_at);
     const shouldBootstrapFreshSchema = !hasCoreTables;
 
-    console.log(`Detected public tables: ${appTables.length > 0 ? appTables.join(', ') : '(none)'}`);
+    console.log(
+      `Detected public tables: ${appTables.length > 0 ? appTables.join(', ') : '(none)'}`
+    );
 
     if (shouldBootstrapFreshSchema) {
       if (failedMigrations.length > 0) {
-        console.log('Detected failed migration state on a fresh database. Marking failed migrations as rolled back.');
+        console.log(
+          'Detected failed migration state on a fresh database. Marking failed migrations as rolled back.'
+        );
         for (const migration of failedMigrations) {
           await runPrisma(['migrate', 'resolve', '--rolled-back', migration.migration_name]);
         }

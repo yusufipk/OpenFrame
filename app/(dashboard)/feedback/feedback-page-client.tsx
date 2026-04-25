@@ -10,7 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type FeedbackCategory = 'BUG' | 'FEATURE' | 'OTHER';
 type TabValue = 'feedback' | 'review';
@@ -70,7 +76,10 @@ export default function FeedbackPage() {
     for (const file of allowedFiles) {
       const isImage = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type);
       if (!isImage) {
-        setStatus({ type: 'error', message: 'Unsupported screenshot format. Use JPG, PNG, WEBP, or GIF.' });
+        setStatus({
+          type: 'error',
+          message: 'Unsupported screenshot format. Use JPG, PNG, WEBP, or GIF.',
+        });
         continue;
       }
       if (file.size > 10 * 1024 * 1024) {
@@ -92,7 +101,9 @@ export default function FeedbackPage() {
     const targetUrl = feedbackScreenshotPreviewUrls[index];
     if (targetUrl) URL.revokeObjectURL(targetUrl);
     setFeedbackScreenshotFiles((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
-    setFeedbackScreenshotPreviewUrls((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+    setFeedbackScreenshotPreviewUrls((prev) =>
+      prev.filter((_, currentIndex) => currentIndex !== index)
+    );
   };
 
   const clearFeedbackScreenshots = () => {
@@ -169,7 +180,10 @@ export default function FeedbackPage() {
       setReviewMessage('');
       setReviewRating('5');
       setAllowShowcase(false);
-      setStatus({ type: 'success', message: 'Review submitted. Thank you for sharing your experience.' });
+      setStatus({
+        type: 'success',
+        message: 'Review submitted. Thank you for sharing your experience.',
+      });
     } catch {
       setStatus({ type: 'error', message: 'Failed to submit review' });
     } finally {
@@ -180,7 +194,10 @@ export default function FeedbackPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] px-4 py-10">
       <div className="mx-auto w-full max-w-3xl space-y-6">
-        <Link href="/dashboard" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="mr-1 h-4 w-4" />
           Back to Dashboard
         </Link>
@@ -189,7 +206,8 @@ export default function FeedbackPage() {
           <CardHeader>
             <CardTitle className="text-2xl">Feedback & Review</CardTitle>
             <CardDescription>
-              Send product feedback, report bugs, or share a review we can feature on the landing page.
+              Send product feedback, report bugs, or share a review we can feature on the landing
+              page.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -205,7 +223,11 @@ export default function FeedbackPage() {
               </div>
             )}
 
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabValue)} className="w-full">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as TabValue)}
+              className="w-full"
+            >
               <TabsList className="w-full">
                 <TabsTrigger value="feedback" className="gap-1.5">
                   <Bug className="h-3.5 w-3.5" />
@@ -308,7 +330,11 @@ export default function FeedbackPage() {
                   </div>
 
                   <Button type="submit" disabled={isSubmittingFeedback}>
-                    {isSubmittingFeedback ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
+                    {isSubmittingFeedback ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="mr-2 h-4 w-4" />
+                    )}
                     Submit Feedback
                   </Button>
                 </form>
@@ -332,7 +358,11 @@ export default function FeedbackPage() {
 
                   <div className="space-y-2">
                     <Label>Rating</Label>
-                    <Select value={reviewRating} onValueChange={setReviewRating} disabled={isSubmittingReview}>
+                    <Select
+                      value={reviewRating}
+                      onValueChange={setReviewRating}
+                      disabled={isSubmittingReview}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -369,11 +399,17 @@ export default function FeedbackPage() {
                       onChange={(event) => setAllowShowcase(event.target.checked)}
                       disabled={isSubmittingReview}
                     />
-                    <span>I allow OpenFrame to potentially showcase this review on the landing page.</span>
+                    <span>
+                      I allow OpenFrame to potentially showcase this review on the landing page.
+                    </span>
                   </label>
 
                   <Button type="submit" disabled={isSubmittingReview}>
-                    {isSubmittingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquareQuote className="mr-2 h-4 w-4" />}
+                    {isSubmittingReview ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <MessageSquareQuote className="mr-2 h-4 w-4" />
+                    )}
                     Submit Review
                   </Button>
                 </form>

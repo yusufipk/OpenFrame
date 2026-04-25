@@ -22,9 +22,7 @@ export default function SignOutPage() {
             <LogOut className="h-6 w-6 text-muted-foreground" />
           </div>
           <CardTitle className="text-2xl">Sign out</CardTitle>
-          <CardDescription>
-            Are you sure you want to sign out?
-          </CardDescription>
+          <CardDescription>Are you sure you want to sign out?</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <Button onClick={handleSignOut} disabled={loading} className="w-full">

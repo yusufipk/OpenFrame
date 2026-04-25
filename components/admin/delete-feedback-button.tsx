@@ -64,7 +64,11 @@ export function DeleteFeedbackButton({
     <AlertDialog>
       <AlertDialogTrigger asChild>
         <Button variant={variant} size={size} disabled={isDeleting}>
-          {isDeleting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+          {isDeleting ? (
+            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="mr-1.5 h-4 w-4" />
+          )}
           Delete
         </Button>
       </AlertDialogTrigger>
