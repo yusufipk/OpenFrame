@@ -116,6 +116,54 @@ The Docker template already trusts `localhost:3000` for Auth.js via `AUTH_TRUST_
 - MinIO objects are stored in the `minio-data` Docker volume.
 - After updating the repo, rebuild and restart with `docker compose up --build`.
 
+### Use The Published Image
+
+If you do not want to build OpenFrame locally, use the published Docker Hub image instead.
+
+Pull a specific version:
+
+```bash
+podman pull docker.io/yusufipk/openframe:v0.1.0
+```
+
+You can also inspect these tags on Docker Hub:
+
+- `yusufipk/openframe:v0.1.0` for a fixed release
+- `yusufipk/openframe:latest` for the newest build from the `main` branch
+- `yusufipk/openframe:sha-<commit>` for a commit-pinned image
+
+Use `latest` if you want the newest mainline build. For real deployments, prefer a fixed version tag such as `v0.1.0` instead of `latest`.
+
+To use the published image in Compose, open `docker-compose.yml` and change only the `app` service from a local `build:` block to an `image:` reference such as `docker.io/yusufipk/openframe:v0.1.0`. Keep the rest of the service and the `postgres` and `minio` services unchanged.
+
+Replace this:
+
+```yaml
+app:
+  build:
+    context: .
+    dockerfile: Dockerfile
+```
+
+With this:
+
+```yaml
+app:
+  image: docker.io/yusufipk/openframe:v0.1.0
+```
+
+If the `build:` block is still present, `podman compose up -d` will try to build locally from the current directory instead of pulling the published image.
+
+Then start the stack normally:
+
+```bash
+podman compose up -d
+```
+
+Open `http://localhost:3000/login` after the containers become healthy.
+
+To verify a published image manually, point your Compose app service at a fixed image tag such as `docker.io/yusufipk/openframe:v0.1.0`, start the stack with `podman compose up -d`, and open `http://localhost:3000/login` after the containers become healthy.
+
 ### Optional Integrations And Feature Flags
 
 The Docker example disables hosted-only features by default:
