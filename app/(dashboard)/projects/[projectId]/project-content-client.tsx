@@ -82,12 +82,6 @@ export function ProjectContentClient({
     [searchParams]
   );
 
-  const sortedVideos = [...localVideos].sort((a, b) => {
-    const dateA = new Date(a.updatedAt).getTime();
-    const dateB = new Date(b.updatedAt).getTime();
-    return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-  });
-
   const handleVideoDeleted = useCallback((videoId: string) => {
     setLocalVideos((prev) => prev.filter((video) => video.id !== videoId));
   }, []);
@@ -191,7 +185,7 @@ export function ProjectContentClient({
       {/* Videos Grid */}
       {localVideos.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {sortedVideos.map((video) => (
+          {localVideos.map((video) => (
             <VideoCard
               key={video.id}
               video={video}

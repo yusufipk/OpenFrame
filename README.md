@@ -1,6 +1,6 @@
 # OpenFrame
 
-OpenFrame is an open source video review and approval platform for teams that need clear feedback, version control, and client-friendly review links in one place. It supports collaborative review workflows out of the box and can be self-hosted with the Docker setup included in this repository.
+OpenFrame is a fair source video review and approval platform for teams that need clear feedback, version control, and client-friendly review links in one place. It supports collaborative review workflows out of the box and can be self-hosted with the Docker setup included in this repository.
 
 Prefer not to self-host? You can try OpenFrame at [open-frame.net](https://open-frame.net) with a 7-day free trial, then continue on the hosted plan starting at $10.
 
@@ -151,3 +151,11 @@ bun run check
 ```
 
 Feature flags and self-hosting environment variables are documented in `.env.example` and `.env.docker.example`.
+
+## Contributing
+
+Contributions are welcome.
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for workflow, conventions, and PR requirements.
+- Use [SECURITY.md](SECURITY.md) for responsible vulnerability reporting.
+- Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) in all project interactions.
