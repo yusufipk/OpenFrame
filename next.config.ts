@@ -21,6 +21,7 @@ const cdnOrigin = bunnyCdnHostname ? `https://${bunnyCdnHostname}` : '';
 const connectSrcParts = [
   "'self'",
   'https://video.bunnycdn.com',
+  'https://www.youtube.com',
   cdnOrigin,
   // Allow Next.js HMR websocket in development
   ...(isDev ? ['ws://localhost:* wss://localhost:*'] : []),
