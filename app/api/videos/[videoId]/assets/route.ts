@@ -16,15 +16,18 @@ import {
   SAFE_BUNNY_VIDEO_ID,
   SAFE_IMAGE_PROXY_PATH,
   SAFE_AUDIO_PROXY_PATH,
+  SAFE_VIDEO_PROXY_PATH,
   canDeleteAssetForViewer,
   extractImageFileNameFromProxyUrl,
   extractImageKeyFromProxyUrl,
   extractAudioKeyFromProxyUrl,
   extractAudioFileNameFromProxyUrl,
+  extractVideoFileNameFromProxyUrl,
   getVideoAssetAccessContext,
   sanitizeAssetDisplayName,
 } from '@/lib/video-assets';
 import { logError } from '@/lib/logger';
+import { finalizeR2VideoUpload } from '@/lib/r2-video-finalize';
 import {
   enforceStorageQuota,
   reserveStorageQuota,
@@ -269,7 +272,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           asset,
           // R2_AUDIO proxy URLs have no auth gate — expose them to any viewer so guests can preview audio
           context.canDownloadAssets ||
-            (asset.provider === VideoAssetProvider.R2_AUDIO && context.hasViewAccess),
+            ((asset.provider === VideoAssetProvider.R2_AUDIO ||
+              asset.provider === VideoAssetProvider.R2_VIDEO) &&
+              context.hasViewAccess),
           includeDeleteMetadata ? canDeleteAssetForViewer(asset, context) : false
         )
       ),
@@ -293,6 +298,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // POST /api/videos/[videoId]/assets
 export async function POST(request: NextRequest, { params }: RouteParams) {
   let reservationId: string | null = null;
+  let finalizedR2AssetSession: {
+    sessionId: string;
+    reservationId: string | null;
+    billedUserId: string;
+    objectKey: string;
+    viewerUserId: string;
+    projectId: string;
+  } | null = null;
   try {
     const limited = await rateLimit(request, 'asset-create');
     if (limited) return limited;
@@ -309,7 +322,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       provider !== VideoAssetProvider.R2_IMAGE &&
       provider !== VideoAssetProvider.YOUTUBE &&
       provider !== VideoAssetProvider.BUNNY &&
-      provider !== VideoAssetProvider.R2_AUDIO
+      provider !== VideoAssetProvider.R2_AUDIO &&
+      provider !== VideoAssetProvider.R2_VIDEO
     ) {
       return apiErrors.badRequest('Invalid provider');
     }
@@ -400,6 +414,59 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       kind = 'VIDEO';
     }
 
+    if (provider === VideoAssetProvider.R2_VIDEO) {
+      if (!context.viewerUserId) {
+        return apiErrors.forbidden('R2 video asset uploads require sign-in');
+      }
+
+      sourceUrl = typeof body?.sourceUrl === 'string' ? body.sourceUrl.trim() : '';
+      const objectKey = typeof body?.objectKey === 'string' ? body.objectKey.trim() : '';
+      const uploadToken = typeof body?.uploadToken === 'string' ? body.uploadToken.trim() : '';
+      thumbnailUrl = typeof body?.thumbnailUrl === 'string' ? body.thumbnailUrl.trim() : null;
+
+      if (!SAFE_VIDEO_PROXY_PATH.test(sourceUrl)) {
+        return apiErrors.badRequest('Video URL must reference an uploaded video file');
+      }
+      if (!objectKey || !uploadToken) {
+        return apiErrors.badRequest('objectKey and uploadToken are required');
+      }
+      if (thumbnailUrl && !SAFE_IMAGE_PROXY_PATH.test(thumbnailUrl)) {
+        return apiErrors.badRequest('Thumbnail URL must reference an uploaded image file');
+      }
+
+      const finalizeResult = await finalizeR2VideoUpload({
+        userId: context.viewerUserId,
+        projectId: context.video.projectId,
+        videoUrl: sourceUrl,
+        objectKey,
+        uploadToken,
+      });
+      if (!finalizeResult.ok) {
+        if (finalizeResult.status === 403) {
+          return apiErrors.forbidden(finalizeResult.error);
+        }
+        return apiErrors.badRequest(finalizeResult.error);
+      }
+
+      assetSizeBytes = finalizeResult.sizeBytes;
+      reservationId = finalizeResult.reservationId;
+      if (!thumbnailUrl) {
+        thumbnailUrl = finalizeResult.thumbnailProxyUrl;
+      }
+
+      const fileName = extractVideoFileNameFromProxyUrl(sourceUrl);
+      displayName = sanitizeAssetDisplayName(requestedDisplayName, fileName || 'Video');
+      kind = 'VIDEO';
+      finalizedR2AssetSession = {
+        sessionId: finalizeResult.sessionId,
+        reservationId: finalizeResult.reservationId,
+        billedUserId: finalizeResult.billedUserId,
+        objectKey: finalizeResult.objectKey,
+        viewerUserId: context.viewerUserId,
+        projectId: context.video.projectId,
+      };
+    }
+
     if (provider === VideoAssetProvider.BUNNY) {
       sourceUrl = typeof body?.sourceUrl === 'string' ? body.sourceUrl.trim() : '';
       providerVideoId =
@@ -472,7 +539,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Only needed for R2 providers where the invalid-reservation fallback quota
     // check requires Bunny usage data.
     const preFetchedBunnyData =
-      provider === VideoAssetProvider.R2_IMAGE || provider === VideoAssetProvider.R2_AUDIO
+      provider === VideoAssetProvider.R2_IMAGE ||
+      provider === VideoAssetProvider.R2_AUDIO ||
+      provider === VideoAssetProvider.R2_VIDEO
         ? await getCachedUserBunnyStorage()
         : null;
 
@@ -503,7 +572,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             SELECT COALESCE(SUM(size_bytes), 0)::bigint AS total
             FROM video_assets
             WHERE "billedUserId" = ${billedUserId}
-              AND provider IN ('R2_IMAGE', 'R2_AUDIO')
+              AND provider IN ('R2_IMAGE', 'R2_AUDIO', 'R2_VIDEO')
           `;
           const [resRow] = await tx.$queryRaw<[{ total: bigint }]>`
             SELECT COALESCE(SUM("sizeBytes"), 0)::bigint AS total
@@ -521,6 +590,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           }
         }
       }
+
+      if (finalizedR2AssetSession) {
+        const consumed = await tx.videoUploadSession.updateMany({
+          where: {
+            id: finalizedR2AssetSession.sessionId,
+            status: 'INITIATED',
+            userId: finalizedR2AssetSession.viewerUserId,
+            projectId: finalizedR2AssetSession.projectId,
+            objectKey: finalizedR2AssetSession.objectKey,
+          },
+          data: {
+            status: 'FINALIZED',
+            consumedAt: new Date(),
+          },
+        });
+        if (consumed.count !== 1) {
+          throw new Error('Upload session already consumed');
+        }
+      }
+
       return tx.videoAsset.create({
         data: {
           videoId: context.video.id,

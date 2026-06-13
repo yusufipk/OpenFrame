@@ -56,6 +56,7 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'asset-delete': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
   'asset-download': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'asset-bunny-init': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
+  'asset-r2-init': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
 
   // Search — debounced on client but protect against scripted callers
   search: { windowMs: 60 * 1000, maxRequests: 60 }, // 60 per minute

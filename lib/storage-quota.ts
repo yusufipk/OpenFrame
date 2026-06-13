@@ -25,7 +25,7 @@ export async function getUserTotalStorageBytes(userId: string): Promise<bigint> 
       SELECT COALESCE(SUM(size_bytes), 0)::bigint AS total
       FROM video_assets
       WHERE "billedUserId" = ${userId}
-        AND provider IN ('R2_IMAGE', 'R2_AUDIO')
+        AND provider IN ('R2_IMAGE', 'R2_AUDIO', 'R2_VIDEO')
     `,
     db.$queryRaw<[{ total: bigint }]>`
       SELECT COALESCE(SUM(vv.size_bytes), 0)::bigint AS total
@@ -143,7 +143,7 @@ export async function reserveStorageQuota(
         SELECT COALESCE(SUM(size_bytes), 0)::bigint AS total
         FROM video_assets
         WHERE "billedUserId" = ${userId}
-          AND provider IN ('R2_IMAGE', 'R2_AUDIO')
+          AND provider IN ('R2_IMAGE', 'R2_AUDIO', 'R2_VIDEO')
       `;
       const [r2VideoRow] = await tx.$queryRaw<[{ total: bigint }]>`
         SELECT COALESCE(SUM(vv.size_bytes), 0)::bigint AS total

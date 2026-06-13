@@ -29,6 +29,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         provider: true,
         sourceUrl: true,
         providerVideoId: true,
+        thumbnailUrl: true,
         uploadedByUserId: true,
         uploadedByGuestIdentityId: true,
       },
@@ -41,6 +42,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     let shouldDeleteImageObject = false;
     let shouldDeleteAudioObject = false;
+    let shouldDeleteVideoObject = false;
+    let shouldDeleteVideoThumbnail = false;
     await db.$transaction(async (tx) => {
       await tx.videoAsset.delete({ where: { id: asset.id } });
 
@@ -59,6 +62,22 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         ]);
         shouldDeleteAudioObject = assetReferenceCount === 0 && commentReferenceCount === 0;
       }
+
+      if (asset.provider === VideoAssetProvider.R2_VIDEO) {
+        const [assetReferenceCount, versionReferenceCount] = await Promise.all([
+          tx.videoAsset.count({ where: { sourceUrl: asset.sourceUrl } }),
+          tx.videoVersion.count({ where: { originalUrl: asset.sourceUrl } }),
+        ]);
+        shouldDeleteVideoObject = assetReferenceCount === 0 && versionReferenceCount === 0;
+
+        if (asset.thumbnailUrl) {
+          const [assetThumbnailCount, commentImageCount] = await Promise.all([
+            tx.videoAsset.count({ where: { thumbnailUrl: asset.thumbnailUrl } }),
+            tx.comment.count({ where: { imageUrl: asset.thumbnailUrl } }),
+          ]);
+          shouldDeleteVideoThumbnail = assetThumbnailCount === 0 && commentImageCount === 0;
+        }
+      }
     });
 
     let r2CleanupResult: Awaited<ReturnType<typeof deleteMediaFilesBestEffort>> | undefined;
@@ -67,6 +86,18 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
     if (asset.provider === VideoAssetProvider.R2_AUDIO && shouldDeleteAudioObject) {
       r2CleanupResult = await deleteMediaFilesBestEffort([asset.sourceUrl]);
+    }
+    if (asset.provider === VideoAssetProvider.R2_VIDEO) {
+      const urlsToDelete: string[] = [];
+      if (shouldDeleteVideoObject && asset.sourceUrl) {
+        urlsToDelete.push(asset.sourceUrl);
+      }
+      if (shouldDeleteVideoThumbnail && asset.thumbnailUrl) {
+        urlsToDelete.push(asset.thumbnailUrl);
+      }
+      if (urlsToDelete.length > 0) {
+        r2CleanupResult = await deleteMediaFilesBestEffort(urlsToDelete);
+      }
     }
 
     let bunnyCleanupResult:

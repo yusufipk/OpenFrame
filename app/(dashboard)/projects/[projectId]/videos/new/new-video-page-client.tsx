@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   UploadCloud,
   FileVideo,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,17 +27,15 @@ import {
   type VideoSource,
 } from '@/lib/video-providers';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
-import { cleanupPendingR2VideoUpload, uploadVideoToR2 } from '@/lib/client/r2-video-upload';
+import {
+  cleanupPendingProjectUpload,
+  getDefaultTitleFromFile,
+  isVideoFile,
+  uploadProjectVideo,
+  type ActiveTusUpload,
+  type PendingProjectUploadCleanup,
+} from '@/lib/client/project-video-upload';
 import type { DirectUploadProvider } from '@/components/video-page/types';
-import * as tus from 'tus-js-client';
-
-const VIDEO_FILE_EXTENSIONS = ['mp4', 'webm', 'ogg', 'mov', 'm4v', 'mkv'];
-
-function isVideoFile(file: File): boolean {
-  if (file.type.startsWith('video/')) return true;
-  const extension = file.name.split('.').pop()?.toLowerCase();
-  return !!extension && VIDEO_FILE_EXTENSIONS.includes(extension);
-}
 
 export default function NewVideoPageClient({
   projectId,
@@ -53,26 +52,21 @@ export default function NewVideoPageClient({
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingMeta, setIsFetchingMeta] = useState(false);
 
-  // URL Mode State
   const [videoUrl, setVideoUrl] = useState('');
   const [videoSource, setVideoSource] = useState<VideoSource | null>(null);
   const [urlError, setUrlError] = useState('');
 
-  // Upload Mode State
   const [uploadMode, setUploadMode] = useState<'url' | 'file'>('url');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [currentUploadIndex, setCurrentUploadIndex] = useState(0);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
-  const [pendingBunnyVideoId, setPendingBunnyVideoId] = useState<string | null>(null);
-  const [pendingBunnyUploadToken, setPendingBunnyUploadToken] = useState<string | null>(null);
-  const pendingBunnyVideoIdRef = useRef<string | null>(null);
-  const pendingBunnyUploadTokenRef = useRef<string | null>(null);
-  const pendingR2ObjectKeyRef = useRef<string | null>(null);
-  const pendingR2UploadTokenRef = useRef<string | null>(null);
-  const pendingR2ReservationIdRef = useRef<string | null>(null);
-  const activeTusUploadRef = useRef<tus.Upload | null>(null);
+  const activeTusUploadRef = useRef<ActiveTusUpload | null>(null);
+  const pendingUploadRef = useRef<PendingProjectUploadCleanup | null>(null);
+  const cancelRequestedRef = useRef(false);
   const fileDragDepthRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -80,61 +74,31 @@ export default function NewVideoPageClient({
     description: '',
   });
   const isUploadingFile = isLoading && uploadMode === 'file';
+  const isMultiFileUpload = selectedFiles.length > 1;
   const leaveWarningMessage =
     'A video upload is in progress. Leaving this page will interrupt it. Do you want to leave?';
 
-  useEffect(() => {
-    pendingBunnyVideoIdRef.current = pendingBunnyVideoId;
-  }, [pendingBunnyVideoId]);
-
-  useEffect(() => {
-    pendingBunnyUploadTokenRef.current = pendingBunnyUploadToken;
-  }, [pendingBunnyUploadToken]);
-
-  const cleanupPendingBunnyVideo = useCallback(
-    async (videoId: string, uploadToken: string, keepalive = false) => {
-      try {
-        await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId, uploadToken }),
-          keepalive,
-        });
-      } catch (error) {
-        console.error('Failed to cleanup pending Bunny upload:', error);
-      } finally {
-        if (pendingBunnyVideoIdRef.current === videoId) {
-          pendingBunnyVideoIdRef.current = null;
-          setPendingBunnyVideoId(null);
-        }
-        if (pendingBunnyUploadTokenRef.current === uploadToken) {
-          pendingBunnyUploadTokenRef.current = null;
-          setPendingBunnyUploadToken(null);
-        }
-      }
-    },
-    [projectId]
-  );
-
   const abortAndCleanupPendingUpload = useCallback(
     (keepalive = false) => {
-      const pendingVideoId = pendingBunnyVideoIdRef.current;
-      const pendingUploadToken = pendingBunnyUploadTokenRef.current;
-      if (!pendingVideoId || !pendingUploadToken) return;
+      cancelRequestedRef.current = true;
 
       if (activeTusUploadRef.current) {
         try {
-          activeTusUploadRef.current.abort(true);
+          void Promise.resolve(activeTusUploadRef.current.abort(false));
         } catch {
-          // Ignore abort failures; we'll still attempt cleanup.
+          // Ignore abort failures.
         } finally {
           activeTusUploadRef.current = null;
         }
       }
 
-      void cleanupPendingBunnyVideo(pendingVideoId, pendingUploadToken, keepalive);
+      const pending = pendingUploadRef.current;
+      if (pending) {
+        void cleanupPendingProjectUpload(projectId, pending, keepalive);
+        pendingUploadRef.current = null;
+      }
     },
-    [cleanupPendingBunnyVideo]
+    [projectId]
   );
 
   useEffect(() => {
@@ -168,9 +132,8 @@ export default function NewVideoPageClient({
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [abortAndCleanupPendingUpload, isUploadingFile]);
+  }, [abortAndCleanupPendingUpload, isUploadingFile, leaveWarningMessage]);
 
-  // Auto-fetch metadata when a valid video source is detected
   useEffect(() => {
     if (!videoSource) return;
 
@@ -216,40 +179,69 @@ export default function NewVideoPageClient({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!isVideoFile(file)) {
-        setSubmitError('Please select a valid video file.');
-        return;
-      }
-      setSelectedFile(file);
-      setSubmitError('');
-      if (!formData.title) {
-        // Strip extension from filename for default title
-        const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
-        setFormData((prev) => ({ ...prev, title: nameWithoutExt }));
-      }
-    }
-  };
+  const addSelectedFiles = useCallback(
+    (incoming: File[]) => {
+      const validFiles: File[] = [];
+      let invalidCount = 0;
 
-  const setSelectedVideoFile = useCallback(
-    (file: File) => {
-      if (!isVideoFile(file)) {
-        setSubmitError('Please select a valid video file.');
+      for (const file of incoming) {
+        if (!isVideoFile(file)) {
+          invalidCount += 1;
+          continue;
+        }
+        validFiles.push(file);
+      }
+
+      if (validFiles.length === 0) {
+        setSubmitError('Please select valid video files.');
         return;
       }
 
-      setSelectedFile(file);
-      setSubmitError('');
+      if (invalidCount > 0) {
+        setSubmitError(
+          `${invalidCount} file${invalidCount === 1 ? '' : 's'} skipped (not a video).`
+        );
+      } else {
+        setSubmitError('');
+      }
 
-      if (!formData.title) {
-        const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
-        setFormData((prev) => ({ ...prev, title: nameWithoutExt }));
+      setSelectedFiles((prev) => {
+        const next = [...prev];
+        for (const file of validFiles) {
+          const duplicate = next.some(
+            (existing) =>
+              existing.name === file.name &&
+              existing.size === file.size &&
+              existing.lastModified === file.lastModified
+          );
+          if (!duplicate) next.push(file);
+        }
+        return next;
+      });
+
+      if (validFiles.length === 1 && !formData.title) {
+        setFormData((prev) => ({
+          ...prev,
+          title: getDefaultTitleFromFile(validFiles[0]),
+        }));
       }
     },
     [formData.title]
   );
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 0) {
+      addSelectedFiles(files);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleFileDragEnter = useCallback(
     (event: React.DragEvent<HTMLLabelElement>) => {
@@ -290,83 +282,105 @@ export default function NewVideoPageClient({
       setIsFileDragOver(false);
       if (isLoading) return;
 
-      const file = Array.from(event.dataTransfer.files)[0];
-      if (!file) return;
-      setSelectedVideoFile(file);
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) return;
+      addSelectedFiles(files);
     },
-    [isLoading, setSelectedVideoFile]
+    [addSelectedFiles, isLoading]
   );
 
-  const uploadToBunny = async (
-    file: File
-  ): Promise<{
-    videoId: string;
-    libraryId: string;
-    providerId: string;
-    url: string;
-    uploadToken: string;
-  }> => {
-    // 1. Initialize Bunny Stream upload (creates video & gets signature)
-    setUploadStatus('Initializing upload...');
-    const initRes = await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: formData.title || file.name }),
+  const uploadSingleFileWithForm = async (file: File) => {
+    cancelRequestedRef.current = false;
+    pendingUploadRef.current = null;
+
+    const title = formData.title.trim() || getDefaultTitleFromFile(file);
+    const description = formData.description.trim() || null;
+
+    await uploadProjectVideo(projectId, file, {
+      provider: directUploadProvider,
+      title,
+      description,
+      bunnyCdnHostname,
+      onProgress: (progress) => {
+        setUploadProgress(progress);
+        setUploadStatus(`Uploading... ${progress}%`);
+      },
+      onStatus: setUploadStatus,
+      onTusUploadReady: (upload) => {
+        activeTusUploadRef.current = upload;
+      },
+      onPendingUpload: (pending) => {
+        pendingUploadRef.current = pending;
+      },
+      isCancelled: () => cancelRequestedRef.current,
     });
 
-    if (!initRes.ok) {
-      const data = await initRes.json();
-      throw new Error(data.error || 'Failed to initialize upload');
+    pendingUploadRef.current = null;
+    activeTusUploadRef.current = null;
+  };
+
+  const uploadMultipleFiles = async (files: File[]) => {
+    cancelRequestedRef.current = false;
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let index = 0; index < files.length; index++) {
+      if (cancelRequestedRef.current) break;
+
+      const file = files[index];
+      setCurrentUploadIndex(index + 1);
+      setUploadProgress(0);
+      setUploadStatus(`Uploading ${index + 1} of ${files.length}: ${file.name}`);
+
+      try {
+        await uploadProjectVideo(projectId, file, {
+          provider: directUploadProvider,
+          bunnyCdnHostname,
+          onProgress: (progress) => {
+            setUploadProgress(progress);
+            setUploadStatus(
+              `Uploading ${index + 1} of ${files.length}: ${file.name} (${progress}%)`
+            );
+          },
+          onStatus: (status) => {
+            setUploadStatus(`Uploading ${index + 1} of ${files.length}: ${status}`);
+          },
+          onTusUploadReady: (upload) => {
+            activeTusUploadRef.current = upload;
+          },
+          onPendingUpload: (pending) => {
+            pendingUploadRef.current = pending;
+          },
+          isCancelled: () => cancelRequestedRef.current,
+        });
+
+        pendingUploadRef.current = null;
+        activeTusUploadRef.current = null;
+        successCount += 1;
+      } catch (error) {
+        pendingUploadRef.current = null;
+        activeTusUploadRef.current = null;
+        failCount += 1;
+        const message = error instanceof Error ? error.message : 'Upload failed';
+        setSubmitError(`${file.name}: ${message}`);
+      }
     }
 
-    const {
-      data: { videoId, libraryId, signature, expirationTime, uploadToken },
-    } = await initRes.json();
-    setPendingBunnyVideoId(videoId);
-    setPendingBunnyUploadToken(uploadToken);
-    pendingBunnyVideoIdRef.current = videoId;
-    pendingBunnyUploadTokenRef.current = uploadToken;
+    if (successCount > 0 && failCount === 0) {
+      router.push(`/projects/${projectId}`);
+      return;
+    }
 
-    // 2. Upload via TUS
-    return new Promise((resolve, reject) => {
-      setUploadStatus('Uploading video...');
-      const upload = new tus.Upload(file, {
-        endpoint: 'https://video.bunnycdn.com/tusupload',
-        retryDelays: [0, 3000, 5000, 10000, 20000],
-        headers: {
-          AuthorizationSignature: signature,
-          AuthorizationExpire: expirationTime.toString(),
-          VideoId: videoId,
-          LibraryId: libraryId,
-        },
-        metadata: {
-          filetype: file.type,
-          title: formData.title || file.name,
-        },
-        onError: (error) => {
-          activeTusUploadRef.current = null;
-          reject(new Error('Upload failed: ' + error.message));
-        },
-        onProgress: (bytesUploaded, bytesTotal) => {
-          const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(1);
-          setUploadProgress(Number(percentage));
-          setUploadStatus(`Uploading... ${percentage}%`);
-        },
-        onSuccess: () => {
-          activeTusUploadRef.current = null;
-          setUploadStatus('Processing video...');
-          resolve({
-            videoId,
-            libraryId,
-            providerId: 'bunny',
-            url: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`,
-            uploadToken,
-          });
-        },
-      });
-      activeTusUploadRef.current = upload;
-      upload.start();
-    });
+    if (successCount > 0 && failCount > 0) {
+      setSubmitError(
+        `${successCount} uploaded, ${failCount} failed. Remove failed files and retry.`
+      );
+      return;
+    }
+
+    if (failCount > 0 && successCount === 0) {
+      throw new Error('All uploads failed');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -376,130 +390,66 @@ export default function NewVideoPageClient({
     setSubmitError('');
     setUploadStatus('');
     setUploadProgress(0);
+    setCurrentUploadIndex(0);
 
     try {
-      let uploadedBunnyVideoId: string | null = null;
-      let uploadedBunnyUploadToken: string | null = null;
-      let finalTitle = formData.title.trim();
-      const finalDescription = formData.description.trim() || null;
-      let finalVideoUrl = '';
-      let finalProviderId = '';
-      let finalVideoId = '';
-      let finalThumbnailUrl: string | null = null;
-      let finalDuration: number | null = null;
-
       if (uploadMode === 'url') {
         if (!videoSource) {
           setUrlError('Please enter a valid video URL');
           setIsLoading(false);
           return;
         }
-        finalTitle = finalTitle || videoSource.metadata?.title || 'Untitled Video';
-        finalVideoUrl = videoSource.originalUrl;
-        finalProviderId = videoSource.providerId;
-        finalVideoId = videoSource.videoId;
-        finalThumbnailUrl = getThumbnailUrl(videoSource, 'large');
-        finalDuration = videoSource.metadata?.duration || null;
-      } else {
-        if (!directUploadsEnabled) {
-          throw new Error('Direct uploads are disabled by this host');
-        }
 
-        if (!selectedFile) {
-          setSubmitError('Please select a video file to upload');
-          setIsLoading(false);
+        const finalTitle = formData.title.trim() || videoSource.metadata?.title || 'Untitled Video';
+        const finalDescription = formData.description.trim() || null;
+
+        const response = await fetch(`/api/projects/${projectId}/videos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: finalTitle,
+            description: finalDescription,
+            videoUrl: videoSource.originalUrl,
+            providerId: videoSource.providerId,
+            videoId: videoSource.videoId,
+            thumbnailUrl: getThumbnailUrl(videoSource, 'large'),
+            duration: videoSource.metadata?.duration || null,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          setSubmitError(data.error || 'Failed to add video');
           return;
         }
-        finalTitle = finalTitle || selectedFile.name;
 
-        if (directUploadProvider === 'r2') {
-          const r2Data = await uploadVideoToR2(projectId, selectedFile, {
-            onProgress: (progress) => {
-              setUploadProgress(progress);
-              setUploadStatus(`Uploading... ${progress}%`);
-            },
-          });
-          pendingR2ObjectKeyRef.current = r2Data.objectKey;
-          pendingR2UploadTokenRef.current = r2Data.uploadToken;
-          pendingR2ReservationIdRef.current = r2Data.reservationId;
-
-          finalVideoUrl = r2Data.proxyUrl;
-          finalProviderId = 'r2';
-          finalVideoId = r2Data.objectKey;
-          finalThumbnailUrl = r2Data.thumbnailUrl || '/placeholder-video-thumbnail.png';
-          finalDuration = r2Data.duration;
-          uploadedBunnyUploadToken = r2Data.uploadToken;
-        } else {
-          const bunnyData = await uploadToBunny(selectedFile);
-          uploadedBunnyVideoId = bunnyData.videoId;
-          uploadedBunnyUploadToken = bunnyData.uploadToken;
-
-          finalVideoUrl = bunnyData.url;
-          finalProviderId = bunnyData.providerId;
-          finalVideoId = bunnyData.videoId;
-          finalThumbnailUrl = bunnyCdnHostname
-            ? `https://${bunnyCdnHostname}/${bunnyData.videoId}/thumbnail.jpg`
-            : null;
-        }
-      }
-
-      const response = await fetch(`/api/projects/${projectId}/videos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: finalTitle,
-          description: finalDescription,
-          videoUrl: finalVideoUrl,
-          providerId: finalProviderId,
-          videoId: finalVideoId,
-          thumbnailUrl: finalThumbnailUrl,
-          duration: finalDuration,
-          uploadToken: uploadedBunnyUploadToken,
-          objectKey: pendingR2ObjectKeyRef.current,
-          reservationId: pendingR2ReservationIdRef.current,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        setSubmitError(data.error || 'Failed to add video');
-        if (uploadedBunnyVideoId && uploadedBunnyUploadToken) {
-          await cleanupPendingBunnyVideo(uploadedBunnyVideoId, uploadedBunnyUploadToken);
-        } else if (pendingR2ObjectKeyRef.current && pendingR2UploadTokenRef.current) {
-          await cleanupPendingR2VideoUpload(projectId, {
-            objectKey: pendingR2ObjectKeyRef.current,
-            uploadToken: pendingR2UploadTokenRef.current,
-            reservationId: pendingR2ReservationIdRef.current,
-          });
-        }
+        router.push(`/projects/${projectId}`);
         return;
       }
 
-      pendingBunnyVideoIdRef.current = null;
-      pendingBunnyUploadTokenRef.current = null;
-      pendingR2ObjectKeyRef.current = null;
-      pendingR2UploadTokenRef.current = null;
-      pendingR2ReservationIdRef.current = null;
-      setPendingBunnyVideoId(null);
-      setPendingBunnyUploadToken(null);
-      router.push(`/projects/${projectId}`);
+      if (!directUploadsEnabled) {
+        throw new Error('Direct uploads are disabled by this host');
+      }
+
+      if (selectedFiles.length === 0) {
+        setSubmitError('Please select at least one video file to upload');
+        setIsLoading(false);
+        return;
+      }
+
+      if (selectedFiles.length === 1) {
+        await uploadSingleFileWithForm(selectedFiles[0]);
+        router.push(`/projects/${projectId}`);
+        return;
+      }
+
+      await uploadMultipleFiles(selectedFiles);
     } catch (error: unknown) {
       console.error('Failed to add video:', error);
       setSubmitError(error instanceof Error ? error.message : 'An unexpected error occurred');
-      if (pendingBunnyVideoIdRef.current && pendingBunnyUploadTokenRef.current) {
-        await cleanupPendingBunnyVideo(
-          pendingBunnyVideoIdRef.current,
-          pendingBunnyUploadTokenRef.current
-        );
-      } else if (pendingR2ObjectKeyRef.current && pendingR2UploadTokenRef.current) {
-        await cleanupPendingR2VideoUpload(projectId, {
-          objectKey: pendingR2ObjectKeyRef.current,
-          uploadToken: pendingR2UploadTokenRef.current,
-          reservationId: pendingR2ReservationIdRef.current,
-        });
-      }
     } finally {
       activeTusUploadRef.current = null;
+      pendingUploadRef.current = null;
       setIsLoading(false);
     }
   };
@@ -532,7 +482,7 @@ export default function NewVideoPageClient({
           <CardTitle>Add Video</CardTitle>
           <CardDescription>
             {directUploadsEnabled
-              ? 'Paste a video link or upload a file directly to add it to your project. Currently supports YouTube.'
+              ? 'Paste a video link or upload one or more files directly to add them to your project.'
               : 'Paste a video link to add it to your project. Direct uploads are disabled on this host.'}
           </CardDescription>
         </CardHeader>
@@ -592,7 +542,7 @@ export default function NewVideoPageClient({
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="file">Video File</Label>
+                <Label htmlFor="file">Video Files</Label>
                 <div className="flex items-center justify-center w-full">
                   <label
                     htmlFor="file"
@@ -600,49 +550,92 @@ export default function NewVideoPageClient({
                     onDragOver={handleFileDragOver}
                     onDragLeave={handleFileDragLeave}
                     onDrop={handleFileDrop}
-                    className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                    className={`flex flex-col items-center justify-center w-full min-h-40 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
                       isFileDragOver
                         ? 'border-primary bg-primary/10'
-                        : selectedFile
+                        : selectedFiles.length > 0
                           ? 'border-primary bg-muted/30 hover:bg-muted/50'
                           : 'border-border bg-muted/30 hover:bg-muted/50'
                     }`}
                   >
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      {selectedFile ? (
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6 px-4 w-full">
+                      {selectedFiles.length === 0 ? (
+                        <>
+                          <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
+                          <p className="mb-2 text-sm text-muted-foreground text-center">
+                            <span className="font-semibold">Click to upload</span> or drag and drop
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Multiple videos supported · MP4, WebM, MOV, and more
+                          </p>
+                        </>
+                      ) : selectedFiles.length === 1 ? (
                         <>
                           <FileVideo className="w-10 h-10 mb-3 text-primary" />
                           <p className="mb-2 text-sm text-foreground font-medium">
-                            {selectedFile.name}
+                            {selectedFiles[0].name}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                            {(selectedFiles[0].size / (1024 * 1024)).toFixed(2)} MB
                           </p>
                         </>
                       ) : (
                         <>
-                          <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
-                          <p className="mb-2 text-sm text-muted-foreground">
-                            <span className="font-semibold">Click to upload</span> or drag and drop
+                          <FileVideo className="w-10 h-10 mb-3 text-primary" />
+                          <p className="mb-2 text-sm text-foreground font-medium">
+                            {selectedFiles.length} videos selected
                           </p>
-                          <p className="text-xs text-muted-foreground">MP4, WebM, or OGG</p>
+                          <p className="text-xs text-muted-foreground">
+                            Click or drop to add more files
+                          </p>
                         </>
                       )}
                     </div>
                     <input
+                      ref={fileInputRef}
                       id="file"
                       type="file"
                       accept="video/*"
+                      multiple
                       className="hidden"
                       onChange={handleFileChange}
                       disabled={isLoading}
                     />
                   </label>
                 </div>
+
+                {selectedFiles.length > 1 && (
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border">
+                    {selectedFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                        className="flex items-center gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0"
+                      >
+                        <FileVideo className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{file.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {getDefaultTitleFromFile(file)} ·{' '}
+                            {(file.size / (1024 * 1024)).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0"
+                          disabled={isLoading}
+                          onClick={() => removeSelectedFile(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Video Preview (Only for URL mode) */}
             {uploadMode === 'url' && thumbnailUrl && videoSource && (
               <div className="space-y-2">
                 <Label>Preview</Label>
@@ -658,37 +651,54 @@ export default function NewVideoPageClient({
               </div>
             )}
 
-            {/* Title */}
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                placeholder={
-                  isFetchingMeta
-                    ? 'Fetching title...'
-                    : 'Video title (will auto-fill from video if empty)'
-                }
-                value={formData.title}
-                onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-                disabled={isLoading}
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave empty to use the original video title
-              </p>
-            </div>
+            {uploadMode === 'url' || selectedFiles.length <= 1 ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input
+                    id="title"
+                    placeholder={
+                      isFetchingMeta
+                        ? 'Fetching title...'
+                        : uploadMode === 'file' && isMultiFileUpload
+                          ? 'Not used for multi-file uploads'
+                          : 'Video title (will auto-fill from video if empty)'
+                    }
+                    value={formData.title}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+                    disabled={isLoading || (uploadMode === 'file' && isMultiFileUpload)}
+                  />
+                  {uploadMode === 'file' && isMultiFileUpload ? (
+                    <p className="text-xs text-muted-foreground">
+                      Each file will use its filename as the title.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Leave empty to use the original video title
+                    </p>
+                  )}
+                </div>
 
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Textarea
-                id="description"
-                placeholder="Add context about this video..."
-                value={formData.description}
-                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                rows={3}
-                disabled={isLoading}
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description (optional)</Label>
+                  <Textarea
+                    id="description"
+                    placeholder="Add context about this video..."
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, description: e.target.value }))
+                    }
+                    rows={3}
+                    disabled={isLoading || (uploadMode === 'file' && isMultiFileUpload)}
+                  />
+                  {uploadMode === 'file' && isMultiFileUpload ? (
+                    <p className="text-xs text-muted-foreground">
+                      Descriptions are not applied in bulk upload mode.
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
 
             {submitError && (
               <p className="text-sm text-destructive flex items-center gap-1">
@@ -710,7 +720,10 @@ export default function NewVideoPageClient({
                 )}
                 {isUploadingFile && (
                   <p className="text-xs text-amber-500">
-                    Do not close, refresh, or navigate away while the upload is in progress.
+                    Do not close, refresh, or navigate away while uploads are in progress.
+                    {isMultiFileUpload && currentUploadIndex > 0
+                      ? ` (${currentUploadIndex} of ${selectedFiles.length})`
+                      : ''}
                   </p>
                 )}
               </div>
@@ -722,11 +735,13 @@ export default function NewVideoPageClient({
                 disabled={
                   isLoading ||
                   (uploadMode === 'url' && !videoSource) ||
-                  (uploadMode === 'file' && !selectedFile)
+                  (uploadMode === 'file' && selectedFiles.length === 0)
                 }
               >
                 {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Add Video
+                {uploadMode === 'file' && selectedFiles.length > 1
+                  ? `Upload ${selectedFiles.length} Videos`
+                  : 'Add Video'}
               </Button>
               <Button
                 type="button"

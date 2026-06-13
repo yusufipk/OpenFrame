@@ -925,6 +925,7 @@ export function VideoPageContent({
               loadMoreAssets={loadMoreAssets}
               highlightedAssetId={highlightedAssetId}
               onHighlightedAssetHandled={() => setHighlightedAssetId(null)}
+              directUploadProvider={directUploadProvider}
             />
           }
           composer={

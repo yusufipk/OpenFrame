@@ -34,7 +34,8 @@ import {
   type BunnyPreviewPlayerHandle,
 } from '@/components/video-page/bunny-preview-player';
 import { AssetListSection } from '@/components/video-page/asset-list-section';
-import type { VideoAsset } from '@/components/video-page/types';
+import type { DirectUploadProvider, VideoAsset } from '@/components/video-page/types';
+import { uploadAssetVideoToR2 } from '@/lib/client/r2-asset-video-upload';
 import {
   extractPastedImageFile,
   validateImageFile,
@@ -87,12 +88,13 @@ interface AssetsPaneProps {
   canDownloadAssets: boolean;
   getGuestUploadToken: (intent: 'image' | 'audio') => Promise<string | null>;
   createAsset: (payload: {
-    provider: 'R2_IMAGE' | 'YOUTUBE' | 'BUNNY' | 'R2_AUDIO';
+    provider: 'R2_IMAGE' | 'YOUTUBE' | 'BUNNY' | 'R2_AUDIO' | 'R2_VIDEO';
     displayName?: string;
     sourceUrl: string;
     providerVideoId?: string;
     thumbnailUrl?: string;
     uploadToken?: string;
+    objectKey?: string;
     reservationId?: string | null;
   }) => Promise<VideoAsset | null>;
   deleteAsset: (assetId: string) => Promise<boolean>;
@@ -102,6 +104,7 @@ interface AssetsPaneProps {
   loadMoreAssets: () => Promise<void>;
   highlightedAssetId: string | null;
   onHighlightedAssetHandled: () => void;
+  directUploadProvider?: DirectUploadProvider;
 }
 
 export const AssetsPane = memo(function AssetsPane({
@@ -122,16 +125,18 @@ export const AssetsPane = memo(function AssetsPane({
   loadMoreAssets,
   highlightedAssetId,
   onHighlightedAssetHandled,
+  directUploadProvider = 'bunny',
 }: AssetsPaneProps) {
   const [uploadTab, setUploadTab] = useState<'image' | 'youtube' | 'bunny' | 'voice'>('image');
   const [imageTitle, setImageTitle] = useState('');
-  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [pendingImageFiles, setPendingImageFiles] = useState<File[]>([]);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeTitle, setYoutubeTitle] = useState('');
   const [bunnyTitle, setBunnyTitle] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isUploadingBunny, setIsUploadingBunny] = useState(false);
   const [bunnyProgress, setBunnyProgress] = useState(0);
+  const [bunnyUploadLabel, setBunnyUploadLabel] = useState('');
   const [bunnyProcessingByAssetId, setBunnyProcessingByAssetId] = useState<Record<string, boolean>>(
     {}
   );
@@ -152,6 +157,7 @@ export const AssetsPane = memo(function AssetsPane({
   const youtubePreviewStateRef = useRef({ currentTime: 0, isPlaying: false, isMuted: false });
   const imageInputRef = useRef<HTMLInputElement>(null);
   const bunnyInputRef = useRef<HTMLInputElement>(null);
+  const voiceInputRef = useRef<HTMLInputElement>(null);
 
   // Voice recording state
   const [voiceTitle, setVoiceTitle] = useState('');
@@ -159,7 +165,7 @@ export const AssetsPane = memo(function AssetsPane({
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
-  const [pendingAudioFile, setPendingAudioFile] = useState<File | null>(null);
+  const [pendingAudioFiles, setPendingAudioFiles] = useState<File[]>([]);
   const [isUploadingVoice, setIsUploadingVoice] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
@@ -339,17 +345,14 @@ export const AssetsPane = memo(function AssetsPane({
     );
   }, [bunnyReadyByAssetId, selectedAsset]);
 
-  const handleImageUpload = useCallback(
-    async (file: File) => {
-      if (!file) return;
-
+  const uploadSingleImageAsset = useCallback(
+    async (file: File, displayName?: string): Promise<boolean> => {
       const imageError = await validateImageFile(file);
       if (imageError) {
-        toast.error(imageError);
-        return;
+        toast.error(`${file.name}: ${imageError}`);
+        return false;
       }
 
-      setIsUploadingImage(true);
       try {
         const formData = new FormData();
         formData.append('image', file);
@@ -367,39 +370,99 @@ export const AssetsPane = memo(function AssetsPane({
         } | null;
         const uploadedImageUrl = uploadPayload?.data?.url;
         if (!uploadRes.ok || !uploadedImageUrl) {
-          toast.error(uploadPayload?.error || 'Failed to upload image');
-          return;
+          toast.error(`${file.name}: ${uploadPayload?.error || 'Failed to upload image'}`);
+          return false;
         }
 
-        await createAsset({
+        const created = await createAsset({
           provider: 'R2_IMAGE',
           sourceUrl: uploadedImageUrl,
-          displayName: imageTitle.trim() || file.name,
+          displayName: displayName?.trim() || file.name,
           reservationId: uploadPayload?.data?.reservationId ?? null,
         });
-        if (imageInputRef.current) imageInputRef.current.value = '';
-        setImageTitle('');
-        setPendingImageFile(null);
+        return !!created;
       } catch (error) {
         console.error('Failed to upload image asset:', error);
-        toast.error('Failed to upload image');
+        toast.error(`${file.name}: Failed to upload image`);
+        return false;
+      }
+    },
+    [videoId, getGuestUploadToken, createAsset]
+  );
+
+  const handleImageUpload = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+
+      setIsUploadingImage(true);
+      let successCount = 0;
+      let failCount = 0;
+
+      try {
+        for (const file of files) {
+          const displayName = imageTitle.trim() || file.name;
+          const ok = await uploadSingleImageAsset(file, displayName);
+          if (ok) successCount += 1;
+          else failCount += 1;
+        }
+
+        if (successCount > 0) {
+          if (imageInputRef.current) imageInputRef.current.value = '';
+          setImageTitle('');
+          setPendingImageFiles([]);
+        }
+
+        if (successCount > 0 && failCount === 0) {
+          toast.success(successCount === 1 ? 'Image uploaded' : `${successCount} images uploaded`);
+        } else if (successCount > 0 && failCount > 0) {
+          toast.warning(`${successCount} uploaded, ${failCount} failed`);
+        }
       } finally {
         setIsUploadingImage(false);
       }
     },
-    [videoId, getGuestUploadToken, createAsset, imageTitle]
+    [imageTitle, uploadSingleImageAsset]
   );
 
-  const handleImageFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const imageError = await validateImageFile(file);
-    if (imageError) {
-      toast.error(imageError);
-      return;
+  const stageImageFiles = useCallback(async (files: File[]) => {
+    const validFiles: File[] = [];
+    for (const file of files) {
+      const imageError = await validateImageFile(file);
+      if (imageError) {
+        toast.error(`${file.name}: ${imageError}`);
+        continue;
+      }
+      validFiles.push(file);
     }
-    setPendingImageFile(file);
-    toast.success('Image attached. Click Upload Image to send.');
+    if (validFiles.length === 0) return;
+
+    setPendingImageFiles((prev) => {
+      const next = [...prev];
+      for (const file of validFiles) {
+        const duplicate = next.some(
+          (existing) =>
+            existing.name === file.name &&
+            existing.size === file.size &&
+            existing.lastModified === file.lastModified
+        );
+        if (!duplicate) next.push(file);
+      }
+      return next;
+    });
+
+    toast.success(
+      validFiles.length === 1
+        ? 'Image attached. Click Upload to send.'
+        : `${validFiles.length} images attached. Click Upload to send.`
+    );
+  }, []);
+
+  const handleImageFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
+    setUploadTab('image');
+    await stageImageFiles(files);
+    if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
   const handleImagePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -407,13 +470,7 @@ export const AssetsPane = memo(function AssetsPane({
     const pastedImage = extractPastedImageFile(event.clipboardData);
     if (!pastedImage) return;
     event.preventDefault();
-    const imageError = await validateImageFile(pastedImage);
-    if (imageError) {
-      toast.error(imageError);
-      return;
-    }
-    setPendingImageFile(pastedImage);
-    toast.success('Image attached from clipboard. Click Upload Image to send.');
+    await stageImageFiles([pastedImage]);
   };
 
   const handleCreateYoutubeAsset = async () => {
@@ -430,10 +487,10 @@ export const AssetsPane = memo(function AssetsPane({
   };
 
   const handleBunnyFileUpload = useCallback(
-    async (file: File) => {
+    async (file: File, options?: { index?: number; total?: number }) => {
       if (!file.type.startsWith('video/')) {
-        toast.error('Please select a video file');
-        return;
+        toast.error(`${file.name}: Please select a video file`);
+        return false;
       }
 
       let uploadedVideoId: string | null = null;
@@ -441,6 +498,11 @@ export const AssetsPane = memo(function AssetsPane({
       try {
         setIsUploadingBunny(true);
         setBunnyProgress(0);
+        if (options?.total && options.total > 1) {
+          setBunnyUploadLabel(`Uploading ${options.index ?? 1} of ${options.total}: ${file.name}`);
+        } else {
+          setBunnyUploadLabel('');
+        }
 
         const initRes = await fetch(`/api/videos/${videoId}/assets/bunny-init`, {
           method: 'POST',
@@ -459,8 +521,8 @@ export const AssetsPane = memo(function AssetsPane({
         } | null;
 
         if (!initRes.ok || !initPayload?.data) {
-          toast.error(initPayload?.error || 'Failed to initialize Bunny upload');
-          return;
+          toast.error(`${file.name}: ${initPayload?.error || 'Failed to initialize Bunny upload'}`);
+          return false;
         }
 
         const initData = initPayload.data;
@@ -508,11 +570,10 @@ export const AssetsPane = memo(function AssetsPane({
         }
         setBunnyReadyByAssetId((prev) => ({ ...prev, [createdAsset.id]: false }));
         setBunnyProcessingByAssetId((prev) => ({ ...prev, [createdAsset.id]: true }));
-        if (bunnyInputRef.current) bunnyInputRef.current.value = '';
-        setBunnyTitle('');
+        return true;
       } catch (error) {
         console.error('Failed to upload Bunny asset:', error);
-        toast.error('Failed to upload Bunny video');
+        toast.error(`${file.name}: Failed to upload Bunny video`);
         if (uploadedVideoId && uploadToken) {
           await fetch(`/api/videos/${videoId}/assets/bunny-init`, {
             method: 'DELETE',
@@ -520,18 +581,109 @@ export const AssetsPane = memo(function AssetsPane({
             body: JSON.stringify({ videoId: uploadedVideoId, uploadToken }),
           }).catch(() => undefined);
         }
+        return false;
       } finally {
         setIsUploadingBunny(false);
         setBunnyProgress(0);
+        setBunnyUploadLabel('');
       }
     },
     [videoId, bunnyTitle, bunnyCdnHostname, createAsset]
   );
 
+  const handleR2FileUpload = useCallback(
+    async (file: File, options?: { index?: number; total?: number }) => {
+      if (!file.type.startsWith('video/')) {
+        toast.error(`${file.name}: Please select a video file`);
+        return false;
+      }
+
+      try {
+        setIsUploadingBunny(true);
+        setBunnyProgress(0);
+        if (options?.total && options.total > 1) {
+          setBunnyUploadLabel(`Uploading ${options.index ?? 1} of ${options.total}: ${file.name}`);
+        } else {
+          setBunnyUploadLabel('');
+        }
+
+        const uploadResult = await uploadAssetVideoToR2(videoId, file, {
+          onProgress: (progress) => setBunnyProgress(progress),
+        });
+
+        const createdAsset = await createAsset({
+          provider: 'R2_VIDEO',
+          sourceUrl: uploadResult.proxyUrl,
+          objectKey: uploadResult.objectKey,
+          uploadToken: uploadResult.uploadToken,
+          reservationId: uploadResult.reservationId,
+          thumbnailUrl: uploadResult.thumbnailUrl ?? undefined,
+          displayName: bunnyTitle.trim() || file.name,
+        });
+        if (!createdAsset) {
+          throw new Error('Failed to finalize video asset');
+        }
+        return true;
+      } catch (error) {
+        console.error('Failed to upload R2 asset video:', error);
+        toast.error(`${file.name}: Failed to upload video`);
+        return false;
+      } finally {
+        setIsUploadingBunny(false);
+        setBunnyProgress(0);
+        setBunnyUploadLabel('');
+      }
+    },
+    [videoId, bunnyTitle, createAsset]
+  );
+
+  const handleVideoFileUpload = useCallback(
+    (file: File, options?: { index?: number; total?: number }) => {
+      if (directUploadProvider === 'r2') {
+        return handleR2FileUpload(file, options);
+      }
+      return handleBunnyFileUpload(file, options);
+    },
+    [directUploadProvider, handleBunnyFileUpload, handleR2FileUpload]
+  );
+
+  const handleVideoBatchUpload = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let index = 0; index < files.length; index++) {
+        const ok = await handleVideoFileUpload(files[index], {
+          index: index + 1,
+          total: files.length,
+        });
+        if (ok) successCount += 1;
+        else failCount += 1;
+      }
+
+      if (bunnyInputRef.current) bunnyInputRef.current.value = '';
+      if (successCount > 0) setBunnyTitle('');
+
+      if (successCount > 0 && failCount === 0) {
+        toast.success(successCount === 1 ? 'Video uploaded' : `${successCount} videos uploaded`);
+      } else if (successCount > 0 && failCount > 0) {
+        toast.warning(`${successCount} uploaded, ${failCount} failed`);
+      }
+    },
+    [handleVideoFileUpload]
+  );
+
   const handleBunnyUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await handleBunnyFileUpload(file);
+    const files = Array.from(event.target.files ?? []).filter((file) =>
+      file.type.startsWith('video/')
+    );
+    if (files.length === 0) {
+      toast.error('Please select valid video files');
+      return;
+    }
+    await handleVideoBatchUpload(files);
   };
 
   const handleBunnyThumbnailError = (assetId: string) => {
@@ -605,73 +757,157 @@ export const AssetsPane = memo(function AssetsPane({
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
-    setPendingAudioFile(null);
+    setPendingAudioFiles([]);
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
   }, []);
 
-  const handleVoiceUpload = useCallback(async () => {
-    const uploadSource = pendingAudioFile ?? audioBlob;
-    if (!uploadSource) return;
+  const uploadSingleAudioAsset = useCallback(
+    async (file: File | Blob, fileName: string, displayName?: string): Promise<boolean> => {
+      const validationError = getAudioUploadValidationError(file);
+      if (validationError) {
+        toast.error(`${fileName}: ${validationError}`);
+        return false;
+      }
 
-    const validationError = getAudioUploadValidationError(uploadSource);
-    if (validationError) {
-      toast.error(validationError);
+      try {
+        const formData = new FormData();
+        formData.append('audio', file, file instanceof File ? file.name : 'recording.webm');
+        formData.append('videoId', videoId);
+        const guestUploadToken = await getGuestUploadToken('audio');
+        if (guestUploadToken) formData.append('uploadToken', guestUploadToken);
+
+        const uploadRes = await fetch('/api/upload/audio', {
+          method: 'POST',
+          body: formData,
+        });
+        const uploadPayload = await readUploadAudioResponse(uploadRes);
+        const uploadedUrl = uploadPayload?.data?.url;
+        if (!uploadRes.ok || !uploadedUrl) {
+          toast.error(
+            `${fileName}: ${
+              uploadPayload?.error ||
+              (uploadRes.status === 413 ? MAX_AUDIO_UPLOAD_SIZE_MESSAGE : null) ||
+              'Failed to upload voice recording'
+            }`
+          );
+          return false;
+        }
+
+        const created = await createAsset({
+          provider: 'R2_AUDIO',
+          sourceUrl: uploadedUrl,
+          displayName:
+            displayName?.trim() || fileName.replace(/\.[^/.]+$/, '') || 'Voice Recording',
+          reservationId: uploadPayload?.data?.reservationId ?? null,
+        });
+        return !!created;
+      } catch (error) {
+        console.error('Failed to upload voice asset:', error);
+        toast.error(`${fileName}: Failed to upload voice recording`);
+        return false;
+      }
+    },
+    [videoId, getGuestUploadToken, createAsset]
+  );
+
+  const stageAudioFiles = useCallback((files: File[]) => {
+    const validFiles: File[] = [];
+    for (const file of files) {
+      const audioError = getAudioUploadValidationError(file);
+      if (audioError) {
+        toast.error(`${file.name}: ${audioError}`);
+        continue;
+      }
+      validFiles.push(file);
+    }
+    if (validFiles.length === 0) return;
+
+    setPendingAudioFiles((prev) => {
+      const next = [...prev];
+      for (const file of validFiles) {
+        const duplicate = next.some(
+          (existing) =>
+            existing.name === file.name &&
+            existing.size === file.size &&
+            existing.lastModified === file.lastModified
+        );
+        if (!duplicate) next.push(file);
+      }
+      return next;
+    });
+
+    toast.success(
+      validFiles.length === 1
+        ? 'Audio file attached. Click Upload to send.'
+        : `${validFiles.length} audio files attached. Click Upload to send.`
+    );
+  }, []);
+
+  const handleVoiceFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
+    setUploadTab('voice');
+    stageAudioFiles(files);
+    if (voiceInputRef.current) voiceInputRef.current.value = '';
+  };
+
+  const handleVoiceUpload = useCallback(async () => {
+    if (audioBlob && pendingAudioFiles.length === 0) {
+      setIsUploadingVoice(true);
+      try {
+        const ok = await uploadSingleAudioAsset(
+          audioBlob,
+          'recording.webm',
+          voiceTitle.trim() || 'Voice Recording'
+        );
+        if (ok) {
+          setVoiceTitle('');
+          setAudioBlob(null);
+          setAudioBlobUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+          });
+        }
+      } finally {
+        setIsUploadingVoice(false);
+      }
       return;
     }
 
+    if (pendingAudioFiles.length === 0) return;
+
     setIsUploadingVoice(true);
+    let successCount = 0;
+    let failCount = 0;
+
     try {
-      const formData = new FormData();
-      if (pendingAudioFile) {
-        formData.append('audio', pendingAudioFile);
-      } else {
-        formData.append('audio', audioBlob!, 'recording.webm');
+      for (const file of pendingAudioFiles) {
+        const displayName = voiceTitle.trim() || file.name.replace(/\.[^/.]+$/, '');
+        const ok = await uploadSingleAudioAsset(file, file.name, displayName);
+        if (ok) successCount += 1;
+        else failCount += 1;
       }
-      formData.append('videoId', videoId);
-      const guestUploadToken = await getGuestUploadToken('audio');
-      if (guestUploadToken) formData.append('uploadToken', guestUploadToken);
 
-      const uploadRes = await fetch('/api/upload/audio', {
-        method: 'POST',
-        body: formData,
-      });
-      const uploadPayload = await readUploadAudioResponse(uploadRes);
-      const uploadedUrl = uploadPayload?.data?.url;
-      if (!uploadRes.ok || !uploadedUrl) {
-        toast.error(
-          uploadPayload?.error ||
-            (uploadRes.status === 413 ? MAX_AUDIO_UPLOAD_SIZE_MESSAGE : null) ||
-            'Failed to upload voice recording'
+      if (successCount > 0) {
+        setVoiceTitle('');
+        setPendingAudioFiles([]);
+        if (voiceInputRef.current) voiceInputRef.current.value = '';
+      }
+
+      if (successCount > 0 && failCount === 0) {
+        toast.success(
+          successCount === 1 ? 'Audio uploaded' : `${successCount} audio files uploaded`
         );
-        return;
+      } else if (successCount > 0 && failCount > 0) {
+        toast.warning(`${successCount} uploaded, ${failCount} failed`);
       }
-
-      const fallbackName = pendingAudioFile
-        ? pendingAudioFile.name.replace(/\.[^/.]+$/, '')
-        : 'Voice Recording';
-      await createAsset({
-        provider: 'R2_AUDIO',
-        sourceUrl: uploadedUrl,
-        displayName: voiceTitle.trim() || fallbackName,
-        reservationId: uploadPayload?.data?.reservationId ?? null,
-      });
-      setVoiceTitle('');
-      setAudioBlob(null);
-      setAudioBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-      setPendingAudioFile(null);
-    } catch (error) {
-      console.error('Failed to upload voice asset:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to upload voice recording');
     } finally {
       setIsUploadingVoice(false);
     }
-  }, [pendingAudioFile, audioBlob, videoId, getGuestUploadToken, createAsset, voiceTitle]);
+  }, [audioBlob, pendingAudioFiles, uploadSingleAudioAsset, voiceTitle]);
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent) => {
@@ -700,36 +936,52 @@ export const AssetsPane = memo(function AssetsPane({
       setIsDragOver(false);
       if (!canUploadAssets) return;
 
-      const file = Array.from(e.dataTransfer.files)[0];
-      if (!file) return;
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length === 0) return;
 
-      if (file.type.startsWith('image/')) {
-        const imageError = await validateImageFile(file);
-        if (imageError) {
-          toast.error(imageError);
-          return;
+      const imageFiles: File[] = [];
+      const videoFiles: File[] = [];
+      const audioFiles: File[] = [];
+      let unsupportedCount = 0;
+
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          imageFiles.push(file);
+        } else if (file.type.startsWith('video/')) {
+          videoFiles.push(file);
+        } else if (file.type.startsWith('audio/')) {
+          audioFiles.push(file);
+        } else {
+          unsupportedCount += 1;
+          toast.error(`${file.name}: Unsupported file type`);
         }
-        // Stage the file so the user can optionally set a name before uploading
+      }
+
+      if (imageFiles.length > 0) {
         setUploadTab('image');
-        setPendingImageFile(file);
-      } else if (file.type.startsWith('video/')) {
-        // Videos upload immediately (large files, no staging)
-        setUploadTab('bunny');
-        await handleBunnyFileUpload(file);
-      } else if (file.type.startsWith('audio/')) {
-        const audioError = getAudioUploadValidationError(file);
-        if (audioError) {
-          toast.error(audioError);
-          return;
-        }
-        // Stage the file so the user can optionally set a name before uploading
+        await stageImageFiles(imageFiles);
+      }
+
+      if (audioFiles.length > 0) {
         setUploadTab('voice');
-        setPendingAudioFile(file);
-      } else {
-        toast.error('Unsupported file type. Drop an image, video, or audio file.');
+        stageAudioFiles(audioFiles);
+      }
+
+      if (videoFiles.length > 0) {
+        setUploadTab('bunny');
+        await handleVideoBatchUpload(videoFiles);
+      }
+
+      if (
+        imageFiles.length === 0 &&
+        videoFiles.length === 0 &&
+        audioFiles.length === 0 &&
+        unsupportedCount === 0
+      ) {
+        toast.error('Drop an image, video, or audio file.');
       }
     },
-    [canUploadAssets, handleBunnyFileUpload]
+    [canUploadAssets, handleVideoBatchUpload, stageAudioFiles, stageImageFiles]
   );
 
   const renderAssetPreview = (asset: VideoAsset) => {
@@ -768,6 +1020,27 @@ export const AssetsPane = memo(function AssetsPane({
             alt={asset.displayName}
             className="h-full w-full object-contain"
           />
+        </div>
+      );
+    }
+
+    if (asset.provider === 'R2_VIDEO') {
+      const thumbnailSrc = asset.thumbnailUrl;
+      return (
+        <div className="h-24 w-36 rounded border overflow-hidden bg-black/70 relative flex items-center justify-center">
+          {thumbnailSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbnailSrc}
+              alt={asset.displayName}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <FileVideo className="h-6 w-6 text-muted-foreground" />
+          )}
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+            <Play className="h-4 w-4 text-white" />
+          </div>
         </div>
       );
     }
@@ -863,7 +1136,10 @@ export const AssetsPane = memo(function AssetsPane({
           {isDragOver && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 border-2 border-dashed border-primary pointer-events-none">
               <UploadCloud className="h-8 w-8 text-primary" />
-              <span className="text-sm font-medium text-primary">Drop to upload</span>
+              <span className="text-sm font-medium text-primary">Drop files to upload</span>
+              <span className="text-xs text-primary/80">
+                Multiple images, videos, or audio supported
+              </span>
             </div>
           )}
           <Tabs
@@ -891,22 +1167,40 @@ export const AssetsPane = memo(function AssetsPane({
                 If set, this name will be used in @asset mentions.
               </p>
               <p className="text-xs text-muted-foreground">
-                Tip: you can paste an image here with Ctrl/Cmd+V.
+                Tip: paste an image with Ctrl/Cmd+V, or drop multiple files onto this panel.
               </p>
-              {pendingImageFile ? (
-                <div className="rounded-md border px-2 py-1.5 text-xs flex items-center justify-between gap-2">
-                  <span className="truncate">Attached: {pendingImageFile.name}</span>
+              {pendingImageFiles.length > 0 ? (
+                <div className="space-y-1">
+                  {pendingImageFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                      className="rounded-md border px-2 py-1.5 text-xs flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate">Attached: {file.name}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2"
+                        onClick={() => {
+                          setPendingImageFiles((prev) => prev.filter((_, i) => i !== index));
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="h-6 px-2"
+                    className="h-6 px-2 text-xs"
                     onClick={() => {
-                      setPendingImageFile(null);
+                      setPendingImageFiles([]);
                       if (imageInputRef.current) imageInputRef.current.value = '';
                     }}
                   >
-                    Clear
+                    Clear all
                   </Button>
                 </div>
               ) : null}
@@ -915,8 +1209,8 @@ export const AssetsPane = memo(function AssetsPane({
                 className="w-full"
                 disabled={isUploadingImage || isCreatingAsset}
                 onClick={() => {
-                  if (pendingImageFile) {
-                    void handleImageUpload(pendingImageFile);
+                  if (pendingImageFiles.length > 0) {
+                    void handleImageUpload(pendingImageFiles);
                     return;
                   }
                   imageInputRef.current?.click();
@@ -931,14 +1225,17 @@ export const AssetsPane = memo(function AssetsPane({
                   ? 'Uploading...'
                   : isCreatingAsset
                     ? 'Saving...'
-                    : pendingImageFile
-                      ? 'Upload Image'
-                      : 'Select Image'}
+                    : pendingImageFiles.length > 1
+                      ? `Upload ${pendingImageFiles.length} Images`
+                      : pendingImageFiles.length === 1
+                        ? 'Upload Image'
+                        : 'Select Images'}
               </Button>
               <input
                 ref={imageInputRef}
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
                 onChange={handleImageFileChange}
               />
@@ -978,6 +1275,9 @@ export const AssetsPane = memo(function AssetsPane({
               <p className="text-xs text-muted-foreground">
                 If set, this name will be used in @asset mentions.
               </p>
+              <p className="text-xs text-muted-foreground">
+                Drop multiple video files onto this panel to upload them in sequence.
+              </p>
               <Button
                 variant="outline"
                 className="w-full"
@@ -989,21 +1289,27 @@ export const AssetsPane = memo(function AssetsPane({
                 ) : (
                   <UploadCloud className="h-4 w-4 mr-2" />
                 )}
-                {isUploadingBunny ? 'Uploading...' : 'Upload Video'}
+                {isUploadingBunny ? 'Uploading...' : 'Select Videos'}
               </Button>
               <input
                 ref={bunnyInputRef}
                 type="file"
                 accept="video/*"
+                multiple
                 className="hidden"
                 onChange={handleBunnyUpload}
               />
               {isUploadingBunny && (
-                <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-primary h-2 rounded-full"
-                    style={{ width: `${bunnyProgress}%` }}
-                  />
+                <div className="space-y-1">
+                  {bunnyUploadLabel ? (
+                    <p className="text-xs text-muted-foreground">{bunnyUploadLabel}</p>
+                  ) : null}
+                  <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-primary h-2 rounded-full"
+                      style={{ width: `${bunnyProgress}%` }}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1017,31 +1323,54 @@ export const AssetsPane = memo(function AssetsPane({
                 onChange={(e) => setVoiceTitle(e.target.value)}
                 disabled={isRecording || isUploadingVoice}
               />
-              {pendingAudioFile ? (
+              {pendingAudioFiles.length > 0 ? (
                 <div className="space-y-2">
-                  <div className="rounded-md border px-2 py-1.5 text-xs flex items-center justify-between gap-2">
-                    <span className="truncate">Attached: {pendingAudioFile.name}</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2"
-                      onClick={() => setPendingAudioFile(null)}
+                  {pendingAudioFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                      className="rounded-md border px-2 py-1.5 text-xs flex items-center justify-between gap-2"
                     >
-                      Clear
-                    </Button>
-                  </div>
+                      <span className="truncate">Attached: {file.name}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2"
+                        onClick={() => {
+                          setPendingAudioFiles((prev) => prev.filter((_, i) => i !== index));
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => {
+                      setPendingAudioFiles([]);
+                      if (voiceInputRef.current) voiceInputRef.current.value = '';
+                    }}
+                  >
+                    Clear all
+                  </Button>
                   <Button
                     className="w-full"
                     disabled={isUploadingVoice || isCreatingAsset}
-                    onClick={handleVoiceUpload}
+                    onClick={() => void handleVoiceUpload()}
                   >
                     {isUploadingVoice ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
                       <UploadCloud className="h-4 w-4 mr-2" />
                     )}
-                    {isUploadingVoice ? 'Uploading...' : 'Upload File'}
+                    {isUploadingVoice
+                      ? 'Uploading...'
+                      : pendingAudioFiles.length > 1
+                        ? `Upload ${pendingAudioFiles.length} Files`
+                        : 'Upload File'}
                   </Button>
                 </div>
               ) : isRecording ? (
@@ -1141,18 +1470,37 @@ export const AssetsPane = memo(function AssetsPane({
                   </div>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={startRecording}
-                  disabled={isUploadingVoice || isCreatingAsset}
-                >
-                  <Mic className="h-4 w-4 mr-2" />
-                  Start Recording
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={startRecording}
+                    disabled={isUploadingVoice || isCreatingAsset}
+                  >
+                    <Mic className="h-4 w-4 mr-2" />
+                    Start Recording
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={isUploadingVoice || isCreatingAsset}
+                    onClick={() => voiceInputRef.current?.click()}
+                  >
+                    <UploadCloud className="h-4 w-4 mr-2" />
+                    Select Audio Files
+                  </Button>
+                  <input
+                    ref={voiceInputRef}
+                    type="file"
+                    accept="audio/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleVoiceFileChange}
+                  />
+                </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Or drag an audio file anywhere onto this panel.
+                Or drag multiple audio files anywhere onto this panel.
               </p>
             </div>
           )}
@@ -1286,6 +1634,22 @@ export const AssetsPane = memo(function AssetsPane({
                     Open on YouTube
                   </a>
                 </Button>
+              ) : selectedAsset?.provider === 'R2_VIDEO' && canDownloadAssets ? (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  title="Download video"
+                  aria-label="Download video"
+                  disabled={activeDownloadAssetId === selectedAsset.id}
+                  onClick={() => void downloadAsset(selectedAsset)}
+                >
+                  {activeDownloadAssetId === selectedAsset.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
               ) : null}
               {selectedAsset?.provider === 'BUNNY' && canDownloadAssets ? (
                 <DropdownMenu>
@@ -1346,6 +1710,14 @@ export const AssetsPane = memo(function AssetsPane({
                       allowFullScreen
                     />
                   </div>
+                ) : selectedAsset.provider === 'R2_VIDEO' && selectedAsset.sourceUrl ? (
+                  <video
+                    className="w-full h-full rounded-md border bg-black object-contain"
+                    src={selectedAsset.sourceUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
                 ) : (
                   <BunnyPreviewPlayer
                     ref={bunnyPreviewPlayerRef}

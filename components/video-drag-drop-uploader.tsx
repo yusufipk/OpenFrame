@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, UploadCloud } from 'lucide-react';
+import { CheckCircle2, Loader2, UploadCloud, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -22,13 +22,30 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
-import { cleanupPendingR2VideoUpload, uploadVideoToR2 } from '@/lib/client/r2-video-upload';
+import {
+  cleanupPendingProjectUpload,
+  getDefaultTitleFromFile,
+  isVideoFile,
+  uploadProjectVideo,
+  type ActiveTusUpload,
+  type PendingProjectUploadCleanup,
+} from '@/lib/client/project-video-upload';
 import type { DirectUploadProvider } from '@/components/video-page/types';
 
 type ProjectOption = {
   id: string;
   name: string;
   description?: string | null;
+};
+
+type QueueItemStatus = 'pending' | 'uploading' | 'done' | 'error' | 'cancelled';
+
+type QueueItem = {
+  id: string;
+  file: File;
+  status: QueueItemStatus;
+  progress: number;
+  error?: string;
 };
 
 interface VideoDragDropUploaderProps {
@@ -40,29 +57,18 @@ interface VideoDragDropUploaderProps {
   directUploadProvider?: DirectUploadProvider;
 }
 
-const VIDEO_FILE_EXTENSIONS = ['mp4', 'webm', 'ogg', 'mov', 'm4v', 'mkv'];
-type ActiveTusUpload = { abort: (shouldTerminate?: boolean) => Promise<unknown> | void };
-
-function isVideoFile(file: File): boolean {
-  if (file.type.startsWith('video/')) return true;
-  const ext = file.name.split('.').pop()?.toLowerCase();
-  return !!ext && VIDEO_FILE_EXTENSIONS.includes(ext);
-}
-
-function extractVideoFile(dataTransfer: DataTransfer | null): File | null {
-  if (!dataTransfer?.files?.length) return null;
-  const files = Array.from(dataTransfer.files);
-  return files.find(isVideoFile) ?? null;
-}
-
 function hasFileData(dataTransfer: DataTransfer | null): boolean {
   if (!dataTransfer) return false;
   return Array.from(dataTransfer.types || []).includes('Files');
 }
 
-function getDefaultTitleFromFile(file: File): string {
-  const withoutExt = file.name.replace(/\.[^/.]+$/, '').trim();
-  return withoutExt || file.name;
+function createQueueItem(file: File): QueueItem {
+  return {
+    id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+    file,
+    status: 'pending',
+    progress: 0,
+  };
 }
 
 export function VideoDragDropUploader({
@@ -79,7 +85,7 @@ export function VideoDragDropUploader({
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [droppedFile, setDroppedFile] = useState<File | null>(null);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -90,23 +96,9 @@ export function VideoDragDropUploader({
   );
 
   const activeTusUploadRef = useRef<ActiveTusUpload | null>(null);
-  const pendingUploadRef = useRef<
-    | {
-        type: 'bunny';
-        projectId: string;
-        videoId: string;
-        uploadToken: string;
-      }
-    | {
-        type: 'r2';
-        projectId: string;
-        objectKey: string;
-        uploadToken: string;
-        reservationId: string | null;
-        thumbnailObjectKey?: string;
-      }
-    | null
-  >(null);
+  const pendingUploadRef = useRef<(PendingProjectUploadCleanup & { projectId: string }) | null>(
+    null
+  );
   const cancelRequestedRef = useRef(false);
   const dragDepthRef = useRef(0);
   const hasLoadedProjectsRef = useRef(false);
@@ -117,6 +109,12 @@ export function VideoDragDropUploader({
   const projectsById = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project.name]));
   }, [projects]);
+
+  const pendingCount = queue.filter((item) => item.status === 'pending').length;
+  const doneCount = queue.filter((item) => item.status === 'done').length;
+  const errorCount = queue.filter((item) => item.status === 'error').length;
+  const totalCount = queue.length;
+  const hasQueue = totalCount > 0;
 
   const ensureProjectsLoaded = useCallback(async () => {
     if (!canUpload) return;
@@ -183,7 +181,7 @@ export function VideoDragDropUploader({
   useEffect(() => {
     if (!canUpload) {
       setDialogOpen(false);
-      setDroppedFile(null);
+      setQueue([]);
     }
   }, [canUpload]);
 
@@ -196,7 +194,7 @@ export function VideoDragDropUploader({
     }
   }, [needsProjectSelection, projectOptions, workspaceId]);
 
-  const cleanupUploadState = useCallback(() => {
+  const resetUploadState = useCallback(() => {
     activeTusUploadRef.current = null;
     pendingUploadRef.current = null;
     setIsUploading(false);
@@ -207,7 +205,6 @@ export function VideoDragDropUploader({
   const cancelPendingUpload = useCallback(async () => {
     if (!isUploading) return;
     cancelRequestedRef.current = true;
-    const pending = pendingUploadRef.current;
 
     if (activeTusUploadRef.current) {
       try {
@@ -219,274 +216,163 @@ export function VideoDragDropUploader({
       }
     }
 
+    const pending = pendingUploadRef.current;
     if (pending) {
-      try {
-        if (pending.type === 'bunny') {
-          await fetch(`/api/projects/${pending.projectId}/videos/bunny-init`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoId: pending.videoId, uploadToken: pending.uploadToken }),
-          });
-        } else {
-          await cleanupPendingR2VideoUpload(pending.projectId, {
-            objectKey: pending.objectKey,
-            uploadToken: pending.uploadToken,
-            reservationId: pending.reservationId,
-            thumbnailObjectKey: pending.thumbnailObjectKey,
-          });
-        }
-      } catch (error) {
-        console.error('Failed to cleanup cancelled upload:', error);
-      }
+      await cleanupPendingProjectUpload(pending.projectId, pending);
     }
 
-    cleanupUploadState();
-    setDroppedFile(null);
-    setDialogOpen(false);
+    setQueue((prev) =>
+      prev.map((item) =>
+        item.status === 'uploading' || item.status === 'pending'
+          ? { ...item, status: 'cancelled' as const }
+          : item
+      )
+    );
+
+    resetUploadState();
     setShowCancelUploadDialog(false);
     toast.info('Upload cancelled');
-  }, [cleanupUploadState, isUploading]);
+  }, [isUploading, resetUploadState]);
 
-  const uploadFileToProject = useCallback(
-    async (file: File, projectId: string, projectName?: string) => {
+  const uploadQueueToProject = useCallback(
+    async (files: File[], projectId: string, projectName?: string) => {
+      if (files.length === 0) return;
+
       setDialogOpen(true);
       cancelRequestedRef.current = false;
       setIsUploading(true);
-      setUploadStatus('Initializing upload...');
-      setUploadProgress(0);
       setSelectedProjectId(projectId);
       setSelectedProjectName(projectName ?? projectsById.get(projectId) ?? null);
 
-      let pendingCleanup:
-        | { type: 'bunny'; videoId: string; uploadToken: string }
-        | {
-            type: 'r2';
-            objectKey: string;
-            uploadToken: string;
-            reservationId: string | null;
-            thumbnailObjectKey?: string;
-          }
-        | null = null;
+      const initialQueue = files.map(createQueueItem);
+      setQueue(initialQueue);
 
-      try {
-        const title = getDefaultTitleFromFile(file);
+      let successCount = 0;
+      let failCount = 0;
 
-        if (directUploadProvider === 'r2') {
-          const uploaded = await uploadVideoToR2(projectId, file, {
+      for (let index = 0; index < initialQueue.length; index++) {
+        if (cancelRequestedRef.current) break;
+
+        const item = initialQueue[index];
+        setUploadProgress(0);
+        setUploadStatus(`Uploading ${index + 1} of ${initialQueue.length}: ${item.file.name}`);
+
+        setQueue((prev) =>
+          prev.map((entry) =>
+            entry.id === item.id
+              ? { ...entry, status: 'uploading', progress: 0, error: undefined }
+              : entry
+          )
+        );
+
+        try {
+          await uploadProjectVideo(projectId, item.file, {
+            provider: directUploadProvider,
+            bunnyCdnHostname,
             onProgress: (progress) => {
               setUploadProgress(progress);
-              setUploadStatus(`Uploading... ${progress}%`);
+              setQueue((prev) =>
+                prev.map((entry) => (entry.id === item.id ? { ...entry, progress } : entry))
+              );
             },
-          });
-          pendingCleanup = {
-            type: 'r2',
-            objectKey: uploaded.objectKey,
-            uploadToken: uploaded.uploadToken,
-            reservationId: uploaded.reservationId,
-            thumbnailObjectKey: uploaded.thumbnailObjectKey,
-          };
-          pendingUploadRef.current = {
-            type: 'r2',
-            projectId,
-            objectKey: uploaded.objectKey,
-            uploadToken: uploaded.uploadToken,
-            reservationId: uploaded.reservationId,
-            thumbnailObjectKey: uploaded.thumbnailObjectKey,
-          };
-
-          setUploadStatus('Saving video...');
-          const createResponse = await fetch(`/api/projects/${projectId}/videos`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title,
-              description: null,
-              videoUrl: uploaded.proxyUrl,
-              providerId: 'r2',
-              videoId: uploaded.objectKey,
-              thumbnailUrl: uploaded.thumbnailUrl || '/placeholder-video-thumbnail.png',
-              duration: uploaded.duration,
-              uploadToken: uploaded.uploadToken,
-              objectKey: uploaded.objectKey,
-              reservationId: uploaded.reservationId,
-            }),
+            onStatus: (status) => {
+              setUploadStatus(`Uploading ${index + 1} of ${initialQueue.length}: ${status}`);
+            },
+            onTusUploadReady: (upload) => {
+              activeTusUploadRef.current = upload;
+            },
+            onPendingUpload: (pending) => {
+              pendingUploadRef.current = { ...pending, projectId };
+            },
+            isCancelled: () => cancelRequestedRef.current,
           });
 
-          const createPayload = (await createResponse.json().catch(() => null)) as {
-            error?: string;
-          } | null;
+          if (cancelRequestedRef.current) break;
 
-          if (!createResponse.ok) {
-            throw new Error(createPayload?.error || 'Failed to create video');
-          }
+          pendingUploadRef.current = null;
+          activeTusUploadRef.current = null;
+          successCount += 1;
 
-          toast.success(
-            `Video uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
+          setQueue((prev) =>
+            prev.map((entry) =>
+              entry.id === item.id ? { ...entry, status: 'done', progress: 100 } : entry
+            )
           );
-          setDialogOpen(false);
-          setDroppedFile(null);
-          cleanupUploadState();
-          router.push(`/projects/${projectId}`);
-          router.refresh();
-          return;
+        } catch (error) {
+          if (cancelRequestedRef.current) break;
+
+          pendingUploadRef.current = null;
+          activeTusUploadRef.current = null;
+          failCount += 1;
+
+          const message = error instanceof Error ? error.message : 'Failed to upload video';
+          setQueue((prev) =>
+            prev.map((entry) =>
+              entry.id === item.id ? { ...entry, status: 'error', error: message } : entry
+            )
+          );
+          toast.error(`${item.file.name}: ${message}`);
         }
+      }
 
-        const initResponse = await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title }),
-        });
+      resetUploadState();
 
-        const initPayload = (await initResponse.json().catch(() => null)) as {
-          data?: {
-            videoId: string;
-            libraryId: string;
-            signature: string;
-            expirationTime: number;
-            uploadToken: string;
-          };
-          error?: string;
-        } | null;
+      if (cancelRequestedRef.current) {
+        return;
+      }
 
-        if (!initResponse.ok || !initPayload?.data) {
-          throw new Error(initPayload?.error || 'Failed to initialize upload');
-        }
-
-        const createdVideoId = initPayload.data.videoId;
-        const uploadToken = initPayload.data.uploadToken;
-        pendingCleanup = { type: 'bunny', videoId: createdVideoId, uploadToken };
-        pendingUploadRef.current = {
-          type: 'bunny',
-          projectId,
-          videoId: createdVideoId,
-          uploadToken,
-        };
-
-        const { Upload } = await import('tus-js-client');
-        await new Promise<void>((resolve, reject) => {
-          const upload = new Upload(file, {
-            endpoint: 'https://video.bunnycdn.com/tusupload',
-            retryDelays: [0, 3000, 5000, 10000, 20000],
-            headers: {
-              AuthorizationSignature: initPayload.data!.signature,
-              AuthorizationExpire: initPayload.data!.expirationTime.toString(),
-              VideoId: initPayload.data!.videoId,
-              LibraryId: initPayload.data!.libraryId,
-            },
-            metadata: {
-              filetype: file.type,
-              title,
-            },
-            onError: (error) => {
-              activeTusUploadRef.current = null;
-              reject(new Error(error.message));
-            },
-            onProgress: (bytesUploaded, bytesTotal) => {
-              const percentage = Number(((bytesUploaded / bytesTotal) * 100).toFixed(1));
-              setUploadProgress(percentage);
-              setUploadStatus(`Uploading... ${percentage}%`);
-            },
-            onSuccess: () => {
-              activeTusUploadRef.current = null;
-              resolve();
-            },
-          });
-
-          activeTusUploadRef.current = upload;
-          upload.start();
-        });
-
-        setUploadStatus('Saving video...');
-
-        const createResponse = await fetch(`/api/projects/${projectId}/videos`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            description: null,
-            videoUrl: `https://iframe.mediadelivery.net/embed/${initPayload.data.libraryId}/${initPayload.data.videoId}`,
-            providerId: 'bunny',
-            videoId: initPayload.data.videoId,
-            thumbnailUrl: bunnyCdnHostname
-              ? `https://${bunnyCdnHostname}/${initPayload.data.videoId}/thumbnail.jpg`
-              : null,
-            duration: null,
-            uploadToken,
-          }),
-        });
-
-        const createPayload = (await createResponse.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-
-        if (!createResponse.ok) {
-          throw new Error(createPayload?.error || 'Failed to create video');
-        }
-
-        toast.success(
-          `Video uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
-        );
-        setDialogOpen(false);
-        setDroppedFile(null);
-        cleanupUploadState();
-        router.push(`/projects/${projectId}`);
+      if (successCount > 0) {
         router.refresh();
-      } catch (error) {
-        console.error('Drag-drop upload failed:', error);
+      }
 
-        if (cancelRequestedRef.current) {
-          setUploadStatus('');
-          setUploadProgress(0);
-          setIsUploading(false);
-          return;
+      if (successCount > 0 && failCount === 0) {
+        toast.success(
+          successCount === 1
+            ? `Video uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
+            : `${successCount} videos uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
+        );
+        if (fixedProjectId) {
+          setDialogOpen(false);
+          setQueue([]);
         }
-
-        if (pendingCleanup) {
-          try {
-            if (pendingCleanup.type === 'bunny') {
-              await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  videoId: pendingCleanup.videoId,
-                  uploadToken: pendingCleanup.uploadToken,
-                }),
-              });
-            } else {
-              await cleanupPendingR2VideoUpload(projectId, pendingCleanup);
-            }
-          } catch (cleanupError) {
-            console.error('Failed to cleanup pending upload:', cleanupError);
-          }
-        }
-
-        setUploadStatus('');
-        setUploadProgress(0);
-        setIsUploading(false);
-        toast.error(error instanceof Error ? error.message : 'Failed to upload video');
+      } else if (successCount > 0 && failCount > 0) {
+        toast.warning(`${successCount} uploaded, ${failCount} failed`);
+      } else if (failCount > 0) {
+        toast.error('All uploads failed');
       }
     },
-    [bunnyCdnHostname, cleanupUploadState, directUploadProvider, projectsById, router]
+    [bunnyCdnHostname, directUploadProvider, fixedProjectId, projectsById, resetUploadState, router]
   );
 
-  const handleDropFile = useCallback(
-    (file: File) => {
+  const handleDropFiles = useCallback(
+    (files: File[]) => {
       if (!canUpload) {
         toast.error('You do not have permission to upload videos here');
         return;
       }
 
-      setDroppedFile(file);
+      const videoFiles = files.filter(isVideoFile);
+      const invalidCount = files.length - videoFiles.length;
 
-      if (fixedProjectId) {
-        void uploadFileToProject(file, fixedProjectId, fixedProjectName);
+      if (videoFiles.length === 0) {
+        toast.error('Please drop valid video files');
         return;
       }
 
+      if (invalidCount > 0) {
+        toast.error(`${invalidCount} file${invalidCount === 1 ? '' : 's'} skipped (not a video)`);
+      }
+
+      if (fixedProjectId) {
+        void uploadQueueToProject(videoFiles, fixedProjectId, fixedProjectName);
+        return;
+      }
+
+      setQueue(videoFiles.map(createQueueItem));
       setDialogOpen(true);
       void ensureProjectsLoaded();
     },
-    [canUpload, ensureProjectsLoaded, fixedProjectId, fixedProjectName, uploadFileToProject]
+    [canUpload, ensureProjectsLoaded, fixedProjectId, fixedProjectName, uploadQueueToProject]
   );
 
   useEffect(() => {
@@ -520,13 +406,10 @@ export function VideoDragDropUploader({
       dragDepthRef.current = 0;
       setIsDragActive(false);
 
-      const videoFile = extractVideoFile(event.dataTransfer);
-      if (!videoFile) {
-        toast.error('Please drop a valid video file');
-        return;
-      }
+      const allFiles = Array.from(event.dataTransfer?.files ?? []);
+      if (allFiles.length === 0) return;
 
-      handleDropFile(videoFile);
+      handleDropFiles(allFiles);
     };
 
     window.addEventListener('dragenter', handleDragEnter);
@@ -540,7 +423,15 @@ export function VideoDragDropUploader({
       window.removeEventListener('dragleave', handleDragLeave);
       window.removeEventListener('drop', handleDrop);
     };
-  }, [handleDropFile]);
+  }, [handleDropFiles]);
+
+  const closeDialog = useCallback(() => {
+    setQueue([]);
+    setUploadStatus('');
+    setUploadProgress(0);
+    setSelectedProjectId(fixedProjectId ?? null);
+    setSelectedProjectName(fixedProjectName ?? null);
+  }, [fixedProjectId, fixedProjectName]);
 
   return (
     <>
@@ -549,11 +440,11 @@ export function VideoDragDropUploader({
           <div className="flex h-full items-center justify-center px-4">
             <div className="w-full max-w-2xl rounded-2xl border-2 border-dashed border-primary bg-background p-10 text-center shadow-2xl">
               <UploadCloud className="mx-auto mb-4 h-10 w-10 text-primary" />
-              <p className="text-lg font-semibold">Drop video to upload</p>
+              <p className="text-lg font-semibold">Drop videos to upload</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {fixedProjectId
-                  ? `Upload to ${fixedProjectName ?? 'current project'}`
-                  : 'Drop now, then choose a project card.'}
+                  ? `Upload multiple videos to ${fixedProjectName ?? 'current project'}`
+                  : 'Drop multiple videos, then choose a project.'}
               </p>
             </div>
           </div>
@@ -568,26 +459,62 @@ export function VideoDragDropUploader({
               setShowCancelUploadDialog(true);
               return;
             }
-            setDroppedFile(null);
-            setUploadStatus('');
-            setUploadProgress(0);
-            setSelectedProjectId(fixedProjectId ?? null);
-            setSelectedProjectName(fixedProjectName ?? null);
+            closeDialog();
           }
           setDialogOpen(open);
         }}
       >
         <DialogContent className="border-2 border-border bg-background text-foreground sm:max-w-xl">
           <DialogHeader className="space-y-1">
-            <DialogTitle className="text-2xl font-bold">Choose a project</DialogTitle>
+            <DialogTitle className="text-2xl font-bold">
+              {needsProjectSelection ? 'Choose a project' : 'Uploading videos'}
+            </DialogTitle>
             <DialogDescription>
-              {droppedFile
-                ? 'Upload 1 video to:'
-                : 'Drop a video file anywhere on this page to start.'}
+              {hasQueue
+                ? totalCount === 1
+                  ? `Upload 1 video${needsProjectSelection ? ' to:' : ''}`
+                  : `Upload ${totalCount} videos${needsProjectSelection ? ' to:' : ''}`
+                : 'Drop video files anywhere on this page to start.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            {hasQueue && (
+              <div className="max-h-40 overflow-y-auto rounded-md border border-border">
+                {queue.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0"
+                  >
+                    {item.status === 'done' ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                    ) : item.status === 'error' ? (
+                      <XCircle className="h-4 w-4 shrink-0 text-destructive" />
+                    ) : item.status === 'uploading' ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                    ) : item.status === 'cancelled' ? (
+                      <XCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <div className="h-4 w-4 shrink-0 rounded-full border border-muted-foreground/40" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{item.file.name}</p>
+                      {item.error ? (
+                        <p className="truncate text-xs text-destructive">{item.error}</p>
+                      ) : (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {getDefaultTitleFromFile(item.file)}
+                          {item.status === 'uploading' && item.progress > 0
+                            ? ` · ${item.progress}%`
+                            : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {!fixedProjectId && (
               <div className="space-y-2">
                 {isLoadingProjects ? (
@@ -597,23 +524,31 @@ export function VideoDragDropUploader({
                     {projects.map((project) => (
                       <button
                         key={project.id}
-                        tabIndex={droppedFile && !isUploading ? 0 : -1}
-                        disabled={!droppedFile || isUploading}
-                        aria-disabled={!droppedFile || isUploading}
-                        className={`block w-full border-b border-border p-4 text-left transition-colors last:border-b-0 ${selectedProjectId === project.id ? 'bg-accent' : 'bg-background'} ${!droppedFile || isUploading ? 'opacity-60' : 'hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'}`}
+                        tabIndex={hasQueue && !isUploading ? 0 : -1}
+                        disabled={!hasQueue || isUploading || pendingCount === 0}
+                        aria-disabled={!hasQueue || isUploading || pendingCount === 0}
+                        className={`block w-full border-b border-border p-4 text-left transition-colors last:border-b-0 ${selectedProjectId === project.id ? 'bg-accent' : 'bg-background'} ${!hasQueue || isUploading ? 'opacity-60' : 'hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'}`}
                         onClick={() => {
-                          if (!droppedFile || isUploading) return;
+                          if (!hasQueue || isUploading) return;
+                          const pendingFiles = queue
+                            .filter((item) => item.status === 'pending')
+                            .map((item) => item.file);
+                          if (pendingFiles.length === 0) return;
                           setSelectedProjectId(project.id);
                           setSelectedProjectName(project.name);
-                          void uploadFileToProject(droppedFile, project.id, project.name);
+                          void uploadQueueToProject(pendingFiles, project.id, project.name);
                         }}
                         onKeyDown={(event) => {
                           if (event.key !== 'Enter' && event.key !== ' ') return;
-                          if (!droppedFile || isUploading) return;
+                          if (!hasQueue || isUploading) return;
                           event.preventDefault();
+                          const pendingFiles = queue
+                            .filter((item) => item.status === 'pending')
+                            .map((item) => item.file);
+                          if (pendingFiles.length === 0) return;
                           setSelectedProjectId(project.id);
                           setSelectedProjectName(project.name);
-                          void uploadFileToProject(droppedFile, project.id, project.name);
+                          void uploadQueueToProject(pendingFiles, project.id, project.name);
                         }}
                       >
                         <p className="text-2xl font-semibold leading-tight text-foreground">
@@ -656,12 +591,27 @@ export function VideoDragDropUploader({
                     />
                   </div>
                 )}
+                {totalCount > 1 && (
+                  <p className="text-xs text-muted-foreground">
+                    {doneCount} of {totalCount} complete
+                    {errorCount > 0 ? ` · ${errorCount} failed` : ''}
+                  </p>
+                )}
               </div>
             )}
 
-            {!fixedProjectId && !isUploading && droppedFile && (
+            {!fixedProjectId && !isUploading && hasQueue && pendingCount > 0 && (
               <p className="text-xs text-muted-foreground">
-                Click a project card to start uploading.
+                Click a project card to start uploading {pendingCount} video
+                {pendingCount === 1 ? '' : 's'}.
+              </p>
+            )}
+
+            {!isUploading && hasQueue && (doneCount > 0 || errorCount > 0) && (
+              <p className="text-xs text-muted-foreground">
+                {doneCount > 0 ? `${doneCount} uploaded` : ''}
+                {doneCount > 0 && errorCount > 0 ? ', ' : ''}
+                {errorCount > 0 ? `${errorCount} failed` : ''}
               </p>
             )}
           </div>
@@ -673,8 +623,9 @@ export function VideoDragDropUploader({
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel upload?</AlertDialogTitle>
             <AlertDialogDescription>
-              A video upload is in progress. If you cancel now, the current upload will be
-              discarded.
+              {totalCount > 1
+                ? 'Video uploads are in progress. If you cancel now, the current upload and any remaining queued files will be discarded.'
+                : 'A video upload is in progress. If you cancel now, the current upload will be discarded.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

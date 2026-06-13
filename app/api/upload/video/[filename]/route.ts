@@ -47,9 +47,17 @@ export async function GET(
       project: { select: projectSelect },
     } as const;
 
-    const [versions, session] = await Promise.all([
+    const [versions, assets, session] = await Promise.all([
       db.videoVersion.findMany({
         where: { originalUrl },
+        take: 2,
+        select: {
+          id: true,
+          video: { select: videoSelect },
+        },
+      }),
+      db.videoAsset.findMany({
+        where: { sourceUrl: originalUrl },
         take: 2,
         select: {
           id: true,
@@ -62,6 +70,9 @@ export async function GET(
     const uniqueVideos = new Map<string, (typeof versions)[number]['video']>();
     for (const version of versions) {
       uniqueVideos.set(version.video.id, version.video);
+    }
+    for (const asset of assets) {
+      uniqueVideos.set(asset.video.id, asset.video);
     }
     if (uniqueVideos.size > 1) {
       return apiErrors.forbidden('Access denied');
