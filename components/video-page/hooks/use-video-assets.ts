@@ -7,12 +7,13 @@ import type { VideoAsset } from '@/components/video-page/types';
 type BunnyDownloadPreference = 'original' | 'compressed';
 
 type CreateAssetPayload = {
-  provider: 'R2_IMAGE' | 'YOUTUBE' | 'BUNNY' | 'R2_AUDIO';
+  provider: 'R2_IMAGE' | 'YOUTUBE' | 'BUNNY' | 'R2_AUDIO' | 'R2_VIDEO';
   displayName?: string;
   sourceUrl: string;
   providerVideoId?: string;
   thumbnailUrl?: string;
   uploadToken?: string;
+  objectKey?: string;
   reservationId?: string | null;
 };
 

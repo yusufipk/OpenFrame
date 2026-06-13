@@ -8,8 +8,10 @@ import { db } from '@/lib/db';
 import {
   extractImageFileNameFromProxyUrl,
   extractAudioFileNameFromProxyUrl,
+  extractVideoFileNameFromProxyUrl,
   getVideoAssetAccessContext,
 } from '@/lib/video-assets';
+import { buildVideoObjectKey } from '@/lib/video-upload-validation';
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string; assetId: string }> };
@@ -34,6 +36,16 @@ const AUDIO_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
   wav: 'audio/wav',
 };
 const BUNNY_ALLOWED_QUALITIES = new Set([2160, 1440, 1080, 720, 480, 360, 240]);
+
+const VIDEO_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  ogg: 'video/ogg',
+  mov: 'video/quicktime',
+  m4v: 'video/mp4',
+  mkv: 'video/x-matroska',
+  avi: 'video/x-msvideo',
+};
 
 function sanitizeFileName(value: string): string {
   const sanitized = value
@@ -134,6 +146,29 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           'X-Content-Type-Options': 'nosniff',
         },
         internalErrorMessage: 'Failed to retrieve audio',
+      });
+    }
+
+    if (asset.provider === VideoAssetProvider.R2_VIDEO) {
+      const fileName = extractVideoFileNameFromProxyUrl(asset.sourceUrl);
+      if (!fileName) return apiErrors.badRequest('Invalid video asset URL');
+      const key = buildVideoObjectKey(fileName);
+      const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '.mp4';
+      const downloadName = `${sanitizeFileName(asset.displayName)}${ext}`;
+      const contentDisposition = buildContentDisposition(downloadName);
+      const extKey = ext.replace('.', '');
+      const contentType = VIDEO_CONTENT_TYPE_BY_EXTENSION[extKey] || 'video/mp4';
+
+      return proxyR2MediaObject({
+        request,
+        key,
+        fallbackContentType: contentType,
+        cacheControl: 'private, no-store',
+        extraHeaders: {
+          'Content-Disposition': contentDisposition,
+          'X-Content-Type-Options': 'nosniff',
+        },
+        internalErrorMessage: 'Failed to retrieve video',
       });
     }
 
