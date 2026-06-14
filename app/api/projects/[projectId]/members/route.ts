@@ -10,6 +10,7 @@ import {
 } from '@/lib/invitations';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
+import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -126,9 +127,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('Email is required');
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(normalizedEmail)) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmailAddress(normalizedEmail)) {
       return apiErrors.validationError('Invalid email format');
     }
 

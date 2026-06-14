@@ -21,6 +21,7 @@ import {
 import { validateAnnotationStrokes } from '@/lib/validation';
 import { logError } from '@/lib/logger';
 import { reserveStorageQuota, releaseStorageReservation } from '@/lib/storage-quota';
+import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 const SAFE_IMAGE_PATH =
@@ -328,14 +329,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (guestName !== undefined && guestName !== null && String(guestName).length > 100) {
       return apiErrors.badRequest('Guest name must be 100 characters or fewer');
     }
+    let normalizedGuestEmail: string | null = null;
     if (guestEmail !== undefined && guestEmail !== null) {
-      const emailStr = String(guestEmail);
-      if (emailStr.length > 254) {
-        return apiErrors.badRequest('Guest email must be 254 characters or fewer');
-      }
-      // RFC 5321 / HTML5 email pattern — simple but sufficient for a stored-value guard
-      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRe.test(emailStr)) {
+      normalizedGuestEmail = normalizeEmail(String(guestEmail));
+      if (!isValidEmailAddress(normalizedGuestEmail)) {
         return apiErrors.badRequest('Guest email must be a valid email address');
       }
     }
@@ -444,7 +441,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           annotationData: serializedAnnotationData,
           authorId: session?.user?.id || null,
           guestName: isGuest ? guestName : null,
-          guestEmail: isGuest ? guestEmail : null,
+          guestEmail: isGuest ? normalizedGuestEmail : null,
           guestIdentityId: isGuest ? (guestIdentity?.identityId ?? null) : null,
           tagId: tagId || null,
           versionId,

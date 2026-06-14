@@ -16,6 +16,7 @@ import {
   isEmailVerificationEnabled,
   sendVerificationEmail,
 } from '@/lib/email-verification';
+import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,11 +40,10 @@ export async function POST(request: NextRequest) {
     if (!email || typeof email !== 'string') {
       return apiErrors.badRequest('Email is required');
     }
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = normalizeEmail(email);
 
     // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(normalizedEmail)) {
+    if (!isValidEmailAddress(normalizedEmail)) {
       return apiErrors.validationError('Invalid email format');
     }
 
