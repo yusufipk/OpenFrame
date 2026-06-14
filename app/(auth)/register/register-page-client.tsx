@@ -316,13 +316,13 @@ export default function RegisterPageClient({
 
         <p className="text-center text-xs text-muted-foreground mt-4">
           By continuing, you agree to our{' '}
-          <a href="/terms" className="underline hover:text-foreground">
+          <Link href="/terms" className="underline hover:text-foreground">
             Terms of Service
-          </a>{' '}
+          </Link>{' '}
           and{' '}
-          <a href="/privacy" className="underline hover:text-foreground">
+          <Link href="/privacy" className="underline hover:text-foreground">
             Privacy Policy
-          </a>
+          </Link>
         </p>
       </div>
     </div>

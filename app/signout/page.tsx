@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { signOut } from 'next-auth/react';
 import { LogOut } from 'lucide-react';
@@ -29,7 +30,7 @@ export default function SignOutPage() {
             {loading ? 'Signing out...' : 'Sign out'}
           </Button>
           <Button variant="outline" asChild className="w-full">
-            <a href="/dashboard">Cancel</a>
+            <Link href="/dashboard">Cancel</Link>
           </Button>
         </CardContent>
       </Card>

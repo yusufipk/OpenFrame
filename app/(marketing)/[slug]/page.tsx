@@ -48,10 +48,7 @@ export default async function MarketingSlugPage({ params }: MarketingSlugPagePro
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: safeStructuredData }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeStructuredData }} />
       <ComparisonPage page={page} isLoggedIn={Boolean(session?.user)} />
     </>
   );
