@@ -352,7 +352,9 @@ export function ProjectContentClient({
                 <DropdownMenuItem onClick={() => startProjectDownload()}>
                   Latest version only
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => startProjectDownload(undefined, { allVersions: true })}>
+                <DropdownMenuItem
+                  onClick={() => startProjectDownload(undefined, { allVersions: true })}
+                >
                   All versions
                 </DropdownMenuItem>
               </DropdownMenuContent>
