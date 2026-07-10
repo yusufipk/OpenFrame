@@ -10,6 +10,7 @@ import type {
   VideoData,
 } from '@/components/video-page/types';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
+import { downloadNamedFile, extensionFromUrl, navigateDownload } from '@/lib/client/download-file';
 
 function sanitizeDownloadFileName(value: string): string {
   return value
@@ -117,18 +118,36 @@ export function useDownloadActions({ activeVersion, video }: UseDownloadActionsP
           throw new Error('Missing download URL');
         }
 
-        const versionLabel =
-          activeVersion.versionLabel?.trim() || `v${activeVersion.versionNumber}`;
-        const baseName = sanitizeDownloadFileName(`${video.title} ${versionLabel}`) || 'video';
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        if (activeVersion.providerId === 'direct' || activeVersion.providerId === 'r2') {
-          const ext = activeVersion.originalUrl.split('.').pop()?.toLowerCase() || 'mp4';
-          a.download = `${baseName}.${ext}`;
+        // File name: "<video title> <version label>" if the editor set a label
+        // for this version, otherwise "<video title> v<number>".
+        const versionLabel = activeVersion.versionLabel?.trim();
+        const baseName =
+          sanitizeDownloadFileName(
+            versionLabel
+              ? `${video.title} ${versionLabel}`
+              : `${video.title} v${activeVersion.versionNumber}`
+          ) || 'video';
+
+        if (activeVersion.providerId === 'r2') {
+          // Same-origin proxy: the download attribute applies and streams
+          // without buffering the whole file in memory (any size).
+          const ext = extensionFromUrl(activeVersion.originalUrl) || 'mp4';
+          navigateDownload(downloadUrl, `${baseName}.${ext}`);
+        } else {
+          // Bunny (CDN redirect) and direct hosts are cross-origin, so the
+          // download attribute is ignored on a plain navigation. Fetch the bytes
+          // (CORS is open) and save them with our filename — unless the file is
+          // over 10 GB, in which case downloadNamedFile returns false and we fall
+          // back to a plain navigation (streams to disk with the CDN's name).
+          const fallbackExt =
+            (activeVersion.providerId === 'direct'
+              ? extensionFromUrl(activeVersion.originalUrl)
+              : '') || 'mp4';
+          const saved = await downloadNamedFile(downloadUrl, `${baseName}.${fallbackExt}`);
+          if (!saved) {
+            navigateDownload(downloadUrl);
+          }
         }
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
       } catch (error) {
         console.error('Failed to start video download:', error);
         if (error instanceof Error && error.message === 'Direct download URL is not allowed') {
