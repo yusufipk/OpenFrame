@@ -315,8 +315,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('Download is currently supported for Bunny versions only');
     }
 
-    if (sourceParam !== null && sourceParam !== 'original' && sourceParam !== 'compressed') {
-      return apiErrors.badRequest('Invalid source. Allowed values: original, compressed');
+    if (
+      sourceParam !== null &&
+      sourceParam !== 'auto' &&
+      sourceParam !== 'original' &&
+      sourceParam !== 'compressed'
+    ) {
+      return apiErrors.badRequest('Invalid source. Allowed values: auto, original, compressed');
     }
 
     if (

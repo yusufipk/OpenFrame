@@ -22,6 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const session = await auth();
     const { projectId } = await params;
     const requestedVideoIds = parseRequestedVideoIds(request.nextUrl.searchParams.get('videoIds'));
+    const includeAllVersions = request.nextUrl.searchParams.get('versions') === 'all';
 
     if (requestedVideoIds && requestedVideoIds.length === 0) {
       return apiErrors.badRequest('At least one video must be selected for download');
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const manifest = buildProjectDownloadManifest(project.name, videos);
+    const manifest = buildProjectDownloadManifest(project.name, videos, { includeAllVersions });
     const validationError = validateProjectDownloadManifest(manifest);
     if (validationError) {
       return apiErrors.badRequest(validationError);

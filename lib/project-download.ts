@@ -119,6 +119,15 @@ type VideoRow = {
   assets: AssetRow[];
 };
 
+function selectLatestVersion(versions: VersionRow[]): VersionRow[] {
+  if (versions.length === 0) return [];
+  let latest = versions[0]!;
+  for (const version of versions) {
+    if (version.versionNumber > latest.versionNumber) latest = version;
+  }
+  return [latest];
+}
+
 function makeUniqueName(baseName: string, usedNames: Set<string>): string {
   if (!usedNames.has(baseName)) {
     usedNames.add(baseName);
@@ -175,7 +184,9 @@ function buildAssetFileName(videoIndex: number, videoTitle: string, asset: Asset
 
 function versionDownloadUrl(version: VersionRow): string | null {
   if (version.providerId === 'bunny' && version.videoId) {
-    return `/api/versions/${version.id}/download?source=auto`;
+    // Always fetch the original (uncompressed) file for bulk/project downloads so
+    // quality never drops. 'auto' could silently fall back to a compressed MP4.
+    return `/api/versions/${version.id}/download?source=original`;
   }
   if (version.providerId === 'r2') {
     if (version.originalUrl.startsWith('/api/upload/video/')) {
@@ -209,10 +220,17 @@ function bigintToSafeNumber(value: bigint): number | null {
   return Number(value);
 }
 
+export type BuildProjectDownloadManifestOptions = {
+  /** Include every version of each video. Defaults to latest version only. */
+  includeAllVersions?: boolean;
+};
+
 export function buildProjectDownloadManifest(
   projectName: string,
-  videos: VideoRow[]
+  videos: VideoRow[],
+  options: BuildProjectDownloadManifestOptions = {}
 ): ProjectDownloadManifest {
+  const { includeAllVersions = false } = options;
   const files: ProjectDownloadManifestFile[] = [];
   const usedNames = new Set<string>();
 
@@ -224,7 +242,11 @@ export function buildProjectDownloadManifest(
     const videoIndex = index + 1;
     const videoTitle = sanitizeFileName(video.title) || `video-${videoIndex}`;
 
-    for (const version of video.versions) {
+    const versionsToInclude = includeAllVersions
+      ? video.versions
+      : selectLatestVersion(video.versions);
+
+    for (const version of versionsToInclude) {
       const url = versionDownloadUrl(version);
       if (!url) continue;
 

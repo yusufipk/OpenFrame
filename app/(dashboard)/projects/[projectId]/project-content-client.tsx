@@ -18,11 +18,18 @@ import {
   Download,
   Loader2,
   Trash2,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -167,13 +174,17 @@ export function ProjectContentClient({
   }, []);
 
   const startProjectDownload = useCallback(
-    async (videoIds?: string[]) => {
+    async (videoIds?: string[], options?: { allVersions?: boolean }) => {
       if (!canDownloadProject || isDownloading) return;
 
-      const query =
-        videoIds && videoIds.length > 0
-          ? `?videoIds=${encodeURIComponent(videoIds.join(','))}`
-          : '';
+      const searchParams = new URLSearchParams();
+      if (videoIds && videoIds.length > 0) {
+        searchParams.set('videoIds', videoIds.join(','));
+      }
+      if (options?.allVersions) {
+        searchParams.set('versions', 'all');
+      }
+      const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
 
       setIsDownloading(true);
       try {
@@ -325,19 +336,27 @@ export function ProjectContentClient({
             )}
           </Button>
           {canDownloadProject && localVideos.length > 0 && !selectionMode && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => startProjectDownload()}
-              disabled={isDownloading}
-            >
-              {isDownloading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4 mr-2" />
-              )}
-              Download project
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={isDownloading}>
+                  {isDownloading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Download project
+                  <ChevronDown className="h-4 w-4 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => startProjectDownload()}>
+                  Latest version only
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => startProjectDownload(undefined, { allVersions: true })}>
+                  All versions
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {canEdit && (
             <Button variant="outline" size="sm" asChild>
@@ -398,19 +417,33 @@ export function ProjectContentClient({
               Cancel
             </Button>
             {canDownloadProject && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => startProjectDownload(selectedVideoIds)}
-                disabled={isDownloading || selectedCount === 0}
-              >
-                {isDownloading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4 mr-2" />
-                )}
-                Download selected
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isDownloading || selectedCount === 0}
+                  >
+                    {isDownloading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Download selected
+                    <ChevronDown className="h-4 w-4 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => startProjectDownload(selectedVideoIds)}>
+                    Latest version only
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => startProjectDownload(selectedVideoIds, { allVersions: true })}
+                  >
+                    All versions
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {canEdit && (
               <Button
