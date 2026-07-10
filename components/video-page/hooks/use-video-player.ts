@@ -1,7 +1,15 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import Hls, { type Level } from 'hls.js';
 import { toast } from 'sonner';
 import type { AnnotationStroke } from '@/components/annotation-canvas';
@@ -23,6 +31,8 @@ interface UseVideoPlayerParams {
   videoRef: RefObject<HTMLVideoElement | null>;
   bunnyViewportRef: RefObject<HTMLDivElement | null>;
   timelineRef: RefObject<HTMLDivElement | null>;
+  progressRef: RefObject<HTMLDivElement | null>;
+  playheadRef: RefObject<HTMLDivElement | null>;
   hlsRef: RefObject<Hls | null>;
   playerRef: RefObject<YT.Player | PlayerAdapter | null>;
   formatBunnyQualityLabel: (level: { height?: number; bitrate?: number }, index: number) => string;
@@ -43,6 +53,8 @@ export function useVideoPlayer({
   videoRef,
   bunnyViewportRef,
   timelineRef,
+  progressRef,
+  playheadRef,
   hlsRef,
   playerRef,
   formatBunnyQualityLabel,
@@ -61,6 +73,17 @@ export function useVideoPlayer({
   const [estimatedFrameRate, setEstimatedFrameRate] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
+  // Scrubbing: the playhead position is driven directly via DOM (rAF) to avoid
+  // per-frame React re-renders. These refs feed that loop.
+  const dragTimeRef = useRef(0);
+  const dragRectRef = useRef<DOMRect | null>(null);
+  const durationRef = useRef(0);
+  // Live scrubbing: coalesce seeks so we never queue stale ones (keeps HLS
+  // responsive). scrubTargetRef is the latest desired time; isSeekingRef is true
+  // while a seek is in flight; wasPlayingBeforeScrubRef restores play on release.
+  const scrubTargetRef = useRef<number | null>(null);
+  const isSeekingRef = useRef(false);
+  const wasPlayingBeforeScrubRef = useRef(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [qualityOptions, setQualityOptions] = useState<BunnyQualityOption[]>([]);
   const [selectedQualityLevel, setSelectedQualityLevel] = useState<number>(-1);
@@ -867,6 +890,91 @@ export function useVideoPlayer({
     return videoDuration || activeVersion?.duration || 0;
   }, [videoDuration, activeVersion?.duration]);
 
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
+  // Position the progress fill + playhead directly on the DOM (no React state /
+  // re-render) so scrubbing and playback stay smooth at the display's refresh
+  // rate instead of stepping ~4x/sec.
+  const applyPlayhead = useCallback(
+    (time: number) => {
+      const d = durationRef.current;
+      const percent = d > 0 ? Math.max(0, Math.min(100, (time / d) * 100)) : 0;
+      if (progressRef.current) progressRef.current.style.width = `${percent}%`;
+      if (playheadRef.current) playheadRef.current.style.left = `calc(${percent}% - 2px)`;
+    },
+    [progressRef, playheadRef]
+  );
+
+  // Live-preview seek for the HTML5 video element (Bunny/R2/direct). Coalesced:
+  // only one seek is in flight at a time; the newest target is chased on
+  // 'seeked' so we stay responsive without flooding hls.js with stale seeks.
+  const requestScrubSeek = useCallback(
+    (time: number) => {
+      const videoEl = videoRef.current;
+      if (!videoEl) return; // YouTube (iframe) keeps seek-on-release only
+      scrubTargetRef.current = time;
+      if (isSeekingRef.current) return;
+      isSeekingRef.current = true;
+      try {
+        videoEl.currentTime = time;
+      } catch {
+        isSeekingRef.current = false;
+      }
+    },
+    [videoRef]
+  );
+
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+    const onSeeked = () => {
+      const target = scrubTargetRef.current;
+      if (
+        isDraggingRef.current &&
+        target !== null &&
+        Math.abs(videoEl.currentTime - target) > 0.04
+      ) {
+        try {
+          videoEl.currentTime = target; // chase the latest scrub position
+        } catch {
+          isSeekingRef.current = false;
+        }
+      } else {
+        isSeekingRef.current = false;
+      }
+    };
+    videoEl.addEventListener('seeked', onSeeked);
+    return () => videoEl.removeEventListener('seeked', onSeeked);
+  }, [videoRef, isReady, activeProviderId]);
+
+  // While playing (live time) or dragging (cursor position), drive the playhead
+  // from a requestAnimationFrame loop for 60fps-smooth motion. During a drag we
+  // also request a (coalesced) seek so the frame previews live like an editor.
+  useEffect(() => {
+    if (!isPlaying && !isDragging) return;
+    let raf = 0;
+    const tick = () => {
+      if (isDraggingRef.current) {
+        applyPlayhead(dragTimeRef.current);
+        requestScrubSeek(dragTimeRef.current);
+      } else if (playerRef.current?.getCurrentTime) {
+        applyPlayhead(playerRef.current.getCurrentTime());
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, isDragging, applyPlayhead, requestScrubSeek, playerRef]);
+
+  // When idle (paused, not dragging), keep the playhead in sync with seeks and
+  // comment jumps. useLayoutEffect avoids a one-frame flash on mount/seek.
+  useLayoutEffect(() => {
+    if (isPlaying || isDragging) return;
+    applyPlayhead(currentTime);
+  }, [currentTime, isPlaying, isDragging, applyPlayhead]);
+
   const resolveSkipAmount = useCallback(
     (seconds: number) => {
       if (!isFrameMode) return seconds;
@@ -1126,43 +1234,87 @@ export function useVideoPlayer({
     [activeProviderId, bunnySourcePreference, hlsRef, isPlaying, playerRef, videoRef]
   );
 
-  const handleTimelineClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!timelineRef.current) return;
-      const rect = timelineRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const percentage = Math.max(0, Math.min(1, x / rect.width));
-      const newTime = percentage * duration;
-      handleSeekToTimestamp(newTime);
-    },
-    [duration, handleSeekToTimestamp, timelineRef]
-  );
+  // Convert a clientX into a time using the timeline rect captured at drag start
+  // (avoids a layout read on every move).
+  const timeFromClientX = useCallback((clientX: number) => {
+    const rect = dragRectRef.current;
+    if (!rect || rect.width === 0) return 0;
+    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return percentage * durationRef.current;
+  }, []);
 
   const handleTimelineMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!timelineRef.current) return;
+      // Cache the rect once for the whole drag; the rAF loop reads dragTimeRef.
+      dragRectRef.current = timelineRef.current.getBoundingClientRect();
+      const newTime = timeFromClientX(e.clientX);
+      dragTimeRef.current = newTime;
+      // Freeze playback while scrubbing so the previewed frames don't fight the
+      // player; resume on release if it was playing.
+      wasPlayingBeforeScrubRef.current = isPlaying;
+      if (isPlaying) playerRef.current?.pauseVideo?.();
       setIsDragging(true);
-      handleTimelineClick(e);
+      applyPlayhead(newTime);
+      setCurrentTime(newTime);
+      requestScrubSeek(newTime);
     },
-    [handleTimelineClick]
+    [applyPlayhead, requestScrubSeek, timeFromClientX, timelineRef, isPlaying, playerRef]
   );
 
   const handleTimelineMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!isDragging || !timelineRef.current) return;
-      const rect = timelineRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const percentage = Math.max(0, Math.min(1, x / rect.width));
-      setCurrentTime(percentage * duration);
+      if (!isDraggingRef.current) return;
+      const newTime = timeFromClientX(e.clientX);
+      dragTimeRef.current = newTime;
+      setCurrentTime(newTime);
     },
-    [isDragging, duration, timelineRef]
+    [timeFromClientX]
   );
 
-  const handleTimelineMouseUp = useCallback(() => {
-    if (isDragging) {
-      handleSeekToTimestamp(currentTime);
-      setIsDragging(false);
+  // Commit the final scrub position and restore playback if needed.
+  const endScrub = useCallback(() => {
+    if (!isDraggingRef.current) return;
+    setIsDragging(false);
+    const finalTime = dragTimeRef.current;
+    setCurrentTime(finalTime);
+    const videoEl = videoRef.current;
+    if (videoEl) {
+      try {
+        videoEl.currentTime = finalTime;
+      } catch {
+        // ignore
+      }
+    } else {
+      playerRef.current?.seekTo?.(finalTime, true);
     }
-  }, [isDragging, currentTime, handleSeekToTimestamp]);
+    if (wasPlayingBeforeScrubRef.current) {
+      playerRef.current?.playVideo?.();
+      wasPlayingBeforeScrubRef.current = false;
+    }
+  }, [playerRef, videoRef]);
+
+  const handleTimelineMouseUp = useCallback(() => {
+    endScrub();
+  }, [endScrub]);
+
+  // While dragging, track the cursor anywhere on the page (not just over the
+  // timeline) so a fast or off-bar drag keeps scrubbing smoothly, and release
+  // anywhere to commit the seek.
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (e: MouseEvent) => {
+      const newTime = timeFromClientX(e.clientX);
+      dragTimeRef.current = newTime;
+      setCurrentTime(newTime);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', endScrub);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', endScrub);
+    };
+  }, [isDragging, timeFromClientX, endScrub]);
 
   return {
     isReady,

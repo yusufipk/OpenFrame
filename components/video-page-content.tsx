@@ -88,6 +88,8 @@ export function VideoPageContent({
   const hlsRef = useRef<Hls | null>(null);
   const playerRef = useRef<YT.Player | PlayerAdapter | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const scheduleWatchProgressSaveRef = useRef<
@@ -320,7 +322,6 @@ export function VideoPageContent({
     isMuted,
     isFrameMode,
     frameStepLabel,
-    isDragging,
     playbackSpeed,
     qualityOptions,
     selectedQualityLevel,
@@ -343,7 +344,6 @@ export function VideoPageContent({
     handleQualityChange,
     handleTimelineMouseDown,
     handleTimelineMouseMove,
-    handleTimelineMouseUp,
     toggleFullscreen,
   } = useVideoPlayer({
     activeVersion,
@@ -355,6 +355,8 @@ export function VideoPageContent({
     videoRef,
     bunnyViewportRef,
     timelineRef,
+    progressRef,
+    playheadRef,
     hlsRef,
     playerRef,
     formatBunnyQualityLabel,
@@ -720,11 +722,7 @@ export function VideoPageContent({
   }
 
   return (
-    <div
-      className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}
-      onMouseUp={handleTimelineMouseUp}
-      onMouseLeave={() => isDragging && handleTimelineMouseUp()}
-    >
+    <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
         <div className={cn('flex-1 w-full flex flex-col min-h-0', isFullscreenMode && 'relative')}>
           <VideoPageHeader
@@ -783,6 +781,8 @@ export function VideoPageContent({
             iframeRef={iframeRef}
             bunnyViewportRef={bunnyViewportRef}
             timelineRef={timelineRef}
+            progressRef={progressRef}
+            playheadRef={playheadRef}
             videoContainerRef={videoContainerRef}
             isFullscreenMode={isFullscreenMode}
             cursorIdle={cursorIdle}

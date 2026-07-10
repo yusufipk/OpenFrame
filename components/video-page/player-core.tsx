@@ -41,6 +41,8 @@ interface PlayerCoreProps {
   iframeRef: RefObject<HTMLIFrameElement | null>;
   bunnyViewportRef: RefObject<HTMLDivElement | null>;
   timelineRef: RefObject<HTMLDivElement | null>;
+  progressRef: RefObject<HTMLDivElement | null>;
+  playheadRef: RefObject<HTMLDivElement | null>;
   videoContainerRef: RefObject<HTMLDivElement | null>;
   isFullscreenMode: boolean;
   cursorIdle: boolean;
@@ -105,6 +107,8 @@ export const PlayerCore = memo(function PlayerCore({
   iframeRef,
   bunnyViewportRef,
   timelineRef,
+  progressRef,
+  playheadRef,
   videoContainerRef,
   isFullscreenMode,
   cursorIdle,
@@ -501,14 +505,17 @@ export const PlayerCore = memo(function PlayerCore({
           onMouseDown={handleTimelineMouseDown}
           onMouseMove={handleTimelineMouseMove}
         >
+          {/* Position (width/left) is driven directly on the DOM via a rAF loop
+              in use-video-player for smooth scrubbing/playback; see progressRef
+              and playheadRef. Do not bind it to React state here. */}
           <div
-            className="absolute left-0 top-0 h-full bg-primary/30 rounded pointer-events-none"
-            style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
+            ref={progressRef}
+            className="absolute left-0 top-0 h-full w-0 bg-primary/30 rounded pointer-events-none"
           />
 
           <div
-            className="absolute top-0 h-full w-1 bg-primary rounded pointer-events-none"
-            style={{ left: `calc(${duration > 0 ? (currentTime / duration) * 100 : 0}% - 2px)` }}
+            ref={playheadRef}
+            className="absolute top-0 left-0 h-full w-1 bg-primary rounded pointer-events-none will-change-[left]"
           />
 
           {commentMarkers.map((comment) => {
