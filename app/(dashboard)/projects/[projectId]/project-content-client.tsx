@@ -27,8 +27,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -105,6 +107,7 @@ export function ProjectContentClient({
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [includeAssetsInDownload, setIncludeAssetsInDownload] = useState(false);
   const [isDeletingSelected, setIsDeletingSelected] = useState(false);
   const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
   const [showMoveSelectedDialog, setShowMoveSelectedDialog] = useState(false);
@@ -184,7 +187,7 @@ export function ProjectContentClient({
   }, []);
 
   const startProjectDownload = useCallback(
-    async (videoIds?: string[], options?: { allVersions?: boolean }) => {
+    async (videoIds?: string[], options?: { allVersions?: boolean; includeAssets?: boolean }) => {
       if (!canDownloadProject || isDownloading) return;
 
       const searchParams = new URLSearchParams();
@@ -193,6 +196,9 @@ export function ProjectContentClient({
       }
       if (options?.allVersions) {
         searchParams.set('versions', 'all');
+      }
+      if (options?.includeAssets) {
+        searchParams.set('assets', '1');
       }
       const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
 
@@ -359,11 +365,28 @@ export function ProjectContentClient({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => startProjectDownload()}>
+                <DropdownMenuCheckboxItem
+                  checked={includeAssetsInDownload}
+                  onCheckedChange={(checked) => setIncludeAssetsInDownload(checked === true)}
+                  onSelect={(event) => event.preventDefault()}
+                >
+                  Include assets
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() =>
+                    startProjectDownload(undefined, { includeAssets: includeAssetsInDownload })
+                  }
+                >
                   Latest version only
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => startProjectDownload(undefined, { allVersions: true })}
+                  onClick={() =>
+                    startProjectDownload(undefined, {
+                      allVersions: true,
+                      includeAssets: includeAssetsInDownload,
+                    })
+                  }
                 >
                   All versions
                 </DropdownMenuItem>
@@ -446,11 +469,30 @@ export function ProjectContentClient({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => startProjectDownload(selectedVideoIds)}>
+                  <DropdownMenuCheckboxItem
+                    checked={includeAssetsInDownload}
+                    onCheckedChange={(checked) => setIncludeAssetsInDownload(checked === true)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    Include assets
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() =>
+                      startProjectDownload(selectedVideoIds, {
+                        includeAssets: includeAssetsInDownload,
+                      })
+                    }
+                  >
                     Latest version only
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => startProjectDownload(selectedVideoIds, { allVersions: true })}
+                    onClick={() =>
+                      startProjectDownload(selectedVideoIds, {
+                        allVersions: true,
+                        includeAssets: includeAssetsInDownload,
+                      })
+                    }
                   >
                     All versions
                   </DropdownMenuItem>

@@ -223,6 +223,8 @@ function bigintToSafeNumber(value: bigint): number | null {
 export type BuildProjectDownloadManifestOptions = {
   /** Include every version of each video. Defaults to latest version only. */
   includeAllVersions?: boolean;
+  /** Include b-rolls and other attached assets. Defaults to videos only. */
+  includeAssets?: boolean;
 };
 
 export function buildProjectDownloadManifest(
@@ -230,7 +232,7 @@ export function buildProjectDownloadManifest(
   videos: VideoRow[],
   options: BuildProjectDownloadManifestOptions = {}
 ): ProjectDownloadManifest {
-  const { includeAllVersions = false } = options;
+  const { includeAllVersions = false, includeAssets = false } = options;
   const files: ProjectDownloadManifestFile[] = [];
   const usedNames = new Set<string>();
 
@@ -257,15 +259,17 @@ export function buildProjectDownloadManifest(
       });
     }
 
-    for (const asset of video.assets) {
-      const url = assetDownloadUrl(video.id, asset);
-      if (!url) continue;
+    if (includeAssets) {
+      for (const asset of video.assets) {
+        const url = assetDownloadUrl(video.id, asset);
+        if (!url) continue;
 
-      files.push({
-        fileName: makeUniqueName(buildAssetFileName(videoIndex, videoTitle, asset), usedNames),
-        url,
-        sizeBytes: bigintToSafeNumber(asset.sizeBytes),
-      });
+        files.push({
+          fileName: makeUniqueName(buildAssetFileName(videoIndex, videoTitle, asset), usedNames),
+          url,
+          sizeBytes: bigintToSafeNumber(asset.sizeBytes),
+        });
+      }
     }
   });
 
