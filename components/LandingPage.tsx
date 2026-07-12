@@ -276,8 +276,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 rel="noreferrer"
                 className="text-xs font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
               >
-                Prefer self-hosting? View on GitHub{' '}
-                <ArrowRight className="ml-1 inline h-3 w-3" />
+                Prefer self-hosting? View on GitHub <ArrowRight className="ml-1 inline h-3 w-3" />
               </a>
             </div>
           </div>

@@ -110,8 +110,7 @@ export async function sendVerificationEmail(email: string, token: string): Promi
   }
 
   const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
-  const from =
-    process.env.SMTP_FROM || process.env.EMAIL_FROM || 'OpenFrame <info@open-frame.net>';
+  const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || 'OpenFrame <info@open-frame.net>';
 
   const html = brandedEmailTemplate(
     `

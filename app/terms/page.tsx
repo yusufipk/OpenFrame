@@ -176,8 +176,8 @@ export default function TermsOfServicePage() {
             </p>
             <p className="mt-3">
               The core platform code is made available under the Functional Source License
-              (FSL-1.1-ALv2): the source code is publicly available and may be self-hosted, and
-              each release becomes available under the Apache 2.0 license two years after its
+              (FSL-1.1-ALv2): the source code is publicly available and may be self-hosted, and each
+              release becomes available under the Apache 2.0 license two years after its
               publication. Please refer to the license in the GitHub repository for details on
               permitted use.
             </p>
