@@ -120,10 +120,17 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="antialiased min-h-screen bg-background font-sans">
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-        />
+        {/* One script per object: single-object payloads with a top-level
+            @context survive naive JSON-LD consumers that choke on arrays. */}
+        {structuredData.map((data) => (
+          <script
+            key={String(data['@type'])}
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify(data).replace(/</g, '\\u003c'),
+            }}
+          />
+        ))}
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <svg aria-hidden="true" className="fixed h-0 w-0">
             <filter id="openframe-noise">
