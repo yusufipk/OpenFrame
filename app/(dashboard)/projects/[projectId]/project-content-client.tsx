@@ -86,6 +86,28 @@ interface ProjectContentClientProps {
   directUploadProvider: DirectUploadProvider;
 }
 
+// Mosaic sizing: thumbnails report their natural aspect ratio on load and are
+// normalized into three buckets so mixed-format projects (vertical social
+// cuts, square posts, widescreen spots) tile without letterboxing. Cards
+// default to landscape until their thumbnail reports otherwise. Every card
+// derives its width from one shared media height, so rows stay aligned:
+// portrait tiles narrow, landscape tiles wide, all thumbnails equally tall.
+const PORTRAIT_ASPECT_RATIO = 9 / 16;
+const SQUARE_ASPECT_RATIO = 1;
+const LANDSCAPE_ASPECT_RATIO = 16 / 9;
+const PORTRAIT_CARD_WIDTH = 240;
+const MOSAIC_MEDIA_HEIGHT = PORTRAIT_CARD_WIDTH / PORTRAIT_ASPECT_RATIO;
+
+function normalizeMosaicAspectRatio(aspectRatio: number): number {
+  if (aspectRatio < 0.8) return PORTRAIT_ASPECT_RATIO;
+  if (aspectRatio < 1.25) return SQUARE_ASPECT_RATIO;
+  return LANDSCAPE_ASPECT_RATIO;
+}
+
+function getMosaicCardWidth(aspectRatio: number): number {
+  return Math.round(MOSAIC_MEDIA_HEIGHT * aspectRatio);
+}
+
 export function ProjectContentClient({
   project,
   projectId,
@@ -106,6 +128,15 @@ export function ProjectContentClient({
   const [localVideos, setLocalVideos] = useState<SerializedVideo[]>(videos);
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [videoAspectRatios, setVideoAspectRatios] = useState<Record<string, number>>({});
+
+  const handleVideoAspectRatioChange = useCallback((videoId: string, aspectRatio: number) => {
+    const normalizedAspectRatio = normalizeMosaicAspectRatio(aspectRatio);
+    setVideoAspectRatios((current) => {
+      if (current[videoId] === normalizedAspectRatio) return current;
+      return { ...current, [videoId]: normalizedAspectRatio };
+    });
+  }, []);
   const [isDownloading, setIsDownloading] = useState(false);
   const [includeAssetsInDownload, setIncludeAssetsInDownload] = useState(false);
   const [isDeletingSelected, setIsDeletingSelected] = useState(false);
@@ -548,21 +579,41 @@ export function ProjectContentClient({
 
       {/* Videos Grid */}
       {localVideos.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {localVideos.map((video) => (
-            <VideoCard
-              key={video.id}
-              video={video}
-              projectId={projectId}
-              canManage={canEdit}
-              canSelect={canSelectVideos}
-              selectionMode={selectionMode}
-              selected={selectedVideoIds.includes(video.id)}
-              onEnterSelectionMode={handleEnterSelectionMode}
-              onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
-              onDeleted={handleVideoDeleted}
-            />
-          ))}
+        <div className="flex flex-wrap items-start gap-4">
+          {localVideos.map((video) => {
+            const aspectRatio = videoAspectRatios[video.id] ?? LANDSCAPE_ASPECT_RATIO;
+            const cardWidth = getMosaicCardWidth(aspectRatio);
+
+            return (
+              <div
+                key={video.id}
+                className="min-w-0"
+                style={{
+                  flexGrow: 0,
+                  flexShrink: 1,
+                  flexBasis: `${cardWidth}px`,
+                  maxWidth: `${cardWidth}px`,
+                  minWidth: 'min(100%, 220px)',
+                }}
+              >
+                <VideoCard
+                  video={video}
+                  projectId={projectId}
+                  canManage={canEdit}
+                  canSelect={canSelectVideos}
+                  selectionMode={selectionMode}
+                  selected={selectedVideoIds.includes(video.id)}
+                  thumbnailAspectRatio={aspectRatio}
+                  onThumbnailAspectRatioChange={(nextAspectRatio) =>
+                    handleVideoAspectRatioChange(video.id, nextAspectRatio)
+                  }
+                  onEnterSelectionMode={handleEnterSelectionMode}
+                  onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
+                  onDeleted={handleVideoDeleted}
+                />
+              </div>
+            );
+          })}
         </div>
       ) : (
         <Card className="border-dashed">
