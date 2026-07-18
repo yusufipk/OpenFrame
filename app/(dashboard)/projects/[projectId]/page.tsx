@@ -108,7 +108,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       where: { projectId: project.id },
       skip,
       take: pageSize,
-      orderBy: [{ updatedAt: sortOrder }, { id: sortOrder }],
+      orderBy: [{ createdAt: sortOrder }, { id: sortOrder }],
       include: {
         versions: {
           where: { isActive: true },
@@ -145,8 +145,13 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       duration: formatDuration(activeVersion?.duration),
       lastUpdated: formatRelativeTime(video.updatedAt),
       updatedAt: video.updatedAt.toISOString(),
+      createdAt: video.createdAt.toISOString(),
     };
   });
+
+  // Serialized once on the server so date-group labels ("Today", "Yesterday")
+  // are computed against a stable reference instead of client render time.
+  const timelineReferenceDate = new Date().toISOString();
 
   const directUploadsEnabled = isDirectFileUploadEnabled();
   const directUploadProvider = isS3VideoUploadsEnabled() ? 'r2' : 'bunny';
@@ -190,6 +195,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
             projectId={projectId}
             videos={videos}
             allVideoIds={allVideoIds.map((video) => video.id)}
+            timelineReferenceDate={timelineReferenceDate}
             canEdit={false}
             canDownloadProject={canDownloadProject}
             isOwner={false}
@@ -222,6 +228,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
         projectId={projectId}
         videos={videos}
         allVideoIds={allVideoIds.map((video) => video.id)}
+        timelineReferenceDate={timelineReferenceDate}
         canEdit={canEdit}
         canDownloadProject={canDownloadProject}
         isOwner={isOwner}

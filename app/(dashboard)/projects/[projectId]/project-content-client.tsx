@@ -61,6 +61,19 @@ interface SerializedVideo {
   duration: string;
   lastUpdated: string;
   updatedAt: string;
+  createdAt: string;
+}
+
+interface VideoDateGroup {
+  key: string;
+  label: string;
+  videos: SerializedVideo[];
+}
+
+interface CalendarDateParts {
+  year: number;
+  month: number;
+  day: number;
 }
 
 interface ProjectContentClientProps {
@@ -75,6 +88,7 @@ interface ProjectContentClientProps {
   projectId: string;
   videos: SerializedVideo[];
   allVideoIds: string[];
+  timelineReferenceDate: string;
   canEdit: boolean;
   canDownloadProject: boolean;
   isOwner: boolean;
@@ -108,11 +122,94 @@ function getMosaicCardWidth(aspectRatio: number): number {
   return Math.round(MOSAIC_MEDIA_HEIGHT * aspectRatio);
 }
 
+// Calendar-day math runs through Intl with an explicit time zone so "Today"
+// and "Yesterday" follow the viewer's local calendar, not UTC boundaries.
+function getCalendarDateParts(date: Date, timeZone: string): CalendarDateParts {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+
+  return {
+    year: getPart('year'),
+    month: getPart('month'),
+    day: getPart('day'),
+  };
+}
+
+function getCalendarDayNumber(parts: CalendarDateParts): number {
+  return Math.floor(Date.UTC(parts.year, parts.month - 1, parts.day) / 86_400_000);
+}
+
+function groupVideosByCreatedDate(
+  videos: SerializedVideo[],
+  referenceDate: Date,
+  timeZone: string
+): VideoDateGroup[] {
+  const referenceParts = getCalendarDateParts(referenceDate, timeZone);
+  const referenceDayNumber = getCalendarDayNumber(referenceParts);
+  const referenceWeekday = new Date(
+    Date.UTC(referenceParts.year, referenceParts.month - 1, referenceParts.day)
+  ).getUTCDay();
+  const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'long',
+  });
+  const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  const dateWithYearFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const groups = new Map<string, VideoDateGroup>();
+
+  for (const video of videos) {
+    const createdAt = new Date(video.createdAt);
+    const parts = getCalendarDateParts(createdAt, timeZone);
+    const key = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+    const dayDifference = referenceDayNumber - getCalendarDayNumber(parts);
+
+    let label: string;
+    if (dayDifference === 0) {
+      label = 'Today';
+    } else if (dayDifference === 1) {
+      label = 'Yesterday';
+    } else if (dayDifference > 1 && dayDifference <= referenceWeekday) {
+      label = weekdayFormatter.format(createdAt);
+    } else if (parts.year === referenceParts.year) {
+      label = dateFormatter.format(createdAt);
+    } else {
+      label = dateWithYearFormatter.format(createdAt);
+    }
+
+    const existingGroup = groups.get(key);
+    if (existingGroup) {
+      existingGroup.videos.push(video);
+    } else {
+      groups.set(key, { key, label, videos: [video] });
+    }
+  }
+
+  return Array.from(groups.values());
+}
+
 export function ProjectContentClient({
   project,
   projectId,
   videos,
   allVideoIds,
+  timelineReferenceDate,
   canEdit,
   canDownloadProject,
   isOwner,
@@ -129,6 +226,19 @@ export function ProjectContentClient({
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [videoAspectRatios, setVideoAspectRatios] = useState<Record<string, number>>({});
+  // 'UTC' for the server render, then the viewer's zone after hydration —
+  // group labels may shift one frame but server and client markup stay
+  // consistent for the initial paint.
+  const [timelineTimeZone, setTimelineTimeZone] = useState('UTC');
+
+  useEffect(() => {
+    setTimelineTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  }, []);
+
+  const videoDateGroups = useMemo(
+    () => groupVideosByCreatedDate(localVideos, new Date(timelineReferenceDate), timelineTimeZone),
+    [localVideos, timelineReferenceDate, timelineTimeZone]
+  );
 
   const handleVideoAspectRatioChange = useCallback((videoId: string, aspectRatio: number) => {
     const normalizedAspectRatio = normalizeMosaicAspectRatio(aspectRatio);
@@ -579,41 +689,57 @@ export function ProjectContentClient({
 
       {/* Videos Grid */}
       {localVideos.length > 0 ? (
-        <div className="flex flex-wrap items-start gap-4">
-          {localVideos.map((video) => {
-            const aspectRatio = videoAspectRatios[video.id] ?? LANDSCAPE_ASPECT_RATIO;
-            const cardWidth = getMosaicCardWidth(aspectRatio);
-
-            return (
-              <div
-                key={video.id}
-                className="min-w-0"
-                style={{
-                  flexGrow: 0,
-                  flexShrink: 1,
-                  flexBasis: `${cardWidth}px`,
-                  maxWidth: `${cardWidth}px`,
-                  minWidth: 'min(100%, 220px)',
-                }}
-              >
-                <VideoCard
-                  video={video}
-                  projectId={projectId}
-                  canManage={canEdit}
-                  canSelect={canSelectVideos}
-                  selectionMode={selectionMode}
-                  selected={selectedVideoIds.includes(video.id)}
-                  thumbnailAspectRatio={aspectRatio}
-                  onThumbnailAspectRatioChange={(nextAspectRatio) =>
-                    handleVideoAspectRatioChange(video.id, nextAspectRatio)
-                  }
-                  onEnterSelectionMode={handleEnterSelectionMode}
-                  onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
-                  onDeleted={handleVideoDeleted}
-                />
+        <div className="space-y-8">
+          {videoDateGroups.map((group) => (
+            <section key={group.key} aria-labelledby={`video-date-${group.key}`}>
+              <div className="sticky top-14 z-20 -mx-2 mb-3 border-b bg-background/95 px-2 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+                <div className="flex items-baseline gap-2">
+                  <h2 id={`video-date-${group.key}`} className="text-sm font-semibold">
+                    {group.label}
+                  </h2>
+                  <span className="text-xs text-muted-foreground">
+                    {group.videos.length} video{group.videos.length === 1 ? '' : 's'}
+                  </span>
+                </div>
               </div>
-            );
-          })}
+              <div className="flex flex-wrap items-start gap-4">
+                {group.videos.map((video) => {
+                  const aspectRatio = videoAspectRatios[video.id] ?? LANDSCAPE_ASPECT_RATIO;
+                  const cardWidth = getMosaicCardWidth(aspectRatio);
+
+                  return (
+                    <div
+                      key={video.id}
+                      className="min-w-0"
+                      style={{
+                        flexGrow: 0,
+                        flexShrink: 1,
+                        flexBasis: `${cardWidth}px`,
+                        maxWidth: `${cardWidth}px`,
+                        minWidth: 'min(100%, 220px)',
+                      }}
+                    >
+                      <VideoCard
+                        video={video}
+                        projectId={projectId}
+                        canManage={canEdit}
+                        canSelect={canSelectVideos}
+                        selectionMode={selectionMode}
+                        selected={selectedVideoIds.includes(video.id)}
+                        thumbnailAspectRatio={aspectRatio}
+                        onThumbnailAspectRatioChange={(nextAspectRatio) =>
+                          handleVideoAspectRatioChange(video.id, nextAspectRatio)
+                        }
+                        onEnterSelectionMode={handleEnterSelectionMode}
+                        onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
+                        onDeleted={handleVideoDeleted}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
       ) : (
         <Card className="border-dashed">
