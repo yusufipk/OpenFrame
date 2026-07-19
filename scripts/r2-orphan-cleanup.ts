@@ -119,8 +119,10 @@ async function findReferencedUrls(urls: string[]): Promise<Set<string>> {
             })
           : Promise.resolve([] as Array<{ url: string }>),
         db.videoAsset.findMany({
-          where: { sourceUrl: { in: group } },
-          select: { sourceUrl: true },
+          where: {
+            OR: [{ sourceUrl: { in: group } }, { thumbnailUrl: { in: group } }],
+          },
+          select: { sourceUrl: true, thumbnailUrl: true },
         }),
         db.videoVersion.findMany({
           where: {
@@ -142,6 +144,7 @@ async function findReferencedUrls(urls: string[]): Promise<Set<string>> {
     }
     for (const row of assetRows) {
       if (row.sourceUrl) referenced.add(row.sourceUrl);
+      if (row.thumbnailUrl) referenced.add(row.thumbnailUrl);
     }
     for (const row of versionRows) {
       if (row.originalUrl) referenced.add(row.originalUrl);
