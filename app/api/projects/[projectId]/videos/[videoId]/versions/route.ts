@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { validateUrl, validateOptionalUrlOrAppPath } from '@/lib/validation';
-import { toJsonSafe } from '@/lib/json-serialize';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -264,7 +263,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }).catch((err) => logError('Notification failed:', err));
     }
 
-    const response = successResponse(toJsonSafe(version), 201);
+    const response = successResponse(version, 201);
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error creating version:', error);

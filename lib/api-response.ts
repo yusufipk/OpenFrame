@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { bigIntReplacer } from '@/lib/json-serialize';
 
 /**
  * Standardized API error response format
@@ -113,6 +114,11 @@ export function errorResponse(
  * @param status - HTTP status code (default: 200)
  * @param meta - Pagination or other metadata (optional)
  *
+ * Serialized with bigIntReplacer rather than NextResponse.json(), because
+ * JSON.stringify throws on BigInt and Prisma returns BigInt for sizeBytes.
+ * Any payload carrying a VideoVersion or VideoAsset row would otherwise 500
+ * after its write had already committed. BigInt values render as strings.
+ *
  * @example
  * ```ts
  * return successResponse({ projects: [] });
@@ -127,7 +133,10 @@ export function successResponse<T>(
   const body: ApiSuccessResponse<T> = { data };
   if (meta) body.meta = meta;
 
-  return NextResponse.json(body, { status });
+  return new NextResponse(JSON.stringify(body, bigIntReplacer), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  }) as NextResponse<ApiSuccessResponse<T>>;
 }
 
 export function withCacheControl(response: Response, value: string): Response {
