@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type SyntheticEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -74,6 +74,8 @@ interface VideoCardProps {
   canSelect?: boolean;
   selectionMode?: boolean;
   selected?: boolean;
+  thumbnailAspectRatio?: number;
+  onThumbnailAspectRatioChange?: (aspectRatio: number) => void;
   onEnterSelectionMode?: () => void;
   onSelectedChange?: (selected: boolean) => void;
   onDeleted?: (videoId: string) => void;
@@ -86,6 +88,8 @@ export function VideoCard({
   canSelect = false,
   selectionMode = false,
   selected = false,
+  thumbnailAspectRatio = 16 / 9,
+  onThumbnailAspectRatioChange,
   onEnterSelectionMode,
   onSelectedChange,
   onDeleted,
@@ -93,6 +97,13 @@ export function VideoCard({
   const router = useRouter();
   const [imgError, setImgError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+
+  const handleThumbnailLoad = (event: SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    if (naturalWidth > 0 && naturalHeight > 0) {
+      onThumbnailAspectRatioChange?.(naturalWidth / naturalHeight);
+    }
+  };
 
   // Edit dialog
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -265,7 +276,10 @@ export function VideoCard({
           }
         >
           {selectionMode ? (
-            <div className="relative aspect-video bg-muted overflow-hidden">
+            <div
+              className="relative bg-muted overflow-hidden"
+              style={{ aspectRatio: thumbnailAspectRatio }}
+            >
               {imgError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/80">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
@@ -279,6 +293,7 @@ export function VideoCard({
                   src={`${resolvedThumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`}
                   alt={video.title}
                   className="absolute inset-0 w-full h-full object-cover"
+                  onLoad={handleThumbnailLoad}
                   onError={() => {
                     setImgError(true);
                     setTimeout(() => {
@@ -296,7 +311,10 @@ export function VideoCard({
           ) : (
             <Link href={`/projects/${projectId}/videos/${video.id}`}>
               {/* Thumbnail */}
-              <div className="relative aspect-video bg-muted overflow-hidden">
+              <div
+                className="relative bg-muted overflow-hidden"
+                style={{ aspectRatio: thumbnailAspectRatio }}
+              >
                 {imgError ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/80">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
@@ -313,6 +331,7 @@ export function VideoCard({
                     src={`${resolvedThumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`}
                     alt={video.title}
                     className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105"
+                    onLoad={handleThumbnailLoad}
                     onError={() => {
                       setImgError(true);
                       // Check again after 10 seconds in case Bunny is still processing
