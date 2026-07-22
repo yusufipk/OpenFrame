@@ -157,10 +157,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 approver: { select: { id: true, name: true, email: true, image: true } },
               },
             },
+            // Scalar fields only: the full version row carries BigInt sizeBytes,
+            // which JSON.stringify rejects when serializing the response.
             version: {
-              include: {
+              select: {
+                id: true,
+                versionNumber: true,
+                versionLabel: true,
                 video: {
-                  include: {
+                  select: {
+                    id: true,
+                    title: true,
                     project: { select: { id: true, name: true } },
                   },
                 },

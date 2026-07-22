@@ -191,12 +191,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (typeof description === 'string') updateData.description = description.trim() || null;
     if (position !== undefined) updateData.position = position;
 
+    // Keep the response to scalar video fields: including versions would pull
+    // in BigInt columns (sizeBytes) that JSON.stringify cannot serialize, and
+    // no caller consumes the success payload beyond these fields.
     const updatedVideo = await db.video.update({
       where: { id: videoId },
       data: updateData,
-      include: {
-        versions: { orderBy: { versionNumber: 'desc' } },
-        _count: { select: { versions: true } },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        position: true,
+        projectId: true,
+        updatedAt: true,
       },
     });
 
