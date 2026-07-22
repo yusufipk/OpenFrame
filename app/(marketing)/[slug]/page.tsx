@@ -44,11 +44,19 @@ export default async function MarketingSlugPage({ params }: MarketingSlugPagePro
     path: `/${page.slug}`,
     faq: page.faq,
   });
-  const safeStructuredData = JSON.stringify(structuredData).replace(/</g, '\\u003c');
-
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeStructuredData }} />
+      {/* One script per object: single-object payloads with a top-level
+          @context survive naive JSON-LD consumers that choke on arrays. */}
+      {structuredData.map((data, index) => (
+        <script
+          key={`${String(data['@type'])}-${index}`}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(data).replace(/</g, '\\u003c'),
+          }}
+        />
+      ))}
       <ComparisonPage page={page} isLoggedIn={Boolean(session?.user)} />
     </>
   );
