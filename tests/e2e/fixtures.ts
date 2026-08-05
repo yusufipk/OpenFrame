@@ -100,8 +100,9 @@ export class Seed {
 
   /**
    * A user whose trial ran out and who has no subscription, so
-   * hasBillingAccess() is false. `billingTrialConsumedAt` is set, which is what
-   * makes /settings offer `Upgrade with Stripe` rather than `Start Free Trial`.
+   * hasBillingAccess() is false and /settings offers `Upgrade with Stripe`.
+   * `billingTrialConsumedAt` is set because the trial is once per account and
+   * this one has had it.
    */
   async expiredUser(): Promise<User> {
     const tag = uniqueTag();

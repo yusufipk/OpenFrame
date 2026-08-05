@@ -56,7 +56,7 @@ interface BillingOverview {
     hasRecoverableSubscription: boolean;
     hasActiveTrial: boolean;
     hasBillingAccess: boolean;
-    isTrialEligible: boolean;
+    isPaid: boolean;
     priceId: string | null;
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
@@ -365,14 +365,17 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
           ) : (
             <>
               {!billing.subscription.hasActiveSubscription &&
-              !billing.subscription.hasActiveTrial &&
-              billing.subscription.isTrialEligible &&
-              billing.checkoutAvailable ? (
+              billing.subscription.hasActiveTrial &&
+              billing.subscription.trialEndsAt ? (
                 <div className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-2">
-                  <p className="text-sm font-semibold">Start your 7-day free trial</p>
+                  <p className="text-sm font-semibold">
+                    Your free trial runs until{' '}
+                    {new Date(billing.subscription.trialEndsAt).toLocaleDateString()}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    Get full access to all features — no charge until the trial ends. Cancel
-                    anytime.
+                    Every feature is on and no card is on file. The trial covers one workspace and
+                    one project. Subscribing starts your paid month straight away, so there is no
+                    reason to do it before you are ready.
                   </p>
                 </div>
               ) : null}
@@ -388,10 +391,8 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                           : 'Subscription canceled. Access remains active until the end of the current billing period.'
                         : 'Paid account with workspace creation unlocked.'
                       : billing.subscription.hasActiveTrial
-                        ? 'Trial access is active.'
-                        : billing.subscription.isTrialEligible
-                          ? "You haven't started your free trial yet."
-                          : 'Billing access has ended.'}
+                        ? 'Free trial, no card required.'
+                        : 'Billing access has ended.'}
                   </p>
                 </div>
                 <Badge
@@ -433,13 +434,15 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 </p>
               ) : null}
 
+              {/* Deliberately not conditioned on `billingAccessEndedAt`: an account that
+                  only ever had the cardless trial never gets one written, and it is exactly
+                  that account which most needs to be told its work is still recoverable. */}
               {!billing.subscription.hasBillingAccess &&
-              billing.subscription.billingAccessEndedAt &&
               billing.subscription.storageCleanupEligibleAt ? (
                 <p className="text-sm text-amber-700 dark:text-amber-400">
-                  Stored media cleanup is scheduled after{' '}
-                  {new Date(billing.subscription.storageCleanupEligibleAt).toLocaleDateString()}{' '}
-                  unless billing is restored first.
+                  Nothing has been deleted. Your projects and media are kept until{' '}
+                  {new Date(billing.subscription.storageCleanupEligibleAt).toLocaleDateString()};
+                  subscribe before then and everything is where you left it.
                 </p>
               ) : null}
 
@@ -479,8 +482,6 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Redirecting...
                       </>
-                    ) : billing.subscription.isTrialEligible ? (
-                      'Start Free Trial'
                     ) : (
                       'Upgrade with Stripe'
                     )}

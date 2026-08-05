@@ -3,7 +3,8 @@ import { db } from '@/lib/db';
 import { auth, checkWorkspaceAccess } from '@/lib/auth';
 import { ProjectVisibility } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
-import { buildBillingAccessWhereInput } from '@/lib/billing';
+import { buildBillingAccessWhereInput, isPaidTier } from '@/lib/billing';
+import { TRIAL_PROJECT_LIMIT } from '@/lib/trial-limits';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { DEFAULT_COMMENT_TAGS } from '@/lib/comment-tags';
 import { logError } from '@/lib/logger';
@@ -159,6 +160,26 @@ export async function POST(request: NextRequest) {
 
     if (!access.canEdit) {
       return apiErrors.forbidden('Only workspace owners and admins can create projects');
+    }
+
+    // Counted against the workspace owner rather than the caller, because that is
+    // the account being billed: `ownerId` on the project below is the workspace
+    // owner too. A workspace admin on somebody else's trial hits the same ceiling.
+    const owner = await db.user.findUnique({
+      where: { id: workspace.ownerId },
+      select: { subscriptionStatus: true, stripeCurrentPeriodEnd: true },
+    });
+
+    if (owner && !isPaidTier(owner)) {
+      const ownedProjectCount = await db.project.count({
+        where: { ownerId: workspace.ownerId },
+      });
+
+      if (ownedProjectCount >= TRIAL_PROJECT_LIMIT) {
+        return apiErrors.forbidden(
+          'Your free trial covers one project at a time. Delete the existing project or subscribe to run more in parallel.'
+        );
+      }
     }
 
     const project = await db.$transaction(async (tx) => {

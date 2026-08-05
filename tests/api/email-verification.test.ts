@@ -96,6 +96,45 @@ describe('consumeVerificationToken', () => {
     expect(await db.verificationToken.count()).toBe(0);
   });
 
+  // Verification is where the free trial begins, which is what makes a proven
+  // address the price of admission rather than a formality.
+  it('starts the seven day trial on the account it verifies', async () => {
+    const user = await createUser({
+      email: 'ada@example.com',
+      emailVerified: null,
+      trialEndsAt: null,
+      billingTrialConsumedAt: null,
+    });
+    const token = await createVerificationToken('ada@example.com');
+
+    await consumeVerificationToken(token);
+
+    const verified = await db.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(verified.billingTrialConsumedAt).toBeInstanceOf(Date);
+    const days =
+      (verified.trialEndsAt!.getTime() - verified.billingTrialConsumedAt!.getTime()) /
+      (24 * 60 * 60 * 1000);
+    expect(days).toBe(7);
+  });
+
+  it('does not hand a second trial to an account that already had one', async () => {
+    const consumedAt = new Date('2026-01-01T00:00:00.000Z');
+    const trialEndsAt = new Date('2026-01-08T00:00:00.000Z');
+    const user = await createUser({
+      email: 'ada@example.com',
+      emailVerified: null,
+      trialEndsAt,
+      billingTrialConsumedAt: consumedAt,
+    });
+    const token = await createVerificationToken('ada@example.com');
+
+    await consumeVerificationToken(token);
+
+    const verified = await db.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(verified.trialEndsAt).toEqual(trialEndsAt);
+    expect(verified.billingTrialConsumedAt).toEqual(consumedAt);
+  });
+
   it('refuses a replayed token and keeps the original verification timestamp', async () => {
     const user = await createUser({ email: 'ada@example.com', emailVerified: null });
     const token = await createVerificationToken('ada@example.com');

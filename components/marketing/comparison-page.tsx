@@ -46,7 +46,7 @@ export function ComparisonPage({ page, isLoggedIn }: ComparisonPageProps) {
                   href={hostedCtaHref}
                   className="group relative isolate inline-flex h-12 items-center justify-center overflow-hidden border border-primary bg-primary px-8 text-sm font-medium text-primary-foreground transition-transform duration-300 hover:scale-[1.02]"
                 >
-                  Start free trial
+                  Start 7-day free trial, no card required
                   <MoveRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </CtaLink>
                 <a
@@ -143,8 +143,9 @@ export function ComparisonPage({ page, isLoggedIn }: ComparisonPageProps) {
                 Pricing comparison
               </h2>
               <p className="mt-3 max-w-3xl text-sm text-muted-foreground md:text-base">
-                OpenFrame is $10/month flat with a 7-day free trial. You do not pay per team member,
-                collaborator, or guest reviewer. Self-hosting is free with Docker.
+                OpenFrame is $10/month flat with a 7-day free trial that never asks for a card. You
+                do not pay per team member, collaborator, or guest reviewer. Self-hosting is free
+                with Docker.
               </p>
             </div>
             <PricingComparison
@@ -204,7 +205,7 @@ export function ComparisonPage({ page, isLoggedIn }: ComparisonPageProps) {
                 href={hostedCtaHref}
                 className="inline-flex h-12 items-center justify-center border border-primary bg-primary px-8 text-sm font-medium text-primary-foreground"
               >
-                Start free trial
+                Start 7-day free trial, no card required
               </CtaLink>
               <a
                 href={seoConfig.githubUrl}

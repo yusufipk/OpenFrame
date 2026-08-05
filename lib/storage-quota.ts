@@ -3,9 +3,28 @@ import { db } from '@/lib/db';
 import { apiErrors } from '@/lib/api-response';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { getCachedUserBunnyStorage } from '@/lib/admin-stats';
+import { isPaidTier } from '@/lib/billing';
+import { getStorageLimitBytes } from '@/lib/trial-limits';
 
 // 200 GB expressed in bytes
 export const PLAN_STORAGE_LIMIT_BYTES = BigInt(200) * BigInt(1024) * BigInt(1024) * BigInt(1024);
+
+/**
+ * The ceiling this particular account is held to.
+ *
+ * A cardless trial gets a much smaller one: it is the only thing standing between
+ * a throwaway signup and 200 GB of our storage. Reads the two billing columns
+ * directly rather than taking a flag from the caller, so no upload route can
+ * forget to pass it.
+ */
+async function getStorageLimitForUser(userId: string): Promise<bigint> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { subscriptionStatus: true, stripeCurrentPeriodEnd: true },
+  });
+
+  return getStorageLimitBytes(user ? isPaidTier(user) : false, PLAN_STORAGE_LIMIT_BYTES);
+}
 
 // TTL for upload reservations: 30 minutes is enough for R2 image/audio uploads
 const RESERVATION_TTL_MS = 30 * 60 * 1000;
@@ -61,8 +80,10 @@ export async function getUserStorageInfo(userId: string): Promise<{
   limitBytes: bigint;
   percentage: number;
 }> {
-  const usedBytes = await getUserTotalStorageBytes(userId);
-  const limitBytes = PLAN_STORAGE_LIMIT_BYTES;
+  const [usedBytes, limitBytes] = await Promise.all([
+    getUserTotalStorageBytes(userId),
+    getStorageLimitForUser(userId),
+  ]);
   const percentage =
     limitBytes > BigInt(0)
       ? Math.min(100, Number((usedBytes * BigInt(10000)) / limitBytes) / 100)
@@ -88,9 +109,12 @@ export async function enforceStorageQuota(
     return null;
   }
 
-  const usedBytes = await getUserTotalStorageBytes(userId);
+  const [usedBytes, limitBytes] = await Promise.all([
+    getUserTotalStorageBytes(userId),
+    getStorageLimitForUser(userId),
+  ]);
 
-  if (usedBytes + incomingSizeBytes >= PLAN_STORAGE_LIMIT_BYTES) {
+  if (usedBytes + incomingSizeBytes >= limitBytes) {
     return apiErrors.storageExceeded() as NextResponse;
   }
 
@@ -121,9 +145,13 @@ export async function reserveStorageQuota(
 
   const expiresAt = new Date(Date.now() + reservationTtlMs);
 
-  // Fetch Bunny storage BEFORE entering the transaction to avoid holding the
-  // advisory lock during a potentially slow/failing HTTP call on cache miss.
-  const bunnyData = await getCachedUserBunnyStorage();
+  // Fetch Bunny storage and the account's ceiling BEFORE entering the transaction,
+  // to avoid holding the advisory lock during a potentially slow/failing HTTP call
+  // on cache miss or an extra round trip to Postgres.
+  const [bunnyData, limitBytes] = await Promise.all([
+    getCachedUserBunnyStorage(),
+    getStorageLimitForUser(userId),
+  ]);
   const bunnyBytes = BigInt(bunnyData[userId] ?? 0);
 
   try {
@@ -166,7 +194,7 @@ export async function reserveStorageQuota(
       const reservedBytes = resRow?.total ?? BigInt(0);
 
       const totalUsed = r2Bytes + reservedBytes + bunnyBytes;
-      if (totalUsed + incomingSizeBytes >= PLAN_STORAGE_LIMIT_BYTES) {
+      if (totalUsed + incomingSizeBytes >= limitBytes) {
         throw new QuotaExceededError();
       }
 

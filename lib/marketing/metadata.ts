@@ -81,7 +81,8 @@ export function buildComparisonJsonLd({
         '@type': 'Offer',
         price: '10',
         priceCurrency: 'USD',
-        description: '7-day free trial, then $10/month hosted plan. Self-hosted option is free.',
+        description:
+          '7-day free trial with no credit card, then $10/month hosted plan. Self-hosted option is free.',
       },
       url: seoConfig.url,
     },

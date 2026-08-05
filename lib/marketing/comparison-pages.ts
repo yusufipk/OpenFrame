@@ -7,7 +7,7 @@ import { competitorProfiles, openFrameProfile } from '@/lib/marketing/comparison
 
 const commonOpenFrameWins = [
   '$10/month flat hosted pricing — no per-member or per-guest fees',
-  '7-day free trial, then unlimited collaborators on one plan',
+  '7-day free trial with no credit card, then unlimited collaborators on one plan',
   'Self-host for free with Docker when you need full data control',
   'Voice notes and drawn annotations on the timeline',
   'Formal approval requests with per-reviewer status',
@@ -148,7 +148,7 @@ function competitorPricingRows(competitorId: string): PricingRow[] {
     },
     {
       label: 'Trial',
-      openframe: '7-day free trial on hosted',
+      openframe: '7-day free trial on hosted, no card required',
       competitor: profile.pricingNotes[0] ?? 'See vendor site',
     },
   ];
@@ -402,7 +402,8 @@ export const comparisonPages: ComparisonPageDefinition[] = [
       },
       {
         question: 'Can I start free?',
-        answer: 'Yes. Use the 7-day hosted trial or self-host for free with Docker.',
+        answer:
+          'Yes. The 7-day hosted trial does not ask for a card, and self-hosting with Docker is free.',
       },
       {
         question: 'Is OpenFrame only for video?',
@@ -662,7 +663,7 @@ export const comparisonPages: ComparisonPageDefinition[] = [
       },
       {
         label: 'Trial',
-        openframe: '7-day free trial on hosted',
+        openframe: '7-day free trial on hosted, no card required',
         competitor: 'Free plan — no card required',
       },
     ],

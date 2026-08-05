@@ -240,6 +240,67 @@ export default async function AdminGrowthPage() {
         </CardContent>
       </Card>
 
+      {scoreboard.cohorts ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Card-first against cardless trial</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Accounts created in the {scoreboard.cohorts.windowDays} days either side of{' '}
+              {formatDate(scoreboard.cohorts.cutover)}, each given{' '}
+              {scoreboard.cohorts.observationDays} days from signup to convert. The rate to read is
+              signup to paid: dropping the card requirement multiplies trials, so trial to paid can
+              fall while more people pay.
+            </p>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 pr-4 font-medium">Cohort</th>
+                  <th className="py-2 pr-4 font-medium">Window</th>
+                  <th className="py-2 pr-4 text-right font-medium">Signup</th>
+                  <th className="py-2 pr-4 text-right font-medium">Trial</th>
+                  <th className="py-2 pr-4 text-right font-medium">Paid</th>
+                  <th className="py-2 pr-4 text-right font-medium">Signup to paid</th>
+                  <th className="py-2 pr-4 text-right font-medium">Trial to paid</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scoreboard.cohorts.rows.map((row) => (
+                  <tr key={row.cohort} className="border-b last:border-0">
+                    <td className="py-2 pr-4">
+                      {row.cohort === 'CARDLESS' ? 'cardless' : 'card first'}
+                    </td>
+                    <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
+                      {formatDate(row.windowStart)} to {formatDate(row.windowEnd)}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.signups}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.trials}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.paid}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      <Rate
+                        rate={row.signups > 0 ? row.paid / row.signups : null}
+                        of={row.signups}
+                      />
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      <Rate rate={row.trials > 0 ? row.paid / row.trials : null} of={row.trials} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {scoreboard.cohorts.windowDays === 0 ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Nothing to compare yet. The first cardless signups reach the end of their{' '}
+                {scoreboard.cohorts.observationDays}-day window {scoreboard.cohorts.observationDays}{' '}
+                days after the switchover.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">By source</CardTitle>

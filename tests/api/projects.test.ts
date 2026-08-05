@@ -14,6 +14,7 @@ import {
   addWorkspaceMember,
   createExpiredUser,
   createProject,
+  createSubscribedUser,
   createUser,
   createVideo,
   createWorkspace,
@@ -338,8 +339,10 @@ describe('POST /api/projects', () => {
     expect(stored.allowDownloads).toBe(false);
   });
 
+  // Subscribed rather than the default trial user: three projects is past the
+  // trial's ceiling, and this test is about slugs, not about billing.
   it('gives two projects with the same name distinct slugs', async () => {
-    const owner = await createUser();
+    const owner = await createSubscribedUser();
     const workspace = await createWorkspace({ ownerId: owner.id });
     signedInAs(owner);
 
@@ -353,6 +356,55 @@ describe('POST /api/projects', () => {
 
     const slugs = (await db.project.findMany({ select: { slug: true } })).map((row) => row.slug);
     expect(slugs.sort()).toEqual(['same-name', 'same-name-1', 'same-name-2']);
+  });
+
+  it('refuses a second project while the owner is on a free trial', async () => {
+    const owner = await createUser();
+    const workspace = await createWorkspace({ ownerId: owner.id });
+    await createProject({ ownerId: owner.id, workspaceId: workspace.id, name: 'First' });
+    signedInAs(owner);
+
+    const response = await callRoute(
+      createProjectRoute,
+      apiRequest('/api/projects', { body: { name: 'Second', workspaceId: workspace.id } })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await db.project.count()).toBe(1);
+  });
+
+  it('lets a paying owner past that ceiling', async () => {
+    const owner = await createSubscribedUser();
+    const workspace = await createWorkspace({ ownerId: owner.id });
+    await createProject({ ownerId: owner.id, workspaceId: workspace.id, name: 'First' });
+    signedInAs(owner);
+
+    const response = await callRoute(
+      createProjectRoute,
+      apiRequest('/api/projects', { body: { name: 'Second', workspaceId: workspace.id } })
+    );
+
+    expect(response.status).toBe(201);
+    expect(await db.project.count()).toBe(2);
+  });
+
+  // The ceiling belongs to the account being billed, so a workspace admin cannot
+  // spend somebody else's trial allowance either.
+  it('counts the ceiling against the workspace owner, not the caller', async () => {
+    const owner = await createUser();
+    const workspace = await createWorkspace({ ownerId: owner.id });
+    await createProject({ ownerId: owner.id, workspaceId: workspace.id, name: 'First' });
+    const admin = await createUser();
+    await addWorkspaceMember({ workspaceId: workspace.id, userId: admin.id, role: 'ADMIN' });
+    signedInAs(admin);
+
+    const response = await callRoute(
+      createProjectRoute,
+      apiRequest('/api/projects', { body: { name: 'Second', workspaceId: workspace.id } })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await db.project.count()).toBe(1);
   });
 
   it('honours an explicit PUBLIC visibility', async () => {

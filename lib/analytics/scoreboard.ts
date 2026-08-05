@@ -77,6 +77,34 @@ export interface PaidAccountRow {
   selfReported: AcquisitionChannel | null;
 }
 
+/**
+ * How long an account gets to convert before its cohort is scored.
+ *
+ * Fixed rather than "since signup" so the two cohorts are compared over equal
+ * time. Without it the newer cohort is measured over a shorter life than the
+ * older one and always looks worse, whatever the change did.
+ */
+export const COHORT_OBSERVATION_DAYS = 30;
+
+export type TrialCohort = 'CARD_FIRST' | 'CARDLESS';
+
+export interface CohortRow {
+  cohort: TrialCohort;
+  windowStart: Date;
+  windowEnd: Date;
+  signups: number;
+  trials: number;
+  paid: number;
+}
+
+export interface CohortComparison {
+  cutover: Date;
+  observationDays: number;
+  /** Length of each side's window. Equal by construction; reported so it can be judged. */
+  windowDays: number;
+  rows: CohortRow[];
+}
+
 export interface Scoreboard {
   weeks: WeeklyRow[];
   channels: ChannelRow[];
@@ -89,6 +117,8 @@ export interface Scoreboard {
   currentActivePaid: number | null;
   currentMrrCents: number | null;
   currency: string;
+  /** Null until OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT names the switchover date. */
+  cohorts: CohortComparison | null;
 }
 
 interface WeeklyQueryRow {
@@ -195,6 +225,118 @@ export function conversionRates(row: {
   };
 }
 
+/**
+ * The day the cardless trial replaced the card-first one, if it has been set.
+ *
+ * Kept in the environment rather than in code because it is a fact about a
+ * deployment, not about the product: a self-hosted instance never switched over
+ * at all, and the hosted one only knows the date once it has shipped.
+ */
+export function getCardlessTrialCutover(): Date | null {
+  const raw = process.env.OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT?.trim();
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * The two equal-length windows either side of the cutover.
+ *
+ * The `after` window stops `COHORT_OBSERVATION_DAYS` short of now, because an
+ * account that signed up yesterday has not had its chance to convert yet and
+ * counting it would drag the new cohort's rate down for a month. The `before`
+ * window is then cut to the same length, ending at the cutover.
+ */
+export function cohortWindows(
+  cutover: Date,
+  now: Date,
+  observationDays: number = COHORT_OBSERVATION_DAYS
+) {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const afterStart = cutover;
+  const afterEnd = new Date(now.getTime() - observationDays * msPerDay);
+  const spanMs = Math.max(0, afterEnd.getTime() - afterStart.getTime());
+
+  return {
+    afterStart,
+    afterEnd: new Date(afterStart.getTime() + spanMs),
+    beforeStart: new Date(cutover.getTime() - spanMs),
+    beforeEnd: cutover,
+    windowDays: Math.floor(spanMs / msPerDay),
+  };
+}
+
+interface CohortQueryRow {
+  cohort: string;
+  signups: number;
+  trials: number;
+  paid: number;
+}
+
+/**
+ * Card-first against cardless, on signup-to-paid rather than trial-to-paid.
+ *
+ * Trial-to-paid is the wrong ratio for this comparison and will mislead whoever
+ * reads it: handing out trials without a card multiplies the denominator, so the
+ * rate can halve while the number of paying customers goes up. Signups are the
+ * honest denominator because they are the one thing the change does not move.
+ */
+export async function getCohortComparison(
+  now: Date = new Date()
+): Promise<CohortComparison | null> {
+  const cutover = getCardlessTrialCutover();
+  if (!cutover) return null;
+
+  const { afterStart, afterEnd, beforeStart, beforeEnd, windowDays } = cohortWindows(cutover, now);
+  const observationInterval = `${COHORT_OBSERVATION_DAYS} days`;
+
+  const rows = await db.$queryRaw<CohortQueryRow[]>`
+    SELECT CASE WHEN u."createdAt" >= ${cutover} THEN 'CARDLESS' ELSE 'CARD_FIRST' END AS cohort,
+           COUNT(*)::int AS signups,
+           COUNT(*) FILTER (WHERE t.started_at IS NOT NULL)::int AS trials,
+           COUNT(*) FILTER (WHERE p.paid_at IS NOT NULL)::int AS paid
+    FROM users u
+    LEFT JOIN LATERAL (
+      SELECT MIN(e.occurred_at) AS started_at
+      FROM analytics_events e
+      WHERE e.user_id = u.id
+        AND e.name::text = 'TRIAL_STARTED'
+        AND e.occurred_at <= u."createdAt" + ${observationInterval}::interval
+    ) t ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT MIN(e.occurred_at) AS paid_at
+      FROM analytics_events e
+      WHERE e.user_id = u.id
+        AND e.name::text = 'SUBSCRIPTION_STARTED'
+        AND e.occurred_at <= u."createdAt" + ${observationInterval}::interval
+    ) p ON TRUE
+    WHERE (u."createdAt" >= ${beforeStart} AND u."createdAt" < ${beforeEnd})
+       OR (u."createdAt" >= ${afterStart} AND u."createdAt" < ${afterEnd})
+    GROUP BY 1
+  `;
+
+  const byCohort = new Map(rows.map((row) => [row.cohort, row]));
+  const build = (cohort: TrialCohort, windowStart: Date, windowEnd: Date): CohortRow => {
+    const row = byCohort.get(cohort);
+    return {
+      cohort,
+      windowStart,
+      windowEnd,
+      signups: row?.signups ?? 0,
+      trials: row?.trials ?? 0,
+      paid: row?.paid ?? 0,
+    };
+  };
+
+  return {
+    cutover,
+    observationDays: COHORT_OBSERVATION_DAYS,
+    windowDays,
+    rows: [build('CARD_FIRST', beforeStart, beforeEnd), build('CARDLESS', afterStart, afterEnd)],
+  };
+}
+
 export async function getScoreboard(options?: { weeks?: number }): Promise<Scoreboard> {
   const weeks = Math.min(Math.max(options?.weeks ?? DEFAULT_WEEKS, 1), 52);
   const now = new Date();
@@ -204,7 +346,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
   const channelWindowStart = new Date(now);
   channelWindowStart.setUTCDate(channelWindowStart.getUTCDate() - CHANNEL_WINDOW_DAYS);
 
-  const [weekRows, channelRows, priorPaid, paidAccounts, stripeStats] = await Promise.all([
+  const [weekRows, channelRows, priorPaid, paidAccounts, stripeStats, cohorts] = await Promise.all([
     // COUNT(DISTINCT COALESCE(anonymous_id, id)) rather than COUNT(*): a landing
     // view is deduped per visitor per day, so a visitor who came back on three
     // days would otherwise be three weekly visitors. Rows with no anonymous id
@@ -256,6 +398,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       LIMIT ${PAID_ACCOUNT_LIMIT + 1}
     `,
     getCachedStripeStats(),
+    getCohortComparison(now),
   ]);
 
   const byWeek = new Map<number, WeeklyRow>();
@@ -337,5 +480,6 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     currentActivePaid: stripeStats?.activeSubscribers ?? null,
     currentMrrCents: stripeStats?.mrrCents ?? null,
     currency: stripeStats?.currency ?? 'usd',
+    cohorts,
   };
 }

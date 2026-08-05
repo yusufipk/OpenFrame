@@ -15,8 +15,14 @@ import {
   createVerificationToken,
   isEmailVerificationEnabled,
   sendVerificationEmail,
+  warnIfTrialsSkipVerification,
 } from '@/lib/email-verification';
-import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
+import {
+  isDisposableEmailDomain,
+  isValidEmailAddress,
+  normalizeEmail,
+} from '@/lib/email-validation';
+import { startCardlessTrial } from '@/lib/billing';
 import { recordSignupCompleted } from '@/lib/analytics/signup';
 import { readRequestVisitor } from '@/lib/analytics/visitor';
 
@@ -48,6 +54,12 @@ export async function POST(request: NextRequest) {
     if (!isValidEmailAddress(normalizedEmail)) {
       return apiErrors.validationError('Invalid email format');
     }
+
+    // Checked before the invitation branch reads its token, but only applied to
+    // people signing themselves up: an invited collaborator was vouched for by a
+    // paying customer, and refusing their address breaks that customer's review
+    // rather than stopping anyone from farming trials.
+    const isDisposableAddress = isDisposableEmailDomain(normalizedEmail);
 
     // Allow registration via a valid invitation token OR global invite code.
     let invitationIsValid = false;
@@ -83,6 +95,12 @@ export async function POST(request: NextRequest) {
       if (!isValidCode) {
         return apiErrors.forbidden('Invalid invite code');
       }
+    }
+
+    if (!invitationIsValid && isDisposableAddress) {
+      return apiErrors.badRequest(
+        'Please sign up with a permanent email address. Disposable mailboxes are not accepted.'
+      );
     }
 
     if (!password || typeof password !== 'string' || password.length < 8 || password.length > 128) {
@@ -141,6 +159,15 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       visitor: await readRequestVisitor(request),
     });
+
+    // With SMTP configured the trial starts when the address is proven, not here.
+    // Without it there is no verification step to hang the trial on and the
+    // account is already marked verified above, so withholding the trial would
+    // just lock the user out of an instance that has billing switched on.
+    if (!emailVerificationRequired) {
+      warnIfTrialsSkipVerification();
+      await startCardlessTrial(user.id);
+    }
 
     // Send verification email if SMTP is configured
     if (emailVerificationRequired) {

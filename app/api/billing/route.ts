@@ -28,7 +28,7 @@ export async function GET() {
         hasRecoverableSubscription: billing.subscription.hasRecoverableSubscription,
         hasActiveTrial: billing.subscription.hasActiveTrial,
         hasBillingAccess: billing.subscription.hasBillingAccess,
-        isTrialEligible: billing.subscription.isTrialEligible,
+        isPaid: billing.subscription.isPaid,
         priceId: billing.subscription.stripePriceId,
         currentPeriodEnd: billing.subscription.currentPeriodEnd?.toISOString() ?? null,
         cancelAtPeriodEnd: billing.subscription.cancelAtPeriodEnd ?? false,

@@ -5,6 +5,8 @@ import { db } from '@/lib/db';
 import { getStripe, getStripePriceId } from '@/lib/stripe';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { recordSubscriptionTransition } from '@/lib/analytics/billing-events';
+import { eventKey, recordEvent } from '@/lib/analytics/record';
+import { TRIAL_WORKSPACE_LIMIT } from '@/lib/trial-limits';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set<BillingSubscriptionStatus>([
   BillingSubscriptionStatus.ACTIVE,
@@ -43,6 +45,22 @@ export function hasActiveTrial(trialEndsAt: Date | null | undefined, now: Date =
   return Boolean(trialEndsAt && trialEndsAt.getTime() > now.getTime());
 }
 
+/**
+ * The trial end date to keep when a Stripe sync has none of its own.
+ *
+ * An unexpired trial is an entitlement the account already holds, so billing
+ * state may add access but must never take a trial back before it has run out.
+ * Without this, a trial user who starts a checkout and abandons the card step
+ * lands on an `incomplete` subscription carrying no `trial_end`, and the sync
+ * would write `trialEndsAt: null` over their remaining days and lock them out of
+ * a product they were still entitled to. Nothing can be farmed this way either:
+ * `billingTrialConsumedAt` is what makes the trial once-per-account, and it is
+ * never cleared.
+ */
+export function keepUnexpiredTrial(trialEndsAt: Date | null | undefined, now: Date = new Date()) {
+  return hasActiveTrial(trialEndsAt, now) ? (trialEndsAt ?? null) : null;
+}
+
 export function hasActiveSubscription(status: BillingSubscriptionStatus | null | undefined) {
   if (!status) return false;
   return ACTIVE_SUBSCRIPTION_STATUSES.has(status);
@@ -54,6 +72,33 @@ export function hasActiveSubscription(status: BillingSubscriptionStatus | null |
 export function hasRecoverableSubscription(status: BillingSubscriptionStatus | null | undefined) {
   if (!status) return false;
   return RECOVERABLE_SUBSCRIPTION_STATUSES.has(status);
+}
+
+/**
+ * Whether this account is a paying customer, as opposed to one that merely has
+ * access right now.
+ *
+ * The cardless trial makes these two different questions for the first time: a
+ * trial account passes `hasBillingAccess` with no card and no Stripe customer
+ * behind it. Every ceiling that exists to bound what an unpaid account can cost
+ * us (storage, upload size, workspace count) hangs off this, not off access.
+ * A legacy Stripe trial counts as paid because a card was handed over for it.
+ */
+export function isPaidTier(
+  subject: Pick<BillingAccessSubject, 'subscriptionStatus' | 'stripeCurrentPeriodEnd'>,
+  now: Date = new Date()
+) {
+  if (!isStripeFeatureEnabled()) {
+    return true;
+  }
+
+  if (hasActiveSubscription(subject.subscriptionStatus)) {
+    return true;
+  }
+
+  return Boolean(
+    subject.stripeCurrentPeriodEnd && subject.stripeCurrentPeriodEnd.getTime() > now.getTime()
+  );
 }
 
 export function hasBillingAccess(subject: BillingAccessSubject, now: Date = new Date()) {
@@ -195,12 +240,52 @@ export function getBillingStatusLabel(status: BillingSubscriptionStatus) {
   }
 }
 
+/**
+ * Grants the cardless trial, once per account, and reports whether this call is
+ * the one that granted it.
+ *
+ * Called where the email address is proven rather than where the account is
+ * created: an unverifiable address gets no trial, which is the cheapest abuse
+ * control available and the reason the two writes below can stay this simple.
+ *
+ * `billingTrialConsumedAt` is written here rather than only by the Stripe sync.
+ * It is the once-per-account marker, so a re-issued verification link, a second
+ * device or a replayed request all land on the `WHERE` clause and change nothing.
+ */
+export async function startCardlessTrial(userId: string, now: Date = new Date()) {
+  // Without billing nothing is gated, so a trial would be a date nobody reads.
+  // Writing one anyway would consume the trial of a self-hosted instance that
+  // later switches billing on.
+  if (!isStripeFeatureEnabled()) {
+    return false;
+  }
+
+  const { count } = await db.user.updateMany({
+    where: { id: userId, trialEndsAt: null, billingTrialConsumedAt: null },
+    data: {
+      trialEndsAt: getDefaultTrialEndsAt(now),
+      billingTrialConsumedAt: now,
+    },
+  });
+
+  if (count === 0) {
+    return false;
+  }
+
+  await recordEvent({
+    name: 'TRIAL_STARTED',
+    dedupeKey: eventKey('TRIAL_STARTED', userId),
+    userId,
+  });
+
+  return true;
+}
+
 export async function getStripeCheckoutState(userId: string) {
   const user = await db.user.findUnique({
     where: { id: userId },
     select: {
       subscriptionStatus: true,
-      billingTrialConsumedAt: true,
     },
   });
 
@@ -211,7 +296,6 @@ export async function getStripeCheckoutState(userId: string) {
   return {
     hasActiveSubscription: hasActiveSubscription(user.subscriptionStatus),
     hasRecoverableSubscription: hasRecoverableSubscription(user.subscriptionStatus),
-    isTrialEligible: !user.billingTrialConsumedAt,
   };
 }
 
@@ -268,15 +352,22 @@ export async function getWorkspaceCreationEligibility(userId: string) {
   }
 
   const billingAccess = hasBillingAccess(user);
+  const isPaid = isPaidTier(user);
   const collaborationCount = invitedWorkspaceCount + projectOnlyCollaborationCount;
+
+  // A paying account creates as many workspaces as it wants. Everyone else gets
+  // one, which covers both the cardless trial and the pre-trial state where an
+  // account may set a workspace up before it can open it.
   const canCreateWorkspace =
     !isStripeFeatureEnabled() ||
-    billingAccess ||
-    (ownedWorkspaceCount === 0 && collaborationCount === 0);
+    isPaid ||
+    ((billingAccess || collaborationCount === 0) && ownedWorkspaceCount < TRIAL_WORKSPACE_LIMIT);
 
   let reason: string | null = null;
   if (!canCreateWorkspace && isStripeFeatureEnabled()) {
-    if (collaborationCount > 0 && ownedWorkspaceCount === 0) {
+    if (billingAccess && ownedWorkspaceCount >= TRIAL_WORKSPACE_LIMIT) {
+      reason = 'Your free trial includes one workspace. Subscribe to create more.';
+    } else if (collaborationCount > 0 && ownedWorkspaceCount === 0) {
       reason =
         'You are currently collaborating in someone else’s workspace or project. Start a subscription to create a workspace of your own.';
     } else {
@@ -297,7 +388,7 @@ export async function getWorkspaceCreationEligibility(userId: string) {
       hasRecoverableSubscription: hasRecoverableSubscription(user.subscriptionStatus),
       hasActiveTrial: hasActiveTrial(user.trialEndsAt),
       hasBillingAccess: billingAccess,
-      isTrialEligible: !user.billingTrialConsumedAt,
+      isPaid,
       stripeCustomerId: user.stripeCustomerId,
       stripeSubscriptionId: user.stripeSubscriptionId,
       stripePriceId: user.stripePriceId,
@@ -323,6 +414,74 @@ export async function getBillingOverview(userId: string) {
     },
     subscription: billing.subscription,
   };
+}
+
+/** How long before the trial runs out the countdown starts being shown. */
+export const TRIAL_ENDING_NOTICE_DAYS = 3;
+
+export interface TrialNotice {
+  /** `ending` while access is still live, `ended` once it has lapsed. */
+  kind: 'ending' | 'ended';
+  endsAt: Date;
+  /** When the cleanup job becomes eligible to delete this account's media. */
+  contentKeptUntil: Date | null;
+}
+
+/**
+ * The one-line trial status worth interrupting somebody with, or null.
+ *
+ * Both halves of the deadline are in one place because the useful message is the
+ * pair: an account is told when the trial runs out and, separately, that running
+ * out is not the moment its work disappears. The gap between those two dates is
+ * the fifteen-day cleanup grace period, and until now nothing in the product said
+ * it out loud, which made the end of a trial read as a deletion notice.
+ */
+export async function getTrialNotice(
+  userId: string,
+  now: Date = new Date()
+): Promise<TrialNotice | null> {
+  if (!isStripeFeatureEnabled()) {
+    return null;
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      subscriptionStatus: true,
+      trialEndsAt: true,
+      stripeCurrentPeriodEnd: true,
+      billingAccessEndedAt: true,
+    },
+  });
+
+  // A paying account has a billing period, not a trial, and gets told about it
+  // in settings rather than in a banner on every page.
+  if (!user || isPaidTier(user, now)) {
+    return null;
+  }
+
+  const contentKeptUntil = getStorageCleanupEligibleAt(user);
+
+  if (hasActiveTrial(user.trialEndsAt, now) && user.trialEndsAt) {
+    const daysLeft = (user.trialEndsAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
+    if (daysLeft > TRIAL_ENDING_NOTICE_DAYS) {
+      return null;
+    }
+
+    return { kind: 'ending', endsAt: user.trialEndsAt, contentKeptUntil };
+  }
+
+  const endsAt = getBillingAccessEndDate(user);
+  if (!endsAt || hasBillingAccess(user, now)) {
+    return null;
+  }
+
+  // Past the cleanup date there is nothing left to reassure anybody about.
+  if (contentKeptUntil && contentKeptUntil.getTime() <= now.getTime()) {
+    return null;
+  }
+
+  return { kind: 'ended', endsAt, contentKeptUntil };
 }
 
 export async function getOrCreateStripeCustomerId(userId: string) {
@@ -395,6 +554,8 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
     select: {
       id: true,
       billingTrialConsumedAt: true,
+      // Read so a cardless trial that has not run out survives this sync.
+      trialEndsAt: true,
       // Read for the funnel: the transition is what gets recorded, so the state
       // being overwritten has to be captured before the update below.
       subscriptionStatus: true,
@@ -430,6 +591,11 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
   const effectiveCurrentPeriodEnd =
     hasEntitledPrice && currentPeriodEnd ? new Date(currentPeriodEnd * 1000) : null;
   const effectiveTrialEnd = hasEntitledPrice && trialEnd ? new Date(trialEnd * 1000) : null;
+  // Stripe grants no trials any more, so `effectiveTrialEnd` is null for every
+  // subscription created after the cardless trial shipped, and this fallback is
+  // what stops an abandoned or failed checkout from erasing the days the account
+  // still had. Legacy card-backed trials keep arriving through the branch above.
+  const preservedTrialEnd = effectiveTrialEnd ?? keepUnexpiredTrial(user.trialEndsAt);
   const hasAccess =
     hasEntitledPrice &&
     (hasActiveSubscription(mappedStatus) ||
@@ -444,14 +610,23 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
       stripeCancelAtPeriodEnd: cancelAtPeriodEnd,
       stripeCancelAt: cancelAt ? new Date(cancelAt * 1000) : null,
       subscriptionStatus: mappedStatus,
-      trialEndsAt: effectiveTrialEnd,
+      trialEndsAt: preservedTrialEnd,
       billingTrialConsumedAt:
         hasEntitledPrice && trialEnd
           ? (user.billingTrialConsumedAt ?? new Date())
           : user.billingTrialConsumedAt,
-      billingAccessEndedAt: hasAccess
-        ? null
-        : getInactiveBillingAccessEndedAt(subscription, hasEntitledPrice ? currentPeriodEnd : null),
+      // A live trial means access has not ended, whatever the subscription says.
+      // Stamping an end date here while the trial runs would date the storage
+      // cleanup from today and tell the user their work dies before their trial
+      // does. `hasActiveTrial`, not merely a non-null date: a legacy Stripe trial
+      // that has already elapsed is a reason to stamp the end date, not to skip it.
+      billingAccessEndedAt:
+        hasAccess || hasActiveTrial(preservedTrialEnd)
+          ? null
+          : getInactiveBillingAccessEndedAt(
+              subscription,
+              hasEntitledPrice ? currentPeriodEnd : null
+            ),
     },
   });
 
@@ -466,7 +641,7 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
     after: {
       status: mappedStatus,
       cancelAtPeriodEnd,
-      trialEndsAt: effectiveTrialEnd,
+      trialEndsAt: preservedTrialEnd,
       currentPeriodEnd: effectiveCurrentPeriodEnd,
     },
   });
@@ -554,6 +729,7 @@ export async function markSubscriptionCanceledByCustomerId(
       stripeCancelAtPeriodEnd: true,
       stripeCurrentPeriodEnd: true,
       billingTrialConsumedAt: true,
+      trialEndsAt: true,
     },
   });
 
@@ -561,17 +737,24 @@ export async function markSubscriptionCanceledByCustomerId(
     return null;
   }
 
+  // Losing the subscription does not retract a trial that has not run out. The
+  // account keeps the days it was given and lands back on the trial's own end
+  // date, which is also what the cancellation copy in settings promises.
+  const preservedTrialEnd = keepUnexpiredTrial(user.trialEndsAt);
+
   const updated = await db.user.update({
     where: { id: user.id },
     data: {
       subscriptionStatus: BillingSubscriptionStatus.CANCELED,
-      trialEndsAt: null,
+      trialEndsAt: preservedTrialEnd,
       stripeSubscriptionId: null,
       stripePriceId: null,
       stripeCurrentPeriodEnd: options?.currentPeriodEnd ?? null,
       stripeCancelAtPeriodEnd: false,
       stripeCancelAt: null,
-      billingAccessEndedAt: options?.endedAt ?? options?.currentPeriodEnd ?? new Date(),
+      billingAccessEndedAt: preservedTrialEnd
+        ? null
+        : (options?.endedAt ?? options?.currentPeriodEnd ?? new Date()),
     },
   });
 
@@ -590,7 +773,7 @@ export async function markSubscriptionCanceledByCustomerId(
     after: {
       status: BillingSubscriptionStatus.CANCELED,
       cancelAtPeriodEnd: false,
-      trialEndsAt: null,
+      trialEndsAt: preservedTrialEnd,
       currentPeriodEnd: options?.currentPeriodEnd ?? user.stripeCurrentPeriodEnd ?? null,
     },
   });

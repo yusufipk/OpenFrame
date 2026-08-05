@@ -1,11 +1,7 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
-import {
-  DEFAULT_TRIAL_PERIOD_DAYS,
-  getOrCreateStripeCustomerId,
-  getStripeCheckoutState,
-} from '@/lib/billing';
+import { getOrCreateStripeCustomerId, getStripeCheckoutState } from '@/lib/billing';
 import { rateLimit } from '@/lib/rate-limit';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { getStripe, getStripePriceId, isStripeConfigured } from '@/lib/stripe';
@@ -73,11 +69,13 @@ export async function POST(request: NextRequest) {
       metadata: {
         userId: session.user.id,
       },
+      // No trial here. The free trial is granted in the product when the email
+      // address is verified, so by the time anyone reaches checkout they have
+      // already had it and this subscription bills immediately.
       subscription_data: {
         metadata: {
           userId: session.user.id,
         },
-        ...(checkoutState.isTrialEligible ? { trial_period_days: DEFAULT_TRIAL_PERIOD_DAYS } : {}),
       },
     });
 

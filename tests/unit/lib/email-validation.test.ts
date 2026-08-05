@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
+import {
+  isDisposableEmailDomain,
+  isValidEmailAddress,
+  normalizeEmail,
+} from '@/lib/email-validation';
 
 describe('normalizeEmail', () => {
   it.each([
@@ -91,5 +95,49 @@ describe('isValidEmailAddress', () => {
     // length rule, is what rejects the shortest inputs.
     expect(isValidEmailAddress('a@b')).toBe(false);
     expect(isValidEmailAddress('ab')).toBe(false);
+  });
+});
+
+describe('isDisposableEmailDomain', () => {
+  it.each([
+    'someone@mailinator.com',
+    'someone@yopmail.com',
+    'someone@guerrillamail.net',
+    'someone@10minutemail.com',
+  ])('refuses %s', (email) => {
+    expect(isDisposableEmailDomain(email)).toBe(true);
+  });
+
+  // Several of these providers hand out a fresh subdomain per visit, so an
+  // exact-match lookup would let every one of them through.
+  it('follows a disposable provider into its subdomains', () => {
+    expect(isDisposableEmailDomain('someone@inbox.mailinator.com')).toBe(true);
+    expect(isDisposableEmailDomain('someone@a.b.mailinator.com')).toBe(true);
+  });
+
+  it('is not fooled by a domain that merely ends with the same letters', () => {
+    expect(isDisposableEmailDomain('someone@notmailinator.com')).toBe(false);
+    expect(isDisposableEmailDomain('someone@mailinator.com.example.org')).toBe(false);
+  });
+
+  it.each([
+    'someone@gmail.com',
+    'someone@studio.co.uk',
+    // Forwarding and masking services are what privacy-minded paying customers
+    // actually use. Blocking them would cost real revenue.
+    'someone@simplelogin.io',
+    'someone@anonaddy.me',
+    'someone@privaterelay.appleid.com',
+  ])('accepts %s', (email) => {
+    expect(isDisposableEmailDomain(email)).toBe(false);
+  });
+
+  it('ignores case and surrounding whitespace in the domain', () => {
+    expect(isDisposableEmailDomain('Someone@MailInator.COM')).toBe(true);
+  });
+
+  it('returns false for a string with no domain at all', () => {
+    expect(isDisposableEmailDomain('someone')).toBe(false);
+    expect(isDisposableEmailDomain('')).toBe(false);
   });
 });

@@ -17,18 +17,22 @@ import {
   hasActiveTrial,
   hasBillingAccess,
   hasRecoverableSubscription,
+  isPaidTier,
+  keepUnexpiredTrial,
   mapStripeSubscriptionStatus,
   markSubscriptionCanceledByCustomerId,
   selectAuthoritativeSubscription,
+  startCardlessTrial,
   syncStripeCustomerSubscriptions,
   syncStripeSubscriptionToUser,
 } from '@/lib/billing';
 
 const dbMock = vi.hoisted(() => ({
-  user: { findUnique: vi.fn(), update: vi.fn() },
+  user: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   workspace: { count: vi.fn() },
   workspaceMember: { count: vi.fn() },
   projectMember: { count: vi.fn() },
+  analyticsEvent: { createMany: vi.fn() },
 }));
 
 const stripeMock = vi.hoisted(() => ({
@@ -114,6 +118,94 @@ describe('hasActiveTrial', () => {
     ['undefined', undefined],
   ])('returns false for %s', (_label, value) => {
     expect(hasActiveTrial(value, NOW)).toBe(false);
+  });
+});
+
+describe('keepUnexpiredTrial', () => {
+  it('keeps a trial that has not run out', () => {
+    const future = new Date(NOW.getTime() + DAY_MS);
+
+    expect(keepUnexpiredTrial(future, NOW)).toBe(future);
+  });
+
+  it('drops a trial that has already run out', () => {
+    expect(keepUnexpiredTrial(new Date(NOW.getTime() - 1), NOW)).toBeNull();
+  });
+
+  it('drops a trial that ends exactly now', () => {
+    expect(keepUnexpiredTrial(new Date(NOW.getTime()), NOW)).toBeNull();
+  });
+
+  it('returns null rather than undefined when there is no trial', () => {
+    expect(keepUnexpiredTrial(null, NOW)).toBeNull();
+    expect(keepUnexpiredTrial(undefined, NOW)).toBeNull();
+  });
+});
+
+describe('isPaidTier', () => {
+  it('counts an active subscription as paid', () => {
+    expect(
+      isPaidTier(
+        { subscriptionStatus: BillingSubscriptionStatus.ACTIVE, stripeCurrentPeriodEnd: null },
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  // A Stripe trial was card-backed, so it is a customer in waiting rather than
+  // an unpaid account, and it keeps the full plan ceilings.
+  it('counts a Stripe trial as paid', () => {
+    expect(
+      isPaidTier(
+        { subscriptionStatus: BillingSubscriptionStatus.TRIALING, stripeCurrentPeriodEnd: null },
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('counts a lapsed status inside a paid period as paid', () => {
+    expect(
+      isPaidTier(
+        {
+          subscriptionStatus: BillingSubscriptionStatus.CANCELED,
+          stripeCurrentPeriodEnd: new Date(NOW.getTime() + DAY_MS),
+        },
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  // The whole point of the split: this account has access and no card behind it.
+  it('does not count a cardless trial as paid', () => {
+    expect(
+      isPaidTier(
+        { subscriptionStatus: BillingSubscriptionStatus.FREE, stripeCurrentPeriodEnd: null },
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it('does not count an expired paid period as paid', () => {
+    expect(
+      isPaidTier(
+        {
+          subscriptionStatus: BillingSubscriptionStatus.CANCELED,
+          stripeCurrentPeriodEnd: new Date(NOW.getTime() - DAY_MS),
+        },
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it('treats everyone as paid when billing is switched off entirely', () => {
+    vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'false');
+
+    expect(
+      isPaidTier(
+        { subscriptionStatus: BillingSubscriptionStatus.FREE, stripeCurrentPeriodEnd: null },
+        NOW
+      )
+    ).toBe(true);
   });
 });
 
@@ -592,6 +684,8 @@ describe('database backed billing helpers', () => {
     vi.stubEnv('STRIPE_PRICE_ID', ENTITLED_PRICE);
     dbMock.user.findUnique.mockReset();
     dbMock.user.update.mockReset();
+    dbMock.user.updateMany.mockReset();
+    dbMock.analyticsEvent.createMany.mockReset();
     dbMock.workspace.count.mockReset();
     dbMock.workspaceMember.count.mockReset();
     dbMock.projectMember.count.mockReset();
@@ -611,42 +705,95 @@ describe('database backed billing helpers', () => {
       await expect(getStripeCheckoutState('u1')).rejects.toThrow('User u1 not found');
     });
 
-    it('reports an active subscriber as active, recoverable and trial-consumed', async () => {
+    it('reports an active subscriber as active and recoverable', async () => {
       dbMock.user.findUnique.mockResolvedValue({
         subscriptionStatus: BillingSubscriptionStatus.ACTIVE,
-        billingTrialConsumedAt: new Date('2025-06-01T00:00:00Z'),
       });
 
       await expect(getStripeCheckoutState('u1')).resolves.toEqual({
         hasActiveSubscription: true,
         hasRecoverableSubscription: true,
-        isTrialEligible: false,
       });
     });
 
     it('reports a past_due subscriber as recoverable but not active', async () => {
       dbMock.user.findUnique.mockResolvedValue({
         subscriptionStatus: BillingSubscriptionStatus.PAST_DUE,
-        billingTrialConsumedAt: null,
       });
 
       await expect(getStripeCheckoutState('u1')).resolves.toEqual({
         hasActiveSubscription: false,
         hasRecoverableSubscription: true,
-        isTrialEligible: true,
       });
     });
 
     it('reports a canceled subscriber as neither active nor recoverable', async () => {
       dbMock.user.findUnique.mockResolvedValue({
         subscriptionStatus: BillingSubscriptionStatus.CANCELED,
-        billingTrialConsumedAt: null,
       });
 
       const state = await getStripeCheckoutState('u1');
 
       expect(state.hasActiveSubscription).toBe(false);
       expect(state.hasRecoverableSubscription).toBe(false);
+    });
+  });
+
+  describe('startCardlessTrial', () => {
+    it('dates the trial from now and marks it consumed in the same write', async () => {
+      dbMock.user.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(startCardlessTrial('u1')).resolves.toBe(true);
+
+      const call = dbMock.user.updateMany.mock.calls[0][0];
+      expect(call.data.trialEndsAt.getTime()).toBe(
+        NOW.getTime() + DEFAULT_TRIAL_PERIOD_DAYS * DAY_MS
+      );
+      expect(call.data.billingTrialConsumedAt.getTime()).toBe(NOW.getTime());
+    });
+
+    // The guard is the whole once-per-account rule. Without it a re-issued
+    // verification link, or a second one opened on a phone, extends the trial.
+    it('only writes to an account that has never had a trial', async () => {
+      dbMock.user.updateMany.mockResolvedValue({ count: 1 });
+
+      await startCardlessTrial('u1');
+
+      expect(dbMock.user.updateMany.mock.calls[0][0].where).toEqual({
+        id: 'u1',
+        trialEndsAt: null,
+        billingTrialConsumedAt: null,
+      });
+    });
+
+    it('reports no trial and records nothing when the guard matched no rows', async () => {
+      vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+      dbMock.user.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(startCardlessTrial('u1')).resolves.toBe(false);
+      expect(dbMock.analyticsEvent.createMany).not.toHaveBeenCalled();
+    });
+
+    it('records the trial once, keyed on the account', async () => {
+      vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+      dbMock.user.updateMany.mockResolvedValue({ count: 1 });
+
+      await startCardlessTrial('u1');
+
+      expect(dbMock.analyticsEvent.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [expect.objectContaining({ name: 'TRIAL_STARTED', dedupeKey: 'TRIAL_STARTED:u1' })],
+        })
+      );
+    });
+
+    // Nothing is gated without billing, so a trial date would be noise. Worse, it
+    // would consume the trial of an instance that switches billing on later.
+    it('grants nothing when billing is switched off entirely', async () => {
+      vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'false');
+
+      await expect(startCardlessTrial('u1')).resolves.toBe(false);
+      expect(dbMock.user.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -682,6 +829,55 @@ describe('database backed billing helpers', () => {
       mockEligibility({ user: null });
 
       await expect(getWorkspaceCreationEligibility('u1')).rejects.toThrow('User u1 not found');
+    });
+
+    it('lets an account on a cardless trial create its first workspace', async () => {
+      mockEligibility({
+        user: {
+          subscriptionStatus: BillingSubscriptionStatus.FREE,
+          trialEndsAt: new Date(NOW.getTime() + 5 * DAY_MS),
+          billingTrialConsumedAt: NOW,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          stripePriceId: null,
+          stripeCurrentPeriodEnd: null,
+          stripeCancelAtPeriodEnd: null,
+          stripeCancelAt: null,
+          billingAccessEndedAt: null,
+        },
+        owned: 0,
+      });
+
+      const result = await getWorkspaceCreationEligibility('u1');
+
+      expect(result.canCreateWorkspace).toBe(true);
+      expect(result.subscription.isPaid).toBe(false);
+    });
+
+    // The trial ceiling. Access alone used to be enough for any number of these.
+    it('refuses a second workspace on a cardless trial', async () => {
+      mockEligibility({
+        user: {
+          subscriptionStatus: BillingSubscriptionStatus.FREE,
+          trialEndsAt: new Date(NOW.getTime() + 5 * DAY_MS),
+          billingTrialConsumedAt: NOW,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          stripePriceId: null,
+          stripeCurrentPeriodEnd: null,
+          stripeCancelAtPeriodEnd: null,
+          stripeCancelAt: null,
+          billingAccessEndedAt: null,
+        },
+        owned: 1,
+      });
+
+      const result = await getWorkspaceCreationEligibility('u1');
+
+      expect(result.canCreateWorkspace).toBe(false);
+      expect(result.reason).toBe(
+        'Your free trial includes one workspace. Subscribe to create more.'
+      );
     });
 
     it('allows creation while billing access holds, whatever the counts are', async () => {
@@ -1002,6 +1198,26 @@ describe('database backed billing helpers', () => {
       expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(NOW.getTime());
     });
 
+    // A legacy Stripe trial that has already elapsed is a reason to stamp the
+    // access end date, not to skip it. Treating any non-null trial date as live
+    // would leave a lapsed account looking like it still had access, and the
+    // cleanup job would never come for its storage.
+    it('still ends access when the Stripe trial it reports is already over', async () => {
+      dbMock.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        billingTrialConsumedAt: new Date(NOW.getTime() - 30 * DAY_MS),
+        trialEndsAt: null,
+      });
+      const elapsedTrialEnd = Math.floor((NOW.getTime() - 5 * DAY_MS) / 1000);
+
+      await syncStripeSubscriptionToUser(
+        stripeSub({ status: 'canceled', current_period_end: null, trial_end: elapsedTrialEnd })
+      );
+
+      expect((updateData().trialEndsAt as Date).getTime()).toBe(elapsedTrialEnd * 1000);
+      expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(NOW.getTime());
+    });
+
     it('marks the trial consumed the first time an entitled trial is seen', async () => {
       dbMock.user.findUnique.mockResolvedValue({ id: 'u1', billingTrialConsumedAt: null });
       const trialEnd = Math.floor(NOW.getTime() / 1000) + 5 * 86_400;
@@ -1064,6 +1280,68 @@ describe('database backed billing helpers', () => {
 
       expect(updateData().stripePriceId).toBeNull();
     });
+
+    // The abandoned-checkout case. Stripe grants no trials any more, so every
+    // sync arrives with trial_end null, and writing that through would erase the
+    // days a cardless trial still had left.
+    it('keeps a cardless trial that has not run out when Stripe reports none', async () => {
+      const trialEndsAt = new Date(NOW.getTime() + 4 * DAY_MS);
+      dbMock.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        billingTrialConsumedAt: NOW,
+        trialEndsAt,
+      });
+
+      await syncStripeSubscriptionToUser(
+        stripeSub({ status: 'incomplete', current_period_end: null })
+      );
+
+      expect(updateData().trialEndsAt).toBe(trialEndsAt);
+    });
+
+    it('does not date the storage cleanup from today while that trial runs', async () => {
+      dbMock.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        billingTrialConsumedAt: NOW,
+        trialEndsAt: new Date(NOW.getTime() + 4 * DAY_MS),
+      });
+
+      await syncStripeSubscriptionToUser(
+        stripeSub({ status: 'incomplete', current_period_end: null })
+      );
+
+      expect(updateData().billingAccessEndedAt).toBeNull();
+    });
+
+    it('clears a trial that has already run out', async () => {
+      dbMock.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        billingTrialConsumedAt: new Date(NOW.getTime() - 30 * DAY_MS),
+        trialEndsAt: new Date(NOW.getTime() - DAY_MS),
+      });
+
+      await syncStripeSubscriptionToUser(
+        stripeSub({ status: 'incomplete', current_period_end: null })
+      );
+
+      expect(updateData().trialEndsAt).toBeNull();
+      expect(updateData().billingAccessEndedAt).toBeInstanceOf(Date);
+    });
+
+    it('still prefers the trial end Stripe reports over the stored one', async () => {
+      const stripeTrialEnd = Math.floor(NOW.getTime() / 1000) + 10 * 86_400;
+      dbMock.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        billingTrialConsumedAt: null,
+        trialEndsAt: new Date(NOW.getTime() + 2 * DAY_MS),
+      });
+
+      await syncStripeSubscriptionToUser(
+        stripeSub({ status: 'trialing', trial_end: stripeTrialEnd })
+      );
+
+      expect((updateData().trialEndsAt as Date).getTime()).toBe(stripeTrialEnd * 1000);
+    });
   });
 
   describe('markSubscriptionCanceledByCustomerId', () => {
@@ -1099,6 +1377,30 @@ describe('database backed billing helpers', () => {
 
       expect(updateData().stripeCurrentPeriodEnd).toBe(periodEnd);
       expect(updateData().billingAccessEndedAt).toBe(periodEnd);
+    });
+
+    // Cancelling a subscription does not retract days the account was already
+    // given, and the settings copy promises exactly this.
+    it('keeps a trial that has not run out and leaves access open', async () => {
+      const trialEndsAt = new Date(NOW.getTime() + 3 * DAY_MS);
+      dbMock.user.findUnique.mockResolvedValue({ id: 'u1', trialEndsAt });
+
+      await markSubscriptionCanceledByCustomerId('cus_1');
+
+      expect(updateData().trialEndsAt).toBe(trialEndsAt);
+      expect(updateData().billingAccessEndedAt).toBeNull();
+    });
+
+    it('still ends access when the trial has already run out', async () => {
+      dbMock.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        trialEndsAt: new Date(NOW.getTime() - DAY_MS),
+      });
+
+      await markSubscriptionCanceledByCustomerId('cus_1');
+
+      expect(updateData().trialEndsAt).toBeNull();
+      expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(NOW.getTime());
     });
 
     it('prefers an explicit endedAt over the period end', async () => {

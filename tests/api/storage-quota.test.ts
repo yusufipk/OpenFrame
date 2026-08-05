@@ -27,6 +27,7 @@ import { signedInAs, signedOut } from '../helpers/session';
 import {
   createExpiredUser,
   createProject,
+  createSubscribedUser,
   createUploadReservation,
   createUser,
   createVersion,
@@ -59,9 +60,47 @@ describe('PLAN_STORAGE_LIMIT_BYTES', () => {
   });
 });
 
+// Everything else in this file bills a subscribed account, because the plan
+// ceiling and the advisory lock are what those tests are about. This block is
+// the other half: the same code paths, held to the trial ceiling instead.
+describe('the trial ceiling', () => {
+  it('reports the trial limit rather than the plan limit for a trial account', async () => {
+    const user = await createUser();
+
+    expect((await getUserStorageInfo(user.id)).limitBytes).toBe(BigInt(3) * GIB);
+  });
+
+  it('refuses an upload that a paying account of the same size would be allowed', async () => {
+    const trialUser = await createUser();
+    const paidUser = await createSubscribedUser();
+    const fourGiB = BigInt(4) * GIB;
+
+    expect((await enforceStorageQuota(trialUser.id, fourGiB))?.status).toBe(507);
+    expect(await enforceStorageQuota(paidUser.id, fourGiB)).toBeNull();
+  });
+
+  it('holds a reservation to the trial ceiling too, not only the plain check', async () => {
+    const user = await createUser();
+    await createUploadReservation({ billedUserId: user.id, sizeBytes: BigInt(2) * GIB });
+
+    const result = await reserveStorageQuota(user.id, BigInt(2) * GIB);
+
+    expect('error' in result).toBe(true);
+    expect((result as { error: Response }).error.status).toBe(507);
+  });
+
+  it('still lets a trial account upload inside its own ceiling', async () => {
+    const user = await createUser();
+
+    const result = await reserveStorageQuota(user.id, BigInt(1) * GIB);
+
+    expect('reservationId' in result).toBe(true);
+  });
+});
+
 describe('getUserTotalStorageBytes', () => {
   it('is zero for a user with nothing stored', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
 
     expect(await getUserTotalStorageBytes(user.id)).toBe(BigInt(0));
   });
@@ -93,7 +132,7 @@ describe('getUserTotalStorageBytes', () => {
 
   it('ignores assets billed to somebody else and non-R2 providers', async () => {
     const scenario = await seedProject();
-    const other = await createUser();
+    const other = await createSubscribedUser();
     const video = await createVideo({ projectId: scenario.project.id });
     await createVideoAsset({
       videoId: video.id,
@@ -121,9 +160,9 @@ describe('getUserTotalStorageBytes', () => {
   // Versions are billed through the workspace owner, not through the project
   // owner or the uploader, which is what the join in the raw SQL encodes.
   it('sums r2 video versions through the workspace owner', async () => {
-    const workspaceOwner = await createUser();
+    const workspaceOwner = await createSubscribedUser();
     const workspace = await createWorkspace({ ownerId: workspaceOwner.id });
-    const projectOwner = await createUser();
+    const projectOwner = await createSubscribedUser();
     const project = await createProject({
       ownerId: projectOwner.id,
       workspaceId: workspace.id,
@@ -146,7 +185,7 @@ describe('getUserTotalStorageBytes', () => {
   });
 
   it('counts active reservations and ignores expired ones', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({ billedUserId: user.id, sizeBytes: BigInt(1000) });
     await createUploadReservation({
       billedUserId: user.id,
@@ -158,7 +197,7 @@ describe('getUserTotalStorageBytes', () => {
   });
 
   it('adds the Bunny Stream bytes reported for the user', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     bunnyStorage({ [user.id]: 12_345 });
 
     expect(await getUserTotalStorageBytes(user.id)).toBe(BigInt(12_345));
@@ -167,7 +206,7 @@ describe('getUserTotalStorageBytes', () => {
 
 describe('getUserStorageInfo', () => {
   it('reports the percentage to two decimal places', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: BigInt(50) * GIB,
@@ -181,7 +220,7 @@ describe('getUserStorageInfo', () => {
   });
 
   it('clamps the percentage at 100 when usage exceeds the limit', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: PLAN_STORAGE_LIMIT_BYTES * BigInt(3),
@@ -193,7 +232,7 @@ describe('getUserStorageInfo', () => {
 
 describe('enforceStorageQuota', () => {
   it('allows an upload that stays under the limit', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
 
     expect(await enforceStorageQuota(user.id, BigInt(1024))).toBeNull();
   });
@@ -201,7 +240,7 @@ describe('enforceStorageQuota', () => {
   // The route uses `>=`, so a user sitting exactly on the limit is blocked
   // rather than allowed one more byte.
   it('rejects an upload that lands exactly on the limit', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: PLAN_STORAGE_LIMIT_BYTES - BigInt(1024),
@@ -213,7 +252,7 @@ describe('enforceStorageQuota', () => {
   });
 
   it('allows an upload one byte short of the limit', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: PLAN_STORAGE_LIMIT_BYTES - BigInt(1024),
@@ -224,7 +263,7 @@ describe('enforceStorageQuota', () => {
 
   it('skips the check entirely when Stripe is disabled', async () => {
     vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'false');
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: PLAN_STORAGE_LIMIT_BYTES,
@@ -236,7 +275,7 @@ describe('enforceStorageQuota', () => {
 
 describe('reserveStorageQuota', () => {
   it('writes a reservation row billed to the user with the requested size', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
 
     const result = await reserveStorageQuota(user.id, BigInt(4096));
 
@@ -250,7 +289,7 @@ describe('reserveStorageQuota', () => {
 
   it('returns a null reservation id and writes nothing when Stripe is disabled', async () => {
     vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'false');
-    const user = await createUser();
+    const user = await createSubscribedUser();
 
     const result = await reserveStorageQuota(user.id, BigInt(4096));
 
@@ -259,7 +298,7 @@ describe('reserveStorageQuota', () => {
   });
 
   it('refuses a reservation that would cross the limit and writes no row', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: PLAN_STORAGE_LIMIT_BYTES - BigInt(1024),
@@ -289,7 +328,7 @@ describe('reserveStorageQuota', () => {
   });
 
   it('counts Bunny Stream bytes against the reservation', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     bunnyStorage({ [user.id]: Number(PLAN_STORAGE_LIMIT_BYTES - BigInt(1024)) });
 
     const result = await reserveStorageQuota(user.id, BigInt(2048));
@@ -299,7 +338,7 @@ describe('reserveStorageQuota', () => {
   });
 
   it('ignores an expired reservation when computing headroom', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: PLAN_STORAGE_LIMIT_BYTES - BigInt(1024),
@@ -312,8 +351,8 @@ describe('reserveStorageQuota', () => {
   });
 
   it('does not let one user reservations reduce another user headroom', async () => {
-    const heavy = await createUser();
-    const light = await createUser();
+    const heavy = await createSubscribedUser();
+    const light = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: heavy.id,
       sizeBytes: PLAN_STORAGE_LIMIT_BYTES - BigInt(1024),
@@ -328,7 +367,7 @@ describe('reserveStorageQuota', () => {
   // start before either commits, so without serialisation both read the same
   // "used" figure, both see enough headroom, and the user ends up over quota.
   it('serialises two concurrent reservations so only one fits the remaining headroom', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     const used = PLAN_STORAGE_LIMIT_BYTES - BigInt(30) * GIB;
     await createUploadReservation({ billedUserId: user.id, sizeBytes: used });
     // 30 GiB of headroom, and each request wants 20 GiB.
@@ -358,7 +397,7 @@ describe('reserveStorageQuota', () => {
   });
 
   it('grants both concurrent reservations when there is room for both', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     const request = BigInt(20) * GIB;
 
     const results = await Promise.all([
@@ -372,7 +411,7 @@ describe('reserveStorageQuota', () => {
   });
 
   it('serialises five concurrent reservations, granting exactly the number that fit', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     const used = PLAN_STORAGE_LIMIT_BYTES - BigInt(50) * GIB;
     await createUploadReservation({ billedUserId: user.id, sizeBytes: used });
     const request = BigInt(20) * GIB;
@@ -394,8 +433,8 @@ describe('reserveStorageQuota', () => {
   // Different users hash to different advisory lock keys, so they must not
   // block each other.
   it('does not serialise reservations for different users', async () => {
-    const first = await createUser();
-    const second = await createUser();
+    const first = await createSubscribedUser();
+    const second = await createSubscribedUser();
     const request = BigInt(150) * GIB;
 
     const results = await Promise.all([
@@ -410,7 +449,7 @@ describe('reserveStorageQuota', () => {
 
 describe('releaseStorageReservation', () => {
   it('deletes the reservation and frees the headroom', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     const result = await reserveStorageQuota(user.id, BigInt(10) * GIB);
     const reservationId = 'reservationId' in result ? result.reservationId : null;
     expect(reservationId).toBeTruthy();
@@ -423,7 +462,7 @@ describe('releaseStorageReservation', () => {
   });
 
   it('is a no-op for a null id', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({ billedUserId: user.id, sizeBytes: BigInt(1) });
 
     await releaseStorageReservation(null);
@@ -434,8 +473,8 @@ describe('releaseStorageReservation', () => {
   // The billedUserId argument scopes the delete, so a caller cannot release
   // another user's reservation by guessing its id.
   it('refuses to delete a reservation belonging to a different billed user', async () => {
-    const owner = await createUser();
-    const attacker = await createUser();
+    const owner = await createSubscribedUser();
+    const attacker = await createSubscribedUser();
     const reservation = await createUploadReservation({
       billedUserId: owner.id,
       sizeBytes: BigInt(4096),
@@ -466,7 +505,7 @@ describe('GET /api/settings/storage', () => {
   });
 
   it('serialises the byte counts as strings so BigInt survives JSON', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createUploadReservation({
       billedUserId: user.id,
       sizeBytes: BigInt(20) * GIB,

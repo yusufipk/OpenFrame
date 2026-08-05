@@ -47,13 +47,13 @@ export default function RefundPolicyPage() {
             <p>
               All new accounts are eligible for a{' '}
               <strong className="text-foreground">7-day free trial</strong> with full access to paid
-              features. We strongly encourage you to evaluate the Service fully during this period
-              before subscribing.
+              features. The trial requires no credit card and collects no payment. We strongly
+              encourage you to evaluate the Service fully during this period before subscribing.
             </p>
             <p className="mt-3">
-              You may cancel at any time during your free trial without being charged. If you do not
-              cancel before the trial ends, your chosen plan will automatically activate and payment
-              will be collected.
+              The trial never activates a paid plan by itself. When it ends, paid features stop
+              until you choose to subscribe, and a subscription is charged as soon as you complete
+              checkout.
             </p>
           </section>
 

@@ -21,6 +21,7 @@ import {
   addWorkspaceMember,
   createExpiredUser,
   createProject,
+  createSubscribedUser,
   createUser,
   createVideo,
   createWorkspace,
@@ -145,8 +146,10 @@ describe('POST /api/workspaces', () => {
     expect(stored.ownerId).toBe(user.id);
   });
 
+  // Subscribed rather than the default trial user: three workspaces is past the
+  // trial's ceiling, and this test is about slugs, not about billing.
   it('gives same-named workspaces distinct slugs', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     for (let index = 0; index < 3; index += 1) {
@@ -221,8 +224,10 @@ describe('POST /api/workspaces', () => {
     expect(await db.workspace.count()).toBe(1);
   });
 
+  // The name has always promised a subscriber; it used to be handed a trial user,
+  // which passed only because nothing distinguished the two.
   it('lets a subscribed user create any number of workspaces', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     await createWorkspace({ ownerId: user.id });
     await createWorkspace({ ownerId: user.id });
     signedInAs(user);
@@ -234,6 +239,20 @@ describe('POST /api/workspaces', () => {
 
     expect(response.status).toBe(201);
     expect(await db.workspace.count()).toBe(3);
+  });
+
+  it('refuses a second workspace while the owner is on a free trial', async () => {
+    const user = await createUser();
+    await createWorkspace({ ownerId: user.id });
+    signedInAs(user);
+
+    const response = await callRoute(
+      createWorkspaceRoute,
+      apiRequest('/api/workspaces', { body: { name: 'Second' } })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await db.workspace.count()).toBe(1);
   });
 
   it('lets a self-hosted instance with billing disabled create freely', async () => {

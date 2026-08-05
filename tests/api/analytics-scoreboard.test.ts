@@ -8,7 +8,11 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import type { AcquisitionChannel, AnalyticsEventName } from '@prisma/client';
 import { db } from '@/lib/db';
-import { AT_RISK_SILENT_DAYS, getScoreboard } from '@/lib/analytics/scoreboard';
+import {
+  AT_RISK_SILENT_DAYS,
+  getCohortComparison,
+  getScoreboard,
+} from '@/lib/analytics/scoreboard';
 import { createUser } from '../factories';
 
 function daysAgo(days: number): Date {
@@ -151,5 +155,93 @@ describe('getScoreboard', () => {
     const busyRow = scoreboard.paidAccounts.find((row) => row.userId === busy.id);
     expect(busyRow?.valueEvents7).toBe(1);
     expect(busyRow?.valueEvents30).toBe(2);
+  });
+});
+
+// The cohort comparison is another block of raw SQL, and the part most easily
+// got wrong is the observation window: a conversion that arrives two months
+// after signup belongs to neither cohort's score.
+describe('getCohortComparison', () => {
+  const CUTOVER = '2026-03-01T00:00:00.000Z';
+  const NOW = new Date('2026-05-01T00:00:00.000Z');
+
+  async function seedAccount(params: { createdAt: string; trialAt?: string; paidAt?: string }) {
+    const user = await createUser();
+    await db.user.update({
+      where: { id: user.id },
+      data: { createdAt: new Date(params.createdAt) },
+    });
+
+    if (params.trialAt) {
+      await seedEvent({
+        name: 'TRIAL_STARTED',
+        occurredAt: new Date(params.trialAt),
+        userId: user.id,
+      });
+    }
+    if (params.paidAt) {
+      await seedEvent({
+        name: 'SUBSCRIPTION_STARTED',
+        occurredAt: new Date(params.paidAt),
+        userId: user.id,
+      });
+    }
+
+    return user;
+  }
+
+  it('is null on a deployment that never named a switchover date', async () => {
+    vi.stubEnv('OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT', '');
+
+    expect(await getCohortComparison(NOW)).toBeNull();
+  });
+
+  it('splits accounts by the cutover and scores each within its 30 days', async () => {
+    vi.stubEnv('OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT', CUTOVER);
+
+    // Card first: one converted inside the window, one long after it.
+    await seedAccount({
+      createdAt: '2026-02-10T00:00:00.000Z',
+      paidAt: '2026-02-20T00:00:00.000Z',
+    });
+    await seedAccount({
+      createdAt: '2026-02-10T00:00:00.000Z',
+      paidAt: '2026-03-25T00:00:00.000Z',
+    });
+    // Cardless: both took the trial, one paid for it.
+    await seedAccount({
+      createdAt: '2026-03-10T00:00:00.000Z',
+      trialAt: '2026-03-10T00:00:00.000Z',
+      paidAt: '2026-03-20T00:00:00.000Z',
+    });
+    await seedAccount({
+      createdAt: '2026-03-15T00:00:00.000Z',
+      trialAt: '2026-03-15T00:00:00.000Z',
+    });
+    // Older than the matched window, and too new to have been observed yet.
+    await seedAccount({
+      createdAt: '2026-01-01T00:00:00.000Z',
+      paidAt: '2026-01-05T00:00:00.000Z',
+    });
+    await seedAccount({
+      createdAt: '2026-04-15T00:00:00.000Z',
+      paidAt: '2026-04-16T00:00:00.000Z',
+    });
+
+    const comparison = await getCohortComparison(NOW);
+
+    expect(comparison?.rows).toEqual([
+      expect.objectContaining({ cohort: 'CARD_FIRST', signups: 2, trials: 0, paid: 1 }),
+      expect.objectContaining({ cohort: 'CARDLESS', signups: 2, trials: 2, paid: 1 }),
+    ]);
+  });
+
+  it('reports both cohorts as empty rows rather than omitting them', async () => {
+    vi.stubEnv('OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT', CUTOVER);
+
+    const comparison = await getCohortComparison(NOW);
+
+    expect(comparison?.rows.map((row) => row.cohort)).toEqual(['CARD_FIRST', 'CARDLESS']);
+    expect(comparison?.rows.every((row) => row.signups === 0)).toBe(true);
   });
 });

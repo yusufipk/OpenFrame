@@ -351,6 +351,62 @@ describe('POST /api/auth/register', () => {
     expect(sentMail()).toEqual([]);
   });
 
+  it('refuses a disposable mailbox with 400 and stores nothing', async () => {
+    const response = await post({
+      name: 'Throwaway Person',
+      email: 'burner@mailinator.com',
+      password: PASSWORD,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await db.user.count()).toBe(0);
+  });
+
+  // The block exists to stop trial farming, which is a self-signup problem. An
+  // invited collaborator was vouched for by a paying customer, so refusing their
+  // address would break that customer's review instead.
+  it('accepts a disposable mailbox when an invitation vouches for it', async () => {
+    const scenario = await seedProject();
+    const invitation = await createInvitation({
+      invitedById: scenario.owner.id,
+      scope: 'PROJECT',
+      projectId: scenario.project.id,
+      email: 'guest@mailinator.com',
+      role: 'COMMENTATOR',
+    });
+    signedOut();
+
+    const response = await callRoute(
+      register,
+      registerRequest({
+        name: 'Invited Guest',
+        email: 'guest@mailinator.com',
+        password: PASSWORD,
+        invitationToken: invitation.token,
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(await db.user.count()).toBe(2);
+  });
+
+  // SMTP is configured in .env.test, so registration alone proves nothing about
+  // the address and grants no trial. Verification is what starts the clock.
+  it('leaves the trial unstarted until the address has been verified', async () => {
+    const response = await post({
+      name: 'Unverified Person',
+      email: 'unverified@example.com',
+      password: PASSWORD,
+    });
+
+    expect(response.status).toBe(201);
+    const created = await db.user.findUniqueOrThrow({
+      where: { email: 'unverified@example.com' },
+    });
+    expect(created.trialEndsAt).toBeNull();
+    expect(created.billingTrialConsumedAt).toBeNull();
+  });
+
   it('reports the rate limit budget on a successful registration', async () => {
     const response = await post({
       name: 'Rate Limited',

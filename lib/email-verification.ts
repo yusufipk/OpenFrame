@@ -10,7 +10,8 @@ import {
 } from '@/lib/email-brand';
 import { logError } from '@/lib/logger';
 import { eventKey, recordEvent } from '@/lib/analytics/record';
-import { isProductAnalyticsEnabled } from '@/lib/feature-flags';
+import { isProductAnalyticsEnabled, isStripeFeatureEnabled } from '@/lib/feature-flags';
+import { startCardlessTrial } from '@/lib/billing';
 
 // Reduce window to 2 hours — shorter exposure in access logs and backups.
 const TOKEN_EXPIRY_HOURS = 2;
@@ -27,6 +28,28 @@ function hashToken(token: string): string {
  */
 export function isEmailVerificationEnabled(): boolean {
   return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD);
+}
+
+let warnedAboutUnverifiedTrials = false;
+
+/**
+ * Says so, once, when an instance is handing out free trials to addresses nobody
+ * has proved.
+ *
+ * Billing switched on means the trial is worth something, and no SMTP means there
+ * is no verification step to hang it on, so every signup form submission mints
+ * seven days of storage. That combination is a deployment mistake rather than a
+ * choice, and it is invisible until the storage bill arrives.
+ */
+export function warnIfTrialsSkipVerification(): void {
+  if (warnedAboutUnverifiedTrials) return;
+  if (isEmailVerificationEnabled() || !isStripeFeatureEnabled()) return;
+
+  warnedAboutUnverifiedTrials = true;
+  logError(
+    'Free trials are being granted without email verification because SMTP is not configured while billing is enabled. Configure SMTP_HOST, SMTP_USER and SMTP_PASSWORD.',
+    new Error('Unverified trial signups')
+  );
 }
 
 /**
@@ -79,21 +102,25 @@ export async function consumeVerificationToken(token: string): Promise<string | 
   // Return null so a replayed/stale token never produces a misleading success redirect.
   if (user.count === 0) return null;
 
-  // Behind the flag so the extra lookup does not happen at all on a deployment
-  // that is not measuring. count > 0 above already means this is the one call
-  // that flipped the account, so a replayed link cannot reach here.
-  if (isProductAnalyticsEnabled()) {
-    const verified = await db.user.findUnique({
-      where: { email: record.identifier },
-      select: { id: true },
-    });
-    if (verified) {
+  // This is where the free trial begins: a proven address, before any card and
+  // before Stripe is involved at all. count > 0 above means this call is the one
+  // that flipped the account, so a replayed link cannot reach here, and
+  // `startCardlessTrial` refuses a second trial regardless.
+  const verified = await db.user.findUnique({
+    where: { email: record.identifier },
+    select: { id: true },
+  });
+
+  if (verified) {
+    if (isProductAnalyticsEnabled()) {
       await recordEvent({
         name: 'EMAIL_VERIFIED',
         dedupeKey: eventKey('EMAIL_VERIFIED', verified.id),
         userId: verified.id,
       });
     }
+
+    await startCardlessTrial(verified.id);
   }
 
   return record.identifier;

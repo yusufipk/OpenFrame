@@ -58,7 +58,7 @@ export default function TermsOfServicePage() {
               OpenFrame is a video review and approval platform that enables creative professionals
               and their clients to collaborate on video projects through timestamped comments,
               annotations, version management, and approval workflows. The Service is offered on a
-              subscription basis with a free trial period.
+              subscription basis with a free trial period that requires no payment details.
             </p>
           </section>
 
@@ -96,11 +96,12 @@ export default function TermsOfServicePage() {
               5. Subscriptions and Free Trial
             </h2>
             <p>
-              Certain features of the Service require a paid subscription. We offer a{' '}
-              <strong className="text-foreground">7-day free trial</strong> for new accounts, during
-              which you may access paid features at no charge. At the end of the trial period, your
-              subscription will automatically convert to a paid plan unless you cancel before the
-              trial ends.
+              Certain features of the Service require a paid subscription. Every new account
+              receives a <strong className="text-foreground">7-day free trial</strong>, which starts
+              once the account&apos;s email address is verified and requires no credit card. The
+              trial does not convert into a paid plan on its own and nothing is charged while it
+              runs. When it ends, access to paid features stops until you choose to subscribe, and a
+              subscription is billed as soon as you complete checkout.
             </p>
             <p className="mt-3">
               Subscription fees are billed in advance on a monthly or annual basis depending on the
