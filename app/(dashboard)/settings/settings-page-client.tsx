@@ -33,6 +33,25 @@ import { cn } from '@/lib/utils';
 import { CancelSubscriptionDialog } from '@/components/settings/cancel-subscription-dialog';
 import type { CancellationReason } from '@/lib/cancellation-reasons';
 
+/** Convert Stripe API units separately from the currency's display precision. */
+function formatInvoiceAmount(amountInMinorUnits: number, currency: string) {
+  const currencyCode = currency.toUpperCase();
+
+  try {
+    const formatter = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: currencyCode,
+    });
+    const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+    // Stripe retains two-decimal API amounts for ISK/UGX despite their zero-decimal display.
+    // https://docs.stripe.com/currencies#special-cases
+    const apiExponent = currencyCode === 'ISK' || currencyCode === 'UGX' ? 2 : fractionDigits;
+    return formatter.format(amountInMinorUnits / 10 ** apiExponent);
+  } catch {
+    return `${(amountInMinorUnits / 100).toFixed(2)} ${currencyCode}`;
+  }
+}
+
 interface NotificationSettings {
   telegramChatId: string | null;
   telegramEnabled: boolean;
@@ -51,6 +70,17 @@ interface BillingOverview {
   status: 'disabled' | 'ready' | 'misconfigured';
   checkoutAvailable: boolean;
   portalAvailable: boolean;
+  cancelAvailable: boolean;
+  cancelIsImmediate: boolean;
+  needsPaymentFix: boolean;
+  openInvoice: {
+    id: string | null;
+    hostedInvoiceUrl: string | null;
+    amountDue: number;
+    currency: string;
+    attemptCount: number;
+    nextPaymentAttempt: string | null;
+  } | null;
   subscription: {
     status: string;
     label: string;
@@ -260,12 +290,16 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   );
 
   const handleBillingRedirect = useCallback(
-    async (endpoint: '/api/billing/checkout' | '/api/billing/portal') => {
+    async (
+      endpoint: '/api/billing/checkout' | '/api/billing/portal',
+      flow?: 'payment_method_update'
+    ) => {
       setBillingAction(endpoint.endsWith('checkout') ? 'checkout' : 'portal');
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow ? { flow } : {}),
         });
         const data = await res.json();
 
@@ -333,9 +367,11 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
           : null;
         showMessage(
           'success',
-          endsOn
-            ? `Your subscription ends on ${endsOn}. You keep full access until then.`
-            : 'Your subscription ends at the close of the current period.'
+          data.data?.canceledImmediately
+            ? 'Subscription canceled. Automatic collection has stopped for its open invoices. Charges for prior service may still be owed.'
+            : endsOn
+              ? `Your subscription ends on ${endsOn}. You keep full access until then.`
+              : 'Your subscription ends at the close of the current period.'
         );
         return true;
       } catch {
@@ -458,13 +494,15 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                   <p className="text-sm text-muted-foreground mt-1">
                     {billing.subscription.hasActiveSubscription
                       ? hasScheduledCancellation
-                        ? billing.subscription.hasActiveTrial
+                        ? billing.subscription.status === 'TRIALING'
                           ? 'Trial canceled. Access remains active until the trial ends.'
                           : 'Subscription canceled. Access remains active until the end of the current billing period.'
                         : 'Paid account with workspace creation unlocked.'
                       : billing.subscription.hasActiveTrial
                         ? 'Free trial, no card required.'
-                        : 'Billing access has ended.'}
+                        : billing.subscription.hasBillingAccess
+                          ? 'Workspace access remains available while you resolve your payment.'
+                          : 'Billing access has ended.'}
                   </p>
                 </div>
                 <Badge
@@ -478,11 +516,11 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
               !billing.subscription.hasActiveSubscription ? (
                 <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
                   Your latest payment didn&apos;t go through. Update your payment method to keep
-                  your subscription — starting a new one would create a duplicate.
+                  your subscription. Starting a new one would create a duplicate.
                 </p>
               ) : null}
 
-              {billing.subscription.hasActiveTrial &&
+              {billing.subscription.status === 'TRIALING' &&
               billing.subscription.trialEndsAt &&
               hasScheduledCancellation ? (
                 <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
@@ -501,7 +539,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
 
               {hasScheduledCancellation && billing.subscription.cancelAt ? (
                 <p className="text-sm text-muted-foreground">
-                  Cancellation was scheduled on{' '}
+                  Cancellation takes effect on{' '}
                   {new Date(billing.subscription.cancelAt).toLocaleDateString()}.
                 </p>
               ) : null}
@@ -527,10 +565,54 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 </div>
               ) : null}
 
+              {billing.openInvoice ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 space-y-2">
+                  <p className="text-sm font-semibold text-destructive">
+                    A payment of{' '}
+                    {formatInvoiceAmount(
+                      billing.openInvoice.amountDue,
+                      billing.openInvoice.currency
+                    )}{' '}
+                    did not go through
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {billing.openInvoice.attemptCount} attempt
+                    {billing.openInvoice.attemptCount === 1 ? '' : 's'} so far
+                    {billing.openInvoice.nextPaymentAttempt
+                      ? `, next one on ${new Date(billing.openInvoice.nextPaymentAttempt).toLocaleDateString()}`
+                      : ''}
+                    . Update your payment method or pay the invoice to stop the retries, or cancel
+                    to stop them for good.
+                  </p>
+                  {billing.subscription.billingAccessEndedAt ? (
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(billing.subscription.billingAccessEndedAt) > new Date()
+                        ? `Access to your workspaces continues until ${new Date(billing.subscription.billingAccessEndedAt).toLocaleDateString()}.`
+                        : `Access to your workspaces ended on ${new Date(billing.subscription.billingAccessEndedAt).toLocaleDateString()}. Paying this invoice restores it.`}
+                    </p>
+                  ) : null}
+                  {billing.openInvoice.hostedInvoiceUrl ? (
+                    <a
+                      href={billing.openInvoice.hostedInvoiceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-sm font-medium text-primary hover:underline"
+                    >
+                      View and pay this invoice
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex flex-col sm:flex-row gap-3">
                 {billing.subscription.hasRecoverableSubscription && billing.portalAvailable ? (
                   <Button
-                    onClick={() => handleBillingRedirect('/api/billing/portal')}
+                    onClick={() =>
+                      handleBillingRedirect(
+                        '/api/billing/portal',
+                        billing.needsPaymentFix ? 'payment_method_update' : undefined
+                      )
+                    }
                     disabled={billingAction !== null}
                   >
                     {billingAction === 'portal' ? (
@@ -548,9 +630,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 {/* Beside the portal button, not inside it. Someone who came to
                     cancel should not have to guess that "Manage" is the way, and
                     the portal cannot ask why they are leaving. */}
-                {billing.subscription.hasActiveSubscription &&
-                billing.portalAvailable &&
-                !hasScheduledCancellation ? (
+                {billing.cancelAvailable ? (
                   <Button
                     variant="ghost"
                     className="text-muted-foreground"
@@ -603,6 +683,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
           onOpenChange={setCancelDialogOpen}
           periodEnd={billing.subscription.currentPeriodEnd}
           isTrial={billing.subscription.status === 'TRIALING'}
+          canceledImmediately={billing.cancelIsImmediate}
           onConfirm={handleCancelSubscription}
         />
       ) : null}

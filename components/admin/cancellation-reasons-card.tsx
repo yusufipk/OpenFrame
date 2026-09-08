@@ -78,7 +78,9 @@ export async function CancellationReasonsCard() {
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {format(row.createdAt, 'MMM dd, yyyy')}
-                      {row.periodEnd ? ` · access until ${format(row.periodEnd, 'MMM dd')}` : ''}
+                      {row.periodEnd
+                        ? ` · billing period ends ${format(row.periodEnd, 'MMM dd')}`
+                        : ''}
                     </span>
                   </div>
                   <p className="text-muted-foreground">{getCancellationReasonLabel(row.reason)}</p>

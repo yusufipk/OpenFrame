@@ -167,7 +167,11 @@ export async function POST(request: NextRequest) {
     // owner too. A workspace admin on somebody else's trial hits the same ceiling.
     const owner = await db.user.findUnique({
       where: { id: workspace.ownerId },
-      select: { subscriptionStatus: true, stripeCurrentPeriodEnd: true },
+      select: {
+        subscriptionStatus: true,
+        stripeCurrentPeriodEnd: true,
+        billingAccessEndedAt: true,
+      },
     });
 
     if (owner && !isPaidTier(owner)) {

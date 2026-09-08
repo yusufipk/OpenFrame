@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import {
   CANCELLATION_NOTE_MAX_LENGTH,
-  cancelSubscriptionAtPeriodEnd,
+  cancelSubscription,
   isCancellationReason,
 } from '@/lib/cancellation';
 import { RATE_LIMIT_CONFIGS, checkRateLimit, rateLimit, rateLimitHeaders } from '@/lib/rate-limit';
@@ -13,8 +13,8 @@ import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
 
 /**
- * In-app cancellation: end the subscription at the close of the current
- * period and keep the one answer the customer gave about why.
+ * In-app cancellation: end unpaid subscriptions immediately, schedule paid
+ * subscriptions for period end, and record the optional reason.
  *
  * This exists beside the Stripe portal rather than instead of it. The portal
  * cannot ask a question of our own, and by the time its webhook arrives the
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await cancelSubscriptionAtPeriodEnd({
+    const result = await cancelSubscription({
       userId: session.user.id,
       reason: rawReason,
       note: trimmedNote.length > 0 ? trimmedNote : null,
@@ -98,7 +98,11 @@ export async function POST(request: NextRequest) {
     }
 
     const response = successResponse({
-      cancelAtPeriodEnd: true,
+      cancelAtPeriodEnd: !result.canceledImmediately,
+      canceledImmediately: result.canceledImmediately,
+      status: result.status,
+      cancelAt: result.cancelAt?.toISOString() ?? null,
+      voidedInvoices: result.voidedInvoices,
       periodEnd: result.periodEnd?.toISOString() ?? null,
     });
     return withCacheControl(response, 'private, no-store');

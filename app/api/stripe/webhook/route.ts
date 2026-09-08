@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import type Stripe from 'stripe';
-import { syncStripeCustomerSubscriptions } from '@/lib/billing';
+import { getInvoiceSubscriptionId, syncStripeCustomerSubscriptions } from '@/lib/billing';
 import { getStripe, getStripeWebhookSecret } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
 
@@ -51,6 +51,25 @@ export async function POST(request: NextRequest) {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = getCustomerId(subscription.customer);
         if (customerId) {
+          await syncStripeCustomerSubscriptions(customerId);
+        }
+        break;
+      }
+      // Invoice events carry the payment health of a subscription earlier and more
+      // reliably than the subscription events alone. Without them a customer whose card
+      // failed keeps the mirror of a healthy subscription until Stripe eventually gives
+      // up, which is the whole dunning window spent showing them the wrong state.
+      case 'invoice.paid':
+      case 'invoice.payment_failed':
+      case 'invoice.voided':
+      case 'invoice.marked_uncollectible': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = getCustomerId(invoice.customer);
+        // Only subscription invoices. A one-off invoice against a customer record left
+        // behind by an abandoned checkout has no subscription, and syncing on it would
+        // find an empty list, mark the account canceled and book a churn event for a
+        // subscription that never existed.
+        if (customerId && getInvoiceSubscriptionId(invoice)) {
           await syncStripeCustomerSubscriptions(customerId);
         }
         break;

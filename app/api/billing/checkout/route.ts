@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
-import { getOrCreateStripeCustomerId, getStripeCheckoutState } from '@/lib/billing';
+import {
+  findBlockingStripeSubscription,
+  getOrCreateStripeCustomerId,
+  getStripeCheckoutState,
+} from '@/lib/billing';
 import { rateLimit } from '@/lib/rate-limit';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { getStripe, getStripePriceId, isStripeConfigured } from '@/lib/stripe';
@@ -57,6 +61,17 @@ export async function POST(request: NextRequest) {
     const stripe = getStripe();
     const priceId = getStripePriceId();
     const customerId = await getOrCreateStripeCustomerId(session.user.id);
+
+    // The guard above reads the local mirror, which can be stale or cleared: the incident
+    // that prompted this had a customer holding three subscriptions at once because the
+    // mirror said there were none. Stripe is the one that knows.
+    const blockingSubscription = await findBlockingStripeSubscription(customerId);
+    if (blockingSubscription) {
+      return apiErrors.badRequest(
+        'A subscription already exists for this account. Manage it from the billing portal.'
+      );
+    }
+
     const appOrigin = getAppOrigin(request);
 
     const checkoutSession = await stripe.checkout.sessions.create({

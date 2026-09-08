@@ -27,6 +27,8 @@ interface CancelSubscriptionDialogProps {
   periodEnd: string | null;
   /** True for a subscription that is still inside its Stripe trial. */
   isTrial: boolean;
+  /** Unpaid subscriptions end now; cancellation does not extend access. */
+  canceledImmediately?: boolean;
   /** Resolves true once the cancellation went through; false keeps the dialog and its answer. */
   onConfirm: (input: {
     reason: CancellationReason | null;
@@ -48,6 +50,7 @@ export function CancelSubscriptionDialog({
   onOpenChange,
   periodEnd,
   isTrial,
+  canceledImmediately = false,
   onConfirm,
 }: CancelSubscriptionDialogProps) {
   const [reason, setReason] = useState<CancellationReason | null>(null);
@@ -96,9 +99,11 @@ export function CancelSubscriptionDialog({
         <DialogHeader>
           <DialogTitle>Cancel your {isTrial ? 'trial' : 'subscription'}?</DialogTitle>
           <DialogDescription>
-            {endsOn
-              ? `Everything stays on until ${endsOn}. Nothing is deleted before then, and you will not be charged again.`
-              : 'Everything stays on until the end of the current period. Nothing is deleted before then, and you will not be charged again.'}
+            {canceledImmediately
+              ? 'This subscription ends immediately. Canceling does not extend access to your workspaces. Automatic collection stops for its open invoices. Eligible current-period subscription invoices are canceled; charges for prior service and other items may still be owed.'
+              : endsOn
+                ? `Everything stays on until ${endsOn}. Nothing is deleted before then, and you will not be charged again.`
+                : 'Everything stays on until the end of the current period. Nothing is deleted before then, and you will not be charged again.'}
           </DialogDescription>
         </DialogHeader>
 

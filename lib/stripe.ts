@@ -3,6 +3,12 @@ import { hasStripeConfig, isStripeBillingEnabled } from '@/lib/feature-flags';
 
 let stripeClient: Stripe | null = null;
 
+// Pinned on purpose. Without it the SDK silently follows whatever version it ships
+// with, and field moves between versions (the subscription period moving onto items,
+// the invoice subscription link moving under `parent`) turn into null reads instead
+// of build failures. `satisfies` makes an SDK bump a compile error here first.
+const STRIPE_API_VERSION = '2026-02-25.clover' satisfies Stripe.LatestApiVersion;
+
 export function isStripeConfigured() {
   return isStripeBillingEnabled();
 }
@@ -18,7 +24,7 @@ export function getStripe() {
   }
 
   if (!stripeClient) {
-    stripeClient = new Stripe(secretKey);
+    stripeClient = new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION });
   }
 
   return stripeClient;

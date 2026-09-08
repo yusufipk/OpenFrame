@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { CancelSubscriptionDialog } from '@/components/settings/cancel-subscription-dialog';
 
 function renderDialog(
-  overrides: { periodEnd?: string | null; isTrial?: boolean; confirmResult?: boolean } = {}
+  overrides: {
+    periodEnd?: string | null;
+    isTrial?: boolean;
+    canceledImmediately?: boolean;
+    confirmResult?: boolean;
+  } = {}
 ) {
   const onConfirm = vi.fn(async () => overrides.confirmResult ?? true);
   const onOpenChange = vi.fn();
@@ -16,6 +21,7 @@ function renderDialog(
         overrides.periodEnd === undefined ? '2026-10-01T00:00:00.000Z' : overrides.periodEnd
       }
       isTrial={overrides.isTrial ?? false}
+      canceledImmediately={overrides.canceledImmediately}
       onConfirm={onConfirm}
     />
   );
@@ -106,6 +112,29 @@ describe('CancelSubscriptionDialog', () => {
 
     expect(onConfirm).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('explains immediate unpaid cancellation without promising future access or forgiving prior charges', () => {
+    renderDialog({ canceledImmediately: true });
+
+    expect(screen.getByRole('heading', { name: 'Cancel your subscription?' })).toBeInTheDocument();
+    expect(screen.getByText(/This subscription ends immediately/)).toHaveTextContent(
+      'Canceling does not extend access to your workspaces.'
+    );
+    expect(screen.getByText(/Automatic collection stops/)).toHaveTextContent(
+      'charges for prior service and other items may still be owed.'
+    );
+    expect(screen.queryByText(/Everything stays on/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('radio')).toHaveLength(5);
+  });
+
+  it('retains the scheduled period-end explanation', () => {
+    renderDialog();
+
+    expect(screen.getByText(/Everything stays on until/)).toHaveTextContent(
+      new Date('2026-10-01T00:00:00.000Z').toLocaleDateString()
+    );
+    expect(screen.queryByText(/This subscription ends immediately/)).not.toBeInTheDocument();
   });
 
   it('names the trial instead of the subscription while still trialing', () => {

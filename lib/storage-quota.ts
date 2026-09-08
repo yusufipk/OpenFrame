@@ -43,7 +43,7 @@ export interface StorageContext {
 export async function getStorageContextForUser(userId: string): Promise<StorageContext> {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { subscriptionStatus: true, stripeCurrentPeriodEnd: true },
+    select: { subscriptionStatus: true, stripeCurrentPeriodEnd: true, billingAccessEndedAt: true },
   });
 
   const isPaid = user ? isPaidTier(user) : false;
