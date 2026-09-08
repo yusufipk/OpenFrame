@@ -36,6 +36,8 @@ import {
 } from '@/lib/billing';
 
 const dbMock = vi.hoisted(() => ({
+  $transaction: vi.fn(),
+  $executeRaw: vi.fn(),
   user: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   workspace: { count: vi.fn() },
   workspaceMember: { count: vi.fn() },
@@ -941,6 +943,10 @@ describe('database backed billing helpers', () => {
     vi.setSystemTime(NOW);
     vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'true');
     vi.stubEnv('STRIPE_PRICE_ID', ENTITLED_PRICE);
+    dbMock.$transaction
+      .mockReset()
+      .mockImplementation(async (work: (tx: typeof dbMock) => Promise<unknown>) => work(dbMock));
+    dbMock.$executeRaw.mockReset().mockResolvedValue(0);
     dbMock.user.findUnique.mockReset();
     dbMock.user.update.mockReset();
     dbMock.user.updateMany.mockReset();

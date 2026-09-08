@@ -10,6 +10,7 @@ import {
   voidOpenSubscriptionInvoices,
 } from '@/lib/billing';
 import { logError } from '@/lib/logger';
+import { recordSubscriptionCancellation } from '@/lib/analytics/billing-events';
 
 export {
   CANCELLATION_NOTE_MAX_LENGTH,
@@ -175,6 +176,14 @@ export async function cancelSubscription(params: {
 
   const periodEndUnix = getSubscriptionPeriodEnd(original);
   const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000) : user.stripeCurrentPeriodEnd;
+  // The paid claim already set the local flag, and another subscription may
+  // drive customer sync. Record acceptance directly with the same cycle key.
+  await recordSubscriptionCancellation({
+    userId: params.userId,
+    subscriptionId,
+    currentPeriodEnd: periodEnd,
+  });
+
   await db.$transaction(async (tx) => {
     // The paid mirror's claim does not cover other subscriptions. Serialize every
     // reason write and reuse only a row written during this request, so a resumed

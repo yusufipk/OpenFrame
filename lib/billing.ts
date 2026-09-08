@@ -911,10 +911,17 @@ function hasEntitledPrice(subscription: Stripe.Subscription, configuredPriceId: 
 }
 
 export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscription) {
+  return recordSyncedSubscription(await writeStripeSubscriptionToUser(subscription, db));
+}
+
+async function writeStripeSubscriptionToUser(
+  subscription: Stripe.Subscription,
+  client: Prisma.TransactionClient
+) {
   const customerId =
     typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
 
-  const user = await db.user.findUnique({
+  const user = await client.user.findUnique({
     where: { stripeCustomerId: customerId },
     select: {
       id: true,
@@ -964,7 +971,7 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
   // which is cleared again as soon as the subscription goes back to active.
   const hasAccess = hasEntitledPrice && hasActiveSubscription(mappedStatus);
 
-  const updated = await db.user.update({
+  const updated = await client.user.update({
     where: { id: user.id },
     data: {
       stripeSubscriptionId: subscription.id,
@@ -986,7 +993,7 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
     },
   });
 
-  await recordSubscriptionTransition({
+  const transition: Parameters<typeof recordSubscriptionTransition>[0] = {
     userId: user.id,
     subscriptionId: subscription.id,
     before: {
@@ -1000,9 +1007,19 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
       trialEndsAt: preservedTrialEnd,
       currentPeriodEnd: effectiveCurrentPeriodEnd,
     },
-  });
+  };
 
-  return updated;
+  return { updated, transition };
+}
+
+async function recordSyncedSubscription(
+  result: Awaited<ReturnType<typeof writeStripeSubscriptionToUser>>
+) {
+  if (!result) return null;
+  // Analytics uses its own connection. Run it after commit, not while a billing
+  // transaction holds a connection and other syncs are queued on its advisory lock.
+  await recordSubscriptionTransition(result.transition);
+  return result.updated;
 }
 
 // A single Stripe customer can own several subscriptions at once (e.g. after
@@ -1055,28 +1072,49 @@ export function selectAuthoritativeSubscription(
 // Source-of-truth sync: instead of trusting a single subscription from a webhook
 // event body (which may be an OLD subscription being deleted while a NEWER one is
 // active), re-list ALL of the customer's subscriptions from Stripe and sync the
-// authoritative one. This is order-independent and self-healing.
+// authoritative one. The customer lock covers the Stripe read as well as the mirror
+// write: locking only after the read would still let a delayed older response win.
 export async function syncStripeCustomerSubscriptions(customerId: string) {
-  const stripe = getStripe();
-  const { data: subscriptions } = await stripe.subscriptions.list({
-    customer: customerId,
-    status: 'all',
-    limit: 100,
-  });
+  const result = await db.$transaction(
+    async (tx) => {
+      // Two-key advisory locks occupy a separate namespace from the one-key
+      // cancellation locks. Cancellation releases its lock before calling sync.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext('stripe-subscription-sync'), hashtext(${customerId}))
+      `;
+      const { data: subscriptions } = await getStripe().subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 100,
+      });
 
-  const authoritative = selectAuthoritativeSubscription(subscriptions);
-  if (!authoritative) {
-    return markSubscriptionCanceledByCustomerId(customerId);
-  }
-
-  return syncStripeSubscriptionToUser(authoritative);
+      const authoritative = selectAuthoritativeSubscription(subscriptions);
+      return authoritative
+        ? writeStripeSubscriptionToUser(authoritative, tx)
+        : writeSubscriptionCanceledByCustomerId(customerId, undefined, tx);
+    },
+    // Bound lock and connection occupancy. A slow Stripe call or lock wait fails
+    // this sync; writes through the expired transaction cannot overwrite a newer sync.
+    { maxWait: 10_000, timeout: 30_000 }
+  );
+  return recordSyncedSubscription(result);
 }
 
 export async function markSubscriptionCanceledByCustomerId(
   customerId: string,
   options?: { currentPeriodEnd?: Date | null; endedAt?: Date | null }
 ) {
-  const user = await db.user.findUnique({
+  return recordSyncedSubscription(
+    await writeSubscriptionCanceledByCustomerId(customerId, options, db)
+  );
+}
+
+async function writeSubscriptionCanceledByCustomerId(
+  customerId: string,
+  options: { currentPeriodEnd?: Date | null; endedAt?: Date | null } | undefined,
+  client: Prisma.TransactionClient
+) {
+  const user = await client.user.findUnique({
     where: { stripeCustomerId: customerId },
     select: {
       id: true,
@@ -1098,7 +1136,7 @@ export async function markSubscriptionCanceledByCustomerId(
   // date, which is also what the cancellation copy in settings promises.
   const preservedTrialEnd = user.trialEndsAt ?? null;
 
-  const updated = await db.user.update({
+  const updated = await client.user.update({
     where: { id: user.id },
     data: {
       subscriptionStatus: BillingSubscriptionStatus.CANCELED,
@@ -1116,7 +1154,7 @@ export async function markSubscriptionCanceledByCustomerId(
   // uses the period end being cleared here, which is the same one the earlier
   // "cancel at period end" write carried, so a customer who cancelled through the
   // portal and then reached the end of their term produces one cancellation, not two.
-  await recordSubscriptionTransition({
+  const transition: Parameters<typeof recordSubscriptionTransition>[0] = {
     userId: user.id,
     subscriptionId: user.stripeSubscriptionId ?? user.id,
     before: {
@@ -1130,9 +1168,9 @@ export async function markSubscriptionCanceledByCustomerId(
       trialEndsAt: preservedTrialEnd,
       currentPeriodEnd: options?.currentPeriodEnd ?? user.stripeCurrentPeriodEnd ?? null,
     },
-  });
+  };
 
-  return updated;
+  return { updated, transition };
 }
 
 /**

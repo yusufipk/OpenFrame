@@ -33,11 +33,7 @@ import { cn } from '@/lib/utils';
 import { CancelSubscriptionDialog } from '@/components/settings/cancel-subscription-dialog';
 import type { CancellationReason } from '@/lib/cancellation-reasons';
 
-/**
- * Stripe reports amounts in the currency's smallest unit, and how many of those make a
- * whole unit differs per currency: two for USD, none for JPY. The formatter knows the
- * exponent, so it decides the divisor instead of a hardcoded 100.
- */
+/** Convert Stripe API units separately from the currency's display precision. */
 function formatInvoiceAmount(amountInMinorUnits: number, currency: string) {
   const currencyCode = currency.toUpperCase();
 
@@ -47,7 +43,10 @@ function formatInvoiceAmount(amountInMinorUnits: number, currency: string) {
       currency: currencyCode,
     });
     const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
-    return formatter.format(amountInMinorUnits / 10 ** fractionDigits);
+    // Stripe retains two-decimal API amounts for ISK/UGX despite their zero-decimal display.
+    // https://docs.stripe.com/currencies#special-cases
+    const apiExponent = currencyCode === 'ISK' || currencyCode === 'UGX' ? 2 : fractionDigits;
+    return formatter.format(amountInMinorUnits / 10 ** apiExponent);
   } catch {
     return `${(amountInMinorUnits / 100).toFixed(2)} ${currencyCode}`;
   }

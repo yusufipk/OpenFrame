@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type Stripe from 'stripe';
 import { BillingSubscriptionStatus, type User } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getStripe } from '@/lib/stripe';
+import { syncStripeCustomerSubscriptions } from '@/lib/billing';
 import { POST as cancelRoute } from '@/app/api/billing/cancel/route';
 import { GET as billingRoute } from '@/app/api/billing/route';
 import { apiRequest, callRoute, readData, readError } from '../helpers/request';
@@ -675,5 +676,149 @@ describe('repeated and concurrent cancellation reasons', () => {
     } finally {
       clearTimeout(timeout);
     }
+  });
+});
+
+describe('cancellation analytics through the route', () => {
+  beforeEach(() => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+  });
+
+  it.each(['canceled subscription', 'empty customer'] as const)(
+    'records paid cancellation before sync and deduplicates %s deletion in the same cycle',
+    async (deletion) => {
+      const user = await createSubscribedUser();
+      signedInAs(user);
+      const original = subscription(user);
+      const stripe = stubStripe([original]);
+      const response = await callRoute(
+        cancelRoute,
+        cancelRequest({ reason: 'OTHER', note: 'Leaving after this project' })
+      );
+      expect(response.status).toBe(200);
+      expect(stripe.update).toHaveBeenCalledExactlyOnceWith(original.id, {
+        cancel_at_period_end: true,
+        cancellation_details: { feedback: 'other' },
+      });
+      expect(await db.subscriptionCancellation.findFirstOrThrow()).toMatchObject({
+        userId: user.id,
+        stripeSubscriptionId: original.id,
+        reason: 'OTHER',
+        note: 'Leaving after this project',
+      });
+      const where = { userId: user.id, name: 'SUBSCRIPTION_CANCELED' as const };
+      // This must exist before any later transition can conceal the missing event.
+      const accepted = await db.analyticsEvent.findMany({ where });
+      expect(accepted).toHaveLength(1);
+      expect(accepted[0].dedupeKey).toBe(
+        `SUBSCRIPTION_CANCELED:${original.id}:${original.items.data[0].current_period_end * 1000}`
+      );
+
+      await syncStripeCustomerSubscriptions(user.stripeCustomerId!);
+      await syncStripeCustomerSubscriptions(user.stripeCustomerId!);
+      stripe.list.mockResolvedValue({
+        data:
+          deletion === 'empty customer'
+            ? []
+            : [{ ...original, status: 'canceled', cancel_at_period_end: false }],
+        has_more: false,
+      });
+      await syncStripeCustomerSubscriptions(user.stripeCustomerId!);
+      await syncStripeCustomerSubscriptions(user.stripeCustomerId!);
+      const replayed = await db.analyticsEvent.findMany({ where });
+      expect(replayed.map((event) => event.id)).toEqual([accepted[0].id]);
+      expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).subscriptionStatus).toBe(
+        BillingSubscriptionStatus.CANCELED
+      );
+    }
+  );
+
+  it('records cancellation of a paid subscription that does not drive the customer mirror', async () => {
+    const user = await createSubscribedUser({ stripeCancelAtPeriodEnd: true });
+    signedInAs(user);
+    const authoritative = subscription(user);
+    const other = subscription(user, {
+      id: 'sub_analytics_other',
+      cancel_at_period_end: false,
+      created: unix(-60 * DAY),
+    });
+    const stripe = stubStripe([authoritative, other]);
+    const response = await callRoute(cancelRoute, cancelRequest({ reason: 'OTHER' }));
+    expect(response.status).toBe(200);
+    expect(stripe.update).toHaveBeenCalledExactlyOnceWith(other.id, expect.anything());
+    const events = await db.analyticsEvent.findMany({
+      where: { userId: user.id, name: 'SUBSCRIPTION_CANCELED' },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].dedupeKey).toBe(
+      `SUBSCRIPTION_CANCELED:sub_analytics_other:${other.items.data[0].current_period_end * 1000}`
+    );
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).stripeSubscriptionId).toBe(
+      authoritative.id
+    );
+  });
+
+  it('records no cancellation event when Stripe rejects the paid cancellation', async () => {
+    const user = await createSubscribedUser();
+    signedInAs(user);
+    const stripe = stubStripe([subscription(user)]);
+    stripe.update.mockRejectedValueOnce(
+      Object.assign(new Error('Stripe rejected cancellation'), {
+        type: 'StripeInvalidRequestError',
+      })
+    );
+    const response = await callRoute(cancelRoute, cancelRequest({ reason: 'OTHER' }));
+    expect(response.status).toBe(409);
+    expect(stripe.update).toHaveBeenCalledTimes(1);
+    expect(
+      await db.analyticsEvent.count({ where: { userId: user.id, name: 'SUBSCRIPTION_CANCELED' } })
+    ).toBe(0);
+    expect(await db.subscriptionCancellation.count({ where: { userId: user.id } })).toBe(0);
+    expect(
+      (await db.user.findUniqueOrThrow({ where: { id: user.id } })).stripeCancelAtPeriodEnd
+    ).toBe(false);
+  });
+
+  it('keeps the cancellation and reason when analytics recording fails', async () => {
+    const user = await createSubscribedUser();
+    signedInAs(user);
+    const original = subscription(user);
+    const stripe = stubStripe([original]);
+    const recording = vi
+      .spyOn(db.analyticsEvent, 'createMany')
+      .mockRejectedValue(new Error('Analytics unavailable'));
+    try {
+      const response = await callRoute(
+        cancelRoute,
+        cancelRequest({ reason: 'OTHER', note: 'Keep this answer' })
+      );
+      expect(response.status).toBe(200);
+      expect(stripe.update).toHaveBeenCalledTimes(1);
+      expect(recording).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [expect.objectContaining({ name: 'SUBSCRIPTION_CANCELED', userId: user.id })],
+        })
+      );
+      expect(await db.subscriptionCancellation.findFirstOrThrow()).toMatchObject({
+        reason: 'OTHER',
+        note: 'Keep this answer',
+      });
+      expect(
+        (await db.user.findUniqueOrThrow({ where: { id: user.id } })).stripeCancelAtPeriodEnd
+      ).toBe(true);
+    } finally {
+      recording.mockRestore();
+    }
+  });
+
+  it('still cancels without recording analytics when the feature is disabled', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'false');
+    const user = await createSubscribedUser();
+    signedInAs(user);
+    const stripe = stubStripe([subscription(user)]);
+    expect((await callRoute(cancelRoute, cancelRequest({ reason: 'OTHER' }))).status).toBe(200);
+    expect(stripe.update).toHaveBeenCalledTimes(1);
+    expect(await db.subscriptionCancellation.count({ where: { userId: user.id } })).toBe(1);
+    expect(await db.analyticsEvent.count({ where: { userId: user.id } })).toBe(0);
   });
 });

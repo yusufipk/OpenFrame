@@ -1,11 +1,7 @@
-// Turning Stripe state into funnel events.
-//
-// These four events are derived from a before/after comparison inside the sync
-// that already re-reads every subscription a customer has, rather than from the
-// webhook event types. That is deliberate: webhooks arrive out of order and get
-// replayed, and `customer.subscription.updated` fires for changes that mean
-// nothing here. Comparing the row we are about to overwrite with the row we are
-// writing is order-independent, and the dedupe keys make a replay a no-op.
+// Turning Stripe state and accepted cancellations into funnel events.
+// Sync compares before/after state; in-app cancellation also records acceptance
+// because its local claim can hide that transition. Shared cycle keys make both
+// paths and replayed webhooks count the same cancellation once.
 
 import type { BillingSubscriptionStatus } from '@prisma/client';
 import { eventKey, recordEvent } from '@/lib/analytics/record';
@@ -35,6 +31,19 @@ export interface SubscriptionStateAfter {
  */
 function cycleMarker(currentPeriodEnd: Date | null): string {
   return String(currentPeriodEnd ? currentPeriodEnd.getTime() : 0);
+}
+
+/** Shared by accepted in-app cancellations and sync; recordEvent logs write failures. */
+export async function recordSubscriptionCancellation(params: {
+  userId: string;
+  subscriptionId: string;
+  currentPeriodEnd: Date | null;
+}): Promise<void> {
+  await recordEvent({
+    name: 'SUBSCRIPTION_CANCELED',
+    dedupeKey: `SUBSCRIPTION_CANCELED:${params.subscriptionId}:${cycleMarker(params.currentPeriodEnd)}`,
+    userId: params.userId,
+  });
 }
 
 export async function recordSubscriptionTransition(params: {
@@ -71,10 +80,10 @@ export async function recordSubscriptionTransition(params: {
   const startedCanceling = after.cancelAtPeriodEnd && !before.cancelAtPeriodEnd;
   const becameCanceled = after.status === 'CANCELED' && before.status !== 'CANCELED';
   if (startedCanceling || becameCanceled) {
-    await recordEvent({
-      name: 'SUBSCRIPTION_CANCELED',
-      dedupeKey: `SUBSCRIPTION_CANCELED:${subscriptionId}:${cycle}`,
+    await recordSubscriptionCancellation({
       userId,
+      subscriptionId,
+      currentPeriodEnd: after.currentPeriodEnd,
     });
   }
 
