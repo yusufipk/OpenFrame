@@ -492,7 +492,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                   <p className="text-sm text-muted-foreground mt-1">
                     {billing.subscription.hasActiveSubscription
                       ? hasScheduledCancellation
-                        ? billing.subscription.hasActiveTrial
+                        ? billing.subscription.status === 'TRIALING'
                           ? 'Trial canceled. Access remains active until the trial ends.'
                           : 'Subscription canceled. Access remains active until the end of the current billing period.'
                         : 'Paid account with workspace creation unlocked.'
@@ -512,11 +512,11 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
               !billing.subscription.hasActiveSubscription ? (
                 <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
                   Your latest payment didn&apos;t go through. Update your payment method to keep
-                  your subscription — starting a new one would create a duplicate.
+                  your subscription. Starting a new one would create a duplicate.
                 </p>
               ) : null}
 
-              {billing.subscription.hasActiveTrial &&
+              {billing.subscription.status === 'TRIALING' &&
               billing.subscription.trialEndsAt &&
               hasScheduledCancellation ? (
                 <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
@@ -535,7 +535,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
 
               {hasScheduledCancellation && billing.subscription.cancelAt ? (
                 <p className="text-sm text-muted-foreground">
-                  Cancellation was scheduled on{' '}
+                  Cancellation takes effect on{' '}
                   {new Date(billing.subscription.cancelAt).toLocaleDateString()}.
                 </p>
               ) : null}
