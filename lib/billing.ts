@@ -746,6 +746,26 @@ function hasEntitledPrice(subscription: Stripe.Subscription, configuredPriceId: 
   return subscription.items.data.some((item) => item.price.id === configuredPriceId);
 }
 
+/**
+ * When the current billing period ends, as a Unix timestamp, or null.
+ *
+ * The API version this client pins (2026-02-25) reports the period on each
+ * subscription item rather than on the subscription itself, and every item of
+ * a single-price subscription carries the same dates. The top-level field is
+ * still read afterwards so an older fixture or a replayed event body from a
+ * previous version keeps working.
+ */
+export function getSubscriptionPeriodEnd(subscription: Stripe.Subscription): number | null {
+  const fromItem = subscription.items?.data?.[0]?.current_period_end;
+  if (typeof fromItem === 'number') {
+    return fromItem;
+  }
+
+  return 'current_period_end' in subscription && typeof subscription.current_period_end === 'number'
+    ? subscription.current_period_end
+    : null;
+}
+
 export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscription) {
   const customerId =
     typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
@@ -768,10 +788,7 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
     return null;
   }
 
-  const currentPeriodEnd =
-    'current_period_end' in subscription && typeof subscription.current_period_end === 'number'
-      ? subscription.current_period_end
-      : null;
+  const currentPeriodEnd = getSubscriptionPeriodEnd(subscription);
   const cancelAt =
     'cancel_at' in subscription && typeof subscription.cancel_at === 'number'
       ? subscription.cancel_at
