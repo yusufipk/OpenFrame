@@ -29,18 +29,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+import { CancelSubscriptionDialog } from '@/components/settings/cancel-subscription-dialog';
+import type { CancellationReason } from '@/lib/cancellation-reasons';
 
 /**
  * Stripe reports amounts in the currency's smallest unit, and how many of those make a
@@ -193,6 +184,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   const [billingAction, setBillingAction] = useState<
     'checkout' | 'portal' | 'trial' | 'cancel' | null
   >(null);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [storageLoading, setStorageLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -350,37 +342,48 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
     }
   }, [showMessage]);
 
-  const handleCancelSubscription = useCallback(async () => {
-    setBillingAction('cancel');
-    try {
-      const res = await fetch('/api/billing/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await res.json();
+  const handleCancelSubscription = useCallback(
+    async (input: { reason: CancellationReason | null; note: string | null }) => {
+      setBillingAction('cancel');
+      try {
+        const res = await fetch('/api/billing/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(input),
+        });
+        const data = await res.json();
 
-      if (!res.ok) {
-        showMessage('error', data.error || 'Failed to cancel subscription');
-        return;
+        if (!res.ok) {
+          showMessage('error', data.error || 'Failed to cancel subscription');
+          return false;
+        }
+
+        setCancelDialogOpen(false);
+        const billingRes = await fetch('/api/billing');
+        if (billingRes.ok) {
+          setBilling((await billingRes.json()).data);
+        }
+        const endsOn = data.data?.periodEnd
+          ? new Date(data.data.periodEnd).toLocaleDateString()
+          : null;
+        showMessage(
+          'success',
+          data.data?.canceledImmediately
+            ? 'Subscription canceled. Automatic collection has stopped for its open invoices. Charges for prior service may still be owed.'
+            : endsOn
+              ? `Your subscription ends on ${endsOn}. You keep full access until then.`
+              : 'Your subscription ends at the close of the current period.'
+        );
+        return true;
+      } catch {
+        showMessage('error', 'Failed to cancel subscription');
+        return false;
+      } finally {
+        setBillingAction(null);
       }
-
-      const billingRes = await fetch('/api/billing');
-      if (billingRes.ok) {
-        setBilling((await billingRes.json()).data);
-      }
-
-      showMessage(
-        'success',
-        data.data.canceledImmediately
-          ? 'Subscription canceled. No further payment will be attempted.'
-          : 'Subscription canceled. Access remains until the end of the current billing period.'
-      );
-    } catch {
-      showMessage('error', 'Failed to cancel subscription');
-    } finally {
-      setBillingAction(null);
-    }
-  }, [showMessage]);
+    },
+    [showMessage]
+  );
 
   if (loading) {
     return (
@@ -498,7 +501,9 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                         : 'Paid account with workspace creation unlocked.'
                       : billing.subscription.hasActiveTrial
                         ? 'Free trial, no card required.'
-                        : 'Billing access has ended.'}
+                        : billing.subscription.hasBillingAccess
+                          ? 'Workspace access remains available while you resolve your payment.'
+                          : 'Billing access has ended.'}
                   </p>
                 </div>
                 <Badge
@@ -622,7 +627,22 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                       'Update Payment Method'
                     )}
                   </Button>
-                ) : (
+                ) : null}
+                {/* Beside the portal button, not inside it. Someone who came to
+                    cancel should not have to guess that "Manage" is the way, and
+                    the portal cannot ask why they are leaving. */}
+                {billing.cancelAvailable ? (
+                  <Button
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    onClick={() => setCancelDialogOpen(true)}
+                    disabled={billingAction !== null}
+                  >
+                    Cancel subscription
+                  </Button>
+                ) : null}
+                {billing.subscription.hasRecoverableSubscription &&
+                billing.portalAvailable ? null : (
                   <>
                     {billing.workspaceCreation.canStartTrial ? (
                       <Button onClick={handleStartTrial} disabled={billingAction !== null}>
@@ -652,52 +672,22 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                     </Button>
                   </>
                 )}
-
-                {billing.cancelAvailable ? (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        disabled={billingAction !== null}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        {billingAction === 'cancel' ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Canceling...
-                          </>
-                        ) : (
-                          'Cancel Subscription'
-                        )}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Cancel your subscription?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {billing.cancelIsImmediate
-                            ? 'Your subscription ends right away and the unpaid invoice is canceled, so no further payment is attempted. This cannot be undone: getting the subscription back means going through checkout again.'
-                            : 'Your subscription stays active until the end of the current billing period and is not renewed after that. This cannot be undone from here.'}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Keep Subscription</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={handleCancelSubscription}
-                          disabled={billingAction !== null}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                          Cancel Subscription
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                ) : null}
               </div>
             </>
           )}
         </CardContent>
       </Card>
+
+      {billing ? (
+        <CancelSubscriptionDialog
+          open={cancelDialogOpen}
+          onOpenChange={setCancelDialogOpen}
+          periodEnd={billing.subscription.currentPeriodEnd}
+          isTrial={billing.subscription.status === 'TRIALING'}
+          canceledImmediately={billing.cancelIsImmediate}
+          onConfirm={handleCancelSubscription}
+        />
+      ) : null}
 
       {billing?.subscription.hasBillingAccess && (
         <Card className="mb-6">

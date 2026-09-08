@@ -1,5 +1,5 @@
 /**
- * Re-reads every Stripe customer's live subscription and writes it back onto the user
+ * Re-reads each Stripe customer's authoritative subscription and writes it back onto the user
  * through the normal sync path.
  *
  * Needed once after a Stripe API version change: mirrored fields that moved between
@@ -76,7 +76,7 @@ async function main() {
   console.log(`${TAG} Summary${dryRun ? ' (dry run)' : ''}`);
   console.log(`${TAG} Customers: ${users.length}`);
   console.log(`${TAG} Synced: ${synced}`);
-  console.log(`${TAG} Without a live subscription: ${withoutSubscription}`);
+  console.log(`${TAG} Without a subscription: ${withoutSubscription}`);
   console.log(`${TAG} Failed: ${failed}`);
 }
 

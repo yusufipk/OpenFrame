@@ -127,7 +127,12 @@ vi.mock('@/lib/stripe', async (importOriginal) => {
     ...actual,
     getStripe: vi.fn(() => ({
       customers: { create: vi.fn(async () => ({ id: 'cus_test_default' })) },
-      subscriptions: { list: vi.fn(async () => ({ data: [] })) },
+      subscriptions: {
+        list: vi.fn(async () => ({ data: [] })),
+        update: vi.fn(() => {
+          throw new Error('stripe.subscriptions.update was not stubbed for this test');
+        }),
+      },
       checkout: {
         sessions: { create: vi.fn(async () => ({ url: 'https://stripe.test/checkout' })) },
       },

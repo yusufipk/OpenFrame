@@ -449,7 +449,7 @@ describe('hasBillingAccess', () => {
 });
 
 describe('getBillingAccessEndDate', () => {
-  it('prefers billingAccessEndedAt over every other date', () => {
+  it('keeps an independent trial beyond the subscription cutoff', () => {
     const ended = new Date('2026-01-10T00:00:00Z');
     const result = getBillingAccessEndDate(
       subject({
@@ -458,10 +458,10 @@ describe('getBillingAccessEndDate', () => {
         trialEndsAt: new Date('2026-03-01T00:00:00Z'),
       })
     );
-    expect(result).toBe(ended);
+    expect(result).toEqual(new Date('2026-03-01T00:00:00Z'));
   });
 
-  it('falls back to stripeCurrentPeriodEnd when billing has not been marked ended', () => {
+  it('keeps a longer trial when billing has not been marked ended', () => {
     const periodEnd = new Date('2026-02-01T00:00:00Z');
     const result = getBillingAccessEndDate(
       subject({
@@ -469,7 +469,7 @@ describe('getBillingAccessEndDate', () => {
         trialEndsAt: new Date('2026-03-01T00:00:00Z'),
       })
     );
-    expect(result).toBe(periodEnd);
+    expect(result).toEqual(new Date('2026-03-01T00:00:00Z'));
   });
 
   it('falls back to trialEndsAt when there is no paid period', () => {
@@ -535,36 +535,18 @@ describe('buildBillingAccessWhereInput', () => {
 });
 
 describe('buildExpiredBillingWhereInput', () => {
-  it('states the lack of access positively and requires the fifteen day grace to have elapsed', () => {
-    const cutoff = new Date('2025-12-31T00:00:00.000Z');
-
-    expect(buildExpiredBillingWhereInput(NOW)).toEqual({
-      AND: [
-        { subscriptionStatus: { notIn: ['ACTIVE', 'TRIALING'] } },
-        { OR: [{ trialEndsAt: null }, { trialEndsAt: { lte: NOW } }] },
-        { OR: [{ stripeCurrentPeriodEnd: null }, { stripeCurrentPeriodEnd: { lte: NOW } }] },
-        {
-          OR: [
-            { billingAccessEndedAt: { lte: cutoff } },
-            { AND: [{ billingAccessEndedAt: null }, { trialEndsAt: { lte: cutoff } }] },
-          ],
-        },
-      ],
+  it('requires the entire trial retention window before deleting an inactive account', () => {
+    const where = buildExpiredBillingWhereInput(NOW) as {
+      AND: Array<Record<string, unknown>>;
+    };
+    expect(where.AND[0]).toEqual({ subscriptionStatus: { notIn: ['ACTIVE', 'TRIALING'] } });
+    expect(where.AND[1]).toEqual({
+      OR: [{ trialEndsAt: null }, { trialEndsAt: { lte: new Date('2025-12-31T00:00:00Z') } }],
     });
   });
 
-  // The NOT form this replaced could not express "no access" for a row whose date columns are
-  // empty, because SQL turns a comparison against NULL into unknown rather than false. Every
-  // branch has to name NULL explicitly instead. tests/api/expired-billing-cleanup.test.ts
-  // proves it against a real database; this only guards the shape.
-  it('admits a null trial and a null period end as expired rather than skipping the row', () => {
-    const where = buildExpiredBillingWhereInput(NOW) as {
-      AND: Array<{ OR?: Array<Record<string, unknown>> }>;
-    };
-    expect(where.AND[1].OR).toContainEqual({ trialEndsAt: null });
-    expect(where.AND[2].OR).toContainEqual({ stripeCurrentPeriodEnd: null });
-  });
-
+  // Real SQL behavior with null dates and future unpaid periods is covered by the
+  // API cleanup and entitlement suites; the unit check guards the retention boundary.
   it('matches nobody when Stripe is disabled, because nothing can expire without billing', () => {
     vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'false');
     expect(buildExpiredBillingWhereInput(NOW)).toEqual({ id: { in: [] } });
@@ -1818,10 +1800,13 @@ describe('database backed billing helpers', () => {
         stripeSub({ status: 'incomplete', current_period_end: null })
       );
 
-      expect(updateData().billingAccessEndedAt).toBeNull();
+      expect(updateData().billingAccessEndedAt).toEqual(NOW);
+      expect(getStorageCleanupEligibleAt(subject(updateData()))).toEqual(
+        new Date(NOW.getTime() + 19 * DAY_MS)
+      );
     });
 
-    it('clears a trial that has already run out', async () => {
+    it('preserves an expired trial for the storage retention calculation', async () => {
       dbMock.user.findUnique.mockResolvedValue({
         id: 'u1',
         billingTrialConsumedAt: new Date(NOW.getTime() - 30 * DAY_MS),
@@ -1832,7 +1817,7 @@ describe('database backed billing helpers', () => {
         stripeSub({ status: 'incomplete', current_period_end: null })
       );
 
-      expect(updateData().trialEndsAt).toBeNull();
+      expect(updateData().trialEndsAt).toEqual(new Date(NOW.getTime() - DAY_MS));
       expect(updateData().billingAccessEndedAt).toBeInstanceOf(Date);
     });
 
@@ -1896,7 +1881,8 @@ describe('database backed billing helpers', () => {
       await markSubscriptionCanceledByCustomerId('cus_1');
 
       expect(updateData().trialEndsAt).toBe(trialEndsAt);
-      expect(updateData().billingAccessEndedAt).toBeNull();
+      expect(updateData().billingAccessEndedAt).toEqual(NOW);
+      expect(hasBillingAccess(subject(updateData()), NOW)).toBe(true);
     });
 
     it('still ends access when the trial has already run out', async () => {
@@ -1907,7 +1893,7 @@ describe('database backed billing helpers', () => {
 
       await markSubscriptionCanceledByCustomerId('cus_1');
 
-      expect(updateData().trialEndsAt).toBeNull();
+      expect(updateData().trialEndsAt).toEqual(new Date(NOW.getTime() - DAY_MS));
       expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(NOW.getTime());
     });
 

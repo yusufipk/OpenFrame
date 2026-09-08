@@ -1,7 +1,12 @@
 import { BillingSubscriptionStatus } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
-import { getBillingOverview, getOpenInvoiceForCustomer } from '@/lib/billing';
+import {
+  findCancelableStripeSubscription,
+  isUnpaidStripeSubscription,
+  getBillingOverview,
+  getOpenInvoiceForCustomer,
+} from '@/lib/billing';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { hasStripeRuntimeConfig, isStripeConfigured } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
@@ -17,8 +22,7 @@ export async function GET() {
     const isEnabled = isStripeFeatureEnabled();
     const isConfigured = hasStripeRuntimeConfig();
 
-    // Only looked up when the account actually owes something, so the common path does not
-    // pay for a Stripe round trip.
+    // Invoice details are only needed when the current subscription is behind on payment.
     const needsPaymentFix =
       billing.subscription.status === BillingSubscriptionStatus.PAST_DUE ||
       billing.subscription.status === BillingSubscriptionStatus.UNPAID;
@@ -28,6 +32,11 @@ export async function GET() {
             billing.subscription.stripeCustomerId,
             billing.subscription.stripeSubscriptionId
           )
+        : null;
+
+    const cancelable =
+      isStripeConfigured() && billing.subscription.stripeCustomerId
+        ? await findCancelableStripeSubscription(billing.subscription.stripeCustomerId)
         : null;
 
     const response = successResponse({
@@ -42,20 +51,15 @@ export async function GET() {
         Boolean(billing.subscription.stripeCustomerId) &&
         (billing.subscription.hasRecoverableSubscription ||
           Boolean(billing.subscription.stripeSubscriptionId)),
-      // Gated on the status rather than on the mirrored subscription id: the id survives a
-      // cancellation until the deletion webhook arrives, and offering Cancel on an already
-      // canceled subscription just returns an error.
-      cancelAvailable:
-        isStripeConfigured() &&
-        billing.subscription.hasRecoverableSubscription &&
-        !billing.subscription.cancelAt &&
-        !billing.subscription.cancelAtPeriodEnd,
+      // An already scheduled unpaid subscription still needs immediate cancellation.
+      // A different unscheduled subscription may also remain after an earlier cancel.
+      cancelAvailable: Boolean(cancelable),
       needsPaymentFix,
-      // Whether cancelling ends the subscription there and then rather than at the period
-      // end, which is what the confirmation copy has to say. Mirrors the branch the cancel
-      // route takes: nothing was paid for the open period, so there is nothing to run out.
-      cancelIsImmediate:
-        needsPaymentFix || billing.subscription.status === BillingSubscriptionStatus.INCOMPLETE,
+      cancelIsImmediate: Boolean(
+        cancelable &&
+        (isUnpaidStripeSubscription(cancelable) ||
+          ['canceled', 'incomplete_expired'].includes(cancelable.status))
+      ),
       openInvoice: openInvoice
         ? {
             id: openInvoice.id,

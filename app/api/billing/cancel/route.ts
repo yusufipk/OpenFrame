@@ -2,18 +2,25 @@ import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import {
-  findLiveStripeSubscription,
-  getBillingOverview,
-  isUnpaidStripeSubscription,
-  syncStripeCustomerSubscriptions,
-  voidOpenSubscriptionInvoices,
-} from '@/lib/billing';
-import { rateLimit } from '@/lib/rate-limit';
+  CANCELLATION_NOTE_MAX_LENGTH,
+  cancelSubscription,
+  isCancellationReason,
+} from '@/lib/cancellation';
+import { RATE_LIMIT_CONFIGS, checkRateLimit, rateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
-import { getStripe, isStripeConfigured } from '@/lib/stripe';
+import { isStripeConfigured } from '@/lib/stripe';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
 
+/**
+ * In-app cancellation: end unpaid subscriptions immediately, schedule paid
+ * subscriptions for period end, and record the optional reason.
+ *
+ * This exists beside the Stripe portal rather than instead of it. The portal
+ * cannot ask a question of our own, and by the time its webhook arrives the
+ * customer has already left the page. Both fields are optional: skipping the
+ * question is allowed and must never stand between someone and cancelling.
+ */
 export async function POST(request: NextRequest) {
   try {
     const limited = await rateLimit(request, 'mutate');
@@ -28,6 +35,22 @@ export async function POST(request: NextRequest) {
       return apiErrors.unauthorized();
     }
 
+    // A second limit keyed on the account. The IP-keyed one above is shared by
+    // every mutating route and, without TRUSTED_PROXY_MODE, by every caller,
+    // so it is the wrong thing to lean on for the one action a leaving
+    // customer most needs to succeed.
+    const config = RATE_LIMIT_CONFIGS['billing-cancel'];
+    const limit = await checkRateLimit(session.user.id, 'billing-cancel', config);
+    if (!limit.allowed) {
+      return new Response(JSON.stringify({ error: 'Too many requests. Please try again later.' }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          ...rateLimitHeaders(limit, config.maxRequests),
+        },
+      });
+    }
+
     if (!isStripeFeatureEnabled()) {
       return apiErrors.badRequest('Stripe billing is disabled by this host');
     }
@@ -36,46 +59,55 @@ export async function POST(request: NextRequest) {
       return apiErrors.internalError('Stripe billing is not configured');
     }
 
-    const billing = await getBillingOverview(session.user.id);
-    const customerId = billing.subscription.stripeCustomerId;
-    if (!customerId) {
-      return apiErrors.badRequest('No Stripe customer exists for this account');
+    const body = await request.json().catch(() => null);
+    const rawReason = body?.reason ?? null;
+    if (rawReason !== null && !isCancellationReason(rawReason)) {
+      return apiErrors.badRequest('Unknown cancellation reason');
     }
 
-    const subscription = await findLiveStripeSubscription(customerId);
-    if (!subscription) {
-      return apiErrors.badRequest('No subscription to cancel');
+    const rawNote = body?.note;
+    if (rawNote !== undefined && rawNote !== null && typeof rawNote !== 'string') {
+      return apiErrors.badRequest('Note must be text');
+    }
+    const trimmedNote = typeof rawNote === 'string' ? rawNote.trim() : '';
+    if (trimmedNote.length > CANCELLATION_NOTE_MAX_LENGTH) {
+      return apiErrors.badRequest(
+        `Note must be at most ${CANCELLATION_NOTE_MAX_LENGTH} characters`
+      );
     }
 
-    const stripe = getStripe();
-    const unpaid = isUnpaidStripeSubscription(subscription);
+    const result = await cancelSubscription({
+      userId: session.user.id,
+      reason: rawReason,
+      note: trimmedNote.length > 0 ? trimmedNote : null,
+    });
 
-    // Scheduling an unpaid subscription to the end of its period leaves the customer
-    // owing money for a period they never paid for, while the already issued invoice
-    // keeps retrying their card on its own. Those cancel immediately instead, and the
-    // invoice for the unserved period is voided in the same pass.
-    const canceled = unpaid
-      ? await stripe.subscriptions.cancel(subscription.id)
-      : await stripe.subscriptions.update(subscription.id, { cancel_at_period_end: true });
-
-    const voidedInvoices = unpaid
-      ? await voidOpenSubscriptionInvoices(customerId, subscription.id)
-      : [];
-
-    // Re-derived from the customer's whole set rather than written from `canceled` alone.
-    // A customer can hold more than one subscription, and mirroring just the one that was
-    // cancelled would lock out an account still being billed on another.
-    await syncStripeCustomerSubscriptions(customerId);
+    if (!result.ok) {
+      switch (result.code) {
+        case 'ALREADY_CANCELING':
+          return apiErrors.conflict(
+            'Your subscription is already set to end at the close of this period'
+          );
+        case 'STRIPE_REJECTED':
+          return apiErrors.conflict(
+            'Stripe could not find this subscription. Open Manage Subscription to see its current state.'
+          );
+        default:
+          return apiErrors.conflict('There is no active subscription to cancel');
+      }
+    }
 
     const response = successResponse({
-      canceledImmediately: unpaid,
-      status: canceled.status,
-      cancelAt: canceled.cancel_at ? new Date(canceled.cancel_at * 1000).toISOString() : null,
-      voidedInvoices,
+      cancelAtPeriodEnd: !result.canceledImmediately,
+      canceledImmediately: result.canceledImmediately,
+      status: result.status,
+      cancelAt: result.cancelAt?.toISOString() ?? null,
+      voidedInvoices: result.voidedInvoices,
+      periodEnd: result.periodEnd?.toISOString() ?? null,
     });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
-    logError('Error canceling Stripe subscription:', error);
+    logError('billing.cancel', error);
     return apiErrors.internalError('Failed to cancel subscription');
   }
 }

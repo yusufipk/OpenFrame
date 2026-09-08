@@ -60,6 +60,7 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'image-upload': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
   'voice-upload': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'feedback-submit': { windowMs: 60 * 1000, maxRequests: 8 }, // 8 per minute
+  'billing-cancel': { windowMs: 60 * 60 * 1000, maxRequests: 10 }, // 10 per hour per account
   'feedback-upload': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
   'create-project': { windowMs: 60 * 60 * 1000, maxRequests: 20 }, // 20 per hour
   'create-video': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
