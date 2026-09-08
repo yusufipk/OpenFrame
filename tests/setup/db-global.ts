@@ -70,6 +70,7 @@ const REVIEWED_MIGRATIONS = [
   '20260818120000_add_upload_reservation_purpose',
   '20260820120000_add_comment_images',
   '20260822120000_add_video_subtitles',
+  '20260908120000_add_subscription_cancellations',
 ];
 
 /** Objects POST_PUSH_SQL must have produced. Verified after it runs. */

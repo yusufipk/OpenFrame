@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { Suspense } from 'react';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { isBunnyUploadsFeatureEnabled, isStripeBillingEnabled } from '@/lib/feature-flags';
@@ -10,6 +11,7 @@ import {
 } from '@/lib/admin-stats';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RefreshR2StatsButton } from '@/components/admin/refresh-r2-stats-button';
+import { CancellationReasonsCard } from '@/components/admin/cancellation-reasons-card';
 import {
   Users,
   Folder,
@@ -288,6 +290,14 @@ export default async function AdminDashboardPage() {
             </Card>
           </div>
         </>
+      )}
+
+      {/* Outside the `stripeStats` guard on purpose: the answers live in our own
+          table and must stay readable while a Stripe outage blanks the cards above. */}
+      {isStripeBillingEnabled() && (
+        <Suspense fallback={null}>
+          <CancellationReasonsCard />
+        </Suspense>
       )}
     </div>
   );

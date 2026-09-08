@@ -54,6 +54,7 @@ model User {
   sentInvitations           Invitation[] @relation("InvitationsSentBy")
   acquisition               UserAcquisition?
   analyticsEvents           AnalyticsEvent[]
+  subscriptionCancellations SubscriptionCancellation[]
 
   @@map("users")
 }
@@ -607,6 +608,36 @@ model UserFeedback {
   @@index([status, createdAt(sort: Desc)])
   @@index([showOnLanding, createdAt(sort: Desc)])
   @@map("user_feedback")
+}
+
+enum CancellationReason {
+  NOT_USING
+  MISSING_FEATURE
+  PRICE_OR_BILLING
+  PROJECT_ENDED
+  OTHER
+}
+
+// One row per in-app cancellation, written the moment the customer asks for
+// it, not when Stripe later confirms it. The reason is the whole point of the
+// row and it is optional on purpose: the question can be skipped, and a skipped
+// answer still counts as a cancellation whose reason is unknown rather than a
+// cancellation that never happened. Cancellations made in the Stripe portal
+// never produce a row here; the funnel event still records those.
+model SubscriptionCancellation {
+  id                   String              @id @default(cuid())
+  userId               String
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String
+  reason               CancellationReason?
+  note                 String?             @db.VarChar(500)
+  // When access was due to end at the time of the request.
+  periodEnd            DateTime?
+  createdAt            DateTime            @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("subscription_cancellations")
 }
 
 model UserFeedbackScreenshot {
