@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
 import Hls from 'hls.js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -128,8 +129,7 @@ export default function CompareVersionsPageClient({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [cursorIdle, setCursorIdle] = useState(false);
-  const cursorIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { cursorIdle, handleVideoMouseMove, handleVideoMouseLeave } = useCursorIdle(isPlaying);
   const timelineRef = useRef<HTMLDivElement>(null);
 
   // Map of versionId -> YT.Player or Custom Adapter
@@ -408,57 +408,6 @@ export default function CompareVersionsPageClient({
     setIsDragging(false);
     handleSeek(currentTimeRef.current);
   }, [isDragging, handleSeek]);
-
-  const handleVideoMouseMove = useCallback(() => {
-    setCursorIdle(false);
-    if (cursorIdleTimerRef.current) {
-      clearTimeout(cursorIdleTimerRef.current);
-    }
-
-    if (isPlaying) {
-      cursorIdleTimerRef.current = setTimeout(() => {
-        setCursorIdle(true);
-      }, 1000);
-    }
-  }, [isPlaying]);
-
-  const handleVideoMouseLeave = useCallback(() => {
-    if (cursorIdleTimerRef.current) {
-      clearTimeout(cursorIdleTimerRef.current);
-    }
-    setCursorIdle(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (cursorIdleTimerRef.current) {
-        clearTimeout(cursorIdleTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (cursorIdleTimerRef.current) {
-      clearTimeout(cursorIdleTimerRef.current);
-      cursorIdleTimerRef.current = null;
-    }
-
-    if (!isPlaying) {
-      setCursorIdle(false);
-      return;
-    }
-
-    cursorIdleTimerRef.current = setTimeout(() => {
-      setCursorIdle(true);
-    }, 1000);
-
-    return () => {
-      if (cursorIdleTimerRef.current) {
-        clearTimeout(cursorIdleTimerRef.current);
-        cursorIdleTimerRef.current = null;
-      }
-    };
-  }, [isPlaying]);
 
   // Keyboard shortcuts (matching video page)
   useEffect(() => {

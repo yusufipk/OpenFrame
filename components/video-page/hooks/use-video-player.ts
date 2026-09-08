@@ -33,6 +33,7 @@ import {
   resolveSkipAmount as resolveSkipAmountFor,
   timeFromClientX as timeFromClientXWithin,
 } from '@/components/video-page/hooks/video-player-utils';
+import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
 
 interface UseVideoPlayerParams {
   activeVersion: Version | undefined;
@@ -114,8 +115,7 @@ export function useVideoPlayer({
   const previousVersionKeyRef = useRef<string | null>(null);
   const [isBunnyPortraitSource, setIsBunnyPortraitSource] = useState(false);
   const [bunnyPortraitFrameWidth, setBunnyPortraitFrameWidth] = useState<number>(0);
-  const [cursorIdle, setCursorIdle] = useState(false);
-  const cursorIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { cursorIdle, handleVideoMouseMove, handleVideoMouseLeave } = useCursorIdle(isPlaying);
   const bunnyRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bunnyFrameCallbackIdRef = useRef<number | null>(null);
   const bunnyFrameSampleRef = useRef<{ mediaTime: number; presentedFrames: number } | null>(null);
@@ -211,30 +211,6 @@ export function useVideoPlayer({
     observer.observe(viewportEl);
     return () => observer.disconnect();
   }, [activeVersionId, bunnyViewportRef]);
-
-  const handleVideoMouseMove = useCallback(() => {
-    setCursorIdle(false);
-    if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
-
-    const shouldHideControls = isFullscreenMode;
-
-    if (isPlaying || shouldHideControls) {
-      cursorIdleTimerRef.current = setTimeout(() => {
-        setCursorIdle(true);
-      }, 1000);
-    }
-  }, [isFullscreenMode, isPlaying]);
-
-  const handleVideoMouseLeave = useCallback(() => {
-    if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
-    setCursorIdle(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     if (isApiLoaded) return;

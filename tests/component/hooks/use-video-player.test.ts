@@ -418,6 +418,92 @@ describe('useVideoPlayer scrubbing', () => {
   });
 });
 
+describe('useVideoPlayer cursor idling', () => {
+  /** The hook hides the cursor and the overlay after this much stillness. */
+  const IDLE_DELAY_MS = 1000;
+
+  it('goes idle when playback starts under a cursor that never moves again', () => {
+    const { result, video } = renderPlayer();
+    act(() => result.current.handleVideoMouseMove());
+
+    startPlayback(video);
+    expect(result.current.cursorIdle).toBe(false);
+
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
+    expect(result.current.cursorIdle).toBe(true);
+  });
+
+  it('stays awake through a scrub and idles again once the cursor returns', () => {
+    const { result, video } = renderPlayer();
+    act(() => result.current.handleVideoMouseMove());
+    startPlayback(video);
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
+    expect(result.current.cursorIdle).toBe(true);
+
+    // The timeline sits outside the player, so reaching it leaves the player
+    // first; the element then reports the pause the scrub asked for and the
+    // resume on release.
+    act(() => result.current.handleVideoMouseLeave());
+    act(() => result.current.handleTimelineMouseDown(mouseEventAt(50)));
+    stopPlayback(video);
+    act(() => result.current.handleTimelineMouseUp());
+    startPlayback(video);
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS * 5));
+    expect(result.current.cursorIdle).toBe(false);
+
+    act(() => result.current.handleVideoMouseMove());
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
+    expect(result.current.cursorIdle).toBe(true);
+  });
+
+  it('wakes on movement and idles again after the same delay', () => {
+    const { result, video } = renderPlayer();
+    act(() => result.current.handleVideoMouseMove());
+    startPlayback(video);
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
+
+    act(() => result.current.handleVideoMouseMove());
+    expect(result.current.cursorIdle).toBe(false);
+
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS - 1));
+    expect(result.current.cursorIdle).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.cursorIdle).toBe(true);
+  });
+
+  it('never idles while paused', () => {
+    const { result } = renderPlayer();
+    act(() => result.current.handleVideoMouseMove());
+
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS * 5));
+    expect(result.current.cursorIdle).toBe(false);
+  });
+
+  it('stays awake once the cursor has left the player', () => {
+    const { result, video } = renderPlayer();
+    act(() => result.current.handleVideoMouseMove());
+    act(() => result.current.handleVideoMouseLeave());
+
+    startPlayback(video);
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS * 5));
+    expect(result.current.cursorIdle).toBe(false);
+  });
+
+  it('stays idle across a pause and play the element emits on its own', () => {
+    const { result, video } = renderPlayer();
+    act(() => result.current.handleVideoMouseMove());
+    startPlayback(video);
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
+    expect(result.current.cursorIdle).toBe(true);
+
+    // A rebuffer or a source switch pauses and resumes without any pointer
+    // activity, so the cursor must not come back for a second on every stall.
+    stopPlayback(video);
+    startPlayback(video);
+    expect(result.current.cursorIdle).toBe(true);
+  });
+});
+
 describe('useVideoPlayer keyboard shortcuts', () => {
   it('starts and stops playback on space', () => {
     const { video } = renderPlayer();
