@@ -48,6 +48,7 @@ import * as adminGrowthRoute from '@/app/api/admin/growth/route';
 import * as adminRefreshR2Route from '@/app/api/admin/stats/refresh-r2/route';
 import * as approvalCancelRoute from '@/app/api/approvals/[requestId]/cancel/route';
 import * as approvalDecisionRoute from '@/app/api/approvals/[requestId]/decision/route';
+import * as billingCancelRoute from '@/app/api/billing/cancel/route';
 import * as billingCheckoutRoute from '@/app/api/billing/checkout/route';
 import * as billingPortalRoute from '@/app/api/billing/portal/route';
 import * as billingTrialRoute from '@/app/api/billing/trial/route';
@@ -149,7 +150,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 67;
+const EXPECTED_ROUTE_MODULE_COUNT = 68;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -404,6 +405,12 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: (f) => `/api/approvals/${f.approvalRequestId}/decision`,
     params: (f) => ({ requestId: f.approvalRequestId }),
     body: { decision: 'APPROVED' },
+  },
+  {
+    file: 'billing/cancel/route.ts',
+    module: billingCancelRoute,
+    url: () => '/api/billing/cancel',
+    headers: { origin: 'http://localhost:3000' },
   },
   {
     file: 'billing/checkout/route.ts',
