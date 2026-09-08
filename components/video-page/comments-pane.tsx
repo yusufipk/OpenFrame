@@ -92,6 +92,11 @@ interface CommentsPaneProps {
   handleEditComment: (commentId: string) => void;
   handleDeleteComment: (commentId: string) => void;
   playVoice: (commentId: string, voiceUrl: string, knownDuration?: number) => void;
+  downloadVoice: (commentId: string, voiceUrl: string, baseName: string) => void;
+  downloadingVoiceIds: ReadonlySet<string>;
+  /** Same gate as the video and asset downloads: a project or share link with
+   * downloads disabled must not offer to save voice notes either. */
+  canDownloadVoiceNotes: boolean;
   playingVoiceId: string | null;
   voiceProgress: number;
   voiceCurrentTime: number;
@@ -136,6 +141,18 @@ interface CommentsPaneProps {
   assetsPane: ReactNode;
 }
 
+/**
+ * Names the download after the reviewer and the frame they were talking about,
+ * so a folder of voice notes still makes sense next to the cut.
+ */
+function voiceNoteFileName(
+  entry: { timestamp: number; author: { name: string | null } | null; guestName: string | null },
+  formatTime: (seconds: number) => string
+): string {
+  const who = entry.author?.name || entry.guestName || 'guest';
+  return `voice-${who}-${formatTime(entry.timestamp).replace(/:/g, '-')}`;
+}
+
 export const CommentsPane = memo(function CommentsPane({
   isMobileCommentsOpen,
   setIsMobileCommentsOpen,
@@ -174,6 +191,9 @@ export const CommentsPane = memo(function CommentsPane({
   handleEditComment,
   handleDeleteComment,
   playVoice,
+  downloadVoice,
+  downloadingVoiceIds,
+  canDownloadVoiceNotes,
   playingVoiceId,
   voiceProgress,
   voiceCurrentTime,
@@ -680,6 +700,29 @@ export const CommentsPane = memo(function CommentsPane({
                             {voicePlaybackRate}x
                           </button>
                         )}
+                        {canDownloadVoiceNotes && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 shrink-0"
+                            title="Download as WAV"
+                            aria-label="Download voice note as WAV"
+                            disabled={downloadingVoiceIds.has(comment.id)}
+                            onClick={() =>
+                              downloadVoice(
+                                comment.id,
+                                comment.voiceUrl!,
+                                voiceNoteFileName(comment, formatTime)
+                              )
+                            }
+                          >
+                            {downloadingVoiceIds.has(comment.id) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                       </div>
                     )}
 
@@ -903,6 +946,29 @@ export const CommentsPane = memo(function CommentsPane({
                                     >
                                       {voicePlaybackRate}x
                                     </button>
+                                  )}
+                                  {canDownloadVoiceNotes && (
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 shrink-0"
+                                      title="Download as WAV"
+                                      aria-label="Download voice note as WAV"
+                                      disabled={downloadingVoiceIds.has(reply.id)}
+                                      onClick={() =>
+                                        downloadVoice(
+                                          reply.id,
+                                          reply.voiceUrl!,
+                                          voiceNoteFileName(reply, formatTime)
+                                        )
+                                      }
+                                    >
+                                      {downloadingVoiceIds.has(reply.id) ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Download className="h-3 w-3" />
+                                      )}
+                                    </Button>
                                   )}
                                 </div>
                               )}

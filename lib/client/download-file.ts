@@ -1,5 +1,7 @@
 'use client';
 
+import { convertAudioBlobToWav } from '@/lib/audio-to-wav';
+
 // Above this size we don't buffer the file in memory to rename it — the caller
 // falls back to a plain navigation so the browser streams it straight to disk
 // (with the CDN's own filename). 10 GiB.
@@ -27,10 +29,18 @@ export function extensionFromUrl(url: string): string {
   return ext.length >= 1 && ext.length <= 5 ? ext : '';
 }
 
-function replaceExtension(fileName: string, ext: string): string {
+export function replaceExtension(fileName: string, ext: string): string {
   const dot = fileName.lastIndexOf('.');
   const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
   return `${stem}.${ext}`;
+}
+
+/** Strips the characters Windows and macOS reject in a file name. */
+export function sanitizeDownloadFileName(value: string): string {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function formatBytes(bytes: number): string {
@@ -144,6 +154,88 @@ export async function downloadNamedFile(
   const mimeExt = MIME_EXTENSION_MAP[contentType];
   saveBlobAs(blob, mimeExt ? replaceExtension(fileName, mimeExt) : fileName);
   return true;
+}
+
+const AUDIO_MIME_EXTENSION_MAP: Record<string, string> = {
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
+  'audio/mp4': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+};
+
+const AUDIO_EXTENSIONS = new Set(Object.values(AUDIO_MIME_EXTENSION_MAP).concat('mp4', 'oga'));
+
+/** Display names are often the recorded file name, extension and all, and
+ * `recording.webm.wav` helps nobody. */
+function stripAudioExtension(name: string): string {
+  const ext = extensionFromUrl(name);
+  return ext && AUDIO_EXTENSIONS.has(ext) ? name.slice(0, -(ext.length + 1)) : name;
+}
+
+/**
+ * Containers an editing suite already opens. Audio assets are not only voice
+ * recordings, anyone can upload an audio file, and decoding one of these back out
+ * through the Web Audio API would resample it to 48 kHz and requantise it to 16
+ * bit for no gain. A file in this set is handed over exactly as stored.
+ */
+const EDITOR_READY_MIME_TYPES = new Set(['audio/wav', 'audio/mpeg', 'audio/mp4']);
+
+export type AudioDownloadResult =
+  | 'wav'
+  | 'no-conversion-needed'
+  | 'conversion-unsupported'
+  | 'failed';
+
+/**
+ * Voice notes are stored exactly as MediaRecorder produced them: WebM/Opus,
+ * which browsers play and no editing suite imports. Convert on the way out so
+ * the file lands in the timeline it was recorded for.
+ *
+ * Saves the stored file untouched when it is already in an editable container,
+ * or when this browser cannot decode it, so the download always works. The
+ * return value says which of the three happened, or 'failed' when the file
+ * could not be fetched at all.
+ */
+export async function downloadAudioAsWav(
+  url: string,
+  baseName: string
+): Promise<AudioDownloadResult> {
+  let res: Response;
+  try {
+    res = await fetch(url, { cache: 'no-store' });
+  } catch {
+    return 'failed';
+  }
+  if (!res.ok) return 'failed';
+
+  let source: Blob;
+  try {
+    source = await res.blob();
+  } catch {
+    return 'failed';
+  }
+
+  const stem = stripAudioExtension(sanitizeDownloadFileName(baseName)) || 'voice-note';
+  // The proxy route names the real container; the URL usually carries no
+  // extension, so the content type is the better source for both decisions.
+  const contentType = (res.headers.get('content-type') || '').split(';')[0]?.trim() ?? '';
+  const ext = AUDIO_MIME_EXTENSION_MAP[contentType] || extensionFromUrl(url) || 'webm';
+
+  if (EDITOR_READY_MIME_TYPES.has(contentType)) {
+    saveBlobAs(source, `${stem}.${ext}`);
+    return 'no-conversion-needed';
+  }
+
+  const wav = await convertAudioBlobToWav(source);
+  if (wav) {
+    saveBlobAs(wav, `${stem}.wav`);
+    return 'wav';
+  }
+
+  saveBlobAs(source, `${stem}.${ext}`);
+  return 'conversion-unsupported';
 }
 
 /** Plain navigation download (streams to disk; filename controlled only for

@@ -104,8 +104,10 @@ export function VideoPageContent({
     voiceProgress,
     voiceCurrentTime,
     voicePlaybackRate,
+    downloadingVoiceIds,
     playVoice,
     toggleVoiceSpeed,
+    downloadVoice,
   } = useCommentMedia();
   const [showResolved, setShowResolved] = useState(false);
   const [activeSidePane, setActiveSidePane] = useState<'comments' | 'assets'>('comments');
@@ -926,6 +928,9 @@ export function VideoPageContent({
           handleEditComment={commentsActions.onEditComment}
           handleDeleteComment={commentsActions.onDeleteComment}
           playVoice={playVoice}
+          downloadVoice={downloadVoice}
+          downloadingVoiceIds={downloadingVoiceIds}
+          canDownloadVoiceNotes={canDownloadAssets}
           playingVoiceId={playingVoiceId}
           voiceProgress={voiceProgress}
           voiceCurrentTime={voiceCurrentTime}

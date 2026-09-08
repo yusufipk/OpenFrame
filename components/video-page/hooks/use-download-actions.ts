@@ -17,19 +17,13 @@ import {
   downloadProgressPercent,
   extensionFromUrl,
   navigateDownload,
+  sanitizeDownloadFileName,
 } from '@/lib/client/download-file';
 import {
   createDownloadProgressToast,
   type DownloadProgressToastHandle,
 } from '@/components/download-progress-toast';
 import { beginUnloadGuard } from '@/lib/client/unload-guard';
-
-function sanitizeDownloadFileName(value: string): string {
-  return value
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 function getAllowedHosts() {
   const bunnyCdnHostname = resolvePublicBunnyCdnHostname();

@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import type { VideoAsset } from '@/components/video-page/types';
+import type { AssetDownloadPreference, VideoAsset } from '@/components/video-page/types';
 import { apiRequestError, toastApiError } from '@/lib/client/api-error';
-
-type BunnyDownloadPreference = 'original' | 'compressed';
+import { downloadAudioAsWav } from '@/lib/client/download-file';
 
 type CreateAssetPayload = {
   provider: 'R2_IMAGE' | 'YOUTUBE' | 'BUNNY' | 'R2_AUDIO' | 'R2_VIDEO';
@@ -234,7 +233,7 @@ export function useVideoAssets({
   );
 
   const downloadAsset = useCallback(
-    async (asset: VideoAsset, preference: BunnyDownloadPreference = 'compressed') => {
+    async (asset: VideoAsset, preference: AssetDownloadPreference = 'compressed') => {
       if (!canDownloadAssets) {
         toast.error('Asset downloads require an authenticated account');
         return;
@@ -247,6 +246,20 @@ export function useVideoAssets({
       setActiveDownloadAssetId(asset.id);
       try {
         let downloadUrl = `/api/videos/${videoId}/assets/${asset.id}/download`;
+
+        // A voice note is stored as MediaRecorder wrote it, and no editing suite
+        // reads WebM/Opus. Convert it in the browser so the download opens in the
+        // timeline it was recorded for; 'original' is there for anyone who wants
+        // the stored bytes instead.
+        if (asset.provider === 'R2_AUDIO' && preference !== 'original') {
+          const result = await downloadAudioAsWav(downloadUrl, asset.displayName);
+          if (result === 'failed') {
+            toast.error('Failed to download voice note');
+          } else if (result === 'conversion-unsupported') {
+            toast.warning('This browser cannot convert the recording. Downloaded the original.');
+          }
+          return;
+        }
 
         if (asset.provider === 'BUNNY') {
           const prepareRes = await fetch(`${downloadUrl}?source=${preference}&prepare=1`, {

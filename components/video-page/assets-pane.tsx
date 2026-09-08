@@ -35,7 +35,11 @@ import {
   type BunnyPreviewPlayerHandle,
 } from '@/components/video-page/bunny-preview-player';
 import { AssetListSection } from '@/components/video-page/asset-list-section';
-import type { DirectUploadProvider, VideoAsset } from '@/components/video-page/types';
+import type {
+  AssetDownloadPreference,
+  DirectUploadProvider,
+  VideoAsset,
+} from '@/components/video-page/types';
 import { uploadAssetVideoToR2 } from '@/lib/client/r2-asset-video-upload';
 import {
   extractPastedImageFiles,
@@ -101,7 +105,7 @@ interface AssetsPaneProps {
     reservationId?: string | null;
   }) => Promise<VideoAsset | null>;
   deleteAsset: (assetId: string) => Promise<boolean>;
-  downloadAsset: (asset: VideoAsset, preference?: 'original' | 'compressed') => Promise<void>;
+  downloadAsset: (asset: VideoAsset, preference?: AssetDownloadPreference) => Promise<void>;
   hasMoreAssets: boolean;
   isLoadingMoreAssets: boolean;
   loadMoreAssets: () => Promise<void>;
