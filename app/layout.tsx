@@ -26,8 +26,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(seoConfig.url),
   title: {
-    default: `${seoConfig.name} | ${seoConfig.title}`,
-    template: `%s | ${seoConfig.name}`,
+    default: `${seoConfig.name} - ${seoConfig.title}`,
+    template: `%s - ${seoConfig.name}`,
   },
   description: seoConfig.description,
   applicationName: seoConfig.name,
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     locale: 'en_US',
     siteName: seoConfig.name,
     url: seoConfig.url,
-    title: `${seoConfig.name} | ${seoConfig.title}`,
+    title: `${seoConfig.name} - ${seoConfig.title}`,
     description: seoConfig.description,
     images: [
       {
@@ -64,7 +64,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${seoConfig.name} | ${seoConfig.title}`,
+    title: `${seoConfig.name} - ${seoConfig.title}`,
     description: seoConfig.description,
     images: [seoConfig.ogImage],
   },
