@@ -7,8 +7,8 @@
  * which for a customer whose payment already failed may never happen on its own.
  */
 import { db, disconnectDb } from '../lib/db';
-import { findLiveStripeSubscription, syncStripeCustomerSubscriptions } from '../lib/billing';
-import { isStripeConfigured } from '../lib/stripe';
+import { selectAuthoritativeSubscription, syncStripeCustomerSubscriptions } from '../lib/billing';
+import { getStripe, isStripeConfigured } from '../lib/stripe';
 import { logError } from '../lib/logger';
 
 const TAG = '[resync-stripe-subscriptions]';
@@ -34,14 +34,23 @@ async function main() {
     if (!user.stripeCustomerId) continue;
 
     try {
-      const subscription = await findLiveStripeSubscription(user.stripeCustomerId);
+      const label = user.email ?? user.id;
+
+      // Selected exactly the way the write path selects, over the customer's whole set
+      // rather than the live ones only. A mirror left wrong by the version change is most
+      // likely on a customer whose subscription is already canceled or incomplete, which
+      // is precisely who a live-only filter would skip.
+      const { data: subscriptions } = await getStripe().subscriptions.list({
+        customer: user.stripeCustomerId,
+        status: 'all',
+        limit: 100,
+      });
+      const subscription = selectAuthoritativeSubscription(subscriptions);
 
       if (!subscription) {
         withoutSubscription += 1;
         continue;
       }
-
-      const label = user.email ?? user.id;
 
       if (dryRun) {
         console.log(
@@ -54,7 +63,7 @@ async function main() {
       const updated = await syncStripeCustomerSubscriptions(user.stripeCustomerId);
       if (updated) {
         console.log(
-          `${TAG} Synced ${label}: ${subscription.status}, period end ${updated.stripeCurrentPeriodEnd?.toISOString() ?? 'null'}`
+          `${TAG} Synced ${label}: ${subscription.status}, period end ${updated.stripeCurrentPeriodEnd?.toISOString() ?? 'null'}, access ends ${updated.billingAccessEndedAt?.toISOString() ?? 'null'}`
         );
         synced += 1;
       }

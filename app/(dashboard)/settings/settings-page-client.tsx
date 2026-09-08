@@ -81,6 +81,7 @@ interface BillingOverview {
   checkoutAvailable: boolean;
   portalAvailable: boolean;
   cancelAvailable: boolean;
+  cancelIsImmediate: boolean;
   needsPaymentFix: boolean;
   openInvoice: {
     id: string | null;
@@ -581,8 +582,9 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                   </p>
                   {billing.subscription.billingAccessEndedAt ? (
                     <p className="text-sm text-muted-foreground">
-                      Access to your workspaces continues until{' '}
-                      {new Date(billing.subscription.billingAccessEndedAt).toLocaleDateString()}.
+                      {new Date(billing.subscription.billingAccessEndedAt) > new Date()
+                        ? `Access to your workspaces continues until ${new Date(billing.subscription.billingAccessEndedAt).toLocaleDateString()}.`
+                        : `Access to your workspaces ended on ${new Date(billing.subscription.billingAccessEndedAt).toLocaleDateString()}. Paying this invoice restores it.`}
                     </p>
                   ) : null}
                   {billing.openInvoice.hostedInvoiceUrl ? (
@@ -673,7 +675,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                       <AlertDialogHeader>
                         <AlertDialogTitle>Cancel your subscription?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          {billing.needsPaymentFix
+                          {billing.cancelIsImmediate
                             ? 'Your subscription ends right away and the unpaid invoice is canceled, so no further payment is attempted. This cannot be undone: getting the subscription back means going through checkout again.'
                             : 'Your subscription stays active until the end of the current billing period and is not renewed after that. This cannot be undone from here.'}
                         </AlertDialogDescription>

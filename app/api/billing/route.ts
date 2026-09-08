@@ -51,6 +51,11 @@ export async function GET() {
         !billing.subscription.cancelAt &&
         !billing.subscription.cancelAtPeriodEnd,
       needsPaymentFix,
+      // Whether cancelling ends the subscription there and then rather than at the period
+      // end, which is what the confirmation copy has to say. Mirrors the branch the cancel
+      // route takes: nothing was paid for the open period, so there is nothing to run out.
+      cancelIsImmediate:
+        needsPaymentFix || billing.subscription.status === BillingSubscriptionStatus.INCOMPLETE,
       openInvoice: openInvoice
         ? {
             id: openInvoice.id,

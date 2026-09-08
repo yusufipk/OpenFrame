@@ -5,7 +5,7 @@ import {
   findLiveStripeSubscription,
   getBillingOverview,
   isUnpaidStripeSubscription,
-  syncStripeSubscriptionToUser,
+  syncStripeCustomerSubscriptions,
   voidOpenSubscriptionInvoices,
 } from '@/lib/billing';
 import { rateLimit } from '@/lib/rate-limit';
@@ -62,7 +62,10 @@ export async function POST(request: NextRequest) {
       ? await voidOpenSubscriptionInvoices(customerId, subscription.id)
       : [];
 
-    await syncStripeSubscriptionToUser(canceled);
+    // Re-derived from the customer's whole set rather than written from `canceled` alone.
+    // A customer can hold more than one subscription, and mirroring just the one that was
+    // cancelled would lock out an account still being billed on another.
+    await syncStripeCustomerSubscriptions(customerId);
 
     const response = successResponse({
       canceledImmediately: unpaid,

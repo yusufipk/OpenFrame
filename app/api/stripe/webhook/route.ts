@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import type Stripe from 'stripe';
-import { syncStripeCustomerSubscriptions } from '@/lib/billing';
+import { getInvoiceSubscriptionId, syncStripeCustomerSubscriptions } from '@/lib/billing';
 import { getStripe, getStripeWebhookSecret } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
 
@@ -65,7 +65,11 @@ export async function POST(request: NextRequest) {
       case 'invoice.marked_uncollectible': {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = getCustomerId(invoice.customer);
-        if (customerId) {
+        // Only subscription invoices. A one-off invoice against a customer record left
+        // behind by an abandoned checkout has no subscription, and syncing on it would
+        // find an empty list, mark the account canceled and book a churn event for a
+        // subscription that never existed.
+        if (customerId && getInvoiceSubscriptionId(invoice)) {
           await syncStripeCustomerSubscriptions(customerId);
         }
         break;

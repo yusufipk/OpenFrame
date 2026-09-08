@@ -152,7 +152,11 @@ describe('isPaidTier', () => {
   it('counts an active subscription as paid', () => {
     expect(
       isPaidTier(
-        { subscriptionStatus: BillingSubscriptionStatus.ACTIVE, stripeCurrentPeriodEnd: null },
+        {
+          subscriptionStatus: BillingSubscriptionStatus.ACTIVE,
+          stripeCurrentPeriodEnd: null,
+          billingAccessEndedAt: null,
+        },
         NOW
       )
     ).toBe(true);
@@ -163,7 +167,11 @@ describe('isPaidTier', () => {
   it('counts a Stripe trial as paid', () => {
     expect(
       isPaidTier(
-        { subscriptionStatus: BillingSubscriptionStatus.TRIALING, stripeCurrentPeriodEnd: null },
+        {
+          subscriptionStatus: BillingSubscriptionStatus.TRIALING,
+          stripeCurrentPeriodEnd: null,
+          billingAccessEndedAt: null,
+        },
         NOW
       )
     ).toBe(true);
@@ -175,6 +183,7 @@ describe('isPaidTier', () => {
         {
           subscriptionStatus: BillingSubscriptionStatus.CANCELED,
           stripeCurrentPeriodEnd: new Date(NOW.getTime() + DAY_MS),
+          billingAccessEndedAt: null,
         },
         NOW
       )
@@ -185,7 +194,11 @@ describe('isPaidTier', () => {
   it('does not count a cardless trial as paid', () => {
     expect(
       isPaidTier(
-        { subscriptionStatus: BillingSubscriptionStatus.FREE, stripeCurrentPeriodEnd: null },
+        {
+          subscriptionStatus: BillingSubscriptionStatus.FREE,
+          stripeCurrentPeriodEnd: null,
+          billingAccessEndedAt: null,
+        },
         NOW
       )
     ).toBe(false);
@@ -200,6 +213,7 @@ describe('isPaidTier', () => {
         {
           subscriptionStatus: BillingSubscriptionStatus.INCOMPLETE,
           stripeCurrentPeriodEnd: new Date(NOW.getTime() + 30 * DAY_MS),
+          billingAccessEndedAt: null,
         },
         NOW
       )
@@ -212,6 +226,7 @@ describe('isPaidTier', () => {
         {
           subscriptionStatus: BillingSubscriptionStatus.INCOMPLETE_EXPIRED,
           stripeCurrentPeriodEnd: new Date(NOW.getTime() + 30 * DAY_MS),
+          billingAccessEndedAt: null,
         },
         NOW
       )
@@ -227,6 +242,7 @@ describe('isPaidTier', () => {
         {
           subscriptionStatus: BillingSubscriptionStatus.PAST_DUE,
           stripeCurrentPeriodEnd: new Date(NOW.getTime() + DAY_MS),
+          billingAccessEndedAt: null,
         },
         NOW
       )
@@ -239,6 +255,7 @@ describe('isPaidTier', () => {
         {
           subscriptionStatus: BillingSubscriptionStatus.CANCELED,
           stripeCurrentPeriodEnd: new Date(NOW.getTime() - DAY_MS),
+          billingAccessEndedAt: null,
         },
         NOW
       )
@@ -250,7 +267,11 @@ describe('isPaidTier', () => {
 
     expect(
       isPaidTier(
-        { subscriptionStatus: BillingSubscriptionStatus.FREE, stripeCurrentPeriodEnd: null },
+        {
+          subscriptionStatus: BillingSubscriptionStatus.FREE,
+          stripeCurrentPeriodEnd: null,
+          billingAccessEndedAt: null,
+        },
         NOW
       )
     ).toBe(true);
@@ -366,7 +387,12 @@ describe('hasBillingAccess', () => {
     ).toBe(true);
   });
 
-  it('ignores billingAccessEndedAt while the paid period is still running', () => {
+  // Was the opposite assertion, on the premise that a future period end means a paid
+  // period. It does not: Stripe advances the period when it issues the renewal invoice,
+  // paid or not, and the period survives cancellation, so this exact shape (cutoff in the
+  // past, period end in the future) is what a subscription cancelled while behind on
+  // payment looks like. Honouring the period here handed out a free month.
+  it('honours billingAccessEndedAt even while the reported period is still running', () => {
     const result = hasBillingAccess(
       subject({
         subscriptionStatus: 'CANCELED',
@@ -375,7 +401,34 @@ describe('hasBillingAccess', () => {
       }),
       NOW
     );
+    expect(result).toBe(false);
+  });
+
+  // The other half of that: a stale cutoff must not outrank a live trial, or starting a
+  // cardless trial on a lapsed account would consume the account's one trial and grant
+  // nothing, since only a Stripe sync ever clears the cutoff.
+  it('lets an unexpired trial win over a cutoff already in the past', () => {
+    const result = hasBillingAccess(
+      subject({
+        subscriptionStatus: 'CANCELED',
+        trialEndsAt: new Date(NOW.getTime() + DAY_MS),
+        billingAccessEndedAt: new Date(NOW.getTime() - DAY_MS),
+      }),
+      NOW
+    );
     expect(result).toBe(true);
+  });
+
+  // Stripe stamps a period on a subscription whose first charge never went through.
+  it('refuses a period end carried by a subscription that never paid', () => {
+    const result = hasBillingAccess(
+      subject({
+        subscriptionStatus: 'INCOMPLETE_EXPIRED',
+        stripeCurrentPeriodEnd: new Date(NOW.getTime() + DAY_MS),
+      }),
+      NOW
+    );
+    expect(result).toBe(false);
   });
 
   it('grants access to everyone when Stripe is disabled', () => {
@@ -452,7 +505,14 @@ describe('buildBillingAccessWhereInput', () => {
       OR: [
         { subscriptionStatus: { in: ['ACTIVE', 'TRIALING'] } },
         { trialEndsAt: { gt: NOW } },
-        { stripeCurrentPeriodEnd: { gt: NOW } },
+        // Both guards sit inside this arm, mirroring `hasBillingAccess`: the period end
+        // is only evidence of access when a payment stands behind it and no cutoff has
+        // passed. Scoped to this arm, not the whole query, so a live trial still wins.
+        {
+          stripeCurrentPeriodEnd: { gt: NOW },
+          subscriptionStatus: { notIn: ['INCOMPLETE', 'INCOMPLETE_EXPIRED'] },
+          OR: [{ billingAccessEndedAt: null }, { billingAccessEndedAt: { gt: NOW } }],
+        },
       ],
     });
   });
@@ -1451,31 +1511,48 @@ describe('database backed billing helpers', () => {
       expect(updateData().billingAccessEndedAt).toBeInstanceOf(Date);
     });
 
-    it('keeps access while a canceled subscription is still inside its paid period', async () => {
+    // Was asserting `billingAccessEndedAt: null` here, i.e. that a canceled subscription
+    // keeps access to the reported period end. That is only right if the period was paid
+    // for, and a canceled subscription cannot tell you that it was: the period Stripe
+    // reports advances when the renewal invoice is issued and survives the cancellation,
+    // so this is also exactly the shape of "cancelled while behind on payment". A cutoff
+    // is stamped instead, and `ended_at` is what it comes from.
+    it('stamps a cutoff on a canceled subscription rather than trusting its period', async () => {
       dbMock.user.findUnique.mockResolvedValue({ id: 'u1', billingTrialConsumedAt: null });
+      const endedAt = Math.floor(NOW.getTime() / 1000);
 
       await syncStripeSubscriptionToUser(
         stripeSub({
           status: 'canceled',
+          ended_at: endedAt,
           current_period_end: Math.floor(NOW.getTime() / 1000) + 3600,
         })
       );
 
       expect(updateData()).toMatchObject({
         subscriptionStatus: BillingSubscriptionStatus.CANCELED,
-        billingAccessEndedAt: null,
       });
+      expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(endedAt * 1000);
     });
 
-    it('ends access at the period end once the paid period has passed', async () => {
+    // Behind on payment but still being retried: access runs to the end of Stripe's retry
+    // window, measured from the period start, not to the period end Stripe advanced to
+    // cover the invoice that was never paid.
+    it('bounds a past_due subscription to the retry window', async () => {
       dbMock.user.findUnique.mockResolvedValue({ id: 'u1', billingTrialConsumedAt: null });
-      const periodEnd = Math.floor(NOW.getTime() / 1000) - 3600;
+      const periodStart = Math.floor(NOW.getTime() / 1000);
 
       await syncStripeSubscriptionToUser(
-        stripeSub({ status: 'canceled', current_period_end: periodEnd })
+        stripeSub({
+          status: 'past_due',
+          current_period_start: periodStart,
+          current_period_end: periodStart + 30 * 24 * 60 * 60,
+        })
       );
 
-      expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(periodEnd * 1000);
+      expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(
+        (periodStart + 14 * 24 * 60 * 60) * 1000
+      );
     });
 
     it('falls back to ended_at when there is no period end', async () => {
