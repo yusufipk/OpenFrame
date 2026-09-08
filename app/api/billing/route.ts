@@ -1,6 +1,7 @@
+import { BillingSubscriptionStatus } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
-import { getBillingOverview } from '@/lib/billing';
+import { getBillingOverview, getOpenInvoiceForCustomer } from '@/lib/billing';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { hasStripeRuntimeConfig, isStripeConfigured } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
@@ -15,12 +16,51 @@ export async function GET() {
     const billing = await getBillingOverview(session.user.id);
     const isEnabled = isStripeFeatureEnabled();
     const isConfigured = hasStripeRuntimeConfig();
+
+    // Only looked up when the account actually owes something, so the common path does not
+    // pay for a Stripe round trip.
+    const needsPaymentFix =
+      billing.subscription.status === BillingSubscriptionStatus.PAST_DUE ||
+      billing.subscription.status === BillingSubscriptionStatus.UNPAID;
+    const openInvoice =
+      isStripeConfigured() && needsPaymentFix && billing.subscription.stripeCustomerId
+        ? await getOpenInvoiceForCustomer(
+            billing.subscription.stripeCustomerId,
+            billing.subscription.stripeSubscriptionId
+          )
+        : null;
+
     const response = successResponse({
       isEnabled,
       isConfigured,
       status: !isEnabled ? 'disabled' : isStripeConfigured() ? 'ready' : 'misconfigured',
       checkoutAvailable: isStripeConfigured() && !billing.subscription.hasRecoverableSubscription,
-      portalAvailable: isStripeConfigured() && Boolean(billing.subscription.stripeCustomerId),
+      // A customer id alone is not enough: it is created on the first checkout attempt, so
+      // someone who abandoned checkout would be sent to an empty portal.
+      portalAvailable:
+        isStripeConfigured() &&
+        Boolean(billing.subscription.stripeCustomerId) &&
+        (billing.subscription.hasRecoverableSubscription ||
+          Boolean(billing.subscription.stripeSubscriptionId)),
+      // Gated on the status rather than on the mirrored subscription id: the id survives a
+      // cancellation until the deletion webhook arrives, and offering Cancel on an already
+      // canceled subscription just returns an error.
+      cancelAvailable:
+        isStripeConfigured() &&
+        billing.subscription.hasRecoverableSubscription &&
+        !billing.subscription.cancelAt &&
+        !billing.subscription.cancelAtPeriodEnd,
+      needsPaymentFix,
+      openInvoice: openInvoice
+        ? {
+            id: openInvoice.id,
+            hostedInvoiceUrl: openInvoice.hostedInvoiceUrl,
+            amountDue: openInvoice.amountDue,
+            currency: openInvoice.currency,
+            attemptCount: openInvoice.attemptCount,
+            nextPaymentAttempt: openInvoice.nextPaymentAttempt?.toISOString() ?? null,
+          }
+        : null,
       subscription: {
         status: billing.subscription.status,
         label: billing.subscription.label,

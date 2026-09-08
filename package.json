@@ -36,7 +36,9 @@
     "r2:cleanup-orphans:dry": "bun run scripts/r2-orphan-cleanup.ts --dry-run",
     "r2:cleanup-orphans": "bun run scripts/r2-orphan-cleanup.ts",
     "bunny:cleanup-orphans:dry": "bun run scripts/bunny-orphan-cleanup.ts --dry-run",
-    "bunny:cleanup-orphans": "bun run scripts/bunny-orphan-cleanup.ts"
+    "bunny:cleanup-orphans": "bun run scripts/bunny-orphan-cleanup.ts",
+    "stripe:resync:dry": "bun run scripts/resync-stripe-subscriptions.ts --dry-run",
+    "stripe:resync": "bun run scripts/resync-stripe-subscriptions.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

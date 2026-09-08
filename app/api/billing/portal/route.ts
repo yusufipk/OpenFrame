@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import type Stripe from 'stripe';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { getBillingOverview } from '@/lib/billing';
@@ -17,6 +18,40 @@ function getAppOrigin(request: NextRequest) {
   }
 
   return request.nextUrl.origin;
+}
+
+async function readRequestedFlow(request: NextRequest) {
+  try {
+    const body = await request.json();
+    return body?.flow === 'payment_method_update' ? 'payment_method_update' : null;
+  } catch {
+    return null;
+  }
+}
+
+async function createPortalSession(
+  stripe: Stripe,
+  customer: string,
+  returnUrl: string,
+  flow: 'payment_method_update' | null
+) {
+  if (flow === 'payment_method_update') {
+    try {
+      return await stripe.billingPortal.sessions.create({
+        customer,
+        return_url: returnUrl,
+        flow_data: { type: 'payment_method_update' },
+      });
+    } catch (error) {
+      // The portal configuration may not expose this flow; the plain portal still works.
+      logError('Falling back to the default Stripe portal flow:', error);
+    }
+  }
+
+  return stripe.billingPortal.sessions.create({
+    customer,
+    return_url: returnUrl,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -47,10 +82,12 @@ export async function POST(request: NextRequest) {
     }
 
     const stripe = getStripe();
-    const portalSession = await stripe.billingPortal.sessions.create({
-      customer: billing.subscription.stripeCustomerId,
-      return_url: `${getAppOrigin(request)}/settings`,
-    });
+    const portalSession = await createPortalSession(
+      stripe,
+      billing.subscription.stripeCustomerId,
+      `${getAppOrigin(request)}/settings`,
+      await readRequestedFlow(request)
+    );
 
     const response = successResponse({ url: portalSession.url });
     return withCacheControl(response, 'private, no-store');

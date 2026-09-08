@@ -29,7 +29,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+
+/**
+ * Stripe reports amounts in the currency's smallest unit, and how many of those make a
+ * whole unit differs per currency: two for USD, none for JPY. The formatter knows the
+ * exponent, so it decides the divisor instead of a hardcoded 100.
+ */
+function formatInvoiceAmount(amountInMinorUnits: number, currency: string) {
+  const currencyCode = currency.toUpperCase();
+
+  try {
+    const formatter = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: currencyCode,
+    });
+    const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+    return formatter.format(amountInMinorUnits / 10 ** fractionDigits);
+  } catch {
+    return `${(amountInMinorUnits / 100).toFixed(2)} ${currencyCode}`;
+  }
+}
 
 interface NotificationSettings {
   telegramChatId: string | null;
@@ -49,6 +80,16 @@ interface BillingOverview {
   status: 'disabled' | 'ready' | 'misconfigured';
   checkoutAvailable: boolean;
   portalAvailable: boolean;
+  cancelAvailable: boolean;
+  needsPaymentFix: boolean;
+  openInvoice: {
+    id: string | null;
+    hostedInvoiceUrl: string | null;
+    amountDue: number;
+    currency: string;
+    attemptCount: number;
+    nextPaymentAttempt: string | null;
+  } | null;
   subscription: {
     status: string;
     label: string;
@@ -148,7 +189,9 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   const [testing, setTesting] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingOverview | null>(null);
   const [billingLoading, setBillingLoading] = useState(true);
-  const [billingAction, setBillingAction] = useState<'checkout' | 'portal' | 'trial' | null>(null);
+  const [billingAction, setBillingAction] = useState<
+    'checkout' | 'portal' | 'trial' | 'cancel' | null
+  >(null);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [storageLoading, setStorageLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -255,12 +298,16 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   );
 
   const handleBillingRedirect = useCallback(
-    async (endpoint: '/api/billing/checkout' | '/api/billing/portal') => {
+    async (
+      endpoint: '/api/billing/checkout' | '/api/billing/portal',
+      flow?: 'payment_method_update'
+    ) => {
       setBillingAction(endpoint.endsWith('checkout') ? 'checkout' : 'portal');
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow ? { flow } : {}),
         });
         const data = await res.json();
 
@@ -297,6 +344,38 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
       showMessage('success', 'Your free trial has started');
     } catch {
       showMessage('error', 'Failed to start your free trial');
+    } finally {
+      setBillingAction(null);
+    }
+  }, [showMessage]);
+
+  const handleCancelSubscription = useCallback(async () => {
+    setBillingAction('cancel');
+    try {
+      const res = await fetch('/api/billing/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showMessage('error', data.error || 'Failed to cancel subscription');
+        return;
+      }
+
+      const billingRes = await fetch('/api/billing');
+      if (billingRes.ok) {
+        setBilling((await billingRes.json()).data);
+      }
+
+      showMessage(
+        'success',
+        data.data.canceledImmediately
+          ? 'Subscription canceled. No further payment will be attempted.'
+          : 'Subscription canceled. Access remains until the end of the current billing period.'
+      );
+    } catch {
+      showMessage('error', 'Failed to cancel subscription');
     } finally {
       setBillingAction(null);
     }
@@ -481,10 +560,53 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 </div>
               ) : null}
 
+              {billing.openInvoice ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 space-y-2">
+                  <p className="text-sm font-semibold text-destructive">
+                    A payment of{' '}
+                    {formatInvoiceAmount(
+                      billing.openInvoice.amountDue,
+                      billing.openInvoice.currency
+                    )}{' '}
+                    did not go through
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {billing.openInvoice.attemptCount} attempt
+                    {billing.openInvoice.attemptCount === 1 ? '' : 's'} so far
+                    {billing.openInvoice.nextPaymentAttempt
+                      ? `, next one on ${new Date(billing.openInvoice.nextPaymentAttempt).toLocaleDateString()}`
+                      : ''}
+                    . Update your payment method or pay the invoice to stop the retries, or cancel
+                    to stop them for good.
+                  </p>
+                  {billing.subscription.billingAccessEndedAt ? (
+                    <p className="text-sm text-muted-foreground">
+                      Access to your workspaces continues until{' '}
+                      {new Date(billing.subscription.billingAccessEndedAt).toLocaleDateString()}.
+                    </p>
+                  ) : null}
+                  {billing.openInvoice.hostedInvoiceUrl ? (
+                    <a
+                      href={billing.openInvoice.hostedInvoiceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-sm font-medium text-primary hover:underline"
+                    >
+                      View and pay this invoice
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex flex-col sm:flex-row gap-3">
                 {billing.subscription.hasRecoverableSubscription && billing.portalAvailable ? (
                   <Button
-                    onClick={() => handleBillingRedirect('/api/billing/portal')}
+                    onClick={() =>
+                      handleBillingRedirect(
+                        '/api/billing/portal',
+                        billing.needsPaymentFix ? 'payment_method_update' : undefined
+                      )
+                    }
                     disabled={billingAction !== null}
                   >
                     {billingAction === 'portal' ? (
@@ -528,6 +650,47 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                     </Button>
                   </>
                 )}
+
+                {billing.cancelAvailable ? (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        disabled={billingAction !== null}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        {billingAction === 'cancel' ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Canceling...
+                          </>
+                        ) : (
+                          'Cancel Subscription'
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel your subscription?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {billing.needsPaymentFix
+                            ? 'Your subscription ends right away and the unpaid invoice is canceled, so no further payment is attempted. This cannot be undone: getting the subscription back means going through checkout again.'
+                            : 'Your subscription stays active until the end of the current billing period and is not renewed after that. This cannot be undone from here.'}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Keep Subscription</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleCancelSubscription}
+                          disabled={billingAction !== null}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Cancel Subscription
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : null}
               </div>
             </>
           )}

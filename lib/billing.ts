@@ -4,6 +4,7 @@ import { BillingSubscriptionStatus, InvitationStatus } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getStripe, getStripePriceId } from '@/lib/stripe';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
+import { logError } from '@/lib/logger';
 import { recordSubscriptionTransition } from '@/lib/analytics/billing-events';
 import { eventKey, recordEvent } from '@/lib/analytics/record';
 import { TRIAL_WORKSPACE_LIMIT } from '@/lib/trial-limits';
@@ -34,6 +35,45 @@ const UNPAID_SUBSCRIPTION_STATUSES = new Set<BillingSubscriptionStatus>([
   BillingSubscriptionStatus.INCOMPLETE,
   BillingSubscriptionStatus.INCOMPLETE_EXPIRED,
 ]);
+
+// Stripe-side counterparts of the sets above, used where a raw Stripe subscription is in
+// hand rather than the mirrored status.
+
+// A customer holding one of these must not be sent through checkout again; they belong in
+// the billing portal. `incomplete` is deliberately absent: an abandoned first payment
+// leaves one behind for about a day, and blocking on it would lock the customer out of
+// checkout with nothing to fix in the portal.
+const BLOCKING_STRIPE_STATUSES = new Set<Stripe.Subscription.Status>([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+]);
+
+// Subscriptions still worth mirroring onto the user.
+const LIVE_STRIPE_STATUSES = new Set<Stripe.Subscription.Status>([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+]);
+
+// Cancelling one of these takes effect immediately: the open period was never paid for,
+// so there is nothing left to run out.
+const UNPAID_STRIPE_STATUSES = new Set<Stripe.Subscription.Status>([
+  'past_due',
+  'unpaid',
+  'incomplete',
+]);
+
+// A subscription that was running and then missed a payment. It keeps access while Stripe
+// retries the card, so a customer whose card expired is not locked out before they have
+// had a chance to fix it. `incomplete` is not here: nothing has ever been paid on it.
+const RETRYING_STRIPE_STATUSES = new Set<Stripe.Subscription.Status>(['past_due', 'unpaid']);
+
+// Roughly Stripe's default Smart Retries window. Access follows the retry window rather
+// than the period Stripe advanced when it issued the invoice that was never paid.
+const UNPAID_ACCESS_GRACE_DAYS = 14;
 
 export const DEFAULT_TRIAL_PERIOD_DAYS = 7;
 const STORAGE_CLEANUP_GRACE_DAYS = 15;
@@ -124,6 +164,16 @@ export function hasBillingAccess(subject: BillingAccessSubject, now: Date = new 
     return true;
   }
 
+  // A recorded end date is a hard stop, checked before anything else. Stripe advances the
+  // billing period the moment it issues the renewal invoice, paid or not, and the period
+  // survives cancellation, so the period end below would otherwise hand a full free month
+  // to anyone whose renewal fails. `isPaidTier` guards the storage tier against the same
+  // thing; this guards access itself, without the lockout that worried it: a subscription
+  // behind on payment is stamped with the end of Stripe's retry window, not with today.
+  if (subject.billingAccessEndedAt && subject.billingAccessEndedAt.getTime() <= now.getTime()) {
+    return false;
+  }
+
   if (hasActiveSubscription(subject.subscriptionStatus)) {
     return true;
   }
@@ -161,15 +211,24 @@ export function buildBillingAccessWhereInput(now: Date = new Date()): Prisma.Use
     return {};
   }
 
+  // Mirrors `hasBillingAccess`, including its hard stop, so the query and the in-memory
+  // check cannot disagree about who still has access.
   return {
-    OR: [
+    AND: [
       {
-        subscriptionStatus: {
-          in: [BillingSubscriptionStatus.ACTIVE, BillingSubscriptionStatus.TRIALING],
-        },
+        OR: [{ billingAccessEndedAt: null }, { billingAccessEndedAt: { gt: now } }],
       },
-      { trialEndsAt: { gt: now } },
-      { stripeCurrentPeriodEnd: { gt: now } },
+      {
+        OR: [
+          {
+            subscriptionStatus: {
+              in: [BillingSubscriptionStatus.ACTIVE, BillingSubscriptionStatus.TRIALING],
+            },
+          },
+          { trialEndsAt: { gt: now } },
+          { stripeCurrentPeriodEnd: { gt: now } },
+        ],
+      },
     ],
   };
 }
@@ -723,6 +782,72 @@ function getStripeTimestamp(value: unknown): number | null {
   return typeof value === 'number' ? value : null;
 }
 
+/**
+ * The billing period moved off the subscription and onto its items in the Basil API
+ * version, so reading `subscription.current_period_end` yields undefined on every current
+ * version. Webhook payloads can still be rendered at an older version, so the legacy field
+ * is kept as a fallback rather than dropped.
+ */
+export function getSubscriptionPeriodEnd(subscription: Stripe.Subscription): number | null {
+  const itemPeriodEnds = (subscription.items?.data ?? [])
+    .map((item) =>
+      getStripeTimestamp(
+        (item as Stripe.SubscriptionItem & { current_period_end?: unknown }).current_period_end
+      )
+    )
+    .filter((value): value is number => value !== null);
+
+  if (itemPeriodEnds.length > 0) {
+    return Math.max(...itemPeriodEnds);
+  }
+
+  return getStripeTimestamp(
+    (subscription as Stripe.Subscription & { current_period_end?: unknown }).current_period_end
+  );
+}
+
+/**
+ * Same field move as the period end. Stripe opens the new period when it issues the
+ * renewal invoice, so for an unpaid subscription this is roughly when the first payment
+ * attempt failed, which is what the retry window is measured from.
+ */
+export function getSubscriptionPeriodStart(subscription: Stripe.Subscription): number | null {
+  const itemPeriodStarts = (subscription.items?.data ?? [])
+    .map((item) =>
+      getStripeTimestamp(
+        (item as Stripe.SubscriptionItem & { current_period_start?: unknown }).current_period_start
+      )
+    )
+    .filter((value): value is number => value !== null);
+
+  if (itemPeriodStarts.length > 0) {
+    return Math.min(...itemPeriodStarts);
+  }
+
+  return getStripeTimestamp(
+    (subscription as Stripe.Subscription & { current_period_start?: unknown }).current_period_start
+  );
+}
+
+/**
+ * The invoice link to its subscription moved under `parent.subscription_details` in the
+ * Basil API version. Same fallback reasoning as the period above.
+ */
+export function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  const fromParent = invoice.parent?.subscription_details?.subscription;
+  if (typeof fromParent === 'string') return fromParent;
+  if (fromParent && typeof fromParent === 'object') return fromParent.id;
+
+  const legacy = (invoice as Stripe.Invoice & { subscription?: unknown }).subscription;
+  if (typeof legacy === 'string') return legacy;
+  if (legacy && typeof legacy === 'object' && 'id' in legacy) {
+    const id = (legacy as { id: unknown }).id;
+    return typeof id === 'string' ? id : null;
+  }
+
+  return null;
+}
+
 function getInactiveBillingAccessEndedAt(
   subscription: Stripe.Subscription,
   currentPeriodEnd: number | null
@@ -733,9 +858,27 @@ function getInactiveBillingAccessEndedAt(
   const canceledAt = getStripeTimestamp(
     (subscription as Stripe.Subscription & { canceled_at?: unknown }).canceled_at
   );
-  const reference = currentPeriodEnd ?? endedAt ?? canceledAt;
 
-  return reference ? new Date(reference * 1000) : new Date();
+  // `ended_at` wins over everything: a subscription killed mid-period for non-payment
+  // must not keep access until a period the customer never paid for.
+  if (endedAt) {
+    return new Date(endedAt * 1000);
+  }
+
+  // Still running, just behind on payment: access ends when Stripe gives up retrying, not
+  // at the period end, which Stripe already advanced to cover the unpaid invoice.
+  if (RETRYING_STRIPE_STATUSES.has(subscription.status)) {
+    const periodStart = getSubscriptionPeriodStart(subscription);
+    if (periodStart) {
+      const graceEnd = periodStart + UNPAID_ACCESS_GRACE_DAYS * 24 * 60 * 60;
+      return new Date(Math.min(graceEnd, currentPeriodEnd ?? graceEnd) * 1000);
+    }
+  }
+
+  // Anything else that gets here never paid for the period Stripe is reporting, so that
+  // period is not a date access can run to. `incomplete` and `incomplete_expired` are the
+  // cases that matter: their very first payment never went through.
+  return canceledAt ? new Date(canceledAt * 1000) : new Date();
 }
 
 function getEntitledStripePriceId(subscription: Stripe.Subscription) {
@@ -768,10 +911,7 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
     return null;
   }
 
-  const currentPeriodEnd =
-    'current_period_end' in subscription && typeof subscription.current_period_end === 'number'
-      ? subscription.current_period_end
-      : null;
+  const currentPeriodEnd = getSubscriptionPeriodEnd(subscription);
   const cancelAt =
     'cancel_at' in subscription && typeof subscription.cancel_at === 'number'
       ? subscription.cancel_at
@@ -797,10 +937,11 @@ export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscrip
   // what stops an abandoned or failed checkout from erasing the days the account
   // still had. Legacy card-backed trials keep arriving through the branch above.
   const preservedTrialEnd = effectiveTrialEnd ?? keepUnexpiredTrial(user.trialEndsAt);
-  const hasAccess =
-    hasEntitledPrice &&
-    (hasActiveSubscription(mappedStatus) ||
-      Boolean(currentPeriodEnd && currentPeriodEnd * 1000 > Date.now()));
+  // The reported period is not proof of payment: Stripe advances it when it issues the
+  // renewal invoice, paid or not, and it survives cancellation. Access therefore follows
+  // the status, and every other case gets a cutoff stamped into `billingAccessEndedAt`,
+  // which is cleared again as soon as the subscription goes back to active.
+  const hasAccess = hasEntitledPrice && hasActiveSubscription(mappedStatus);
 
   const updated = await db.user.update({
     where: { id: user.id },
@@ -980,4 +1121,116 @@ export async function markSubscriptionCanceledByCustomerId(
   });
 
   return updated;
+}
+
+/**
+ * Returns a subscription of this customer that still grants access, if any. A customer can
+ * hold several at once, so the state of one says nothing about the others.
+ */
+export async function findLiveStripeSubscription(customerId: string) {
+  const stripe = getStripe();
+  const { data: subscriptions } = await stripe.subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 100,
+  });
+
+  return (
+    selectAuthoritativeSubscription(
+      subscriptions.filter((subscription) => LIVE_STRIPE_STATUSES.has(subscription.status))
+    ) ?? null
+  );
+}
+
+/**
+ * Asked before opening checkout. Answered by Stripe rather than by the local mirror: the
+ * mirror can be stale or cleared, and a customer who slips past this ends up paying for two
+ * subscriptions at once.
+ */
+export async function findBlockingStripeSubscription(customerId: string) {
+  const stripe = getStripe();
+  const { data: subscriptions } = await stripe.subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 100,
+  });
+
+  return (
+    subscriptions.find((subscription) => BLOCKING_STRIPE_STATUSES.has(subscription.status)) ?? null
+  );
+}
+
+export function isUnpaidStripeSubscription(subscription: Stripe.Subscription) {
+  return UNPAID_STRIPE_STATUSES.has(subscription.status);
+}
+
+/**
+ * Cancelling a subscription in Stripe does not stop collection on invoices that were
+ * already issued; they keep retrying on their own until they are paid or voided. Only
+ * invoices for a period the customer never paid for are voided here.
+ */
+export async function voidOpenSubscriptionInvoices(customerId: string, subscriptionId: string) {
+  const stripe = getStripe();
+  const { data: invoices } = await stripe.invoices.list({
+    customer: customerId,
+    status: 'open',
+    limit: 100,
+  });
+
+  const voided: string[] = [];
+
+  for (const invoice of invoices) {
+    if (!invoice.id) continue;
+    if (getInvoiceSubscriptionId(invoice) !== subscriptionId) continue;
+
+    try {
+      await stripe.invoices.voidInvoice(invoice.id);
+      voided.push(invoice.id);
+    } catch (error) {
+      logError(`Failed to void Stripe invoice ${invoice.id}:`, error);
+    }
+  }
+
+  return voided;
+}
+
+/**
+ * Scoped to a subscription when one is known, the same way `voidOpenSubscriptionInvoices`
+ * is: a customer can carry an open invoice left behind by a subscription they no longer
+ * hold, and pointing them at that one does nothing about the retries they are seeing.
+ */
+export async function getOpenInvoiceForCustomer(
+  customerId: string,
+  subscriptionId?: string | null
+) {
+  const stripe = getStripe();
+  const { data: invoices } = await stripe.invoices.list({
+    customer: customerId,
+    status: 'open',
+    limit: 100,
+  });
+
+  const candidates = subscriptionId
+    ? invoices.filter((invoice) => getInvoiceSubscriptionId(invoice) === subscriptionId)
+    : invoices;
+
+  const newest = candidates
+    .slice()
+    .sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
+    .at(0);
+
+  if (!newest) {
+    return null;
+  }
+
+  return {
+    id: newest.id ?? null,
+    hostedInvoiceUrl: newest.hosted_invoice_url ?? null,
+    amountDue: newest.amount_due ?? newest.total ?? 0,
+    currency: newest.currency ?? 'usd',
+    attemptCount: newest.attempt_count ?? 0,
+    nextPaymentAttempt: newest.next_payment_attempt
+      ? new Date(newest.next_payment_attempt * 1000)
+      : null,
+  };
 }

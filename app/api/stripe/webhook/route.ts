@@ -55,6 +55,21 @@ export async function POST(request: NextRequest) {
         }
         break;
       }
+      // Invoice events carry the payment health of a subscription earlier and more
+      // reliably than the subscription events alone. Without them a customer whose card
+      // failed keeps the mirror of a healthy subscription until Stripe eventually gives
+      // up, which is the whole dunning window spent showing them the wrong state.
+      case 'invoice.paid':
+      case 'invoice.payment_failed':
+      case 'invoice.voided':
+      case 'invoice.marked_uncollectible': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = getCustomerId(invoice.customer);
+        if (customerId) {
+          await syncStripeCustomerSubscriptions(customerId);
+        }
+        break;
+      }
       default:
         break;
     }
