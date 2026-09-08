@@ -33,9 +33,7 @@ import {
   resolveSkipAmount as resolveSkipAmountFor,
   timeFromClientX as timeFromClientXWithin,
 } from '@/components/video-page/hooks/video-player-utils';
-
-/** How long the cursor has to sit still over the player before it and the overlay hide. */
-const CURSOR_IDLE_DELAY_MS = 1000;
+import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
 
 interface UseVideoPlayerParams {
   activeVersion: Version | undefined;
@@ -117,9 +115,7 @@ export function useVideoPlayer({
   const previousVersionKeyRef = useRef<string | null>(null);
   const [isBunnyPortraitSource, setIsBunnyPortraitSource] = useState(false);
   const [bunnyPortraitFrameWidth, setBunnyPortraitFrameWidth] = useState<number>(0);
-  const [cursorIdle, setCursorIdle] = useState(false);
-  const cursorIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isCursorOverPlayerRef = useRef(false);
+  const { cursorIdle, handleVideoMouseMove, handleVideoMouseLeave } = useCursorIdle(isPlaying);
   const bunnyRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bunnyFrameCallbackIdRef = useRef<number | null>(null);
   const bunnyFrameSampleRef = useRef<{ mediaTime: number; presentedFrames: number } | null>(null);
@@ -215,42 +211,6 @@ export function useVideoPlayer({
     observer.observe(viewportEl);
     return () => observer.disconnect();
   }, [activeVersionId, bunnyViewportRef]);
-
-  // Restart the idle countdown from "cursor active". The cursor only counts as
-  // idle while it is over the player and there is something to hide (playback
-  // running, or fullscreen chrome); otherwise it stays visible.
-  const armCursorIdleTimer = useCallback(() => {
-    if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
-    cursorIdleTimerRef.current = null;
-    setCursorIdle(false);
-
-    if (!isCursorOverPlayerRef.current) return;
-    if (!isPlaying && !isFullscreenMode) return;
-
-    cursorIdleTimerRef.current = setTimeout(() => {
-      setCursorIdle(true);
-    }, CURSOR_IDLE_DELAY_MS);
-  }, [isFullscreenMode, isPlaying]);
-
-  const handleVideoMouseMove = useCallback(() => {
-    isCursorOverPlayerRef.current = true;
-    armCursorIdleTimer();
-  }, [armCursorIdleTimer]);
-
-  const handleVideoMouseLeave = useCallback(() => {
-    isCursorOverPlayerRef.current = false;
-    armCursorIdleTimer();
-  }, [armCursorIdleTimer]);
-
-  // Playback can change without the cursor moving: a click or a key starts it,
-  // and a scrub pauses then resumes it. Each of those needs a fresh countdown,
-  // or a still cursor over the player never goes idle and the overlay stays.
-  useEffect(() => {
-    armCursorIdleTimer();
-    return () => {
-      if (cursorIdleTimerRef.current) clearTimeout(cursorIdleTimerRef.current);
-    };
-  }, [armCursorIdleTimer]);
 
   useEffect(() => {
     if (isApiLoaded) return;

@@ -433,20 +433,25 @@ describe('useVideoPlayer cursor idling', () => {
     expect(result.current.cursorIdle).toBe(true);
   });
 
-  it('goes idle again after a scrub resumes playback without the cursor moving', () => {
+  it('stays awake through a scrub and idles again once the cursor returns', () => {
     const { result, video } = renderPlayer();
     act(() => result.current.handleVideoMouseMove());
     startPlayback(video);
     act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
     expect(result.current.cursorIdle).toBe(true);
 
-    // The element reports the pause the scrub asked for, then the resume.
+    // The timeline sits outside the player, so reaching it leaves the player
+    // first; the element then reports the pause the scrub asked for and the
+    // resume on release.
+    act(() => result.current.handleVideoMouseLeave());
     act(() => result.current.handleTimelineMouseDown(mouseEventAt(50)));
     stopPlayback(video);
-    expect(result.current.cursorIdle).toBe(false);
     act(() => result.current.handleTimelineMouseUp());
     startPlayback(video);
+    act(() => vi.advanceTimersByTime(IDLE_DELAY_MS * 5));
+    expect(result.current.cursorIdle).toBe(false);
 
+    act(() => result.current.handleVideoMouseMove());
     act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
     expect(result.current.cursorIdle).toBe(true);
   });
@@ -466,7 +471,7 @@ describe('useVideoPlayer cursor idling', () => {
     expect(result.current.cursorIdle).toBe(true);
   });
 
-  it('never idles while paused outside fullscreen', () => {
+  it('never idles while paused', () => {
     const { result } = renderPlayer();
     act(() => result.current.handleVideoMouseMove());
 
@@ -484,15 +489,18 @@ describe('useVideoPlayer cursor idling', () => {
     expect(result.current.cursorIdle).toBe(false);
   });
 
-  it('wakes as soon as playback pauses', () => {
+  it('stays idle across a pause and play the element emits on its own', () => {
     const { result, video } = renderPlayer();
     act(() => result.current.handleVideoMouseMove());
     startPlayback(video);
     act(() => vi.advanceTimersByTime(IDLE_DELAY_MS));
     expect(result.current.cursorIdle).toBe(true);
 
+    // A rebuffer or a source switch pauses and resumes without any pointer
+    // activity, so the cursor must not come back for a second on every stall.
     stopPlayback(video);
-    expect(result.current.cursorIdle).toBe(false);
+    startPlayback(video);
+    expect(result.current.cursorIdle).toBe(true);
   });
 });
 
