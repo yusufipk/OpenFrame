@@ -15,6 +15,9 @@ import {
   getOrCreateStripeCustomerId,
   getStorageCleanupEligibleAt,
   getStripeCheckoutState,
+  getInvoiceSubscriptionId,
+  getSubscriptionPeriodEnd,
+  getSubscriptionPeriodStart,
   getTrialNotice,
   getWorkspaceCreationEligibility,
   hasActiveSubscription,
@@ -868,6 +871,88 @@ function updateData(): Record<string, unknown> {
   return dbMock.user.update.mock.calls[0][0].data as Record<string, unknown>;
 }
 
+// The shape Stripe actually sends on the pinned API version: the period lives on the
+// subscription's items, not on the subscription. `stripeSub` above still uses the older
+// top-level shape, so without these the whole reason this code exists goes untested and
+// every other test in this file passes through the legacy fallback instead.
+describe('Stripe field locations', () => {
+  const periodStart = 1_800_000_000;
+  const periodEnd = periodStart + 30 * 86_400;
+
+  function itemPeriodSub(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'sub_1',
+      customer: 'cus_1',
+      status: 'past_due',
+      items: {
+        data: [
+          {
+            price: { id: ENTITLED_PRICE },
+            current_period_start: periodStart,
+            current_period_end: periodEnd,
+          },
+        ],
+      },
+      ...overrides,
+    } as unknown as Stripe.Subscription;
+  }
+
+  it('reads the period off the subscription items', () => {
+    expect(getSubscriptionPeriodEnd(itemPeriodSub())).toBe(periodEnd);
+    expect(getSubscriptionPeriodStart(itemPeriodSub())).toBe(periodStart);
+  });
+
+  // A webhook body can still be rendered at the version that was current when the
+  // endpoint was created, so the old location has to keep working.
+  it('falls back to the legacy top-level period', () => {
+    const legacy = {
+      items: { data: [{ price: { id: ENTITLED_PRICE } }] },
+      current_period_start: periodStart,
+      current_period_end: periodEnd,
+    } as unknown as Stripe.Subscription;
+
+    expect(getSubscriptionPeriodEnd(legacy)).toBe(periodEnd);
+    expect(getSubscriptionPeriodStart(legacy)).toBe(periodStart);
+  });
+
+  it('returns null when neither location carries a period', () => {
+    const bare = {
+      items: { data: [{ price: { id: ENTITLED_PRICE } }] },
+    } as unknown as Stripe.Subscription;
+
+    expect(getSubscriptionPeriodEnd(bare)).toBeNull();
+    expect(getSubscriptionPeriodStart(bare)).toBeNull();
+  });
+
+  it('reads the invoice subscription off parent.subscription_details', () => {
+    const invoice = {
+      parent: { subscription_details: { subscription: 'sub_9' } },
+    } as unknown as Stripe.Invoice;
+
+    expect(getInvoiceSubscriptionId(invoice)).toBe('sub_9');
+  });
+
+  it('accepts an expanded subscription object on the invoice parent', () => {
+    const invoice = {
+      parent: { subscription_details: { subscription: { id: 'sub_9' } } },
+    } as unknown as Stripe.Invoice;
+
+    expect(getInvoiceSubscriptionId(invoice)).toBe('sub_9');
+  });
+
+  it('falls back to the legacy top-level invoice subscription', () => {
+    expect(getInvoiceSubscriptionId({ subscription: 'sub_9' } as unknown as Stripe.Invoice)).toBe(
+      'sub_9'
+    );
+  });
+
+  // A one-off invoice belongs to no subscription, and the webhook relies on this to leave
+  // the account alone rather than marking it canceled.
+  it('returns null for an invoice with no subscription', () => {
+    expect(getInvoiceSubscriptionId({} as unknown as Stripe.Invoice)).toBeNull();
+  });
+});
+
 describe('database backed billing helpers', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -1550,6 +1635,35 @@ describe('database backed billing helpers', () => {
         })
       );
 
+      expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(
+        (periodStart + 14 * 24 * 60 * 60) * 1000
+      );
+    });
+
+    // The same thing through the payload shape production actually sends, where the period
+    // sits on the items rather than on the subscription. Every other fixture in this file
+    // uses the older top-level shape and so never exercises the read this change is for.
+    it('bounds a past_due subscription whose period is on its items', async () => {
+      dbMock.user.findUnique.mockResolvedValue({ id: 'u1', billingTrialConsumedAt: null });
+      const periodStart = Math.floor(NOW.getTime() / 1000);
+      const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+      await syncStripeSubscriptionToUser({
+        id: 'sub_1',
+        customer: 'cus_1',
+        status: 'past_due',
+        items: {
+          data: [
+            {
+              price: { id: ENTITLED_PRICE },
+              current_period_start: periodStart,
+              current_period_end: periodEnd,
+            },
+          ],
+        },
+      } as unknown as Stripe.Subscription);
+
+      expect((updateData().stripeCurrentPeriodEnd as Date).getTime()).toBe(periodEnd * 1000);
       expect((updateData().billingAccessEndedAt as Date).getTime()).toBe(
         (periodStart + 14 * 24 * 60 * 60) * 1000
       );
