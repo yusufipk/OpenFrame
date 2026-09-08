@@ -170,6 +170,8 @@ export interface BunnyQualityOption {
 export type BunnyPlaybackState = 'none' | 'processing' | 'error';
 export type BunnyDownloadPreference = 'original' | 'compressed';
 export type DownloadTarget = BunnyDownloadPreference | 'direct';
+/** Voice notes add one more option: converted to WAV in the browser on the way out. */
+export type AssetDownloadPreference = BunnyDownloadPreference | 'wav';
 
 export interface CommentMarker {
   id: string;

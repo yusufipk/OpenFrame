@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import type { VideoAsset } from '@/components/video-page/types';
+import type { AssetDownloadPreference, VideoAsset } from '@/components/video-page/types';
 
 interface AssetListSectionProps {
   assets: VideoAsset[];
@@ -25,10 +25,86 @@ interface AssetListSectionProps {
   hasMoreAssets: boolean;
   isLoadingMoreAssets: boolean;
   onViewAsset: (asset: VideoAsset) => void;
-  onDownloadAsset: (asset: VideoAsset, preference?: 'original' | 'compressed') => void;
+  onDownloadAsset: (asset: VideoAsset, preference?: AssetDownloadPreference) => void;
   onDeleteAsset: (assetId: string) => void;
   onLoadMoreAssets: () => void;
   renderAssetPreview: (asset: VideoAsset) => ReactNode;
+}
+
+/**
+ * Three shapes of download. A Bunny video offers the original or the compressed
+ * rendition; a voice note offers WAV (converted in the browser, because no
+ * editing suite opens the WebM/Opus we store) or the file as recorded;
+ * everything else is a single button.
+ */
+function AssetDownloadControl({
+  asset,
+  isBusy,
+  onDownloadAsset,
+}: {
+  asset: VideoAsset;
+  isBusy: boolean;
+  onDownloadAsset: (asset: VideoAsset, preference?: AssetDownloadPreference) => void;
+}) {
+  const options: { preference: AssetDownloadPreference; label: string; hint?: string }[] =
+    asset.provider === 'BUNNY' && asset.kind !== 'AUDIO'
+      ? [
+          { preference: 'original', label: 'Original' },
+          { preference: 'compressed', label: 'Compressed' },
+        ]
+      : asset.provider === 'R2_AUDIO'
+        ? [
+            { preference: 'wav', label: 'WAV', hint: 'for editing software' },
+            { preference: 'original', label: 'Original' },
+          ]
+        : [];
+
+  if (options.length === 0) {
+    return (
+      <Button
+        size="icon"
+        variant="outline"
+        className="h-7 w-7"
+        title="Download asset"
+        aria-label="Download asset"
+        disabled={isBusy}
+        onClick={() => onDownloadAsset(asset)}
+      >
+        {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+      </Button>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-7 w-7"
+          title="Download asset"
+          aria-label="Download asset"
+          disabled={isBusy}
+        >
+          {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.preference}
+            onClick={() => onDownloadAsset(asset, option.preference)}
+          >
+            <Download className="h-3 w-3 mr-2" />
+            {option.label}
+            {option.hint && (
+              <span className="ml-1 text-xs text-muted-foreground">{option.hint}</span>
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export const AssetListSection = memo(function AssetListSection({
@@ -130,54 +206,13 @@ export const AssetListSection = memo(function AssetListSection({
                   )}
                 </Button>
 
-                {canDownloadAssets &&
-                  asset.provider !== 'YOUTUBE' &&
-                  (asset.provider === 'BUNNY' && asset.kind !== 'AUDIO' ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          size="icon"
-                          variant="outline"
-                          className="h-7 w-7"
-                          title="Download asset"
-                          aria-label="Download asset"
-                          disabled={activeDownloadAssetId === asset.id || isBunnyProcessing}
-                        >
-                          {activeDownloadAssetId === asset.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Download className="h-3 w-3" />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem onClick={() => onDownloadAsset(asset, 'original')}>
-                          <Download className="h-3 w-3 mr-2" />
-                          Original
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onDownloadAsset(asset, 'compressed')}>
-                          <Download className="h-3 w-3 mr-2" />
-                          Compressed
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="h-7 w-7"
-                      title="Download asset"
-                      aria-label="Download asset"
-                      disabled={activeDownloadAssetId === asset.id || isBunnyProcessing}
-                      onClick={() => onDownloadAsset(asset)}
-                    >
-                      {activeDownloadAssetId === asset.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Download className="h-3 w-3" />
-                      )}
-                    </Button>
-                  ))}
+                {canDownloadAssets && asset.provider !== 'YOUTUBE' && (
+                  <AssetDownloadControl
+                    asset={asset}
+                    isBusy={activeDownloadAssetId === asset.id || isBunnyProcessing}
+                    onDownloadAsset={onDownloadAsset}
+                  />
+                )}
 
                 {asset.canDelete && (
                   <Button
