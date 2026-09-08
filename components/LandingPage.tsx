@@ -10,24 +10,20 @@ import {
   Video,
   MoveRight,
   Play,
-  PenTool,
-  Keyboard,
-  BellRing,
-  FolderOpen,
-  FileDown,
-  History,
-  Smartphone,
-  Link as LinkIcon,
-  CheckSquare,
-  MessageSquare,
-  Github,
-  ArrowRight,
-  XCircle,
-  ArrowDown,
-  CheckCircle,
+  Mic,
+  Users,
+  Tag,
+  Code,
+  Lock,
   Upload,
   Share2,
+  MessageSquare,
   Check,
+  CheckCircle2,
+  Copy,
+  Link as LinkIcon,
+  Github,
+  ArrowRight,
 } from 'lucide-react';
 
 interface LandingPageProps {
@@ -37,57 +33,162 @@ interface LandingPageProps {
 const controlButtonClass =
   'group relative isolate inline-flex h-8 items-center justify-center overflow-hidden border border-border bg-background px-2.5 text-[11px] font-medium text-foreground transition-colors duration-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:h-9 sm:px-4 sm:text-xs';
 
-const coreWorkflowFeatures = [
+const primaryCtaClass =
+  'group relative isolate inline-flex min-h-12 items-center justify-center gap-2 overflow-hidden border border-primary bg-primary px-6 py-3 text-center text-[13px] font-semibold text-primary-foreground transition-colors duration-300 hover:bg-primary/90 sm:px-8 sm:text-sm';
+
+const labelClass = 'text-[11px] uppercase tracking-[0.14em] text-muted-foreground';
+
+const trustSignals = [
+  { label: 'No client accounts', icon: Users },
+  { label: 'Flat $10 per month', icon: Tag },
+  { label: 'Fair Source, self-hostable', icon: Code },
+  { label: 'Private by default', icon: Lock },
+];
+
+const steps = [
   {
-    title: 'Version Compare',
-    description: 'Compare any two versions side-by-side on a single timeline.',
-    icon: History,
+    label: 'Upload a cut',
+    description: 'Drop a file, or import an unlisted YouTube video.',
+    icon: Upload,
   },
   {
-    title: 'Asset Management',
-    description: 'Keep images and supplementary videos grouped perfectly per cut.',
-    icon: FolderOpen,
+    label: 'Share the link',
+    description: 'Set permissions once, the client needs no account.',
+    icon: Share2,
   },
   {
-    title: 'Version History',
-    description: 'Infinite versioning. Toggle between V1 and V10 without losing where you are.',
-    icon: History,
+    label: 'Timestamped feedback',
+    description: 'Comments, voice notes and drawings land on the frame.',
+    icon: MessageSquare,
   },
   {
-    title: 'Approval Workflow',
-    description:
-      'Assign specific team members or clients to review and sign off on a cut. Get an exact \"Approved\" status.',
-    icon: CheckCircle,
+    label: 'Approve and move on',
+    description: 'The cut gets a signed off Approved status, export the notes.',
+    icon: Check,
   },
 ];
 
-const workflowAcceleratorFeatures = [
+const hostedFeatures = [
+  'Unlimited collaborators and clients',
+  'Comments, voice notes, annotations',
+  'Version compare, history, approvals',
+  'Permissioned share links, PDF and CSV export',
+  'Unlimited unlisted YouTube imports',
+  '200 GB storage, add 100 GB for $5/mo',
+];
+
+const selfHostedFeatures = [
+  'Full source code, read it and audit it',
+  'Docker setup for self-hosting',
+  'Every release becomes Apache 2.0 two years after publication',
+];
+
+const faq = [
   {
-    title: 'Keyboard Shortcuts',
-    description: 'J, K, L, Space, and M controls for professional editing workflows.',
-    icon: Keyboard,
+    q: 'Do clients need an account?',
+    a: 'No. They can review in the browser with a share link.',
   },
   {
-    title: 'PDF/CSV Exports',
-    description: 'Turn video comments into a professional feedback report in one click.',
-    icon: FileDown,
+    q: 'Is OpenFrame open source?',
+    a: 'OpenFrame is Fair Source, licensed under the Functional Source License (FSL). You can read and audit the full source code and self-host it, and every release automatically becomes Apache 2.0 open source two years after publication.',
   },
   {
-    title: 'Real-time Webhooks',
-    description:
-      'Get instant Telegram alerts the second a comment is dropped. More integrations coming soon.',
-    icon: BellRing,
+    q: 'Is there a free trial?',
+    a: 'Yes. Hosted Cloud starts with a 7-day free trial and never asks for a card to begin it. After that it is a flat $10/mo, with no per-seat or per-client fees.',
   },
   {
-    title: 'Mobile-Optimized Review',
-    description: 'Touch-optimized player for clients reviewing cuts on the move.',
-    icon: Smartphone,
+    q: 'How is this different from a Google Drive link?',
+    a: 'Drive does not give timestamped discussion, voice notes, annotations, or version compare, which is where approval time is actually saved.',
+  },
+  {
+    q: 'What happens if I exceed my storage?',
+    a: 'You can add 100 GB for $5/mo. If you need much more, contact us at info@open-frame.net and we will help you choose the best setup.',
+  },
+  {
+    q: 'Can I self-host?',
+    a: 'Yes. The full source code is public and ships with a Docker setup for self-hosting. Hosted Cloud is for teams who want zero setup.',
   },
 ];
+
+// Bar heights for the voice note waveform, in percent. The first twenty read
+// as "played", the rest as "remaining".
+const waveformBars = [
+  28, 52, 74, 40, 96, 62, 34, 80, 46, 90, 38, 66, 88, 30, 72, 50, 84, 42, 94, 56, 32, 68, 44, 86,
+  36, 60, 92, 48, 26, 70, 54, 82, 38, 64,
+];
+
+const shareOptions = [
+  { label: 'Can comment', on: true },
+  { label: 'Ask for a name before commenting', on: true },
+  { label: 'Allow download of the original file', on: false },
+  { label: 'Show earlier versions', on: false },
+];
+
+const heroGridStyle = {
+  backgroundImage:
+    'linear-gradient(to right, color-mix(in oklab, var(--foreground) 5%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 5%, transparent) 1px, transparent 1px)',
+  backgroundSize: '48px 48px',
+  maskImage:
+    'radial-gradient(ellipse 820px 640px at 50% 30%, #000 0%, rgba(0,0,0,0.6) 52%, transparent 80%)',
+  WebkitMaskImage:
+    'radial-gradient(ellipse 820px 640px at 50% 30%, #000 0%, rgba(0,0,0,0.6) 52%, transparent 80%)',
+} as const;
+
+const heroGlowStyle = {
+  background:
+    'radial-gradient(closest-side, color-mix(in oklab, var(--primary) 18%, transparent), color-mix(in oklab, var(--primary) 6%, transparent) 55%, transparent 100%)',
+} as const;
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-3xl font-semibold leading-[1.05] tracking-[-0.02em] md:text-[42px]">
+      {children}
+    </h2>
+  );
+}
+
+function MockToolbar({ left, right }: { left: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <div className="flex h-9 items-center justify-between gap-3 border-b border-border px-3">
+      <span className="truncate text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        {left}
+      </span>
+      {right}
+    </div>
+  );
+}
+
+function Avatar({ initial }: { initial: string }) {
+  return (
+    <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center bg-secondary text-xs">
+      {initial}
+    </div>
+  );
+}
+
+function Timecode({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="bg-primary/10 px-2 py-[3px] text-[11px] tracking-[0.04em] text-primary">
+      {children}
+    </span>
+  );
+}
+
+function Toggle({ on }: { on: boolean }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`flex h-5 w-[38px] shrink-0 items-center px-[3px] ${on ? 'justify-end bg-primary' : 'justify-start bg-muted'}`}
+    >
+      <div
+        className={`h-[14px] w-[14px] ${on ? 'bg-primary-foreground' : 'bg-muted-foreground/60'}`}
+      />
+    </div>
+  );
+}
 
 export function LandingPage({ isLoggedIn }: LandingPageProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const navbarRef = useRef<HTMLElement | null>(null);
   const hostedCtaHref = isLoggedIn ? '/dashboard' : '/register';
   // Same button, two audiences. Once you are signed in it goes to the dashboard,
   // and offering a trial to someone who is already using the product reads as a
@@ -95,10 +196,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
   const hostedCtaLabel = isLoggedIn ? 'Open dashboard' : 'Start 7-day free trial, no card required';
 
   useEffect(() => {
-    const cleanupHandlers: Array<() => void> = [];
-
     const ctx = gsap.context(() => {
-      // General Reveal Animations
       gsap.from('[data-hero-copy]', {
         y: 40,
         opacity: 0,
@@ -107,10 +205,9 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
         ease: 'power4.out',
       });
 
-      // Voice Notes Waveform Animation
-      const waveformBars = gsap.utils.toArray<HTMLElement>('.voice-bar');
-      waveformBars.forEach((bar, index) => {
-        gsap.set(bar, { transformOrigin: 'center bottom' });
+      const bars = gsap.utils.toArray<HTMLElement>('.voice-bar');
+      bars.forEach((bar, index) => {
+        gsap.set(bar, { transformOrigin: 'center center' });
         gsap.to(bar, {
           scaleY: gsap.utils.random(0.3, 1.5),
           duration: gsap.utils.random(0.4, 0.8),
@@ -120,30 +217,9 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
           ease: 'power2.inOut',
         });
       });
-
-      // Navbar Scroll Effect
-      const nav = navbarRef.current;
-      if (nav) {
-        const updateNavbar = () => {
-          const hasScrolled = window.scrollY > 20;
-          gsap.to(nav, {
-            backgroundColor: hasScrolled
-              ? 'color-mix(in oklab, var(--background) 85%, transparent)'
-              : 'transparent',
-            backdropFilter: hasScrolled ? 'blur(16px)' : 'blur(0px)',
-            borderBottomColor: hasScrolled ? 'var(--border)' : 'transparent',
-            duration: 0.3,
-            overwrite: 'auto',
-          });
-        };
-        updateNavbar();
-        window.addEventListener('scroll', updateNavbar, { passive: true });
-        cleanupHandlers.push(() => window.removeEventListener('scroll', updateNavbar));
-      }
     }, rootRef);
 
     return () => {
-      cleanupHandlers.forEach((cleanup) => cleanup());
       ctx.revert();
     };
   }, []);
@@ -153,11 +229,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
       ref={rootRef}
       className="min-h-screen overflow-x-hidden bg-background text-foreground font-sans selection:bg-primary/20"
     >
-      {/* Header */}
-      <header
-        ref={navbarRef}
-        className="fixed inset-x-0 top-0 z-50 border-b border-transparent bg-transparent transition-colors duration-300"
-      >
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-background">
         <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center justify-between px-4 sm:h-16 sm:px-6 lg:px-10">
           <Link
             href="/"
@@ -216,7 +288,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 </Link>
                 <Link href="/register" className={controlButtonClass}>
                   <span className="pointer-events-none absolute inset-0 -translate-x-[101%] bg-primary/10 transition-transform duration-300 group-hover:translate-x-0" />
-                  <span className="relative z-10">Get Started Free</span>
+                  <span className="relative z-10">Start free trial</span>
                 </Link>
               </>
             )}
@@ -226,667 +298,495 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
 
       <main className="relative">
         {/* 1) HERO */}
-        <section className="relative flex min-h-[95vh] flex-col items-center justify-center px-4 pb-20 pt-32 text-center sm:px-6 lg:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background" />
+        <section className="relative overflow-hidden px-4 pb-16 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pb-24">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={heroGridStyle}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-1/2 top-[55%] h-[560px] w-[1000px] max-w-[140vw] -translate-x-1/2"
+            style={heroGlowStyle}
+          />
 
-          <div className="relative z-10 mx-auto max-w-[1000px] space-y-8">
-            <h1
-              data-hero-copy
-              className="text-4xl font-semibold leading-[0.95] tracking-[-0.03em] sm:text-5xl md:text-6xl lg:text-7xl"
-            >
-              Get Client Sign-off From One Link. <br className="hidden md:block" />
-              <span className="text-muted-foreground">Stop Chasing Timecodes.</span>
-            </h1>
-
-            <p
-              data-hero-copy
-              className="mx-auto max-w-2xl text-base text-muted-foreground md:text-xl"
-            >
-              Hosted video review for editors, agencies, and small studios. Comments, voice notes,
-              and annotations land on one timeline — clients review in the browser, no account
-              needed.
-            </p>
-
-            <div
-              data-hero-copy
-              className="mx-auto flex max-w-md flex-col items-center justify-center gap-3"
-            >
-              <CtaLink
-                href={hostedCtaHref}
-                className="group relative isolate inline-flex h-12 min-w-max items-center justify-center overflow-hidden border border-primary bg-primary px-10 text-sm font-medium whitespace-nowrap text-primary-foreground transition-transform duration-300 hover:scale-[1.02]"
+          <div className="relative mx-auto flex w-full max-w-[1200px] flex-col items-center gap-12 lg:gap-16">
+            <div className="flex w-full max-w-[900px] flex-col items-center gap-6 text-center">
+              <h1
+                data-hero-copy
+                className="text-4xl font-semibold leading-[0.95] tracking-[-0.03em] sm:text-5xl md:text-6xl lg:text-7xl"
               >
-                {hostedCtaLabel}
-                <MoveRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </CtaLink>
+                Get client sign-off from one link.
+              </h1>
 
-              <p className="text-xs text-muted-foreground">
-                No credit card · Flat $10/mo after, no per-seat fees · No client accounts
+              <p
+                data-hero-copy
+                className="max-w-[660px] text-base leading-relaxed text-muted-foreground md:text-lg"
+              >
+                Timestamped comments, voice notes and annotations on one timeline. Clients review in
+                the browser, no account.
               </p>
 
-              <a
-                href="https://github.com/yusufipk/OpenFrame"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
-              >
-                Prefer self-hosting? View on GitHub <ArrowRight className="ml-1 inline h-3 w-3" />
-              </a>
+              <div data-hero-copy className="flex flex-col items-center gap-3.5">
+                <CtaLink href={hostedCtaHref} className={primaryCtaClass}>
+                  {hostedCtaLabel}
+                  <MoveRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-1" />
+                </CtaLink>
+                <a
+                  href="https://github.com/yusufipk/OpenFrame"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Prefer self-hosting? View on GitHub <ArrowRight className="ml-1 inline h-3 w-3" />
+                </a>
+              </div>
             </div>
-          </div>
 
-          <div data-hero-copy className="relative mx-auto mt-20 w-full max-w-[1200px]">
-            <div className="relative aspect-[16/9] w-full overflow-hidden border border-border bg-card shadow-2xl rounded-lg">
-              <video
-                src="/landing/hero-flow.mp4"
-                poster="/landing/deep-dive-dashboard-2.webp"
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* 2) PROBLEM BLOCK */}
-        <section className="border-y border-border bg-card/10 px-4 py-16 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div className="mx-auto max-w-4xl">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Feedback chaos looks like this:
-              </h2>
-              <ul className="mt-8 space-y-4 text-base text-muted-foreground md:text-lg">
-                <li className="flex items-start gap-3">
-                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
-                  <span>Comments spread across WhatsApp, email, and random screenshots.</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
-                  <span>&quot;Around 1:12&quot; turns into 10 minutes of guessing.</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
-                  <span>Nobody knows which version is actually the latest.</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <XCircle className="mt-1 h-5 w-5 shrink-0 text-red-500/80" />
-                  <span>One unclear note becomes a full extra revision round.</span>
-                </li>
-              </ul>
-              <div className="mt-10 border-l-2 border-primary/50 pl-4">
-                <p className="text-base text-foreground md:text-lg">
-                  OpenFrame replaces all of that with one link, one timeline, one source of truth.
-                </p>
+            <div data-hero-copy className="w-full max-w-[1100px]">
+              <div className="relative aspect-video w-full overflow-hidden border border-border bg-card shadow-2xl">
+                <video
+                  src="/landing/hero-flow.mp4"
+                  poster="/landing/deep-dive-dashboard-2.webp"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
               </div>
             </div>
           </div>
         </section>
 
-        {/* 3) HOW IT WORKS */}
-        <section className="border-b border-border bg-background px-4 py-20 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div className="mb-16 text-center">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                From upload to approval — in one flow.
-              </h2>
-            </div>
+        {/* 2) TRUST STRIP */}
+        <section className="border-y border-border bg-card/30 px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto grid w-full max-w-[1200px] grid-cols-2 gap-px bg-border md:grid-cols-4">
+            {trustSignals.map((signal) => (
+              <div
+                key={signal.label}
+                className="flex items-center gap-2.5 bg-background px-4 py-3.5 sm:px-5"
+              >
+                <signal.icon className="h-4 w-4 shrink-0 text-primary" />
+                <span className="text-[11px] uppercase tracking-[0.14em]">{signal.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
 
-            <div className="grid gap-4 md:grid-cols-4 relative">
-              {[
-                { label: 'Upload a cut', icon: Upload },
-                { label: 'Share a review link', icon: Share2 },
-                { label: 'Get timestamped feedback', icon: MessageSquare },
-                { label: 'Mark approved and move on', icon: Check },
-              ].map((step, idx, arr) => (
-                <div key={step.label} className="group relative flex flex-col items-center">
-                  <div className="flex flex-col items-center justify-center w-full min-h-[100px] md:aspect-[4/3] border border-border bg-card/20 px-4 py-6 md:p-6 text-center relative z-10 transition-all duration-300 group-hover:border-primary/40 group-hover:bg-card/40">
-                    <div className="mb-4 flex h-8 w-8 md:h-10 md:w-10 items-center justify-center bg-secondary/50 text-primary border border-border/50 transition-colors group-hover:bg-primary/10">
-                      <step.icon className="h-4 w-4 md:h-5 md:w-5" />
+        {/* 3) FEATURES */}
+        <section id="features" className="scroll-mt-20">
+          {/* Version compare */}
+          <div className="border-b border-border px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+            <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 lg:grid-cols-[340px_minmax(0,1fr)] lg:gap-14">
+              <div className="flex flex-col gap-4">
+                <SectionTitle>See exactly what changed.</SectionTitle>
+                <p className="text-base leading-relaxed text-muted-foreground">
+                  Put two cuts on one timeline and scrub them together, then approve without asking
+                  which version this is.
+                </p>
+              </div>
+              <div className="min-w-0 border border-border bg-card">
+                <MockToolbar
+                  left="Compare versions"
+                  right={
+                    <div className="flex items-center gap-2 text-[10px] tracking-[0.04em]">
+                      <span className="bg-secondary px-2 py-[3px]">v2</span>
+                      <span className="text-muted-foreground">against</span>
+                      <span className="bg-primary/10 px-2 py-[3px] text-primary">v1</span>
                     </div>
-                    <p className="text-sm font-medium text-foreground md:text-base leading-tight">
-                      {step.label}
-                    </p>
-                    <div className="absolute top-3 right-3 font-mono text-[10px] text-muted-foreground/30">
-                      0{idx + 1}
+                  }
+                />
+                <div className="relative aspect-video w-full overflow-hidden bg-black">
+                  <video
+                    src="/landing/compare-cuts.mp4"
+                    poster="/landing/compare-cuts-poster.webp"
+                    aria-label="OpenFrame side by side version comparison demo"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    preload="none"
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Voice notes and annotations */}
+          <div className="border-b border-border bg-card/30 px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+            <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-14">
+              <div className="flex flex-col gap-4 lg:order-2">
+                <SectionTitle>Say it, or draw it.</SectionTitle>
+                <p className="text-base leading-relaxed text-muted-foreground">
+                  Record a note or circle the frame, and both land on the exact second instead of in
+                  a follow-up email.
+                </p>
+              </div>
+
+              <div className="min-w-0 border border-border bg-card lg:order-1">
+                <MockToolbar
+                  left="Comment thread, Version 3"
+                  right={
+                    <span className="hidden text-[10px] uppercase tracking-[0.14em] text-muted-foreground sm:block">
+                      Sorted by timecode
+                    </span>
+                  }
+                />
+                <div className="flex flex-col gap-3.5 p-4 sm:p-5">
+                  <div className="flex flex-col gap-3.5 border border-border bg-background p-4 sm:p-[18px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar initial="M" />
+                        <span className="text-[13px] font-medium">Michael A.</span>
+                        <Timecode>00:04:44</Timecode>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-primary">
+                        <Mic className="h-3.5 w-3.5" />
+                        <span>Voice note</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3.5">
+                      <div
+                        aria-hidden="true"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center bg-primary text-primary-foreground"
+                      >
+                        <Play className="h-3.5 w-3.5 fill-current" />
+                      </div>
+                      <div className="flex h-11 min-w-0 flex-1 items-center gap-[3px]">
+                        {waveformBars.map((height, index) => (
+                          <span
+                            key={index}
+                            className={`voice-bar flex-1 ${index < 20 ? 'bg-primary/70' : 'bg-foreground/15'}`}
+                            style={{ height: `${height}%` }}
+                          />
+                        ))}
+                      </div>
+                      <span className="shrink-0 text-[11px] tracking-[0.04em] text-muted-foreground">
+                        0:11 / 0:19
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="border border-border px-2 py-[3px] text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                        Feedback
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">Reply</span>
                     </div>
                   </div>
 
-                  {idx < arr.length - 1 && (
-                    <div className="hidden md:flex absolute top-1/2 -right-4 -translate-y-1/2 z-20 items-center justify-center text-muted-foreground/20">
-                      <MoveRight className="h-5 w-5" />
+                  <div className="flex flex-col gap-4 border border-border bg-background p-4 sm:flex-row sm:p-[18px]">
+                    <div className="relative h-[112px] w-full shrink-0 overflow-hidden border border-border bg-black sm:w-[200px]">
+                      <Image
+                        src="/landing/deep-dive-dashboard-2.webp"
+                        alt="Annotated frame"
+                        fill
+                        className="origin-[30%_40%] scale-[2.4] object-cover brightness-75"
+                        sizes="(min-width: 640px) 480px, 240vw"
+                      />
+                      <svg
+                        aria-hidden="true"
+                        className="absolute inset-0 h-full w-full text-primary"
+                        viewBox="0 0 200 112"
+                        preserveAspectRatio="none"
+                        fill="none"
+                      >
+                        <ellipse
+                          cx="98"
+                          cy="52"
+                          rx="52"
+                          ry="28"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        />
+                        <path
+                          d="M144 38 Q164 22 182 32"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
                     </div>
-                  )}
-                  {idx < arr.length - 1 && (
-                    <div className="md:hidden flex py-4 text-muted-foreground/20">
-                      <ArrowDown className="h-5 w-5" />
+                    <div className="flex min-w-0 flex-col gap-2.5">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <Avatar initial="D" />
+                        <span className="text-[13px] font-medium">David K.</span>
+                        <Timecode>00:01:49</Timecode>
+                        <span className="border border-purple-500/40 px-2 py-[3px] text-[10px] uppercase tracking-[0.14em] text-purple-700 dark:text-purple-300">
+                          Annotated
+                        </span>
+                      </div>
+                      <p className="text-sm leading-relaxed">
+                        This block needs to clear the subject, I drew where it should sit.
+                      </p>
+                      <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground">
+                        <span>Reply</span>
+                        <span>Resolve</span>
+                        <span>Export to PDF</span>
+                      </div>
                     </div>
-                  )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Share and approve */}
+          <div className="border-b border-border px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+            <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 lg:grid-cols-[340px_minmax(0,1fr)] lg:gap-14">
+              <div className="flex flex-col gap-4">
+                <SectionTitle>One link, one approval.</SectionTitle>
+                <p className="text-base leading-relaxed text-muted-foreground">
+                  Decide what the link allows, send it, and get an Approved status you can point at
+                  later.
+                </p>
+              </div>
+
+              <div className="flex min-w-0 items-center justify-center border border-border bg-gradient-to-br from-card to-background p-4 sm:p-8">
+                <div className="flex w-full max-w-[520px] flex-col border border-border bg-card">
+                  <div className="flex h-11 items-center justify-between border-b border-border px-4">
+                    <div className="flex items-center gap-2">
+                      <Share2 className="h-[15px] w-[15px] text-primary" />
+                      <span className="text-xs font-medium">Share review link</span>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                      Version 3
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-4 p-4 sm:p-[18px]">
+                    <div className="flex items-stretch border border-border bg-background">
+                      <div className="flex h-10 min-w-0 flex-1 items-center gap-2 px-3">
+                        <LinkIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate text-xs">open-frame.net/watch/share-7f3a</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-primary px-3.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-foreground">
+                        <Copy className="h-[13px] w-[13px]" />
+                        <span>Copy</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-px border border-border bg-border">
+                      {shareOptions.map((option) => (
+                        <div
+                          key={option.label}
+                          className="flex items-center justify-between gap-3 bg-background px-3.5 py-3"
+                        >
+                          <span className={`text-xs ${option.on ? '' : 'text-muted-foreground'}`}>
+                            {option.label}
+                          </span>
+                          <Toggle on={option.on} />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 border border-primary/35 bg-primary/10 px-3.5 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
+                        <span className="text-[11px] uppercase tracking-[0.14em] text-primary">
+                          Approved by
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-xs">David K.</span>
+                        <span className="text-[11px] tracking-[0.04em] text-muted-foreground">
+                          22.02.2026 16:04
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 4) HOW IT WORKS */}
+        <section className="border-b border-border bg-card/30 px-4 py-14 sm:px-6 lg:px-8 lg:py-16">
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-7">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-2xl font-semibold tracking-[-0.02em] md:text-[28px]">
+                From upload to approval, in one flow.
+              </h2>
+              <span className={labelClass}>Four steps, one link</span>
+            </div>
+            <div className="grid gap-px border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+              {steps.map((step, index) => (
+                <div key={step.label} className="flex flex-col gap-3 bg-background p-5">
+                  <div className="flex items-center justify-between">
+                    <step.icon className="h-5 w-5 text-primary" />
+                    <span className="text-[11px] tracking-[0.14em] text-muted-foreground/60">
+                      0{index + 1}
+                    </span>
+                  </div>
+                  <span className="text-sm font-medium">{step.label}</span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    {step.description}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* 4) FEATURES */}
-        <section id="features" className="scroll-mt-20 border-t border-border bg-card/10">
-          {/* Feature 1 */}
-          <div className="border-b border-border">
-            <div className="mx-auto flex w-full max-w-[1200px] flex-col-reverse items-center justify-between gap-12 px-4 py-20 sm:px-6 lg:flex-row lg:px-8 lg:py-32">
-              <div data-reveal className="w-full lg:w-1/2 relative">
-                <div className="relative aspect-[16/10] w-full border border-border/50 bg-background overflow-hidden">
-                  <Image
-                    src="/landing/compare-v2.webp"
-                    alt="Comparison Mode"
-                    fill
-                    className="object-cover object-left-top"
-                    sizes="(min-width: 1024px) 50vw, 100vw"
-                  />
-                  <div className="absolute inset-0 bg-background/5" />
-                </div>
-              </div>
-              <div data-reveal className="w-full lg:w-1/2 space-y-6">
-                <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                  Compare versions side-by-side. End &quot;which cut is this?&quot;
-                </h2>
-                <p className="text-base text-muted-foreground md:text-lg">
-                  See what actually changed between versions then approve with confidence.
-                </p>
-                <p className="text-xs uppercase tracking-[0.14em] text-primary">
-                  Cuts revision cycles.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Feature 2 */}
-          <div className="border-b border-border bg-background">
-            <div className="mx-auto flex w-full max-w-[1200px] flex-col items-center justify-between gap-12 px-4 py-20 sm:px-6 lg:flex-row lg:px-8 lg:py-32">
-              <div data-reveal className="w-full lg:w-1/2 space-y-6">
-                <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                  Explain it better with Voice.
-                </h2>
-                <p className="text-base text-muted-foreground md:text-lg">
-                  No more &quot;What did you mean by this?&quot; emails. Every note lands at the
-                  exact moment in the video.
-                </p>
-                <p className="text-xs uppercase tracking-[0.14em] text-primary">
-                  Faster feedback. Fewer misunderstandings.
-                </p>
-              </div>
-              <div data-reveal className="w-full lg:w-1/2">
-                <div className="border border-border bg-card p-6">
-                  <div className="border border-border/50 bg-background p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center bg-secondary font-mono text-xs">
-                          Y
-                        </div>
-                        <div className="space-y-1">
-                          <p className="font-mono text-[11px] font-medium leading-none">
-                            Yusuf İpek
-                          </p>
-                          <p className="font-mono text-[10px] text-muted-foreground">00:03:45</p>
-                        </div>
-                      </div>
-                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                    </div>
-                    <div className="mt-6 flex h-16 items-center gap-1 overflow-hidden">
-                      <button className="mr-2 flex h-8 w-8 flex-none items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90">
-                        <Play className="h-3 w-3" />
-                      </button>
-                      {Array.from({ length: 40 }).map((_, i) => (
-                        <span
-                          key={i}
-                          className="voice-bar w-full flex-1 bg-primary/60"
-                          style={{
-                            height: `${[30, 80, 50, 90, 40, 70, 60, 45, 85, 55, 65, 35, 95, 75, 25, 40, 80, 50, 90, 30][i % 20]}%`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Feature 3 */}
-          <div className="border-b border-border">
-            <div className="mx-auto flex w-full max-w-[1200px] flex-col-reverse items-center justify-between gap-12 px-4 py-20 sm:px-6 lg:flex-row lg:px-8 lg:py-32">
-              <div
-                data-reveal
-                className="w-full lg:w-1/2 relative aspect-video bg-card border border-border p-4"
-              >
-                <div className="relative h-full w-full border border-border/50 overflow-hidden bg-background">
-                  <Image
-                    src="https://images.unsplash.com/photo-1542204165-65bf26472b9b?auto=format&fit=crop&w=800&q=80"
-                    alt="Annotate"
-                    fill
-                    className="object-cover opacity-70"
-                  />
-                  <svg
-                    className="absolute inset-0 h-full w-full pointer-events-none"
-                    viewBox="0 0 800 450"
-                    fill="none"
-                  >
-                    <circle
-                      cx="500"
-                      cy="225"
-                      r="80"
-                      stroke="#06b6d4"
-                      strokeWidth="4"
-                      className="opacity-90 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]"
-                    />
-                    <path
-                      d="M500 145 Q550 80 620 120"
-                      stroke="#06b6d4"
-                      strokeWidth="4"
-                      className="opacity-90"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-
-                  {/* Circle Editor UI mock */}
-                  <div className="absolute top-4 left-4 border border-border/50 bg-background/90 backdrop-blur-md p-2 flex flex-col gap-2">
-                    <div className="flex gap-2">
-                      <div className="h-6 w-6 rounded-full bg-red-500 cursor-pointer border-2 border-transparent"></div>
-                      <div className="h-6 w-6 rounded-full bg-yellow-500 cursor-pointer border-2 border-transparent"></div>
-                      <div className="h-6 w-6 rounded-full bg-green-500 cursor-pointer border-2 border-transparent"></div>
-                      <div className="h-6 w-6 rounded-full bg-[#06b6d4] cursor-pointer border-2 border-white"></div>
-                    </div>
-                    <div className="h-px w-full bg-border/50" />
-                    <div className="flex gap-2">
-                      <button className="flex h-8 w-8 items-center justify-center text-muted-foreground bg-primary/10 text-primary hover:bg-secondary">
-                        <PenTool className="h-4 w-4" />
-                      </button>
-                      <button className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:bg-secondary">
-                        <MoveRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div data-reveal className="w-full lg:w-1/2 space-y-6">
-                <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                  Point. Draw. Done.
-                </h2>
-                <p className="text-base text-muted-foreground md:text-lg">
-                  Precise feedback that leaves zero room for error. Circle, sketch, and point
-                  directly on the video frame.
-                </p>
-                <p className="text-xs uppercase tracking-[0.14em] text-primary">
-                  Stops &quot;I thought you meant...&quot;
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 5) EVERYTHING YOUR TEAM EXPECTS */}
-        <section className="border-b border-border px-4 py-20 sm:px-6 lg:px-8 lg:py-32 bg-background">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-12 flex flex-col items-center text-center">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Everything a real production workflow needs.
-              </h2>
-              <p className="mt-4 max-w-2xl text-base text-muted-foreground">
-                The core tools teams expect without the complexity that slows clients down.
-              </p>
-            </div>
-
-            <div className="space-y-10">
-              <div>
-                <p
-                  data-reveal
-                  className="mb-4 text-xs uppercase tracking-[0.14em] text-muted-foreground"
-                >
-                  Core workflow
-                </p>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {coreWorkflowFeatures.map((feat) => (
-                    <div
-                      key={feat.title}
-                      data-reveal
-                      className="group border border-border bg-card p-6 transition-colors hover:border-primary/50 hover:bg-card/80"
-                    >
-                      <feat.icon className="mb-4 h-6 w-6 text-primary" />
-                      <h3 className="mb-2 text-lg font-medium">{feat.title}</h3>
-                      <p className="text-sm text-muted-foreground">{feat.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p
-                  data-reveal
-                  className="mb-4 text-xs uppercase tracking-[0.14em] text-muted-foreground"
-                >
-                  Workflow Accelerators
-                </p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {workflowAcceleratorFeatures.map((feat) => (
-                    <div
-                      key={feat.title}
-                      data-reveal
-                      className="group border border-border bg-card p-6 transition-colors hover:border-primary/50 hover:bg-card/80"
-                    >
-                      <feat.icon className="mb-4 h-6 w-6 text-primary" />
-                      <h3 className="mb-2 text-lg font-medium">{feat.title}</h3>
-                      <p className="text-sm text-muted-foreground">{feat.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 6) BUILT FOR CLIENTS */}
-        <section className="border-b border-border bg-card/20 px-4 py-20 sm:px-6 lg:px-8 lg:py-32">
-          <div className="mx-auto flex w-full max-w-[1200px] flex-col lg:flex-row gap-12 lg:items-center">
-            <div data-reveal className="lg:w-1/2 space-y-6">
-              <h2 className="text-4xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Clients don&apos;t need an account. They just review.
-              </h2>
-              <p className="text-lg text-muted-foreground">
-                If clients can&apos;t adopt the tool, approvals don&apos;t happen. OpenFrame keeps
-                it frictionless.
-              </p>
-            </div>
-            <div data-reveal className="lg:w-1/2 space-y-4">
-              <div className="flex items-start gap-4 border border-border bg-background p-6 transition-transform hover:-translate-y-1">
-                <LinkIcon className="mt-1 h-6 w-6 shrink-0 text-primary" />
-                <div>
-                  <h3 className="text-lg font-semibold">One link. Review in the browser.</h3>
-                </div>
-              </div>
-              <div className="flex items-start gap-4 border border-border bg-background p-6 transition-transform hover:-translate-y-1">
-                <Smartphone className="mt-1 h-6 w-6 shrink-0 text-primary" />
-                <div>
-                  <h3 className="text-lg font-semibold">Works great on mobile.</h3>
-                </div>
-              </div>
-              <div className="flex items-start gap-4 border border-border bg-background p-6 transition-transform hover:-translate-y-1">
-                <MessageSquare className="mt-1 h-6 w-6 shrink-0 text-primary" />
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    Timestamped notes that are impossible to miss.
-                  </h3>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 7) PRICING */}
+        {/* 5) PRICING */}
         <section
           id="pricing"
-          className="border-b border-border bg-[#0a0a0a] px-4 py-20 sm:px-6 lg:px-8 lg:py-32"
+          className="scroll-mt-20 border-b border-border bg-card/30 px-4 py-16 sm:px-6 lg:px-8 lg:py-20"
         >
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mb-16">
-              <h2
-                className="text-3xl font-semibold md:text-5xl text-foreground"
-                style={{ fontFamily: 'monospace', letterSpacing: '-0.02em' }}
-              >
-                Let us run it for you - or deploy it yourself.
-              </h2>
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <SectionTitle>Let us run it, or run it yourself.</SectionTitle>
+              <span className={labelClass}>No per-seat fees</span>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-3">
-              {/* Card 1: Hosted Cloud (recommended) */}
-              <div
-                data-reveal
-                className="relative flex flex-col border border-[#06b6d4]/40 bg-[#141414] p-8"
-              >
-                <span className="absolute -top-3 left-8 bg-[#06b6d4] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-black">
+            <div className="grid gap-5 md:grid-cols-3">
+              <div className="relative flex flex-col gap-[18px] border border-primary/40 bg-card p-6 sm:p-7">
+                <span className="absolute -top-[11px] left-6 bg-primary px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-foreground sm:left-7">
                   Recommended
                 </span>
-                <div className="mb-6">
-                  <p className="font-mono text-[10px] uppercase font-semibold text-muted-foreground tracking-widest mb-4">
-                    Zero setup. Flat pricing, no per-seat fees.
-                  </p>
-                  <h3 className="text-xl font-semibold text-foreground">Hosted Cloud</h3>
+                <div className="flex flex-col gap-2">
+                  <span className={labelClass}>Hosted cloud</span>
+                  <div className="flex items-baseline gap-2 text-primary">
+                    <span className="text-[40px] font-semibold tracking-[-0.02em]">$10</span>
+                    <span className="text-sm">/ month</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    7-day free trial, no credit card. Cancel anytime.
+                  </span>
                 </div>
-
-                <div className="mb-2 flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold text-[#06b6d4]">$10</span>
-                  <span className="text-[#06b6d4]">/ month</span>
-                </div>
-                <p className="mb-6 text-sm text-muted-foreground">
-                  Starts with a 7-day free trial. No credit card. Cancel anytime.
-                </p>
-
-                <ul className="mb-8 flex-1 space-y-4 text-sm text-foreground/80">
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Unlimited collaborators</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Timestamped comments + voice notes</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Annotations + version compare</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Share links with permissions</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Exports (PDF/CSV)</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Unlimited YouTube Video Imports</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Download original uploaded video</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 shrink-0 h-4 w-4 text-[#06b6d4]" />
-                    <span>Includes: 200 GB Storage</span>
-                  </li>
+                <ul className="flex flex-col gap-2.5 text-[13px]">
+                  {hostedFeatures.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-[15px] w-[15px] shrink-0 text-primary" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
                 </ul>
-                <p className="mb-8 text-sm text-muted-foreground">
-                  Need more storage? Add 100 GB for $5/mo.
-                </p>
-
-                <CtaLink
-                  href={hostedCtaHref}
-                  className="mt-auto group relative isolate inline-flex h-12 w-full items-center justify-center overflow-hidden bg-[#06b6d4] font-medium text-black transition-colors hover:bg-[#06b6d4]/90 text-sm"
-                >
-                  {isLoggedIn ? 'Open dashboard' : 'Start free trial'}
-                </CtaLink>
+                <div className="mt-auto pt-2">
+                  <CtaLink href={hostedCtaHref} className={`${primaryCtaClass} w-full`}>
+                    {isLoggedIn ? 'Open dashboard' : 'Start 7-day free trial'}
+                  </CtaLink>
+                </div>
               </div>
 
-              {/* Card 2: Fair Source (Self-hosted) */}
-              <div
-                data-reveal
-                className="relative flex flex-col border border-border/40 bg-[#141414] p-8"
-              >
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold text-foreground">
-                    Fair Source (Self-hosted)
-                  </h3>
+              <div className="flex flex-col gap-[18px] border border-border bg-card p-6 sm:p-7">
+                <div className="flex flex-col gap-2">
+                  <span className={labelClass}>Fair Source, self-hosted</span>
+                  <span className="text-[40px] font-semibold tracking-[-0.02em] text-primary">
+                    Free
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    <a
+                      href="https://fsl.software/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      Functional Source License
+                    </a>
+                    . Your infrastructure, your data.
+                  </span>
                 </div>
-
-                <div className="mb-8 flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold text-[#06b6d4]">Free</span>
-                </div>
-                <p className="mb-8 text-sm text-muted-foreground">
-                  For teams who want full control and can run their own infrastructure. Licensed
-                  under the{' '}
+                <ul className="flex flex-col gap-2.5 text-[13px]">
+                  {selfHostedFeatures.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-[15px] w-[15px] shrink-0 text-primary" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-auto pt-2">
                   <a
-                    href="https://fsl.software/"
+                    href="https://github.com/yusufipk/OpenFrame"
                     target="_blank"
                     rel="noreferrer"
-                    className="underline underline-offset-2 hover:text-foreground"
+                    className="inline-flex h-12 w-full items-center justify-center gap-2 border border-border bg-background text-[13px] font-medium transition-colors hover:border-foreground/30"
                   >
-                    Functional Source License
+                    <Github className="h-[15px] w-[15px]" />
+                    View on GitHub
                   </a>
-                  .
-                </p>
-
-                <ul className="mb-8 flex-1 space-y-4 text-sm text-foreground/80">
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 h-4 w-4 shrink-0 text-[#06b6d4]" />
-                    Full source code — read it, audit it
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 h-4 w-4 shrink-0 text-[#06b6d4]" />
-                    Self-host on your own infrastructure
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <CheckSquare className="mt-0.5 h-4 w-4 shrink-0 text-[#06b6d4]" />
-                    Every release becomes Apache 2.0 open source after two years
-                  </li>
-                </ul>
-
-                <a
-                  href="https://github.com/yusufipk/OpenFrame"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-auto group relative isolate inline-flex h-12 w-full items-center justify-center overflow-hidden border border-border/50 bg-[#0a0a0a] font-medium text-foreground transition-colors hover:bg-white/5 text-sm"
-                >
-                  <Github className="mr-2 h-4 w-4" /> View on GitHub
-                </a>
+                </div>
               </div>
 
-              {/* Card 3: Studio & Agency */}
-              <div
-                data-reveal
-                className="relative flex flex-col border border-border/40 bg-[#141414] p-8"
+              <div className="flex flex-col gap-[18px] border border-border bg-card p-6 sm:p-7">
+                <div className="flex flex-col gap-2">
+                  <span className={labelClass}>Need more?</span>
+                  <span className="text-[40px] font-semibold tracking-[-0.02em] text-primary">
+                    Let&apos;s talk
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Custom capacity and setup help for high volume teams.
+                  </span>
+                </div>
+                <p className="text-[13px] leading-relaxed">
+                  Tell us your storage, usage and workflow, we will recommend the right approach.
+                  Hosted, self-hosted, or a mix of both.
+                </p>
+                <div className="mt-auto flex flex-col gap-3 pt-2">
+                  <span className="text-xs text-muted-foreground">info@open-frame.net</span>
+                  <a
+                    href="mailto:info@open-frame.net"
+                    className="inline-flex h-12 w-full items-center justify-center border border-border bg-background text-[13px] font-medium transition-colors hover:border-foreground/30"
+                  >
+                    Contact us
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 6) FAQ */}
+        <section className="border-b border-border px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-7">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <SectionTitle>Questions people ask.</SectionTitle>
+              <a
+                href="mailto:info@open-frame.net"
+                className={`${labelClass} hover:text-foreground`}
               >
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold text-foreground">
-                    Need more than the standard limits?
-                  </h3>
-                </div>
-                <div className="mb-6 flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold text-[#06b6d4]">Let&apos;s talk</span>
-                </div>
-
-                <p className="mb-8 text-sm text-foreground/80 leading-relaxed">
-                  Custom capacity and setup help for high-volume production teams. Tell us your
-                  storage, usage, and workflow - we&apos;ll recommend the right approach.
-                </p>
-
-                <a
-                  href="mailto:info@open-frame.net"
-                  className="group relative isolate inline-flex h-12 w-full items-center justify-center overflow-hidden bg-[#0a0a0a] font-medium text-foreground transition-colors hover:bg-white/5 border border-border/50 text-sm"
+                info@open-frame.net
+              </a>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {faq.map((item) => (
+                <div
+                  key={item.q}
+                  className="flex flex-col gap-2.5 border border-border bg-card p-5 transition-colors hover:border-primary/45"
                 >
-                  Contact us
-                </a>
-              </div>
+                  <h3 className="text-[15px] font-semibold">{item.q}</h3>
+                  <p className="text-[13px] leading-relaxed text-muted-foreground">{item.a}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>
 
-        {/* 8) SECURITY & PRIVACY */}
-        <section className="border-b border-border bg-background px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mx-auto max-w-4xl">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">
-                Security & privacy, by design.
-              </h2>
-              <ul className="mt-8 space-y-4 text-base text-muted-foreground md:text-lg">
-                <li>- Permissioned share links (control who can view/comment)</li>
-                <li>- Private-by-default projects</li>
-                <li>- Delete videos and projects anytime</li>
-                <li>- Self-host option for full data control</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        {/* 9) FAQ */}
-        <section className="border-b border-border bg-card/10 px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
-          <div className="mx-auto w-full max-w-[1200px]">
-            <div data-reveal className="mx-auto max-w-4xl">
-              <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-5xl">FAQ</h2>
-              <div className="mt-10 space-y-4">
-                {[
-                  {
-                    q: 'Do clients need an account?',
-                    a: 'No. They can review in the browser with a share link.',
-                  },
-                  {
-                    q: 'What happens if I exceed my storage?',
-                    a: "You can add 100 GB for $5/mo. If you need much more, contact us at info@open-frame.net and we'll help you choose the best setup.",
-                  },
-                  {
-                    q: 'How is YouTube unlimited?',
-                    a: 'There is no storage limit on YouTube imports. You can import an unlimited amount of unlisted YouTube videos and use all of our review features exactly the same.',
-                  },
-                  {
-                    q: 'Can I self-host?',
-                    a: 'Yes. The full source code is public and ships with a Docker setup for self-hosting. Hosted Cloud is for teams who want zero setup.',
-                  },
-                  {
-                    q: 'Is OpenFrame open source?',
-                    a: 'OpenFrame is Fair Source, licensed under the Functional Source License (FSL). You can read and audit the full source code and self-host it, and every release automatically becomes Apache 2.0 open source two years after publication.',
-                  },
-                  {
-                    q: 'Is there a free trial?',
-                    a: 'Yes. Hosted Cloud starts with a 7-day free trial and never asks for a card to begin it. After that it is a flat $10/mo, with no per-seat or per-client fees.',
-                  },
-                  {
-                    q: 'How is this different from sending a Google Drive link?',
-                    a: 'Drive doesn’t give timestamped discussion, voice notes, annotations, or version compare, which is where approval time is actually saved.',
-                  },
-                  {
-                    q: 'Is it mobile-friendly?',
-                    a: 'Yes. Clients can review and comment from mobile.',
-                  },
-                  {
-                    q: 'Can I export feedback?',
-                    a: 'Yes. Export to PDF/CSV for archiving or client handoff.',
-                  },
-                  {
-                    q: 'Who can access my videos?',
-                    a: 'Only people you invite or share a link with (based on permissions you set).',
-                  },
-                  {
-                    q: 'Can I cancel anytime?',
-                    a: 'Yes. Cancel anytime from your billing settings.',
-                  },
-                ].map((item) => (
-                  <div key={item.q} className="border border-border bg-background p-6">
-                    <h3 className="text-lg font-semibold">{item.q}</h3>
-                    <p className="mt-2 text-sm text-muted-foreground md:text-base">{item.a}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 10) FINAL CTA STRIP */}
-        <section className="border-b border-border bg-background px-4 py-16 sm:px-6 lg:px-8">
-          <div
-            data-reveal
-            className="mx-auto flex w-full max-w-[1200px] flex-col items-center justify-between gap-4 text-center md:flex-row md:text-left"
-          >
-            <div>
+        {/* 7) FINAL CTA */}
+        <section className="border-b border-border bg-card/30 px-4 py-14 sm:px-6 lg:px-8">
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col items-center justify-between gap-6 text-center md:flex-row md:text-left">
+            <div className="flex flex-col gap-2">
               <h2 className="text-3xl font-semibold tracking-[-0.02em] md:text-4xl">
                 Stop chasing feedback. Start getting approvals.
               </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <span className="text-sm text-muted-foreground">
                 Your first review link takes minutes.
-              </p>
+              </span>
             </div>
-            <CtaLink
-              href={hostedCtaHref}
-              className="group relative isolate inline-flex h-12 min-w-max items-center justify-center overflow-hidden border border-primary bg-primary px-10 text-sm font-medium whitespace-nowrap text-primary-foreground transition-transform duration-300 hover:scale-[1.02] md:min-w-[240px]"
-            >
-              {hostedCtaLabel}
-            </CtaLink>
+            <div className="flex flex-col items-center gap-2.5 md:shrink-0 md:items-end">
+              <CtaLink href={hostedCtaHref} className={`${primaryCtaClass} md:whitespace-nowrap`}>
+                {hostedCtaLabel}
+                <MoveRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-1" />
+              </CtaLink>
+              <a
+                href="https://github.com/yusufipk/OpenFrame"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Prefer self-hosting? View on GitHub
+              </a>
+            </div>
           </div>
         </section>
       </main>
