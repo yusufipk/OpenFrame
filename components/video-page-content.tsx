@@ -214,7 +214,6 @@ export function VideoPageContent({
     setActiveVersionId,
   });
 
-  // Cursor idle detection: hide overlay when cursor idle for 3s while playing
   // Memoize version selection handler to prevent recreating on each render
   const handleVersionSelect = useCallback(
     (versionId: string) => {
