@@ -26,9 +26,9 @@ export function getSiteUrl(): string {
 
 export const seoConfig = {
   name: 'OpenFrame',
-  title: 'Fair Source Video Review Platform',
+  title: 'Video Review & Approval',
   description:
-    'OpenFrame is a fair source video review platform for collecting timestamped feedback with text and voice comments.',
+    'Review videos together with timestamped text and voice comments. Keep feedback organized and your team on the same page.',
   keywords: [
     'fair source video review platform',
     'video review platform',
