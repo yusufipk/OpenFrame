@@ -192,13 +192,13 @@ jobs:
         # Not a `services:` entry, because a service block cannot pass a command
         # to the container and the MinIO entrypoint requires `server /data`.
         # Without arguments the container prints its usage text, exits, and the
-        # job dies at "Failed to initialize container minio/minio:latest".
+        # job fails during container initialization.
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER="$R2_ACCESS_KEY_ID" \
             -e MINIO_ROOT_PASSWORD="$R2_SECRET_ACCESS_KEY" \
             -e MINIO_REGION_NAME=auto \
-            minio/minio:latest server /data
+            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data
           for _ in $(seq 1 60); do
             if curl -sf http://localhost:9000/minio/health/live >/dev/null; then
               echo 'minio is ready'
