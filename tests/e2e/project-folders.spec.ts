@@ -39,10 +39,29 @@ test('folder navigation and account invitation expose only the assigned area', a
     data: { projectId: project.id, folderId: child.id, title: 'Assigned cut' },
   });
   await db.video.create({ data: { projectId: project.id, title: 'Hidden sibling cut' } });
-  await page.getByRole('button', { name: 'Share', exact: true }).first().click();
+  await page
+    .getByRole('group', { name: 'Project actions' })
+    .getByRole('button', { name: 'Share', exact: true })
+    .click();
   const dialog = page.getByRole('dialog', { name: 'Share folder: Assigned area', exact: true });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Inherit parent access' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await expect(
+    dialog.getByRole('button', { name: 'Restrict access', exact: true })
+  ).toHaveAttribute('aria-pressed', 'false');
   await dialog.getByRole('button', { name: 'Restrict access', exact: true }).click();
+  await expect(
+    dialog.getByRole('button', { name: 'Restrict access', exact: true })
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    dialog.getByText(
+      'Account access is limited to invited members. Project and workspace managers retain access.',
+      { exact: true }
+    )
+  ).toBeVisible();
   await dialog.getByRole('button', { name: 'Confirm access change' }).click();
   await expect
     .poll(
@@ -50,7 +69,34 @@ test('folder navigation and account invitation expose only the assigned area', a
         (await db.projectFolder.findUniqueOrThrow({ where: { id: folder.id } })).accessMode
     )
     .toBe('RESTRICTED');
+  await expect(
+    dialog.getByRole('button', { name: 'Restrict access', exact: true })
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('button', { name: 'Confirm access change' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Inherit parent access' })).toHaveAttribute(
+    'aria-pressed',
+    'false'
+  );
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page
+    .getByRole('group', { name: 'Project actions' })
+    .getByRole('button', { name: 'Share', exact: true })
+    .click();
+  await expect(
+    dialog.getByRole('button', { name: 'Restrict access', exact: true })
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('button', { name: 'Inherit parent access' })).toHaveAttribute(
+    'aria-pressed',
+    'false'
+  );
   await dialog.getByLabel('Invitation email').fill(director.email!);
+  await dialog.getByRole('combobox', { name: 'Invitation role' }).click();
+  await page.getByRole('option', { name: 'Admin: manage this area', exact: true }).click();
+  await expect(dialog.getByRole('combobox', { name: 'Invitation role' })).toHaveText(
+    'Admin: manage this area'
+  );
+  await dialog.getByRole('combobox', { name: 'Invitation role' }).click();
+  await page.getByRole('option', { name: 'Commentator: view and comment', exact: true }).click();
   await dialog.getByRole('button', { name: 'Create account invitation' }).click();
   const invitation = dialog.getByLabel('Invitation link');
   await expect(invitation).toBeVisible();
@@ -87,7 +133,7 @@ test('folder navigation and account invitation expose only the assigned area', a
   }
 });
 
-test('lists folders and videos together below the project header', async ({
+test('groups compact folders above videos below the project header', async ({
   page,
   seed,
   seededUser,
@@ -123,8 +169,9 @@ test('lists folders and videos together below the project header', async ({
     .boundingBox();
   expect(folderCard).not.toBeNull();
   expect(videoCard).not.toBeNull();
-  expect(Math.abs(folderCard!.y - videoCard!.y)).toBeLessThan(2);
-  expect(videoCard!.x).toBeGreaterThan(folderCard!.x);
+  expect(videoCard!.y).toBeGreaterThan(folderCard!.y + folderCard!.height);
+  await expect(contents.getByRole('heading', { name: 'Folders', exact: true })).toBeVisible();
+  await expect(contents.getByRole('heading', { name: 'Videos', exact: true })).toBeVisible();
   expect(folderCard!.height).toBeLessThan(110);
   const membersResponse = page.waitForResponse((response) => {
     if (
@@ -148,6 +195,13 @@ test('lists folders and videos together below the project header', async ({
   expect(header).not.toBeNull();
   expect(grid).not.toBeNull();
   expect(grid!.y).toBeGreaterThan(header!.y + header!.height);
+  const addFolder = await page
+    .getByRole('button', { name: 'Add Folder', exact: true })
+    .boundingBox();
+  const addVideo = await page.getByRole('link', { name: 'Add Video', exact: true }).boundingBox();
+  expect(addFolder).not.toBeNull();
+  expect(addVideo).not.toBeNull();
+  expect(Math.abs(addFolder!.y - addVideo!.y)).toBeLessThan(2);
   await contents.getByRole('link', { name: 'Delivery folder', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`folderId=${folder.id}`));
   await expect(page.getByText('This folder is empty', { exact: true })).toBeVisible();

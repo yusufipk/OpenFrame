@@ -10,6 +10,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -290,20 +298,27 @@ export function ProjectFolderBrowser({
                 <div className="space-y-2">
                   <Label htmlFor="folder-destination">Move folder destination</Label>
                   <div className="flex gap-2">
-                    <select
-                      id="folder-destination"
-                      className="min-w-0 flex-1 rounded border bg-background p-2"
-                      value={destinationId ?? ''}
-                      onChange={(e) => setDestination(e.target.value)}
-                      disabled={busy}
+                    <Select
+                      value={destinationId === null ? '__project_root__' : (destinationId ?? '')}
+                      onValueChange={(value) =>
+                        setDestination(value === '__project_root__' ? '' : value)
+                      }
+                      disabled={busy || destinationId === undefined}
                     >
-                      {canSeeRoot && <option value="">Project root</option>}
-                      {destinations.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="folder-destination" className="min-w-0 flex-1">
+                        <SelectValue placeholder="Select a destination" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {canSeeRoot && (
+                          <SelectItem value="__project_root__">Project root</SelectItem>
+                        )}
+                        {destinations.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
                       variant="outline"
                       disabled={busy || destinationId === undefined}

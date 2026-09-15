@@ -345,9 +345,9 @@ export function ProjectContentClient({
       />
 
       {/* Project Header */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
+      <div className="space-y-5 mb-6">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
             <Badge variant="outline" className="flex items-center gap-1">
               {project.visibility === 'PUBLIC' && <Globe className="h-3 w-3" />}
@@ -356,7 +356,7 @@ export function ProjectContentClient({
               {project.visibility.toLowerCase()}
             </Badge>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
             {project.workspace && (
               <Link href={`/workspaces/${project.workspace.id}`}>
                 <Badge
@@ -374,114 +374,124 @@ export function ProjectContentClient({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 mt-4 sm:mt-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const newOrder = sortOrder === 'desc' ? 'asc' : 'desc';
-              router.push(`?${createQueryString('sort', newOrder)}`);
-            }}
-            className="flex items-center gap-2"
-          >
-            {sortOrder === 'desc' ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3"
+          role="group"
+          aria-label="Project actions"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const newOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+                router.push(`?${createQueryString('sort', newOrder)}`);
+              }}
+              className="flex items-center gap-2"
+            >
+              {sortOrder === 'desc' ? (
+                <>
+                  <ArrowDown className="h-4 w-4" />
+                  Newest first
+                </>
+              ) : (
+                <>
+                  <ArrowUp className="h-4 w-4" />
+                  Oldest first
+                </>
+              )}
+            </Button>
+            {canDownloadProject && localVideos.length > 0 && !selectionMode && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={isDownloading}>
+                    {isDownloading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Download accessible videos
+                    <ChevronDown className="h-4 w-4 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuCheckboxItem
+                    checked={includeAssetsInDownload}
+                    onCheckedChange={(checked) => setIncludeAssetsInDownload(checked === true)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    Include assets
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() =>
+                      startProjectDownload(allVideoIds, { includeAssets: includeAssetsInDownload })
+                    }
+                  >
+                    Latest version only
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      startProjectDownload(allVideoIds, {
+                        allVersions: true,
+                        includeAssets: includeAssetsInDownload,
+                      })
+                    }
+                  >
+                    All versions
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {folderId && canEdit && (
+              <ContentAccessControls
+                key={folderId}
+                projectId={projectId}
+                folderId={folderId}
+                contentName={folders.find((folder) => folder.id === folderId)?.name}
+                share
+              />
+            )}
+            {!folderId && (isOwner || project.members[0]?.role === 'ADMIN') && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/projects/${projectId}/share`}>
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share
+                </Link>
+              </Button>
+            )}
+            {(isOwner || project.members[0]?.role === 'ADMIN') && (
               <>
-                <ArrowDown className="h-4 w-4" />
-                Newest first
-              </>
-            ) : (
-              <>
-                <ArrowUp className="h-4 w-4" />
-                Oldest first
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/projects/${projectId}/members`}>
+                    <Users className="h-4 w-4 mr-2" />
+                    Members
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/projects/${projectId}/settings`}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Settings
+                  </Link>
+                </Button>
               </>
             )}
-          </Button>
-          {canDownloadProject && localVideos.length > 0 && !selectionMode && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" disabled={isDownloading}>
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  Download accessible videos
-                  <ChevronDown className="h-4 w-4 ml-1" />
+            {canEdit && (
+              <div className="flex shrink-0 items-center gap-2">
+                <AddFolderButton projectId={projectId} folderId={folderId} />
+                <Button size="sm" asChild>
+                  <Link
+                    href={`/projects/${projectId}/videos/new${folderId ? `?folderId=${folderId}` : ''}`}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Video
+                  </Link>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuCheckboxItem
-                  checked={includeAssetsInDownload}
-                  onCheckedChange={(checked) => setIncludeAssetsInDownload(checked === true)}
-                  onSelect={(event) => event.preventDefault()}
-                >
-                  Include assets
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() =>
-                    startProjectDownload(allVideoIds, { includeAssets: includeAssetsInDownload })
-                  }
-                >
-                  Latest version only
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() =>
-                    startProjectDownload(allVideoIds, {
-                      allVersions: true,
-                      includeAssets: includeAssetsInDownload,
-                    })
-                  }
-                >
-                  All versions
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          {folderId && canEdit && (
-            <ContentAccessControls
-              key={folderId}
-              projectId={projectId}
-              folderId={folderId}
-              contentName={folders.find((folder) => folder.id === folderId)?.name}
-              share
-            />
-          )}
-          {!folderId && (isOwner || project.members[0]?.role === 'ADMIN') && (
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/projects/${projectId}/share`}>
-                <Share2 className="h-4 w-4 mr-2" />
-                Share
-              </Link>
-            </Button>
-          )}
-          {(isOwner || project.members[0]?.role === 'ADMIN') && (
-            <>
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/projects/${projectId}/members`}>
-                  <Users className="h-4 w-4 mr-2" />
-                  Members
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/projects/${projectId}/settings`}>
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
-                </Link>
-              </Button>
-            </>
-          )}
-          {canEdit && <AddFolderButton projectId={projectId} folderId={folderId} />}
-          {canEdit && (
-            <Button size="sm" asChild>
-              <Link
-                href={`/projects/${projectId}/videos/new${folderId ? `?folderId=${folderId}` : ''}`}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Video
-              </Link>
-            </Button>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -595,29 +605,50 @@ export function ProjectContentClient({
         </div>
       )}
 
-      {/* Folders and videos share the same content grid. */}
+      {/* Group both content types below the project header. */}
       {childFolders.length > 0 || localVideos.length > 0 ? (
-        <div
-          className="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-3"
-          aria-label="Project contents"
-        >
-          {childFolders.map((folder) => (
-            <ProjectFolderCard key={folder.id} projectId={projectId} folder={folder} />
-          ))}
-          {localVideos.map((video) => (
-            <VideoCard
-              key={video.id}
-              video={video}
-              projectId={projectId}
-              canManage={canEdit}
-              canSelect={canSelectVideos}
-              selectionMode={selectionMode}
-              selected={selectedVideoIds.includes(video.id)}
-              onEnterSelectionMode={handleEnterSelectionMode}
-              onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
-              onDeleted={handleVideoDeleted}
-            />
-          ))}
+        <div className="space-y-7" aria-label="Project contents">
+          {childFolders.length > 0 && (
+            <section aria-labelledby="project-folders-heading">
+              <h2
+                id="project-folders-heading"
+                className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+              >
+                Folders
+              </h2>
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {childFolders.map((folder) => (
+                  <ProjectFolderCard key={folder.id} projectId={projectId} folder={folder} />
+                ))}
+              </div>
+            </section>
+          )}
+          {localVideos.length > 0 && (
+            <section aria-labelledby="project-videos-heading">
+              <h2
+                id="project-videos-heading"
+                className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+              >
+                Videos
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {localVideos.map((video) => (
+                  <VideoCard
+                    key={video.id}
+                    video={video}
+                    projectId={projectId}
+                    canManage={canEdit}
+                    canSelect={canSelectVideos}
+                    selectionMode={selectionMode}
+                    selected={selectedVideoIds.includes(video.id)}
+                    onEnterSelectionMode={handleEnterSelectionMode}
+                    onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
+                    onDeleted={handleVideoDeleted}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       ) : (
         <Card className="border-dashed">

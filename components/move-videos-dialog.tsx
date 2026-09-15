@@ -190,22 +190,26 @@ export function MoveVideosDialog({
 
         <label className="space-y-1 text-sm">
           Destination folder
-          <select
-            aria-label="Destination folder"
-            className="block w-full rounded border bg-background p-2"
-            value={folderId}
-            onChange={(e) => {
-              setFolderId(e.target.value);
+          <Select
+            value={folderId || '__project_root__'}
+            onValueChange={(value) => {
+              setFolderId(value === '__project_root__' ? '' : value);
               setConfirmation(null);
             }}
+            disabled={isMoving || !selectedId}
           >
-            <option value="">Project root</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="Destination folder" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__project_root__">Project root</SelectItem>
+              {folders.map((f) => (
+                <SelectItem key={f.id} value={f.id}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
         {confirmation && <p className="rounded border p-3 text-sm">{confirmation.message}</p>}
         <DialogFooter>

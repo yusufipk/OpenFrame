@@ -187,9 +187,16 @@ describe('project folder access', () => {
     expect((await checkVideoAccess(f.videoA.id, f.b.id)).hasAccess).toBe(true);
     const link = await createShareLink({ projectId: f.project.id, videoId: f.videoA.id });
     signedInAs(f.owner);
+    const before = await (
+      await action(f.project.id, { action: 'members', folderId: f.folderA.id })
+    ).json();
+    expect(before.data.accessMode).toBe('INHERIT');
     const body = { action: 'access', folderId: f.folderA.id, accessMode: 'RESTRICTED' };
     const preview = await (await action(f.project.id, body)).json();
     expect(preview.data.needsConfirmation).toBe(true);
+    expect(preview.data.message).toBe(
+      'Account access is limited to invited members. Project and workspace managers retain access. 1 existing video link will be revoked.'
+    );
     expect(
       (await db.projectFolder.findUniqueOrThrow({ where: { id: f.folderA.id } })).accessMode
     ).toBe('INHERIT');
@@ -206,6 +213,10 @@ describe('project folder access', () => {
     ).toBe('RESTRICTED');
     expect((await checkVideoAccess(f.videoA.id, f.b.id)).hasAccess).toBe(false);
     expect((await checkVideoAccess(f.videoA.id, f.a.id)).hasAccess).toBe(true);
+    const after = await (
+      await action(f.project.id, { action: 'members', folderId: f.folderA.id })
+    ).json();
+    expect(after.data.accessMode).toBe('RESTRICTED');
   });
   it('preserves video identity, versions and direct grants on confirmed cross-project moves', async () => {
     const f = await fixture();

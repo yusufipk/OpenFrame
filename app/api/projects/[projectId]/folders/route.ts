@@ -127,7 +127,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
           select: { id: true, email: true, role: true },
         });
-        return { members, invitations };
+        const accessMode = 'video' in access ? access.video?.accessMode : access.folder?.accessMode;
+        return { members, invitations, accessMode };
       }
       if (action === 'invite') {
         const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -206,13 +207,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             throw new ContentError(403, 'Destination management access required');
         }
         const operation = { action, folderId, videoId, parentId, accessMode: body.accessMode };
+        const linkCount = await tx.shareLink.count({
+          where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
+        });
+        const accessMessage =
+          body.accessMode === 'RESTRICTED'
+            ? 'Account access is limited to invited members. Project and workspace managers retain access.'
+            : 'Members with access to the parent can access this area.';
+        const message =
+          (action === 'access'
+            ? accessMessage
+            : 'Inherited content will use the destination’s access. Restricted content keeps its invited members.') +
+          (linkCount > 0
+            ? ` ${linkCount} existing video link${linkCount === 1 ? '' : 's'} will be revoked.`
+            : '');
         const confirmation = await confirmContentChange(
           tx,
           [projectId],
           userId,
           operation,
           body.confirmationToken,
-          'Inherited content will use its new parent access. Restricted content keeps its own direct members. A restriction cuts off normal parent members. Project and workspace managers retain access. Existing video links in the affected area will be revoked; create new links separately if needed.'
+          message
         );
         if (confirmation) return confirmation;
         await tx.shareLink.deleteMany({
