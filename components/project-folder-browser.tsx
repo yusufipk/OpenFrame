@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { ChevronRight, Folder, FolderPlus, Lock, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
@@ -178,6 +178,13 @@ export function ProjectFolderBrowser({
   all: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const viewParams = new URLSearchParams(searchParams.toString());
+  viewParams.delete('page');
+  viewParams.delete('view');
+  const folderViewUrl = `/projects/${projectId}${viewParams.size ? `?${viewParams}` : ''}`;
+  viewParams.set('view', 'all');
+  const allVideosUrl = `/projects/${projectId}?${viewParams}`;
   const current = folders.find((f) => f.id === folderId);
   const [name, setName] = useState(current?.name ?? '');
   const [destination, setDestination] = useState('');
@@ -232,27 +239,45 @@ export function ProjectFolderBrowser({
             Project root
           </Link>
         )}
-        {ancestors.map((a, index) => (
-          <span className="inline-flex items-center gap-2" key={a.id}>
-            {(canSeeRoot || index > 0) && (
-              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            <Link
-              className="hover:text-foreground"
-              href={`/projects/${projectId}?folderId=${a.id}`}
-            >
-              {a.name}
-            </Link>
+        {all && (
+          <span className="inline-flex items-center gap-2" aria-current="page">
+            {canSeeRoot && <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
+            All project videos
           </span>
-        ))}
+        )}
+        {!all &&
+          ancestors.map((a, index) => (
+            <span className="inline-flex items-center gap-2" key={a.id}>
+              {(canSeeRoot || index > 0) && (
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              <Link
+                className="hover:text-foreground"
+                href={`/projects/${projectId}?folderId=${a.id}`}
+              >
+                {a.name}
+              </Link>
+            </span>
+          ))}
       </nav>
       <div className="flex flex-wrap items-center gap-2">
-        <Button asChild variant={all ? 'secondary' : 'ghost'} size="sm">
-          <Link href={`/projects/${projectId}?view=all${folderId ? `&folderId=${folderId}` : ''}`}>
-            All accessible videos
-          </Link>
-        </Button>
-        {current && canEdit && (
+        <div
+          className="inline-flex items-center border p-0.5"
+          role="group"
+          aria-label="Content view"
+        >
+          <Button asChild variant={!all ? 'secondary' : 'ghost'} size="sm">
+            <Link href={folderViewUrl} aria-current={!all ? 'page' : undefined}>
+              Folder view
+            </Link>
+          </Button>
+          <Button asChild variant={all ? 'secondary' : 'ghost'} size="sm">
+            <Link href={all ? folderViewUrl : allVideosUrl} aria-current={all ? 'page' : undefined}>
+              All project videos
+            </Link>
+          </Button>
+        </div>
+        {current && canEdit && !all && (
           <>
             <Dialog
               open={optionsOpen}

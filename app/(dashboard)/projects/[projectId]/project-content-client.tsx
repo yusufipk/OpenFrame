@@ -340,7 +340,7 @@ export function ProjectContentClient({
         folderId={folderId}
         fixedProjectId={projectId}
         fixedProjectName={project.name}
-        canUpload={canEdit && directUploadsEnabled}
+        canUpload={canEdit && !all && directUploadsEnabled}
         directUploadProvider={directUploadProvider}
       />
 
@@ -445,7 +445,7 @@ export function ProjectContentClient({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {folderId && canEdit && (
+            {folderId && canEdit && !all && (
               <ContentAccessControls
                 key={folderId}
                 projectId={projectId}
@@ -462,14 +462,25 @@ export function ProjectContentClient({
                 </Link>
               </Button>
             )}
+            {folderId && canEdit && !all && (
+              <ContentAccessControls
+                key={`members-${folderId}`}
+                projectId={projectId}
+                folderId={folderId}
+                contentName={folders.find((folder) => folder.id === folderId)?.name}
+                showMembers
+              />
+            )}
             {(isOwner || project.members[0]?.role === 'ADMIN') && (
               <>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/projects/${projectId}/members`}>
-                    <Users className="h-4 w-4 mr-2" />
-                    Members
-                  </Link>
-                </Button>
+                {!folderId && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/projects/${projectId}/members`}>
+                      <Users className="h-4 w-4 mr-2" />
+                      Members
+                    </Link>
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" asChild>
                   <Link href={`/projects/${projectId}/settings`}>
                     <Settings className="h-4 w-4 mr-2" />
@@ -478,7 +489,7 @@ export function ProjectContentClient({
                 </Button>
               </>
             )}
-            {canEdit && (
+            {canEdit && !all && (
               <div className="flex shrink-0 items-center gap-2">
                 <AddFolderButton projectId={projectId} folderId={folderId} />
                 <Button size="sm" asChild>
@@ -503,6 +514,12 @@ export function ProjectContentClient({
         canSeeRoot={canSeeRoot}
         all={all}
       />
+
+      {all && (
+        <p className="mb-5 text-sm text-muted-foreground">
+          Videos you can access from every folder in this project.
+        </p>
+      )}
 
       {selectionMode && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">

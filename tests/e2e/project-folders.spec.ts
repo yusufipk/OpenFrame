@@ -219,3 +219,88 @@ test('groups compact folders above videos below the project header', async ({
     })
   ).toBe(1);
 });
+
+test('switches all project videos off and returns to the same folder', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const { project } = await seed.project(seededUser);
+  const folder = await db.projectFolder.create({
+    data: { projectId: project.id, name: 'Current folder' },
+  });
+  await db.projectFolder.create({
+    data: { projectId: project.id, parentId: folder.id, name: 'Child folder' },
+  });
+  await db.video.create({
+    data: { projectId: project.id, folderId: folder.id, title: 'Current cut' },
+  });
+  await db.video.create({ data: { projectId: project.id, title: 'Root cut' } });
+  await page.goto(`/projects/${project.id}?folderId=${folder.id}&sort=asc`);
+  const views = page.getByRole('group', { name: 'Content view', exact: true });
+  const folderView = views.getByRole('link', { name: 'Folder view', exact: true });
+  const allVideos = views.getByRole('link', { name: 'All project videos', exact: true });
+  await expect(folderView).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('link', { name: 'Child folder', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Root cut', exact: true })).toHaveCount(0);
+  await allVideos.click();
+  await expect(allVideos).toHaveAttribute('aria-current', 'page');
+  await expect(folderView).not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('heading', { name: 'Root cut', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Current cut', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Child folder', exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText('Videos you can access from every folder in this project.', { exact: true })
+  ).toBeVisible();
+  await allVideos.click();
+  await expect(folderView).toHaveAttribute('aria-current', 'page');
+  await expect(allVideos).not.toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(new RegExp(`folderId=${folder.id}&sort=asc$`));
+  await expect(page.getByRole('link', { name: 'Child folder', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Root cut', exact: true })).toHaveCount(0);
+  await allVideos.click();
+  await expect(allVideos).toHaveAttribute('aria-current', 'page');
+  await folderView.click();
+  await expect(page.getByRole('link', { name: 'Child folder', exact: true })).toBeVisible();
+  expect(await db.projectFolder.count({ where: { projectId: project.id } })).toBe(2);
+});
+
+test('folder Members lists and cancels its pending invitations', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const { project } = await seed.project(seededUser);
+  const invited = await seed.user();
+  const folder = await db.projectFolder.create({
+    data: { projectId: project.id, name: 'Assigned area', accessMode: 'RESTRICTED' },
+  });
+  await page.goto(`/projects/${project.id}?folderId=${folder.id}`);
+  const membersButton = page
+    .getByRole('group', { name: 'Project actions' })
+    .getByRole('button', { name: 'Members', exact: true });
+  await membersButton.click();
+  const dialog = page.getByRole('dialog', { name: 'Folder members: Assigned area', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`folderId=${folder.id}$`));
+  await dialog.getByLabel('Invitation email').fill(invited.email!);
+  await dialog.getByRole('button', { name: 'Create account invitation' }).click();
+  await expect(dialog.getByText(`${invited.email} (pending)`, { exact: true })).toBeVisible();
+  const invitation = await db.invitation.findFirstOrThrow({
+    where: { folderId: folder.id, email: invited.email!, status: 'PENDING' },
+  });
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.reload();
+  await membersButton.click();
+  await expect(dialog.getByText(`${invited.email} (pending)`, { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog.getByText(`${invited.email} (pending)`, { exact: true })).toHaveCount(0);
+  await expect
+    .poll(
+      async () => (await db.invitation.findUniqueOrThrow({ where: { id: invitation.id } })).status
+    )
+    .toBe('CANCELED');
+  expect(
+    await db.projectMember.count({ where: { projectId: project.id, userId: invited.id } })
+  ).toBe(0);
+});

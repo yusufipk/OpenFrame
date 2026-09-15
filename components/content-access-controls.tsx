@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Share2 } from 'lucide-react';
+import { Share2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -29,12 +29,14 @@ export function ContentAccessControls({
   videoId,
   contentName,
   share = false,
+  showMembers = false,
 }: {
   projectId: string;
   folderId?: string | null;
   videoId?: string;
   contentName?: string;
   share?: boolean;
+  showMembers?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -75,8 +77,10 @@ export function ContentAccessControls({
       if (payload.data.members) {
         setMembers(payload.data.members);
         setInvitations(payload.data.invitations);
-      } else if (payload.data.invitationUrl) setInvitationUrl(payload.data.invitationUrl);
-      else {
+      } else if (payload.data.invitationUrl) {
+        setInvitationUrl(payload.data.invitationUrl);
+        await run({ action: 'members' });
+      } else {
         toast.success('Access updated');
         router.refresh();
       }
@@ -98,14 +102,20 @@ export function ContentAccessControls({
           void run({ action: 'members' });
         }}
       >
-        {share && <Share2 className="h-4 w-4 mr-2" />}
-        {share ? 'Share' : 'Manage access'}
+        {showMembers ? (
+          <Users className="h-4 w-4 mr-2" />
+        ) : (
+          share && <Share2 className="h-4 w-4 mr-2" />
+        )}
+        {showMembers ? 'Members' : share ? 'Share' : 'Manage access'}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {contentName ? `Share folder: ${contentName}` : 'Content access'}
+              {contentName
+                ? `${showMembers ? 'Folder members' : 'Share folder'}: ${contentName}`
+                : 'Content access'}
             </DialogTitle>
             <DialogDescription>Choose who can access this area.</DialogDescription>
           </DialogHeader>
@@ -217,6 +227,7 @@ export function ContentAccessControls({
                 disabled={busy}
                 onClick={async () => {
                   await run({ action: 'revokeInvitation', invitationId: i.id });
+                  setInvitationUrl('');
                   await run({ action: 'members' });
                 }}
               >

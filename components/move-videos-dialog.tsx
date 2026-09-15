@@ -170,7 +170,7 @@ export function MoveVideosDialog({
             <p className="text-sm text-destructive">{loadError}</p>
           ) : targets && targets.length > 0 ? (
             <Select value={selectedId} onValueChange={setSelectedId} disabled={isMoving}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="Destination project">
                 <SelectValue placeholder="Select a project" />
               </SelectTrigger>
               <SelectContent>
