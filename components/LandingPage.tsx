@@ -374,17 +374,31 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
           </div>
         </section>
 
-        <figure className="border-b border-border px-4 py-14 sm:px-6 lg:px-8 lg:py-16">
-          <div className="mx-auto flex w-full max-w-[800px] flex-col items-center gap-5 text-center">
-            <blockquote className="text-2xl font-medium leading-relaxed tracking-[-0.02em] md:text-3xl">
-              <p>“I absolutely love this. It’s way more affordable than Frame.”</p>
-            </blockquote>
-            <figcaption className="text-sm">
-              <span className="font-semibold">Bez Duru</span>
-              <span className="text-muted-foreground"> · Guestvfx</span>
-            </figcaption>
+        <section
+          aria-label="Customer testimonials"
+          className="border-b border-border px-4 py-14 sm:px-6 lg:px-8 lg:py-16"
+        >
+          <div className="mx-auto grid w-full max-w-[1200px] gap-10 md:grid-cols-2 md:gap-12">
+            <figure className="flex flex-col justify-between gap-5 text-center">
+              <blockquote className="text-2xl font-medium leading-relaxed tracking-[-0.02em]">
+                <p>“I absolutely love this. It’s way more affordable than Frame.”</p>
+              </blockquote>
+              <figcaption className="text-sm">
+                <span className="font-semibold">Bez Duru</span>
+                <span className="text-muted-foreground"> · Guestvfx</span>
+              </figcaption>
+            </figure>
+            <figure className="flex flex-col justify-between gap-5 border-t border-border pt-10 text-center md:border-l md:border-t-0 md:pl-12 md:pt-0">
+              <blockquote className="text-2xl font-medium leading-relaxed tracking-[-0.02em]">
+                <p>
+                  “I&apos;ve been using OpenFrame for the last two months, and everything is going
+                  smoothly.”
+                </p>
+              </blockquote>
+              <figcaption className="text-sm font-semibold">Done Right</figcaption>
+            </figure>
           </div>
-        </figure>
+        </section>
 
         {/* 3) FEATURES */}
         <section id="features" className="scroll-mt-20">
