@@ -1,3 +1,4 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -20,10 +21,20 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
     if (!project) return apiErrors.notFound('Project');
 
-    const access = await checkProjectAccess(project, session.user.id);
+    const versionId = _request.nextUrl.searchParams.get('versionId');
+    const version = versionId
+      ? await db.videoVersion.findFirst({
+          where: { id: versionId, video: { projectId } },
+          select: { videoParentId: true },
+        })
+      : null;
+    if (versionId && !version) return apiErrors.notFound('Version');
+    const access = version
+      ? await checkVideoAccess(version.videoParentId, session.user.id)
+      : await checkProjectAccess(project, session.user.id);
     if (!access.canEdit) return apiErrors.forbidden('Access denied');
 
-    const candidates = await getApprovalCandidatesForProject(projectId);
+    const candidates = await getApprovalCandidatesForProject(projectId, version?.videoParentId);
     if (!candidates) return apiErrors.notFound('Project');
 
     const response = successResponse({ candidates });

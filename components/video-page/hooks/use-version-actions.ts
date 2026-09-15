@@ -83,6 +83,7 @@ export function useVersionActions({
     if (directUploadProvider === 'r2') {
       setNewVersionUploadStatus('Initializing upload...');
       const uploaded = await uploadVideoToR2(projectId, file, {
+        targetVideoId: videoId,
         onProgress: (progress) => {
           setNewVersionUploadProgress(progress);
           setNewVersionUploadStatus(`Uploading... ${progress}%`);
@@ -111,7 +112,7 @@ export function useVersionActions({
     const initRes = await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, sizeBytes: file.size.toString() }),
+      body: JSON.stringify({ targetVideoId: videoId, title, sizeBytes: file.size.toString() }),
     });
 
     if (!initRes.ok) {

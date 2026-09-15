@@ -1,6 +1,8 @@
+import { visibleVideoWhere, checkFolderAccess } from '@/lib/content-access';
+import { contentId, contentTransaction, ContentError } from '@/lib/content-mutations';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { validateUrl, validateOptionalUrlOrAppPath } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
@@ -29,13 +31,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Project');
     }
 
-    const access = await checkProjectAccess(project, session?.user?.id);
-    if (!access.hasAccess) {
+    const folderId = contentId(request.nextUrl.searchParams.get('folderId'));
+    const access = await checkFolderAccess(projectId, folderId, session?.user?.id);
+    if (!access?.hasAccess) {
       return apiErrors.forbidden('Access denied');
     }
 
     const videos = await db.video.findMany({
-      where: { projectId },
+      where: {
+        projectId,
+        AND: visibleVideoWhere(session?.user?.id),
+        ...(request.nextUrl.searchParams.has('folderId') ? { folderId } : {}),
+      },
       orderBy: { position: 'asc' },
       include: {
         versions: {
@@ -55,7 +62,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     const response = successResponse({ videos });
-    return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
+    return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching videos:', error);
     return apiErrors.internalError('Failed to fetch videos');
@@ -93,12 +100,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Project');
     }
 
-    const access = await checkProjectAccess(project, session.user.id);
-    if (!access.canEdit) {
+    const body = await request.json();
+    const folderId = contentId(body.folderId);
+    const access = await checkFolderAccess(projectId, folderId, session.user.id);
+    if (!access?.canEdit) {
       return apiErrors.forbidden('Access denied');
     }
 
-    const body = await request.json();
     const {
       title,
       description,
@@ -166,6 +174,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         return apiErrors.forbidden('Invalid Bunny upload token');
       }
 
+      if (grant.targetVideoId || grant.folderId !== folderId)
+        return apiErrors.forbidden('Upload destination does not match its original folder');
+
       // See the versions route: Bunny reports no size at all until it has
       // finished encoding, so the size the upload was admitted on is what the
       // account is charged until a real figure arrives.
@@ -191,6 +202,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         return apiErrors.badRequest(finalizeResult.error);
       }
 
+      const savedDestination = await db.videoUploadSession.findUnique({
+        where: { id: finalizeResult.sessionId },
+        select: { folderId: true, targetVideoId: true },
+      });
+      if (
+        !savedDestination ||
+        savedDestination.targetVideoId ||
+        savedDestination.folderId !== folderId
+      )
+        return apiErrors.forbidden('Upload destination does not match its original folder');
       versionSizeBytes = finalizeResult.sizeBytes;
       finalizedR2Session = {
         sessionId: finalizeResult.sessionId,
@@ -215,7 +236,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const nextPosition = (lastVideo?.position ?? -1) + 1;
 
     // Create video with initial version
-    const video = await db.$transaction(async (tx) => {
+    const video = await contentTransaction([projectId], async (tx) => {
+      const currentAccess = await checkFolderAccess(projectId, folderId, session.user.id, tx);
+      if (!currentAccess?.canEdit)
+        throw new ContentError(403, 'Upload destination was removed or access was revoked');
       if (finalizedR2Session) {
         const consumed = await tx.videoUploadSession.updateMany({
           where: {
@@ -261,6 +285,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           title: title.trim(),
           description: description?.trim() || null,
           position: nextPosition,
+          folderId,
           projectId,
           versions: {
             create: {
@@ -307,6 +332,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const response = successResponse(video, 201);
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return apiErrors.forbidden(error.message);
     logError('Error creating video:', error);
     return apiErrors.internalError('Failed to create video');
   }

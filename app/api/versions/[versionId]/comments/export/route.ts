@@ -1,5 +1,6 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import {
   buildCommentsCsv,
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         versionLabel: true,
         video: {
           select: {
+            id: true,
             title: true,
             project: {
               select: {
@@ -61,8 +63,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Version');
     }
 
-    const project = version.video.project;
-    const access = await checkProjectAccess(project, session.user.id);
+    const access = await checkVideoAccess(version.video.id, session.user.id);
 
     if (!access.hasAccess) {
       return apiErrors.notFound('Version');

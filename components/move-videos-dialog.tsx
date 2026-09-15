@@ -83,6 +83,33 @@ export function MoveVideosDialog({
     };
   }, [open, projectId]);
 
+  const [folderId, setFolderId] = useState('');
+  const [folders, setFolders] = useState<Array<{ id: string; name: string; canEdit: boolean }>>([]);
+  const [confirmation, setConfirmation] = useState<{
+    message: string;
+    confirmationToken: string;
+  } | null>(null);
+  useEffect(() => {
+    setFolderId('');
+    setConfirmation(null);
+    if (!selectedId) {
+      setFolders([]);
+      return;
+    }
+    let canceled = false;
+    fetch(`/api/projects/${selectedId}/folders`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((p) => {
+        if (!canceled)
+          setFolders((p.data?.folders ?? []).filter((f: { canEdit: boolean }) => f.canEdit));
+      })
+      .catch(() => {
+        if (!canceled) setFolders([]);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [selectedId, open]);
   const count = videoIds.length;
   const noun = count === 1 ? 'video' : 'videos';
 
@@ -93,11 +120,20 @@ export function MoveVideosDialog({
       const res = await fetch(`/api/projects/${projectId}/videos/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoIds, targetProjectId: selectedId }),
+        body: JSON.stringify({
+          videoIds,
+          targetProjectId: selectedId,
+          folderId: folderId || null,
+          confirmationToken: confirmation?.confirmationToken,
+        }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
         toast.error(typeof body?.error === 'string' ? body.error : 'Failed to move videos');
+        return;
+      }
+      if (body?.data?.needsConfirmation) {
+        setConfirmation(body.data);
         return;
       }
       toast.success(typeof body?.data?.message === 'string' ? body.data.message : 'Videos moved');
@@ -134,7 +170,7 @@ export function MoveVideosDialog({
             <p className="text-sm text-destructive">{loadError}</p>
           ) : targets && targets.length > 0 ? (
             <Select value={selectedId} onValueChange={setSelectedId} disabled={isMoving}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="Destination project">
                 <SelectValue placeholder="Select a project" />
               </SelectTrigger>
               <SelectContent>
@@ -152,6 +188,30 @@ export function MoveVideosDialog({
           )}
         </div>
 
+        <label className="space-y-1 text-sm">
+          Destination folder
+          <Select
+            value={folderId || '__project_root__'}
+            onValueChange={(value) => {
+              setFolderId(value === '__project_root__' ? '' : value);
+              setConfirmation(null);
+            }}
+            disabled={isMoving || !selectedId}
+          >
+            <SelectTrigger aria-label="Destination folder" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__project_root__">Project root</SelectItem>
+              {folders.map((f) => (
+                <SelectItem key={f.id} value={f.id}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        {confirmation && <p className="rounded border p-3 text-sm">{confirmation.message}</p>}
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isMoving}>
             Cancel

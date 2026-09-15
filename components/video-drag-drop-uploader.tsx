@@ -53,6 +53,7 @@ type QueueItem = {
 };
 
 interface VideoDragDropUploaderProps {
+  folderId?: string | null;
   fixedProjectId?: string;
   fixedProjectName?: string;
   workspaceId?: string;
@@ -76,6 +77,7 @@ function createQueueItem(file: File): QueueItem {
 }
 
 export function VideoDragDropUploader({
+  folderId = null,
   fixedProjectId,
   fixedProjectName,
   workspaceId,
@@ -272,6 +274,7 @@ export function VideoDragDropUploader({
         try {
           await uploadProjectVideo(projectId, item.file, {
             provider: directUploadProvider,
+            folderId,
             bunnyCdnHostname,
             onProgress: (progress) => {
               setUploadProgress(progress);
@@ -350,7 +353,15 @@ export function VideoDragDropUploader({
         toast.error('All uploads failed');
       }
     },
-    [bunnyCdnHostname, directUploadProvider, fixedProjectId, projectsById, resetUploadState, router]
+    [
+      bunnyCdnHostname,
+      directUploadProvider,
+      folderId,
+      fixedProjectId,
+      projectsById,
+      resetUploadState,
+      router,
+    ]
   );
 
   const handleDropFiles = useCallback(

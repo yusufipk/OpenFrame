@@ -1,3 +1,4 @@
+import { contentTransaction, ContentError } from '@/lib/content-mutations';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { VideoAssetProvider } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
@@ -274,7 +275,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       assets: pagedAssets.map((asset) =>
         shapeAssetForViewer(
           asset,
-          // R2_AUDIO proxy URLs have no auth gate — expose them to any viewer so guests can preview audio
+          // R2_AUDIO proxy URLs have no auth gate, expose them to any viewer so guests can preview audio
           context.canDownloadAssets ||
             ((asset.provider === VideoAssetProvider.R2_AUDIO ||
               asset.provider === VideoAssetProvider.R2_VIDEO) &&
@@ -294,6 +295,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     response.headers.set('ETag', etag);
     return withCacheControl(response, 'private, no-cache');
   } catch (error) {
+    if (error instanceof ContentError) return apiErrors.forbidden(error.message);
     logError('Error fetching video assets:', error);
     return apiErrors.internalError('Failed to fetch assets');
   }
@@ -599,18 +601,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Create the VideoAsset and atomically consume the upload reservation (if any)
     // so the spot is never double-counted.
-    const created = await db.$transaction(async (tx) => {
+    const created = await contentTransaction([context.video.projectId], async (tx) => {
+      const current = await getVideoAssetAccessContext(request, context.video.id, 'COMMENT', tx);
+      if (!current?.canUploadAssets || current.video.projectId !== context.video.projectId)
+        throw new ContentError(403, 'Access changed. Refresh and try again.');
       if (reservationId && reservationPurpose) {
         // Acquire the per-user advisory lock unconditionally so both the happy path
         // (valid reservation) and the fallback path (fake/expired reservation ID) are
-        // serialised — eliminating the TOCTOU race in the deleted.count === 0 branch.
+        // serialised, eliminating the TOCTOU race in the deleted.count === 0 branch.
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             ('x' || left(md5(${billedUserId}), 16))::bit(64)::bigint
           )
         `;
         // Validate the reservation by checking it actually exists and belongs to the
-        // billed user. A client-supplied fake ID would delete 0 rows — in that case
+        // billed user. A client-supplied fake ID would delete 0 rows, in that case
         // we fall back to a standard (non-locked) quota check so the bypass attempt
         // is caught rather than silently allowed.
         const deleted = await tx.uploadReservation.deleteMany({
@@ -622,7 +627,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         });
         if (deleted.count === 0) {
-          // Reservation didn't exist — enforce quota the normal way inside the tx.
+          // Reservation didn't exist, enforce quota the normal way inside the tx.
           // We read inside the same transaction so the check is at least consistent
           // with the asset insert that follows.
           const [r2Row] = await tx.$queryRaw<[{ total: bigint }]>`
@@ -716,6 +721,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return apiErrors.forbidden(error.message);
     if (error instanceof QuotaExceededInTxError) {
       return storageForRefusal
         ? storageExceededResponse(storageForRefusal)

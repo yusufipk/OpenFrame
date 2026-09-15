@@ -1,7 +1,9 @@
+import { contentTransaction, ContentError } from '@/lib/content-mutations';
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { collectVideoMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
@@ -123,7 +125,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check access including workspace membership
-    const access = await checkProjectAccess(video.project, session?.user?.id);
+    const access = await checkVideoAccess(video.id, session?.user?.id);
 
     if (!access.hasAccess) {
       return apiErrors.forbidden('Access denied');
@@ -132,11 +134,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const canDownload = canDownloadProjectMedia(video.project, access);
     const response = successResponse({
       ...video,
+      project: access.hasProjectAccess
+        ? video.project
+        : {
+            id: video.projectId,
+            name: 'Shared video',
+            allowDownloads: video.project.allowDownloads,
+          },
       isAuthenticated: !!session?.user?.id,
       currentUserId: session?.user?.id || null,
       currentUserName: session?.user?.name || null,
       canDownload,
-      canManageTags: access.canEdit,
+      canManageTags: access.canManageProject,
       canResolveComments: access.canEdit,
       canRequestApproval: access.canEdit,
       canShareVideo: access.canEdit,
@@ -175,7 +184,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video');
     }
 
-    const access = await checkProjectAccess(video.project, session.user.id);
+    const access = await checkVideoAccess(video.id, session.user.id);
     if (!access.canEdit) {
       return apiErrors.forbidden('Access denied');
     }
@@ -256,7 +265,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video');
     }
 
-    const access = await checkProjectAccess(video.project, session.user.id);
+    const access = await checkVideoAccess(video.id, session.user.id);
     if (!access.canEdit) {
       return apiErrors.forbidden('Only project owner or admin can delete videos');
     }
@@ -273,7 +282,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const mediaUrls = await collectVideoMediaUrls(videoId);
 
-    await db.video.delete({ where: { id: videoId } });
+    await contentTransaction([projectId], async (tx) => {
+      const current = await checkVideoAccess(videoId, session.user.id, tx);
+      if (!current.canEdit || current.video?.projectId !== projectId)
+        throw new ContentError(403, 'Access changed');
+      await tx.video.delete({ where: { id: videoId } });
+    });
 
     revalidatePath(`/projects/${projectId}`);
 

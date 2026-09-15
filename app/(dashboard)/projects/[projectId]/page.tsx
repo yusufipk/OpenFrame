@@ -1,3 +1,4 @@
+import { checkFolderAccess, visibleVideoWhere, visibleFolderWhere } from '@/lib/content-access';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
@@ -36,7 +37,7 @@ function formatRelativeTime(date: Date): string {
 
 interface ProjectPageProps {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ page?: string; sort?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; folderId?: string; view?: string }>;
 }
 
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
@@ -44,7 +45,9 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   const { projectId } = await params;
   const resolvedSearchParams = await searchParams;
 
-  const page = Number(resolvedSearchParams?.page) || 1;
+  const folderId = resolvedSearchParams.folderId || null;
+  const all = resolvedSearchParams.view === 'all';
+  const page = Math.max(1, Number(resolvedSearchParams?.page) || 1);
   const sortOrder = resolvedSearchParams?.sort === 'asc' ? 'asc' : 'desc';
   const pageSize = 21;
   const skip = (page - 1) * pageSize;
@@ -66,15 +69,37 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
     notFound();
   }
 
-  const access = await checkProjectAccess(project, session?.user?.id);
+  const projectAccess = await checkProjectAccess(project, session?.user?.id);
+  const access = await checkFolderAccess(projectId, folderId, session?.user?.id);
+  if (!access) notFound();
+  const folders = await db.projectFolder.findMany({
+    where: { projectId, AND: visibleFolderWhere(session?.user?.id) },
+    orderBy: { name: 'asc' },
+  });
+  const editableFolders = await db.projectFolder.findMany({
+    where: { projectId, AND: visibleFolderWhere(session?.user?.id, true) },
+    select: { id: true },
+  });
+  const editableIds = new Set(editableFolders.map((f) => f.id));
+  const visibleIds = new Set(folders.map((f) => f.id));
+  const folderEntries = folders.map((f) => ({
+    id: f.id,
+    name: f.name,
+    accessMode: f.accessMode,
+    parentId: f.parentId && visibleIds.has(f.parentId) ? f.parentId : null,
+    canEdit: editableIds.has(f.id),
+  }));
+  const videoWhere = {
+    projectId,
+    AND: visibleVideoWhere(session?.user?.id),
+    ...(!all ? { folderId } : {}),
+  };
 
   // Check access
   const isOwner = session?.user?.id === project.ownerId;
-  const isMember = project.members.length > 0;
   const isPublic = project.visibility === 'PUBLIC';
 
   // Check workspace membership
-  let isWorkspaceMember = false;
   let workspaceRole: string | null = null;
   if (session?.user?.id) {
     const wsMember = await db.workspaceMember.findUnique({
@@ -90,12 +115,11 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       select: { ownerId: true },
     });
     if (ws?.ownerId === session.user.id || wsMember) {
-      isWorkspaceMember = true;
       workspaceRole = ws?.ownerId === session.user.id ? 'OWNER' : wsMember?.role || null;
     }
   }
 
-  if (!access.hasAccess || (!isOwner && !isMember && !isPublic && !isWorkspaceMember)) {
+  if (!access.hasAccess) {
     if (!session?.user?.id) {
       redirect('/login');
     }
@@ -105,7 +129,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   // Fetch videos separately utilizing bounds
   const [paginatedVideos, totalVideos, allVideoIds] = await Promise.all([
     db.video.findMany({
-      where: { projectId: project.id },
+      where: videoWhere,
       skip,
       take: pageSize,
       orderBy: [{ updatedAt: sortOrder }, { id: sortOrder }],
@@ -121,10 +145,10 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       },
     }),
     db.video.count({
-      where: { projectId: project.id },
+      where: videoWhere,
     }),
     db.video.findMany({
-      where: { projectId: project.id },
+      where: videoWhere,
       select: { id: true },
       orderBy: [{ position: 'asc' }, { id: 'asc' }],
     }),
@@ -151,23 +175,18 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   const directUploadsEnabled = isDirectFileUploadEnabled();
   const directUploadProvider = isS3VideoUploadsEnabled() ? 'r2' : 'bunny';
 
-  const canEdit =
-    access.canEdit &&
-    (isOwner ||
-      project.members[0]?.role === 'ADMIN' ||
-      workspaceRole === 'OWNER' ||
-      workspaceRole === 'ADMIN');
+  const canEdit = access.canEdit;
   const isAuthenticated = !!session?.user?.id;
 
   const canDownloadProject = canDownloadProjectMedia(project, access);
 
   const projectData = {
-    name: project.name,
-    description: project.description,
+    name: projectAccess.hasAccess ? project.name : (access.folder?.name ?? 'Shared content'),
+    description: projectAccess.hasAccess ? project.description : null,
     visibility: project.visibility,
     allowDownloads: project.allowDownloads,
-    workspace: project.workspace,
-    members: project.members,
+    workspace: projectAccess.hasAccess ? project.workspace : null,
+    members: projectAccess.hasAccess ? project.members : [],
   };
 
   // Guest name gate for unauthenticated users on public projects
@@ -186,6 +205,11 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
             </Link>
           </div>
           <ProjectContentClient
+            key={`${folderId ?? 'root'}-${all}`}
+            folderId={folderId}
+            folders={folderEntries}
+            canSeeRoot={projectAccess.hasAccess}
+            all={all}
             project={projectData}
             projectId={projectId}
             videos={videos}
@@ -218,6 +242,11 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
         </Link>
       </div>
       <ProjectContentClient
+        key={`${folderId ?? 'root'}-${all}`}
+        folderId={folderId}
+        folders={folderEntries}
+        canSeeRoot={projectAccess.hasAccess}
+        all={all}
         project={projectData}
         projectId={projectId}
         videos={videos}

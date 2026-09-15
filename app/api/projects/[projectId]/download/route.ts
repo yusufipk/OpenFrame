@@ -1,3 +1,4 @@
+import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -46,13 +47,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const access = await checkProjectAccess(project, session?.user?.id);
-    if (!canDownloadProjectMedia(project, access)) {
+    if (!canDownloadProjectMedia(project, access) && !requestedVideoIds) {
       return apiErrors.forbidden('Project downloads are disabled for viewers');
     }
 
+    const downloadWhere = visibleVideoWhere(session?.user?.id, !project.allowDownloads);
     const videos = await db.video.findMany({
       where: {
         projectId,
+        AND: downloadWhere,
         ...(requestedVideoIds ? { id: { in: requestedVideoIds } } : {}),
       },
       orderBy: [{ position: 'asc' }, { id: 'asc' }],
@@ -94,10 +97,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const manifest = buildProjectDownloadManifest(project.name, videos, {
-      includeAllVersions,
-      includeAssets,
-    });
+    const manifest = buildProjectDownloadManifest(
+      access.hasAccess ? project.name : 'Shared videos',
+      videos,
+      {
+        includeAllVersions,
+        includeAssets,
+      }
+    );
     const validationError = validateProjectDownloadManifest(manifest);
     if (validationError) {
       return apiErrors.badRequest(validationError);

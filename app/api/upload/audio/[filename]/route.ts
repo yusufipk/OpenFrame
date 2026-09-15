@@ -1,5 +1,6 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -83,7 +84,7 @@ export async function GET(
       return apiErrors.forbidden('Access denied');
     }
 
-    const access = await checkProjectAccess(video.project, session?.user?.id);
+    const access = await checkVideoAccess(video.id, session?.user?.id);
 
     if (!access.hasAccess) {
       const shareSession = getShareSessionFromRequest(request, video.id);

@@ -7,6 +7,7 @@
 // not about the toast: a toast can be rendered by a handler that then does
 // nothing.
 import { test, expect } from './fixtures';
+import { db } from '@/lib/db';
 import { createProject, createVideo, createVersion } from '../factories';
 import type { Page } from '@playwright/test';
 
@@ -124,7 +125,7 @@ test('selected videos are moved into another project in the same workspace', asy
   await page.getByRole('checkbox', { name: `Select ${moving}` }).click();
   await expect(page.getByText('1 selected')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Move to project' }).click();
+  await page.getByRole('button', { name: 'Move videos' }).click();
 
   const dialog = page.getByRole('dialog');
   await expect(
@@ -133,13 +134,39 @@ test('selected videos are moved into another project in the same workspace', asy
 
   // The destination list is fetched when the dialog opens; the combobox does
   // not exist until it arrives.
-  const destinationSelect = dialog.getByRole('combobox');
+  const destinationSelect = dialog.getByRole('combobox', { name: 'Destination project' });
   await expect(destinationSelect).toBeVisible();
   await destinationSelect.click();
   await page.getByRole('option', { name: destination.name }).click();
-  await dialog.getByRole('button', { name: 'Move' }).click();
+  // Serializable transactions may refuse a concurrent write with 409. Retry
+  // only that explicit conflict, after proving that the source row survived.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/projects/${source.id}/videos/move`) &&
+        response.request().method() === 'POST'
+    );
+    await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+    const response = await responsePromise;
+    expect((await db.video.findFirstOrThrow({ where: { title: moving } })).projectId).toBe(
+      source.id
+    );
+    if (response.status() !== 409) {
+      expect(response.status()).toBe(200);
+      expect((await response.json()).data.needsConfirmation).toBe(true);
+      break;
+    }
+    expect(attempt, 'Preview must eventually succeed').toBeLessThan(2);
+    await expect(dialog.getByRole('button', { name: 'Move', exact: true })).toBeEnabled();
+  }
 
-  await expect(page.getByText('1 video moved')).toBeVisible();
+  await expect(dialog.getByText(/Existing video links will be revoked/)).toBeVisible();
+  expect((await db.video.findFirstOrThrow({ where: { title: moving } })).projectId).toBe(source.id);
+  await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await db.video.findFirstOrThrow({ where: { title: moving } })).projectId)
+    .toBe(destination.id);
 
   // Left the source...
   await page.reload();

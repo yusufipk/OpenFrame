@@ -45,6 +45,8 @@ model User {
   uploadedVideoSubtitles VideoSubtitle[] @relation("VideoSubtitleUploadedBy")
   billedVideoSubtitles   VideoSubtitle[] @relation("VideoSubtitleBilledTo")
   projectMemberships ProjectMember[]
+  folderMemberships ProjectFolderMember[]
+  videoMemberships VideoMember[]
   notificationSetting NotificationSetting?
   watchProgress      WatchProgress[]
   feedbackEntries    UserFeedback[]
@@ -246,6 +248,7 @@ model Project {
   updatedAt   DateTime @updatedAt
   
   // Relations
+  folders     ProjectFolder[]
   videos      Video[]
   members     ProjectMember[]
   shareLinks  ShareLink[]
@@ -290,6 +293,8 @@ enum ProjectMemberRole {
 enum InvitationScope {
   WORKSPACE
   PROJECT
+  FOLDER
+  VIDEO
 }
 
 enum InvitationRole {
@@ -317,6 +322,11 @@ model Invitation {
   projectId   String?
   project     Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  folderId    String?
+  folder      ProjectFolder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  videoId     String?
+  video       Video? @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
   invitedById String
   invitedBy   User             @relation("InvitationsSentBy", fields: [invitedById], references: [id], onDelete: Cascade)
 
@@ -331,11 +341,66 @@ model Invitation {
   @@map("invitations")
 }
 
+enum ContentAccessMode {
+  INHERIT
+  RESTRICTED
+}
+
+model ProjectFolder {
+  id         String @id @default(cuid())
+  projectId  String
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId   String?
+  parent     ProjectFolder? @relation("FolderTree", fields: [parentId, projectId], references: [id, projectId], onDelete: NoAction, onUpdate: NoAction)
+  children   ProjectFolder[] @relation("FolderTree")
+  name       String @db.VarChar(100)
+  accessMode ContentAccessMode @default(INHERIT)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  videos     Video[]
+  members    ProjectFolderMember[]
+  invitations Invitation[]
+
+  @@unique([id, projectId])
+  @@index([projectId, parentId])
+  @@map("project_folders")
+}
+
+model ProjectFolderMember {
+  id       String @id @default(cuid())
+  folderId String
+  folder   ProjectFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     ProjectMemberRole @default(COMMENTATOR)
+  @@unique([folderId, userId])
+  @@index([userId])
+  @@map("project_folder_members")
+}
+
+model VideoMember {
+  id      String @id @default(cuid())
+  videoId String
+  video   Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    ProjectMemberRole @default(COMMENTATOR)
+  @@unique([videoId, userId])
+  @@index([userId])
+  @@map("video_members")
+}
+
 model Video {
   id          String   @id @default(cuid())
   title       String
   description String?  @db.Text
   
+  folderId    String?
+  folder      ProjectFolder? @relation(fields: [folderId, projectId], references: [id, projectId], onDelete: NoAction, onUpdate: NoAction)
+  accessMode  ContentAccessMode @default(INHERIT)
+  members     VideoMember[]
+  invitations Invitation[]
+
   // Ordering within project
   position    Int      @default(0)
   
@@ -798,7 +863,9 @@ enum UploadSessionStatus {
 }
 
 model VideoUploadSession {
+  targetVideoId String?
   id                 String              @id @default(cuid())
+  folderId           String?
   uploadJti          String              @unique @map("upload_jti")
   userId             String
   projectId          String

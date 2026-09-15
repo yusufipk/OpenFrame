@@ -1,6 +1,7 @@
+import { checkVideoAccess, visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getApprovalCandidatesForProject } from '@/lib/approval-workflow';
 import { notifyUsers } from '@/lib/notifications';
@@ -33,8 +34,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
     if (!version) return apiErrors.notFound('Version');
 
-    const access = await checkProjectAccess(version.video.project, session.user.id);
-    const hasMembership = access.isOwner || access.isProjectMember || access.isWorkspaceMember;
+    const access = await checkVideoAccess(version.video.id, session.user.id);
+    const hasMembership =
+      access.hasAccess &&
+      (await db.video.count({
+        where: { id: version.video.id, AND: visibleVideoWhere(session.user.id, false, false) },
+      })) > 0;
     if (!hasMembership) return apiErrors.forbidden('Access denied');
 
     const requests = await db.approvalRequest.findMany({
@@ -84,7 +89,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     if (!version) return apiErrors.notFound('Version');
 
-    const access = await checkProjectAccess(version.video.project, session.user.id);
+    const access = await checkVideoAccess(version.video.id, session.user.id);
     if (!access.canEdit) return apiErrors.forbidden('Access denied');
 
     const body = (await request.json().catch(() => ({}))) as {
@@ -116,7 +121,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('Requester cannot be an approver');
     }
 
-    const candidates = await getApprovalCandidatesForProject(version.video.project.id);
+    const candidates = await getApprovalCandidatesForProject(
+      version.video.project.id,
+      version.video.id
+    );
     if (!candidates) return apiErrors.notFound('Project');
     const candidateIds = new Set(candidates.map((candidate) => candidate.id));
 
@@ -172,7 +180,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     notifyUsers(approverIds, {
       type: 'approval_requested',
-      projectName: version.video.project.name,
+      projectName: 'Shared video',
       videoTitle: version.video.title,
       versionLabel,
       requestedBy: requesterName,

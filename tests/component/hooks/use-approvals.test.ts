@@ -90,7 +90,7 @@ beforeEach(() => {
     if (url === `/api/versions/${VERSION_ID}/approvals`) {
       return Promise.resolve(ok({ data: { requests: listedRequests } }));
     }
-    if (url === `/api/projects/${PROJECT_ID}/approval-candidates`) {
+    if (url === `/api/projects/${PROJECT_ID}/approval-candidates?versionId=ver1`) {
       return Promise.resolve(ok({ data: { candidates: listedCandidates } }));
     }
     return Promise.resolve(ok({ data: {} }));
@@ -235,9 +235,12 @@ describe('useApprovals reading the candidate list', () => {
       await harness.result.current.fetchCandidates();
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(`/api/projects/${PROJECT_ID}/approval-candidates`, {
-      cache: 'no-store',
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/projects/${PROJECT_ID}/approval-candidates?versionId=ver1`,
+      {
+        cache: 'no-store',
+      }
+    );
     expect(harness.result.current.candidates).toEqual(listedCandidates);
   });
 

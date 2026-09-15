@@ -1,3 +1,4 @@
+import type { ContentClient } from '@/lib/content-access';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { collectVideoMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
@@ -30,7 +31,9 @@ export class VideoStorageCleanupError extends Error {
 
 export async function deleteProjectVideosWithCleanup(
   projectId: string,
-  videoIds: string[]
+  videoIds: string[],
+  client: ContentClient = db,
+  signal?: AbortSignal
 ): Promise<{
   deletedCount: number;
   cleanupWarnings: CleanupWarnings | undefined;
@@ -41,7 +44,7 @@ export async function deleteProjectVideosWithCleanup(
     throw new Error('EMPTY_VIDEO_IDS');
   }
 
-  const videos = await db.video.findMany({
+  const videos = await client.video.findMany({
     where: {
       projectId,
       id: { in: uniqueVideoIds },
@@ -88,8 +91,8 @@ export async function deleteProjectVideosWithCleanup(
   // longer resolved to anything. Leaving the rows in place instead keeps the delete
   // repeatable, and a second attempt cleans up whatever the first one could not.
   const [bunnyCleanupResult, r2CleanupResult] = await Promise.all([
-    cleanupBunnyStreamVideosBestEffort(bunnyRefs),
-    deleteMediaFilesBestEffort(mediaUrls),
+    cleanupBunnyStreamVideosBestEffort(bunnyRefs, signal),
+    deleteMediaFilesBestEffort(mediaUrls, signal),
   ]);
 
   const cleanupInput = {
@@ -102,7 +105,7 @@ export async function deleteProjectVideosWithCleanup(
     throw new VideoStorageCleanupError(cleanupInput);
   }
 
-  await db.video.deleteMany({
+  await client.video.deleteMany({
     where: {
       projectId,
       id: { in: uniqueVideoIds },

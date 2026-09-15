@@ -1,6 +1,7 @@
+import { checkUploadDestination } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { parseR2UploadToken, verifyR2UploadToken } from '@/lib/r2-upload-token';
@@ -11,26 +12,6 @@ import { releaseStorageReservation, UPLOAD_RESERVATION_PURPOSES } from '@/lib/st
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
-
-async function getProjectWithEditAccess(projectId: string, userId: string) {
-  const project = await db.project.findUnique({
-    where: { id: projectId },
-    select: {
-      id: true,
-      ownerId: true,
-      workspaceId: true,
-      visibility: true,
-      workspace: { select: { ownerId: true } },
-    },
-  });
-
-  if (!project) return null;
-
-  const access = await checkProjectAccess(project, userId);
-  if (!access.canEdit) return null;
-
-  return project;
-}
 
 type IncomingPart = { partNumber: number; etag: string };
 
@@ -84,11 +65,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('S3 video uploads are disabled by this host');
     }
 
-    const project = await getProjectWithEditAccess(projectId, session.user.id);
-    if (!project) {
-      return apiErrors.forbidden('Access denied');
-    }
-
     const body = await request.json().catch(() => null);
     const objectKey = typeof body?.objectKey === 'string' ? body.objectKey.trim() : '';
     const uploadToken = typeof body?.uploadToken === 'string' ? body.uploadToken.trim() : '';
@@ -131,6 +107,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       select: {
         id: true,
         multipartUploadId: true,
+        folderId: true,
+        targetVideoId: true,
         reservationId: true,
         billedUserId: true,
       },
@@ -139,6 +117,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.forbidden('Invalid upload token');
     }
 
+    const destination = await checkUploadDestination(
+      projectId,
+      uploadSession.folderId,
+      uploadSession.targetVideoId,
+      session.user.id
+    );
+    if (!destination?.canEdit)
+      return apiErrors.forbidden('Upload destination was removed or access was revoked');
     const proxyUrl = objectKeyToVideoProxyPath(objectKey);
     if (!proxyUrl) {
       return apiErrors.badRequest('Invalid object key');

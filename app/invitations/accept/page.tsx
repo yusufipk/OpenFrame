@@ -45,10 +45,16 @@ export default async function InvitationAcceptPage({ searchParams }: InvitationA
       scope: true,
       workspaceId: true,
       projectId: true,
+      folderId: true,
+      videoId: true,
     },
   });
 
   function redirectToInvitationTarget(inviteStatus: string) {
+    if (invitation?.scope === 'VIDEO' && invitation.videoId)
+      redirect(`/projects/${invitation.projectId}/videos/${invitation.videoId}`);
+    if (invitation?.scope === 'FOLDER' && invitation.folderId && invitation.projectId)
+      redirect(`/projects/${invitation.projectId}?folderId=${invitation.folderId}`);
     if (invitation?.scope === 'WORKSPACE' && invitation.workspaceId) {
       redirect(`/workspaces/${invitation.workspaceId}?invite=${inviteStatus}`);
     }
@@ -77,7 +83,7 @@ export default async function InvitationAcceptPage({ searchParams }: InvitationA
     redirect('/dashboard?invite=expired');
   }
   if (result === 'forbidden') {
-    // Signed in with a different address than the one invited — say so instead of
+    // Signed in with a different address than the one invited , say so instead of
     // dropping the user on the dashboard with no explanation.
     return (
       <InvitationAccountMismatch

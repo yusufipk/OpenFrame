@@ -1,3 +1,4 @@
+import * as foldersRoute from '@/app/api/projects/[projectId]/folders/route';
 // A sweep over every route module under app/api asserting that an
 // unauthenticated caller can never reach a 2xx.
 //
@@ -150,7 +151,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 68;
+const EXPECTED_ROUTE_MODULE_COUNT = 69;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -527,6 +528,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: (f) => `/api/projects/${f.projectId}/videos/bunny-init`,
     params: (f) => ({ projectId: f.projectId }),
     body: { title: 'anon' },
+  },
+  {
+    file: 'projects/[projectId]/folders/route.ts',
+    module: foldersRoute,
+    url: (f) => `/api/projects/${f.projectId}/folders`,
+    params: (f) => ({ projectId: f.projectId }),
+    body: { action: 'create', name: 'Folder' },
   },
   {
     file: 'projects/[projectId]/videos/move/route.ts',

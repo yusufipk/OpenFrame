@@ -1,3 +1,4 @@
+import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, checkWorkspaceAccess } from '@/lib/auth';
@@ -52,7 +53,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           skip: offset,
           take: limit,
           include: {
-            _count: { select: { videos: true, members: true } },
+            _count: {
+              select: { videos: { where: visibleVideoWhere(session?.user?.id) }, members: true },
+            },
           },
         },
         _count: { select: { projects: true, members: true } },
@@ -72,7 +75,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const response = successResponse(workspace);
-    return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
+    return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching workspace:', error);
     return apiErrors.internalError('Failed to fetch workspace');
@@ -139,7 +142,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     });
 
     const response = successResponse(workspace);
-    return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
+    return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error updating workspace:', error);
     return apiErrors.internalError('Failed to update workspace');

@@ -347,14 +347,15 @@ export function computeProjectAccess(
  */
 export async function checkProjectAccess(
   project: { id: string; ownerId: string; workspaceId: string; visibility: string },
-  userId: string | undefined
+  userId: string | undefined,
+  client: import('@prisma/client').Prisma.TransactionClient = db
 ) {
   const isOwner = userId === project.ownerId;
   const isPublic = project.visibility === 'PUBLIC';
 
   // Get project membership
   const projectMember = userId
-    ? await db.projectMember.findUnique({
+    ? await client.projectMember.findUnique({
         where: { projectId_userId: { projectId: project.id, userId } },
       })
     : null;
@@ -366,11 +367,11 @@ export async function checkProjectAccess(
   // queries run together, so this costs one extra indexed lookup and no extra latency.
   const [wsMember, wsOwner] = await Promise.all([
     userId
-      ? db.workspaceMember.findUnique({
+      ? client.workspaceMember.findUnique({
           where: { workspaceId_userId: { workspaceId: project.workspaceId, userId } },
         })
       : null,
-    db.workspace.findUnique({
+    client.workspace.findUnique({
       where: { id: project.workspaceId },
       select: {
         ownerId: true,

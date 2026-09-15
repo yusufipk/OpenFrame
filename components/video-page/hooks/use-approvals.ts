@@ -50,9 +50,12 @@ export function useApprovals({ projectId, activeVersionId, currentUserId }: UseA
     setIsLoadingCandidates(true);
     setError('');
     try {
-      const res = await fetch(`/api/projects/${projectId}/approval-candidates`, {
-        cache: 'no-store',
-      });
+      const res = await fetch(
+        `/api/projects/${projectId}/approval-candidates?versionId=${activeVersionId ?? ''}`,
+        {
+          cache: 'no-store',
+        }
+      );
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(payload?.error || 'Failed to fetch approvers');
@@ -64,7 +67,7 @@ export function useApprovals({ projectId, activeVersionId, currentUserId }: UseA
     } finally {
       setIsLoadingCandidates(false);
     }
-  }, [projectId]);
+  }, [projectId, activeVersionId]);
 
   const createRequest = useCallback(
     async (approverIds: string[], message?: string) => {

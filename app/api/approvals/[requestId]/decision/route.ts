@@ -1,6 +1,7 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { notifyUsers } from '@/lib/notifications';
 import { rateLimit } from '@/lib/rate-limit';
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     if (!approvalRequest) return apiErrors.notFound('Approval request');
 
-    const access = await checkProjectAccess(approvalRequest.version.video.project, session.user.id);
+    const access = await checkVideoAccess(approvalRequest.version.video.id, session.user.id);
     if (!access.hasAccess) return apiErrors.forbidden('Access denied');
 
     const myDecision = approvalRequest.decisions[0];
@@ -189,9 +190,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const baseUrl = process.env.NEXTAUTH_URL || '';
     const requestUrl = `${baseUrl}/projects/${updated.version.video.project.id}/videos/${updated.version.video.id}`;
 
-    notifyUsers([updated.requestedById], {
+    const requesterAccess = await checkVideoAccess(updated.version.video.id, updated.requestedById);
+    const recipients = requesterAccess.hasAccess ? [updated.requestedById] : [];
+    notifyUsers(recipients, {
       type: 'approval_action',
-      projectName: updated.version.video.project.name,
+      projectName: 'Shared video',
       videoTitle: updated.version.video.title,
       versionLabel,
       actorName,
@@ -209,9 +212,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         userId: approvalRequest.version.video.project.ownerId,
       });
 
-      notifyUsers([updated.requestedById], {
+      notifyUsers(recipients, {
         type: 'approval_completed',
-        projectName: updated.version.video.project.name,
+        projectName: 'Shared video',
         videoTitle: updated.version.video.title,
         versionLabel,
         approvedByCount: updated.decisions.filter((item) => item.status === 'APPROVED').length,
@@ -220,9 +223,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         logError('Approval completed notification failed:', error);
       });
     } else if (updated.status === 'REJECTED') {
-      notifyUsers([updated.requestedById], {
+      notifyUsers(recipients, {
         type: 'approval_rejected',
-        projectName: updated.version.video.project.name,
+        projectName: 'Shared video',
         videoTitle: updated.version.video.title,
         versionLabel,
         rejectedBy: actorName,

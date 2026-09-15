@@ -42,7 +42,7 @@ function roleLabel(role: InvitationRole): string {
 }
 
 function scopeLabel(scope: InvitationScope): string {
-  return scope === 'WORKSPACE' ? 'workspace' : 'project';
+  return scope.toLowerCase();
 }
 
 export function buildInvitationUrl(token: string): string {
@@ -62,7 +62,7 @@ export async function sendInvitationEmail(input: {
 }): Promise<boolean> {
   const transporter = createSmtpTransport();
   if (!transporter) {
-    console.warn('SMTP not configured — skipping invitation email');
+    console.warn('SMTP not configured, skipping invitation email');
     return false;
   }
 
@@ -227,7 +227,7 @@ export interface InvitationPreview {
   scope: InvitationScope;
   scopeLabel: string;
   status: InvitationStatus;
-  /** PENDING but past its expiry — the DB row is only flipped to EXPIRED on acceptance. */
+  /** PENDING but past its expiry, the DB row is only flipped to EXPIRED on acceptance. */
   isExpired: boolean;
   inviterName: string;
   targetName: string | null;
@@ -254,6 +254,8 @@ export async function getInvitationPreviewByToken(
       invitedBy: { select: { name: true } },
       workspace: { select: { name: true } },
       project: { select: { name: true } },
+      folder: { select: { name: true } },
+      video: { select: { title: true } },
     },
   });
 
@@ -273,7 +275,12 @@ export async function getInvitationPreviewByToken(
     status: invitation.status,
     isExpired: invitation.expiresAt <= new Date(),
     inviterName: invitation.invitedBy?.name?.trim() || 'A team member',
-    targetName: invitation.workspace?.name ?? invitation.project?.name ?? null,
+    targetName:
+      invitation.folder?.name ??
+      invitation.video?.title ??
+      invitation.workspace?.name ??
+      invitation.project?.name ??
+      null,
     hasAccount: Boolean(existingUser),
   };
 }
@@ -319,10 +326,37 @@ async function applyInvitationMembership(
     scope: InvitationScope;
     workspaceId: string | null;
     projectId: string | null;
+    folderId?: string | null;
+    videoId?: string | null;
   },
   userId: string
 ): Promise<boolean> {
   const invitedAsAdmin = invitation.role === InvitationRole.ADMIN;
+  if (invitation.scope === 'FOLDER' || invitation.scope === 'VIDEO') {
+    // Atomically claim a pending invitation before granting access; cancellation wins if already committed.
+    const claimed = await tx.invitation.updateMany({
+      where: { id: invitation.id, status: 'PENDING', expiresAt: { gt: new Date() } },
+      data: { status: 'ACCEPTED', acceptedAt: new Date() },
+    });
+    if (claimed.count !== 1) return false;
+    if (invitation.scope === 'FOLDER' && invitation.folderId) {
+      await tx.projectFolderMember.upsert({
+        where: { folderId_userId: { folderId: invitation.folderId, userId } },
+        create: { folderId: invitation.folderId, userId, role: invitation.role },
+        update: invitedAsAdmin ? { role: 'ADMIN' } : {},
+      });
+      return true;
+    }
+    if (invitation.scope === 'VIDEO' && invitation.videoId) {
+      await tx.videoMember.upsert({
+        where: { videoId_userId: { videoId: invitation.videoId, userId } },
+        create: { videoId: invitation.videoId, userId, role: invitation.role },
+        update: invitedAsAdmin ? { role: 'ADMIN' } : {},
+      });
+      return true;
+    }
+    throw new Error('Invitation target is missing');
+  }
 
   if (invitation.scope === InvitationScope.WORKSPACE) {
     if (!invitation.workspaceId) return false;

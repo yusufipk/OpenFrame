@@ -1,3 +1,4 @@
+import { checkVideoAccess, visibleFolderWhere, visibleVideoWhere } from '@/lib/content-access';
 import { notFound, redirect } from 'next/navigation';
 import { auth, checkProjectAccess, checkWorkspaceAccess } from '@/lib/auth';
 import { buildBillingAccessWhereInput, hasBillingAccess } from '@/lib/billing';
@@ -122,7 +123,14 @@ export async function hasCollaboratorBillingBackedAccess(userId: string) {
     }),
   ]);
 
-  return workspaceCount > 0 || projectCount > 0;
+  if (workspaceCount > 0 || projectCount > 0) return true;
+  const [folders, videos] = await Promise.all([
+    db.projectFolder.count({
+      where: { members: { some: { userId } }, AND: visibleFolderWhere(userId) },
+    }),
+    db.video.count({ where: { members: { some: { userId } }, AND: visibleVideoWhere(userId) } }),
+  ]);
+  return folders > 0 || videos > 0;
 }
 
 export async function hasAppNavigationAccess(userId: string) {
@@ -257,11 +265,9 @@ export async function requireVideoProjectAccessOrRedirect(options: {
     notFound();
   }
 
-  const access = await assertProjectAccessOrRedirect(video.project, {
-    userId: resolvedUserId,
-    intent,
-    allowPublicView,
-  });
+  ensureGuestPolicy({ userId: resolvedUserId, intent, allowPublicView });
+  const access = await checkVideoAccess(video.id, resolvedUserId);
+  if (!access.hasAccess || (intent === 'manage' && !access.canEdit)) redirectForForbidden();
 
   return { video, access, project: video.project };
 }

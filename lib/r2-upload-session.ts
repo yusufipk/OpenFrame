@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 export type CreateR2UploadSessionInput = {
   userId: string;
   projectId: string;
+  folderId?: string | null;
+  targetVideoId?: string | null;
   billedUserId: string;
   objectKey: string;
   thumbnailObjectKey: string;
@@ -19,6 +21,8 @@ export async function createR2UploadSession(input: CreateR2UploadSessionInput) {
     data: {
       userId: input.userId,
       projectId: input.projectId,
+      folderId: input.folderId ?? null,
+      targetVideoId: input.targetVideoId ?? null,
       billedUserId: input.billedUserId,
       objectKey: input.objectKey,
       thumbnailObjectKey: input.thumbnailObjectKey,

@@ -51,6 +51,7 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, 'prisma', 'migrations');
  * else is a plain table/column/enum addition that db push derives on its own.
  */
 const REVIEWED_MIGRATIONS = [
+  '20260915120000_project_folders', // replayed: folder tree trigger
   '20260226110000_rate_limit_extras', // replayed: cleanup_rate_limits(), UNLOGGED
   '20260227000000_add_audio_asset_kind_and_provider',
   '20260227120000_add_onboarding',
@@ -74,7 +75,7 @@ const REVIEWED_MIGRATIONS = [
 ];
 
 /** Objects POST_PUSH_SQL must have produced. Verified after it runs. */
-const REQUIRED_FUNCTIONS = ['cleanup_rate_limits'];
+const REQUIRED_FUNCTIONS = ['cleanup_rate_limits', 'validate_project_folder_tree'];
 const REQUIRED_INDEXES = [
   'video_versions_r2_videoid_unique',
   'video_versions_r2_originalurl_unique',
@@ -82,6 +83,10 @@ const REQUIRED_INDEXES = [
 ];
 
 const POST_PUSH_SQL = `
+DROP TRIGGER IF EXISTS project_folder_tree_guard ON project_folders;
+
+${fs.readFileSync(path.join(MIGRATIONS_DIR, '20260915120000_project_folders', 'migration.sql'), 'utf8').split('-- Custom invariants, also installed by the test database bootstrap.')[1]}
+
 -- Replayed from 20260226110000_rate_limit_extras. lib/rate-limit.ts calls
 -- cleanup_rate_limits() on an interval and tests/api/rate-limit.test.ts asserts
 -- on what it deletes.

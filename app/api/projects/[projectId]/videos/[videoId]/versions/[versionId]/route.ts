@@ -1,6 +1,7 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
@@ -31,8 +32,7 @@ async function getVersionWithAccess(
     return null;
   }
 
-  const project = version.video.project;
-  const access = await checkProjectAccess(project, userId);
+  const access = await checkVideoAccess(version.video.id, userId);
 
   return { version, canEdit: access.canEdit, isOwner: access.isOwner };
 }

@@ -40,10 +40,12 @@ import type { DirectUploadProvider } from '@/components/video-page/types';
 
 export default function NewVideoPageClient({
   projectId,
+  folderId,
   directUploadsEnabled,
   directUploadProvider,
 }: {
   projectId: string;
+  folderId: string | null;
   directUploadsEnabled: boolean;
   directUploadProvider: DirectUploadProvider;
 }) {
@@ -311,6 +313,7 @@ export default function NewVideoPageClient({
     const description = formData.description.trim() || null;
 
     await uploadProjectVideo(projectId, file, {
+      folderId,
       provider: directUploadProvider,
       title,
       description,
@@ -348,6 +351,7 @@ export default function NewVideoPageClient({
 
       try {
         await uploadProjectVideo(projectId, file, {
+          folderId,
           provider: directUploadProvider,
           bunnyCdnHostname,
           onProgress: (progress) => {
@@ -422,6 +426,7 @@ export default function NewVideoPageClient({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            folderId,
             title: finalTitle,
             description: finalDescription,
             videoUrl: videoSource.originalUrl,

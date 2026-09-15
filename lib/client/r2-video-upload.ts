@@ -227,12 +227,16 @@ async function readVideoDuration(file: File): Promise<number | null> {
 
 export async function initR2VideoUpload(
   projectId: string,
-  file: File
+  file: File,
+  folderId: string | null = null,
+  targetVideoId: string | null = null
 ): Promise<R2VideoInitResponse> {
   const initRes = await fetch(`/api/projects/${projectId}/videos/r2-init`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      folderId,
+      targetVideoId,
       fileName: file.name,
       contentType: file.type,
       sizeBytes: file.size,
@@ -280,9 +284,18 @@ export async function cleanupPendingR2VideoUpload(
 export async function uploadVideoToR2(
   projectId: string,
   file: File,
-  options?: { onProgress?: UploadProgressHandler }
+  options?: {
+    onProgress?: UploadProgressHandler;
+    folderId?: string | null;
+    targetVideoId?: string | null;
+  }
 ): Promise<R2VideoUploadResult> {
-  const init = await initR2VideoUpload(projectId, file);
+  const init = await initR2VideoUpload(
+    projectId,
+    file,
+    options?.folderId ?? null,
+    options?.targetVideoId ?? null
+  );
 
   const cleanupInput = {
     objectKey: init.objectKey,

@@ -1,7 +1,9 @@
+import { checkUploadDestination } from '@/lib/content-access';
+import { contentId } from '@/lib/content-mutations';
 import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import {
@@ -45,7 +47,12 @@ type RouteParams = { params: Promise<{ projectId: string }> };
 const VIDEO_RESERVATION_TTL_MS = 2 * 60 * 60 * 1000;
 const THUMBNAIL_RESERVE_BYTES = BigInt(512 * 1024);
 
-async function getProjectWithEditAccess(projectId: string, userId: string) {
+async function getProjectWithEditAccess(
+  projectId: string,
+  userId: string,
+  folderId: string | null = null,
+  targetVideoId: string | null = null
+) {
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: {
@@ -60,8 +67,8 @@ async function getProjectWithEditAccess(projectId: string, userId: string) {
 
   if (!project) return null;
 
-  const access = await checkProjectAccess(project, userId);
-  if (!access.canEdit) return null;
+  const access = await checkUploadDestination(projectId, folderId, targetVideoId, userId);
+  if (!access?.canEdit) return null;
 
   return project;
 }
@@ -83,12 +90,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('S3 video uploads are disabled by this host');
     }
 
-    const project = await getProjectWithEditAccess(projectId, session.user.id);
+    const body = await request.json().catch(() => null);
+    const folderId = contentId(body?.folderId);
+    const targetVideoId = contentId(body?.targetVideoId);
+    const project = await getProjectWithEditAccess(
+      projectId,
+      session.user.id,
+      folderId,
+      targetVideoId
+    );
     if (!project) {
       return apiErrors.forbidden('Access denied');
     }
 
-    const body = await request.json().catch(() => null);
     const fileName = typeof body?.fileName === 'string' ? body.fileName.trim() : '';
     const contentTypeInput = typeof body?.contentType === 'string' ? body.contentType.trim() : '';
     const sizeBytesRaw = body?.sizeBytes;
@@ -203,6 +217,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const uploadJti = randomUUID();
     const expiresAt = new Date(Date.now() + VIDEO_RESERVATION_TTL_MS);
     const uploadSession = await createR2UploadSession({
+      folderId,
+      targetVideoId,
       userId: session.user.id,
       projectId,
       billedUserId: project.workspace.ownerId,
@@ -260,11 +276,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     if (!isS3VideoUploadsEnabled()) {
       return apiErrors.badRequest('S3 video uploads are disabled by this host');
-    }
-
-    const project = await getProjectWithEditAccess(projectId, session.user.id);
-    if (!project) {
-      return apiErrors.forbidden('Access denied');
     }
 
     const body = await request.json().catch(() => null);

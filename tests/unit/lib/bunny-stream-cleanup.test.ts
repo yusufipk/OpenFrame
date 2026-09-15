@@ -245,3 +245,43 @@ describe('cleanupBunnyStreamVideos', () => {
     );
   });
 });
+
+it('aborts active requests, drains workers and never schedules remaining deletes after the deadline', async () => {
+  const controller = new AbortController();
+  let active = 0;
+  const finishRequests: Array<() => void> = [];
+  fetchMock.mockImplementation((_url, options: { signal: AbortSignal }) => {
+    active++;
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener(
+        'abort',
+        () => {
+          finishRequests.push(() => {
+            active--;
+            reject(new Error('aborted'));
+          });
+        },
+        { once: true }
+      );
+    });
+  });
+  const ids = Array.from({ length: 12 }, (_, i) => `deadline-video-${i}`);
+  const pending = cleanupBunnyStreamVideosBestEffort(bunnyRefs(...ids), controller.signal);
+  expect(active).toBe(5);
+  let settled = false;
+  void pending
+    .finally(() => {
+      settled = true;
+    })
+    .catch(() => {});
+  controller.abort();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(settled).toBe(false);
+  expect(active).toBe(finishRequests.length);
+  expect(active).toBeGreaterThan(0);
+  for (const finish of finishRequests) finish();
+  const result = await pending;
+  expect(active).toBe(0);
+  expect(fetchMock).toHaveBeenCalledTimes(5);
+  expect(result.failedIds).toHaveLength(12);
+});

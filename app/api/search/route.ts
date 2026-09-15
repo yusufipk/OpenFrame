@@ -1,3 +1,4 @@
+import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
@@ -9,7 +10,7 @@ import { logError } from '@/lib/logger';
 const MAX_Q_LENGTH = 100;
 const RESULTS_PER_CATEGORY = 5;
 
-// GET /api/search?q=term — search projects, workspaces, and videos accessible to the user
+// GET /api/search?q=term : search projects, workspaces, and videos accessible to the user
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
         { ownerId: userId },
         { members: { some: { userId } } },
         { workspace: { members: { some: { userId } } } },
+        { workspace: { ownerId: userId } },
       ],
     };
 
@@ -104,20 +106,33 @@ export async function GET(request: NextRequest) {
 
       db.video.findMany({
         where: {
-          project: projectAccessFilter,
+          AND: visibleVideoWhere(userId, false, false),
           title: { contains: term, mode: 'insensitive' },
         },
         select: {
           id: true,
           title: true,
           projectId: true,
-          project: { select: { id: true, name: true } },
         },
         take: RESULTS_PER_CATEGORY,
       }),
     ]);
 
-    const response = successResponse({ projects, workspaces, videos });
+    const videoProjects = await db.project.findMany({
+      where: { id: { in: videos.map((video) => video.projectId) }, AND: projectAccessFilter },
+      select: { id: true, name: true },
+    });
+    const response = successResponse({
+      projects,
+      workspaces,
+      videos: videos.map((video) => ({
+        ...video,
+        project: videoProjects.find((project) => project.id === video.projectId) ?? {
+          id: video.projectId,
+          name: 'Shared video',
+        },
+      })),
+    });
     response.headers.set('Cache-Control', 'private, no-store');
     return response;
   } catch (err) {

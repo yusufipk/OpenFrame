@@ -1,11 +1,7 @@
 // Exercises lib/video-delete.ts, the cascade behind the bulk-delete route.
 //
-// The module does three things in a fixed order and the order is the whole
-// story: it reads the media URLs while the rows still exist, it deletes the
-// rows, and only then does it talk to storage. Reading the URLs first is
-// mandatory (the cascade takes the comment rows with the video), and deleting
-// the rows first means a storage failure cannot be retried, which is a
-// behaviour the tests below pin down rather than paper over.
+// It reads media URLs while their rows exist, deletes storage first, and removes
+// rows only after cleanup succeeds. Failed cleanup retains rows for retry.
 //
 // tests/setup/api.ts does not stub `r2Client`, which deleteMediaFilesBestEffort
 // reaches through, so this file replaces it with a recorder. Bunny goes over
@@ -14,6 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
+import { POST as bulkDelete } from '@/app/api/projects/[projectId]/videos/bulk-delete/route';
+import { apiRequest, callRoute } from '../helpers/request';
+import { signedInAs } from '../helpers/session';
 import { deleteProjectVideosWithCleanup, VideoStorageCleanupError } from '@/lib/video-delete';
 import {
   createComment,
@@ -499,4 +498,81 @@ describe('deleteProjectVideosWithCleanup media collection order', () => {
     expect(result.cleanupInput.r2.attempted).toBe(2);
     expect(new Set(r2.deletedKeys)).toEqual(new Set([TARGET_VIDEO_KEY, TARGET_COMMENT_IMAGE_KEY]));
   });
+});
+
+it('commits a successful slow bulk cleanup beyond the ordinary twenty-second transaction budget', async () => {
+  const f = await seedProject();
+  const video = await createVideo({ projectId: f.project.id });
+  await createVersion({
+    videoParentId: video.id,
+    providerId: 'bunny',
+    providerVideoId: 'slow-bunny-video',
+  });
+  vi.stubEnv('BUNNY_STREAM_API_KEY', 'test');
+  vi.stubEnv('BUNNY_STREAM_LIBRARY_ID', '123');
+  const fetchMock = vi.fn(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20500));
+    return new Response(null, { status: 200 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  signedInAs(f.owner);
+  const response = await callRoute(
+    bulkDelete,
+    apiRequest(`/api/projects/${f.project.id}/videos/bulk-delete`, {
+      body: { videoIds: [video.id] },
+    }),
+    { projectId: f.project.id }
+  );
+  expect(response.status).toBe(200);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(await db.video.findUnique({ where: { id: video.id } })).toBeNull();
+}, 30000);
+
+it('retains rows after an aborted cleanup and drains all active storage requests', async () => {
+  const f = await seedProject();
+  const video = await createVideo({ projectId: f.project.id });
+  await createVersion({
+    videoParentId: video.id,
+    providerId: 'bunny',
+    providerVideoId: 'aborted-bunny-video',
+  });
+  vi.stubEnv('BUNNY_STREAM_API_KEY', 'test');
+  vi.stubEnv('BUNNY_STREAM_LIBRARY_ID', '123');
+  const controller = new AbortController();
+  let active = 0;
+  const finishRequests: Array<() => void> = [];
+  const fetchMock = vi.fn((_url, options: { signal: AbortSignal }) => {
+    active++;
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener(
+        'abort',
+        () => {
+          finishRequests.push(() => {
+            active--;
+            reject(new Error('aborted'));
+          });
+        },
+        { once: true }
+      );
+    });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const pending = deleteProjectVideosWithCleanup(f.project.id, [video.id], db, controller.signal);
+  void pending.catch(() => {});
+  await vi.waitFor(() => expect(active).toBe(1));
+  let settled = false;
+  void pending
+    .finally(() => {
+      settled = true;
+    })
+    .catch(() => {});
+  controller.abort();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(settled).toBe(false);
+  expect(active).toBe(finishRequests.length);
+  expect(active).toBeGreaterThan(0);
+  for (const finish of finishRequests) finish();
+  await expect(pending).rejects.toBeInstanceOf(VideoStorageCleanupError);
+  expect(active).toBe(0);
+  expect(await db.video.findUnique({ where: { id: video.id } })).not.toBeNull();
 });
