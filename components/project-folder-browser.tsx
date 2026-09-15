@@ -33,6 +33,7 @@ export type FolderEntry = {
   parentId: string | null;
   accessMode: string;
   canEdit: boolean;
+  videoCount: number;
 };
 
 export function ProjectFolderCard({
@@ -42,11 +43,15 @@ export function ProjectFolderCard({
   projectId: string;
   folder: FolderEntry;
 }) {
+  const searchParams = useSearchParams();
+  const folderParams = new URLSearchParams({ folderId: folder.id });
+  const sort = searchParams.get('sort');
+  if (sort) folderParams.set('sort', sort);
   return (
     <Card className="min-w-0 gap-0 py-0 transition-colors hover:bg-accent/10">
       <CardContent className="flex items-center gap-3 p-4">
         <Link
-          href={`/projects/${projectId}?folderId=${folder.id}`}
+          href={`/projects/${projectId}?${folderParams}`}
           aria-label={folder.name}
           className="flex min-w-0 flex-1 items-center gap-3 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -54,7 +59,11 @@ export function ProjectFolderCard({
           <div className="min-w-0">
             <h3 className="font-medium truncate">{folder.name}</h3>
             <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-              <span>Folder</span>
+              <span title="Videos directly in this folder that you can access">
+                {folder.videoCount > 0
+                  ? `${folder.videoCount} ${folder.videoCount === 1 ? 'video' : 'videos'}`
+                  : 'Folder'}
+              </span>
               {folder.accessMode === 'RESTRICTED' && (
                 <span className="inline-flex items-center gap-1">
                   <Lock className="h-3 w-3" /> Restricted
@@ -185,6 +194,13 @@ export function ProjectFolderBrowser({
   const folderViewUrl = `/projects/${projectId}${viewParams.size ? `?${viewParams}` : ''}`;
   viewParams.set('view', 'all');
   const allVideosUrl = `/projects/${projectId}?${viewParams}`;
+  function folderUrl(id: string | null) {
+    const params = new URLSearchParams();
+    if (id) params.set('folderId', id);
+    const sort = searchParams.get('sort');
+    if (sort) params.set('sort', sort);
+    return `/projects/${projectId}${params.size ? `?${params}` : ''}`;
+  }
   const current = folders.find((f) => f.id === folderId);
   const [name, setName] = useState(current?.name ?? '');
   const [destination, setDestination] = useState('');
@@ -235,7 +251,7 @@ export function ProjectFolderBrowser({
         aria-label="Folder breadcrumb"
       >
         {canSeeRoot && (
-          <Link className="hover:text-foreground" href={`/projects/${projectId}`}>
+          <Link className="hover:text-foreground" href={folderUrl(null)}>
             Project root
           </Link>
         )}
@@ -251,10 +267,7 @@ export function ProjectFolderBrowser({
               {(canSeeRoot || index > 0) && (
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
               )}
-              <Link
-                className="hover:text-foreground"
-                href={`/projects/${projectId}?folderId=${a.id}`}
-              >
+              <Link className="hover:text-foreground" href={folderUrl(a.id)}>
                 {a.name}
               </Link>
             </span>
