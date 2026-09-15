@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ContentAccessControls } from '@/components/content-access-controls';
 
 interface VideoSharePageProps {
   projectId: string;
@@ -39,6 +40,7 @@ interface ShareResponse {
 }
 
 export default function VideoSharePageClient({ projectId, videoId }: VideoSharePageProps) {
+  const [accessRevision, setAccessRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -81,7 +83,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
     }
 
     loadShareLink();
-  }, [projectId, videoId]);
+  }, [projectId, videoId, accessRevision]);
 
   const copyLink = async () => {
     if (!shareUrl) return;
@@ -220,11 +222,6 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-start justify-center py-12 px-4">
-      <p className="text-sm text-muted-foreground">
-        This link grants separate access to this video and its versions, including when account
-        access is restricted. It never grants access to sibling videos or folder lists. Restricting
-        or moving the content revokes existing links after confirmation.
-      </p>
       <div className="w-full max-w-xl space-y-6">
         <Link
           href={`/projects/${projectId}/videos/${videoId}`}
@@ -236,7 +233,15 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
 
         <Card className="border-border/50 shadow-lg">
           <CardHeader>
-            <CardTitle className="text-2xl">Share Video For Review</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle className="text-2xl">Share Video</CardTitle>
+              <ContentAccessControls
+                projectId={projectId}
+                videoId={videoId}
+                showMembers
+                onAccessChanged={() => setAccessRevision((revision) => revision + 1)}
+              />
+            </div>
             <CardDescription>
               Create a private link so reviewers can watch and comment on this single video.
             </CardDescription>
@@ -249,8 +254,12 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
               </div>
             ) : shareUrl ? (
               <div className="space-y-3">
-                <div className="flex gap-2">
-                  <Input value={shareUrl} readOnly className="font-mono text-sm h-11 bg-muted/50" />
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    value={shareUrl}
+                    readOnly
+                    className="min-w-0 flex-1 font-mono text-sm h-11 bg-muted/50"
+                  />
                   <Button
                     variant={copied ? 'default' : 'outline'}
                     size="icon"
@@ -260,7 +269,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
                     {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   </Button>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button onClick={createShareLink} disabled={submitting} variant="outline">
                     {submitting ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -285,7 +294,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
                       Allow viewers with this link to download
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       variant={allowDownloads ? 'default' : 'outline'}
                       disabled={submitting || allowDownloads}
@@ -312,8 +321,9 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
                     )}
                     Link password
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Input
+                      className="min-w-0 flex-1"
                       type="password"
                       placeholder={
                         hasPassword ? 'Enter new password to replace current one' : 'Set a password'
@@ -353,8 +363,10 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
             )}
 
             <p className="text-xs text-muted-foreground">
-              This link allows guests to leave comments without an account. You can optionally
-              protect it with a password.
+              Anyone with this link can watch this video and its versions and comment without an
+              account, even when member access is restricted. Other videos and folders stay private.
+              You can add a password above. Restricting access or moving the video revokes its
+              existing link after confirmation.
             </p>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
