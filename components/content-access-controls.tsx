@@ -30,6 +30,7 @@ export function ContentAccessControls({
   contentName,
   share = false,
   showMembers = false,
+  onAccessChanged,
 }: {
   projectId: string;
   folderId?: string | null;
@@ -37,6 +38,7 @@ export function ContentAccessControls({
   contentName?: string;
   share?: boolean;
   showMembers?: boolean;
+  onAccessChanged?: () => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -81,6 +83,7 @@ export function ContentAccessControls({
         setInvitationUrl(payload.data.invitationUrl);
         await run({ action: 'members' });
       } else {
+        onAccessChanged?.();
         toast.success('Access updated');
         router.refresh();
       }
