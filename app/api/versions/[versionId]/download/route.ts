@@ -1,5 +1,6 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
@@ -288,7 +289,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Version');
     }
 
-    const access = await checkProjectAccess(version.video.project, session?.user?.id);
+    const access = await checkVideoAccess(version.video.id, session?.user?.id);
     const shareSession = getShareSessionFromRequest(request, version.video.id);
     const shareAccess = shareSession
       ? await validateShareLinkAccess({

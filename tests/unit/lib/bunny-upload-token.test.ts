@@ -74,6 +74,8 @@ describe('createBunnyUploadToken', () => {
 
   it('encodes the subject and the issue and expiry times into the payload', () => {
     expect(decodePayload(createBunnyUploadToken(SUBJECT))).toEqual({
+      fid: null,
+      target: null,
       typ: 'bunny-upload',
       uid: 'user-1',
       pid: 'project-1',

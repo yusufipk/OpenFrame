@@ -1,3 +1,4 @@
+import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
         videos: {
+          where: visibleVideoWhere(session?.user?.id),
           orderBy: { position: 'asc' },
           skip: offset,
           take: limit,
@@ -64,7 +66,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             _count: { select: { versions: true } },
           },
         },
-        _count: { select: { videos: true, members: true, shareLinks: true } },
+        _count: {
+          select: {
+            videos: { where: visibleVideoWhere(session?.user?.id) },
+            members: true,
+            shareLinks: true,
+          },
+        },
       },
     });
 
@@ -78,7 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const response = successResponse(project);
-    return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
+    return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching project:', error);
     return apiErrors.internalError('Failed to fetch project');
@@ -148,7 +156,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       data: updateData,
       include: {
         owner: { select: { id: true, name: true, image: true } },
-        _count: { select: { videos: true, members: true } },
+        _count: {
+          select: { videos: { where: visibleVideoWhere(session?.user?.id) }, members: true },
+        },
       },
     });
 

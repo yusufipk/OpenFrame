@@ -1,9 +1,11 @@
+import { ContentError, contentTransaction } from '@/lib/content-mutations';
+import { checkVideoAccess } from '@/lib/content-access';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth, checkProjectAccess } from '@/lib/auth';
-import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { auth } from '@/lib/auth';
+import { apiErrors, errorResponse, successResponse, withCacheControl } from '@/lib/api-response';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { MAX_SHARE_PASSWORD_LENGTH } from '@/lib/share-links';
@@ -24,7 +26,7 @@ async function requireShareManagementAccess(projectId: string, videoId: string, 
     return { error: apiErrors.notFound('Video') as Response, video: null };
   }
 
-  const access = await checkProjectAccess(video.project, userId);
+  const access = await checkVideoAccess(video.id, userId);
   if (!access.canEdit) {
     return { error: apiErrors.forbidden('Access denied') as Response, video: null };
   }
@@ -102,29 +104,35 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { error } = await requireShareManagementAccess(projectId, videoId, session.user.id);
     if (error) return error;
 
-    const link = await db.shareLink.findFirst({
-      where: {
-        projectId,
-        videoId,
-        permission: 'COMMENT',
-      },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        token: true,
-        permission: true,
-        allowGuests: true,
-        allowDownloads: true,
-        expiresAt: true,
-        createdAt: true,
-        passwordHash: true,
-      },
+    const link = await contentTransaction([projectId], async (tx) => {
+      const current = await checkVideoAccess(videoId, session.user.id, tx);
+      if (!current.canEdit || current.video?.projectId !== projectId)
+        throw new ContentError(403, 'Access changed. Refresh and try again.');
+      return tx.shareLink.findFirst({
+        where: {
+          projectId,
+          videoId,
+          permission: 'COMMENT',
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          token: true,
+          permission: true,
+          allowGuests: true,
+          allowDownloads: true,
+          expiresAt: true,
+          createdAt: true,
+          passwordHash: true,
+        },
+      });
     });
 
     const response = successResponse(serializeShareLink(request, videoId, link));
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return errorResponse(error.message, error.status);
     logError('Error fetching video share link:', error);
     return apiErrors.internalError('Failed to fetch video share link');
   }
@@ -173,50 +181,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     } | null = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        link = await db.$transaction(
-          async (tx) => {
-            const existing = await tx.shareLink.findFirst({
-              where: {
-                projectId,
-                videoId,
-                permission: 'COMMENT',
-              },
-              orderBy: { createdAt: 'desc' },
-              select: { id: true },
-            });
+        link = await contentTransaction([projectId], async (tx) => {
+          const current = await checkVideoAccess(videoId, session.user.id, tx);
+          if (!current.canEdit || current.video?.projectId !== projectId)
+            throw new ContentError(403, 'Access changed. Refresh and try again.');
+          const existing = await tx.shareLink.findFirst({
+            where: {
+              projectId,
+              videoId,
+              permission: 'COMMENT',
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+          });
 
-            if (existing) {
-              return tx.shareLink.update({
-                where: { id: existing.id },
-                data: {
-                  token,
-                  allowGuests,
-                  allowDownloads,
-                  passwordHash,
-                  expiresAt: null,
-                },
-                select: {
-                  id: true,
-                  token: true,
-                  permission: true,
-                  allowGuests: true,
-                  allowDownloads: true,
-                  expiresAt: true,
-                  createdAt: true,
-                  passwordHash: true,
-                },
-              });
-            }
-
-            return tx.shareLink.create({
+          if (existing) {
+            return tx.shareLink.update({
+              where: { id: existing.id },
               data: {
                 token,
-                projectId,
-                videoId,
-                permission: 'COMMENT',
                 allowGuests,
                 allowDownloads,
                 passwordHash,
+                expiresAt: null,
               },
               select: {
                 id: true,
@@ -229,9 +216,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 passwordHash: true,
               },
             });
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-        );
+          }
+
+          return tx.shareLink.create({
+            data: {
+              token,
+              projectId,
+              videoId,
+              permission: 'COMMENT',
+              allowGuests,
+              allowDownloads,
+              passwordHash,
+            },
+            select: {
+              id: true,
+              token: true,
+              permission: true,
+              allowGuests: true,
+              allowDownloads: true,
+              expiresAt: true,
+              createdAt: true,
+              passwordHash: true,
+            },
+          });
+        });
         break;
       } catch (error) {
         if (
@@ -261,6 +269,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return errorResponse(error.message, error.status);
     logError('Error creating video share link:', error);
     return apiErrors.internalError('Failed to create video share link');
   }
@@ -293,19 +302,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const existing = await db.shareLink.findFirst({
-      where: {
-        projectId,
-        videoId,
-        permission: 'COMMENT',
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!existing) {
-      return apiErrors.notFound('Share link');
-    }
-
     let passwordHashUpdate: string | null | undefined;
     if (clearPassword) {
       passwordHashUpdate = null;
@@ -317,29 +313,40 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const shouldRotateToken = clearPassword || rawPassword !== undefined;
-    const updated = await db.shareLink.update({
-      where: { id: existing.id },
-      data: {
-        ...(allowGuests !== undefined ? { allowGuests } : {}),
-        ...(allowDownloads !== undefined ? { allowDownloads } : {}),
-        ...(passwordHashUpdate !== undefined ? { passwordHash: passwordHashUpdate } : {}),
-        ...(shouldRotateToken ? { token: randomBytes(24).toString('base64url') } : {}),
-      },
-      select: {
-        id: true,
-        token: true,
-        permission: true,
-        allowGuests: true,
-        allowDownloads: true,
-        expiresAt: true,
-        createdAt: true,
-        passwordHash: true,
-      },
+    const updated = await contentTransaction([projectId], async (tx) => {
+      const current = await checkVideoAccess(videoId, session.user.id, tx);
+      if (!current.canEdit || current.video?.projectId !== projectId)
+        throw new ContentError(403, 'Access changed. Refresh and try again.');
+      const existing = await tx.shareLink.findFirst({
+        where: { projectId, videoId, permission: 'COMMENT' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!existing) throw new ContentError(404, 'Share link not found');
+      return tx.shareLink.update({
+        where: { id: existing.id },
+        data: {
+          ...(allowGuests !== undefined ? { allowGuests } : {}),
+          ...(allowDownloads !== undefined ? { allowDownloads } : {}),
+          ...(passwordHashUpdate !== undefined ? { passwordHash: passwordHashUpdate } : {}),
+          ...(shouldRotateToken ? { token: randomBytes(24).toString('base64url') } : {}),
+        },
+        select: {
+          id: true,
+          token: true,
+          permission: true,
+          allowGuests: true,
+          allowDownloads: true,
+          expiresAt: true,
+          createdAt: true,
+          passwordHash: true,
+        },
+      });
     });
 
     const response = successResponse(serializeShareLink(request, videoId, updated));
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return errorResponse(error.message, error.status);
     logError('Error updating video share link:', error);
     return apiErrors.internalError('Failed to update video share link');
   }
@@ -360,17 +367,23 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const { error } = await requireShareManagementAccess(projectId, videoId, session.user.id);
     if (error) return error;
 
-    await db.shareLink.deleteMany({
-      where: {
-        projectId,
-        videoId,
-        permission: 'COMMENT',
-      },
+    await contentTransaction([projectId], async (tx) => {
+      const current = await checkVideoAccess(videoId, session.user.id, tx);
+      if (!current.canEdit || current.video?.projectId !== projectId)
+        throw new ContentError(403, 'Access changed. Refresh and try again.');
+      await tx.shareLink.deleteMany({
+        where: {
+          projectId,
+          videoId,
+          permission: 'COMMENT',
+        },
+      });
     });
 
     const response = successResponse({ message: 'Video share link revoked' });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return errorResponse(error.message, error.status);
     logError('Error deleting video share link:', error);
     return apiErrors.internalError('Failed to delete video share link');
   }

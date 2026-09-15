@@ -1,6 +1,8 @@
+import { checkUploadDestination } from '@/lib/content-access';
+import { contentId, contentTransaction } from '@/lib/content-mutations';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import crypto from 'crypto';
@@ -25,7 +27,12 @@ type RouteParams = { params: Promise<{ projectId: string }> };
 // stands for are counted, not until the upload finishes.
 const BUNNY_RESERVATION_TTL_MS = 2 * 60 * 60 * 1000;
 
-async function getProjectWithEditAccess(projectId: string, userId: string) {
+async function getProjectWithEditAccess(
+  projectId: string,
+  userId: string,
+  folderId: string | null = null,
+  targetVideoId: string | null = null
+) {
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: {
@@ -40,8 +47,8 @@ async function getProjectWithEditAccess(projectId: string, userId: string) {
 
   if (!project) return null;
 
-  const access = await checkProjectAccess(project, userId);
-  const canEdit = access.canEdit;
+  const access = await checkUploadDestination(projectId, folderId, targetVideoId, userId);
+  const canEdit = access?.canEdit;
 
   if (!canEdit) return null;
 
@@ -61,12 +68,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.unauthorized();
     }
 
-    const project = await getProjectWithEditAccess(projectId, session.user.id);
+    const body = await request.json().catch(() => null);
+    const folderId = contentId(body?.folderId);
+    const targetVideoId = contentId(body?.targetVideoId);
+    const project = await getProjectWithEditAccess(
+      projectId,
+      session.user.id,
+      folderId,
+      targetVideoId
+    );
     if (!project) {
       return apiErrors.forbidden('Access denied');
     }
 
-    const body = await request.json().catch(() => null);
     const title = typeof body?.title === 'string' ? body.title.trim() : '';
 
     if (!title) {
@@ -160,6 +174,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const signature = hash.digest('hex');
     const uploadToken = createBunnyUploadToken(
       {
+        folderId,
+        targetVideoId,
         userId: session.user.id,
         projectId,
         videoId,
@@ -198,7 +214,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return apiErrors.unauthorized();
     }
 
-    const project = await getProjectWithEditAccess(projectId, session.user.id);
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { workspace: { select: { ownerId: true } } },
+    });
     if (!project) {
       return apiErrors.forbidden('Access denied');
     }
@@ -220,19 +239,35 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return apiErrors.forbidden('Invalid Bunny upload token');
     }
 
-    // Giving the quota back here rather than waiting for the reservation to
-    // lapse: an abandoned upload that keeps holding gigabytes for two hours is
-    // most of a trial's whole allowance, and the account has nothing to show for
-    // it. Safe to do on a caller's say-so only because the reservation id rides
-    // inside the signed token next to this video id, so releasing it costs the
-    // caller the video it belongs to.
-    await releaseStorageReservation(
-      grant.reservationId,
-      project.workspace.ownerId,
-      UPLOAD_RESERVATION_PURPOSES.BUNNY
-    );
+    const cleaned = await contentTransaction([projectId], async (tx) => {
+      // A signed uploader can abandon pending media after losing content access,
+      // but cannot delete media that has already been attached to a video.
+      const [versions, assets] = await Promise.all([
+        tx.videoVersion.count({ where: { providerId: 'bunny', videoId } }),
+        tx.videoAsset.count({ where: { provider: 'BUNNY', providerVideoId: videoId } }),
+      ]);
+      const attached = versions + assets;
+      if (attached) return false;
 
-    await cleanupBunnyStreamVideos([{ providerId: 'bunny', videoId }]);
+      // Giving the quota back here rather than waiting for the reservation to
+      // lapse: an abandoned upload that keeps holding gigabytes for two hours is
+      // most of a trial's whole allowance, and the account has nothing to show for
+      // it. Safe to do on a caller's say-so only because the reservation id rides
+      // inside the signed token next to this video id, so releasing it costs the
+      // caller the video it belongs to.
+      await releaseStorageReservation(
+        grant.reservationId,
+        project.workspace.ownerId,
+        UPLOAD_RESERVATION_PURPOSES.BUNNY
+      );
+
+      await cleanupBunnyStreamVideos(
+        [{ providerId: 'bunny', videoId }],
+        AbortSignal.timeout(10000)
+      );
+      return true;
+    });
+    if (!cleaned) return apiErrors.conflict('This upload has already been attached');
 
     const response = successResponse({ message: 'Pending upload cleaned up' });
     return withCacheControl(response, 'private, no-store');

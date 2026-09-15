@@ -345,7 +345,7 @@ describe('POST /api/projects/[projectId]/videos/bulk-delete', () => {
       { projectId: mine.project.id }
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     expect(await db.video.count()).toBe(2);
   });
 
@@ -388,7 +388,7 @@ describe('video move', () => {
     expect(response.status).toBe(401);
   });
 
-  it('lists every other project in the workspace for a workspace ADMIN', async () => {
+  it('lists current and other projects in the workspace for a workspace ADMIN', async () => {
     const scenario = await seedProject();
     const sibling = await createProject({
       ownerId: scenario.owner.id,
@@ -409,7 +409,7 @@ describe('video move', () => {
       })
     );
 
-    expect(payload.projects.map((entry) => entry.id)).toEqual([sibling.id]);
+    expect(payload.projects.map((entry) => entry.id)).toEqual([scenario.project.id, sibling.id]);
     expect(payload.projects.map((entry) => entry.id)).not.toContain(elsewhere.project.id);
   });
 
@@ -435,7 +435,7 @@ describe('video move', () => {
       })
     );
 
-    expect(payload.projects.map((entry) => entry.id)).toEqual([manageable.id]);
+    expect(payload.projects.map((entry) => entry.id)).toEqual([scenario.project.id, manageable.id]);
   });
 
   it.each([
@@ -551,7 +551,7 @@ describe('video move', () => {
     );
   });
 
-  it('moves the videos, appends their positions and repoints their share links', async () => {
+  it('confirms the move, appends positions and revokes old video links', async () => {
     const source = await seedVersion();
     const target = await createProject({
       ownerId: source.owner.id,
@@ -566,12 +566,30 @@ describe('video move', () => {
     });
     signedInAs(source.owner);
 
+    const previewResponse = await callRoute(
+      moveVideos,
+      apiRequest(`${videosUrl(source.project.id)}/move`, {
+        body: {
+          videoIds: [source.video.id, secondVideo.id],
+          targetProjectId: target.id,
+        },
+      }),
+      { projectId: source.project.id }
+    );
+    const preview = await readData<{ needsConfirmation: boolean; confirmationToken: string }>(
+      previewResponse
+    );
+    expect(preview.needsConfirmation).toBe(true);
+    expect((await db.video.findUniqueOrThrow({ where: { id: source.video.id } })).projectId).toBe(
+      source.project.id
+    );
     const response = await callRoute(
       moveVideos,
       apiRequest(`${videosUrl(source.project.id)}/move`, {
         body: {
           videoIds: [source.video.id, secondVideo.id],
           targetProjectId: target.id,
+          confirmationToken: preview.confirmationToken,
         },
       }),
       { projectId: source.project.id }
@@ -588,11 +606,7 @@ describe('video move', () => {
     expect(moved.position).toBe(5);
     expect(movedSecond.position).toBe(6);
 
-    // A stale projectId on the share link would let the link resolve against
-    // the old project and fail validateShareLinkAccess.
-    expect((await db.shareLink.findUniqueOrThrow({ where: { id: link.id } })).projectId).toBe(
-      target.id
-    );
+    expect(await db.shareLink.findUnique({ where: { id: link.id } })).toBeNull();
   });
 });
 

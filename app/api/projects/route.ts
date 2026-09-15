@@ -1,3 +1,4 @@
+import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, checkWorkspaceAccess } from '@/lib/auth';
@@ -70,7 +71,9 @@ export async function GET(request: NextRequest) {
         where: baseFilter,
         include: {
           owner: { select: { id: true, name: true, image: true } },
-          _count: { select: { videos: true, members: true } },
+          _count: {
+            select: { videos: { where: visibleVideoWhere(session?.user?.id) }, members: true },
+          },
         },
         orderBy: { updatedAt: 'desc' },
         skip,
@@ -88,7 +91,7 @@ export async function GET(request: NextRequest) {
       totalPages: Math.ceil(total / limit),
     });
 
-    return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
+    return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching projects:', error);
     return apiErrors.internalError('Failed to fetch projects');
@@ -198,7 +201,9 @@ export async function POST(request: NextRequest) {
         },
         include: {
           owner: { select: { id: true, name: true, image: true } },
-          _count: { select: { videos: true, members: true } },
+          _count: {
+            select: { videos: { where: visibleVideoWhere(session?.user?.id) }, members: true },
+          },
         },
       });
 

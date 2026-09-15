@@ -49,16 +49,22 @@ vi.mock('next/navigation', () => ({ redirect: nav.redirect, notFound: nav.notFou
 const authModule = vi.hoisted(() => ({
   auth: vi.fn(),
   checkProjectAccess: vi.fn(),
+  checkVideoAccess: vi.fn(),
   checkWorkspaceAccess: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => authModule);
+vi.mock('@/lib/content-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/content-access')>()),
+  checkVideoAccess: authModule.checkVideoAccess,
+}));
 
 const dbMock = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
   workspace: { findUnique: vi.fn(), count: vi.fn() },
   project: { findUnique: vi.fn(), count: vi.fn() },
-  video: { findFirst: vi.fn() },
+  video: { findFirst: vi.fn(), count: vi.fn().mockResolvedValue(0) },
+  projectFolder: { count: vi.fn().mockResolvedValue(0) },
 }));
 
 vi.mock('@/lib/db', () => ({ db: dbMock, default: dbMock, disconnectDb: vi.fn() }));
@@ -677,7 +683,7 @@ describe('requireVideoProjectAccessOrRedirect', () => {
     // Without the projectId in the where clause, any video id would resolve
     // through any project the caller happens to be allowed to see.
     dbMock.video.findFirst.mockResolvedValue(VIDEO_ROW);
-    authModule.checkProjectAccess.mockResolvedValue(
+    authModule.checkVideoAccess.mockResolvedValue(
       projectAccess({ isOwner: true, hasAccess: true })
     );
 
@@ -692,7 +698,7 @@ describe('requireVideoProjectAccessOrRedirect', () => {
     dbMock.video.findFirst.mockResolvedValue(null);
 
     await expectNotFound(requireVideoProjectAccessOrRedirect({ ...args, userId: USER_ID }));
-    expect(authModule.checkProjectAccess).not.toHaveBeenCalled();
+    expect(authModule.checkVideoAccess).not.toHaveBeenCalled();
   });
 
   it('sends an anonymous caller to the login page rather than a 404 for a missing video', async () => {
@@ -711,12 +717,12 @@ describe('requireVideoProjectAccessOrRedirect', () => {
       requireVideoProjectAccessOrRedirect({ ...args, intent: 'manage', allowPublicView: true }),
       LOGIN
     );
-    expect(authModule.checkProjectAccess).not.toHaveBeenCalled();
+    expect(authModule.checkVideoAccess).not.toHaveBeenCalled();
   });
 
   it('sends a signed-in stranger to the dashboard', async () => {
     dbMock.video.findFirst.mockResolvedValue(VIDEO_ROW);
-    authModule.checkProjectAccess.mockResolvedValue(projectAccess({ hasAccess: false }));
+    authModule.checkVideoAccess.mockResolvedValue(projectAccess({ hasAccess: false }));
 
     await expectRedirect(
       requireVideoProjectAccessOrRedirect({ ...args, userId: OTHER_USER_ID }),
@@ -726,7 +732,7 @@ describe('requireVideoProjectAccessOrRedirect', () => {
 
   it('sends a read-only member to the dashboard when the page needs manage rights', async () => {
     dbMock.video.findFirst.mockResolvedValue(VIDEO_ROW);
-    authModule.checkProjectAccess.mockResolvedValue(
+    authModule.checkVideoAccess.mockResolvedValue(
       projectAccess({ isProjectMember: true, hasAccess: true, canEdit: false })
     );
 
@@ -739,19 +745,19 @@ describe('requireVideoProjectAccessOrRedirect', () => {
   it('authorizes against the parent project and returns it alongside the video', async () => {
     const access = projectAccess({ isProjectMember: true, hasAccess: true });
     dbMock.video.findFirst.mockResolvedValue(VIDEO_ROW);
-    authModule.checkProjectAccess.mockResolvedValue(access);
+    authModule.checkVideoAccess.mockResolvedValue(access);
 
     await expect(
       requireVideoProjectAccessOrRedirect({ ...args, userId: OTHER_USER_ID })
     ).resolves.toEqual({ video: VIDEO_ROW, project: PROJECT_ROW, access });
-    expect(authModule.checkProjectAccess).toHaveBeenCalledWith(PROJECT_ROW, OTHER_USER_ID);
+    expect(authModule.checkVideoAccess).toHaveBeenCalledWith(VIDEO_ID, OTHER_USER_ID);
   });
 
   it('lets an anonymous viewer watch a video in a public project when the route opts in', async () => {
     const publicVideo = { id: VIDEO_ID, project: PUBLIC_PROJECT_ROW };
     const access = projectAccess({ hasAccess: true });
     dbMock.video.findFirst.mockResolvedValue(publicVideo);
-    authModule.checkProjectAccess.mockResolvedValue(access);
+    authModule.checkVideoAccess.mockResolvedValue(access);
 
     await expect(
       requireVideoProjectAccessOrRedirect({ ...args, allowPublicView: true })

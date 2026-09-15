@@ -464,7 +464,13 @@ async function arrivedAsCollaborator(userId: string, now: Date) {
     select: { email: true },
   });
 
-  const [workspaceMemberships, projectMemberships, pendingInvitations] = await Promise.all([
+  const [
+    workspaceMemberships,
+    projectMemberships,
+    pendingInvitations,
+    folderMemberships,
+    videoMemberships,
+  ] = await Promise.all([
     db.workspaceMember.count({
       where: { userId, workspace: { ownerId: { not: userId } } },
     }),
@@ -480,9 +486,17 @@ async function arrivedAsCollaborator(userId: string, now: Date) {
           },
         })
       : Promise.resolve(0),
+    db.projectFolderMember.count({ where: { userId } }),
+    db.videoMember.count({ where: { userId } }),
   ]);
 
-  return workspaceMemberships > 0 || projectMemberships > 0 || pendingInvitations > 0;
+  return (
+    workspaceMemberships > 0 ||
+    projectMemberships > 0 ||
+    pendingInvitations > 0 ||
+    folderMemberships > 0 ||
+    videoMemberships > 0
+  );
 }
 
 /**

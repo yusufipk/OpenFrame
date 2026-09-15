@@ -1,6 +1,7 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, computeProjectAccess, projectAccessInclude } from '@/lib/auth';
+import { auth, projectAccessInclude } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const project = version.video.project;
-    const access = computeProjectAccess(project, userId);
+    const access = await checkVideoAccess(version.video.id, userId);
     const shareSession = getShareSessionFromRequest(request, version.video.id);
 
     const shareAccess = shareSession
@@ -214,7 +215,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const project = version.video.project;
-    const access = computeProjectAccess(project, userId);
+    const access = await checkVideoAccess(version.video.id, userId);
     const shareSession = getShareSessionFromRequest(request, version.video.id);
 
     const shareAccess = shareSession

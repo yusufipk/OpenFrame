@@ -1,3 +1,4 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, checkProjectAccess } from '@/lib/auth';
@@ -23,12 +24,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (!project) return apiErrors.notFound('Project');
 
     if (session?.user?.id) {
-      const access = await checkProjectAccess(project, session.user.id);
+      const access = videoId
+        ? await checkVideoAccess(videoId, session.user.id)
+        : await checkProjectAccess(project, session.user.id);
+      if (videoId && !(await db.video.count({ where: { id: videoId, projectId } })))
+        return apiErrors.notFound('Video');
       if (!access.hasAccess) {
         return apiErrors.notFound('Project');
       }
     } else {
-      let hasGuestAccess = project.visibility === 'PUBLIC';
+      let hasGuestAccess = videoId
+        ? (await checkVideoAccess(videoId)).hasAccess &&
+          !!(await db.video.count({ where: { id: videoId, projectId } }))
+        : (await checkProjectAccess(project, undefined)).hasAccess;
       if (!hasGuestAccess && videoId) {
         const video = await db.video.findFirst({
           where: { id: videoId, projectId },
@@ -66,9 +74,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     const response = successResponse(tags);
-    const cacheControl = session?.user?.id
-      ? 'private, max-age=120, stale-while-revalidate=300'
-      : 'private, no-cache';
+    const cacheControl = session?.user?.id ? 'private, no-store' : 'private, no-cache';
     return withCacheControl(response, cacheControl);
   } catch (error) {
     logError('Error fetching tags:', error);

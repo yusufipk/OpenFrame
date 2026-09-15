@@ -1,6 +1,8 @@
+import { contentTransaction, ContentError } from '@/lib/content-mutations';
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { validateUrl, validateOptionalUrlOrAppPath } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video');
     }
 
-    const access = await checkProjectAccess(video.project, session?.user?.id);
+    const access = await checkVideoAccess(video.id, session?.user?.id);
     if (!access.hasAccess) {
       return apiErrors.forbidden('Access denied');
     }
@@ -43,7 +45,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     const response = successResponse({ versions });
-    return withCacheControl(response, 'private, max-age=30, stale-while-revalidate=60');
+    return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching versions:', error);
     return apiErrors.internalError('Failed to fetch versions');
@@ -78,7 +80,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video');
     }
 
-    const access = await checkProjectAccess(video.project, session.user.id);
+    const access = await checkVideoAccess(video.id, session.user.id);
     if (!access.canEdit) {
       return apiErrors.forbidden('Access denied');
     }
@@ -168,6 +170,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // an hour, and until this row existed those bytes were simply invisible:
       // the uploader's own storage page read zero and the next upload was
       // measured against a total that ignored the one before it.
+      if (grant.targetVideoId && grant.targetVideoId !== videoId)
+        return apiErrors.forbidden('Upload belongs to another video');
       versionSizeBytes = grant.declaredSizeBytes ?? BigInt(0);
       bunnyReservation = grant.reservationId;
     } else if (normalizedProviderId === 'r2') {
@@ -190,6 +194,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         return apiErrors.badRequest(finalizeResult.error);
       }
 
+      const savedTarget = await db.videoUploadSession.findUnique({
+        where: { id: finalizeResult.sessionId },
+        select: { targetVideoId: true },
+      });
+      if (savedTarget?.targetVideoId && savedTarget.targetVideoId !== videoId)
+        return apiErrors.forbidden('Upload belongs to another video');
       versionSizeBytes = finalizeResult.sizeBytes;
       persistedProviderVideoId = normalizedObjectKey;
       finalizedR2Session = {
@@ -203,79 +213,80 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const nextVersionNumber = (video.versions[0]?.versionNumber || 0) + 1;
 
     // Use transaction to handle active flag
-    const version = await db.$transaction(
-      async (tx: Parameters<Parameters<typeof db.$transaction>[0]>[0]) => {
-        // If setActive, deactivate all other versions
-        if (setActive) {
-          await tx.videoVersion.updateMany({
-            where: { videoParentId: videoId },
-            data: { isActive: false },
-          });
-        }
+    const version = await contentTransaction([projectId], async (tx) => {
+      const current = await checkVideoAccess(videoId, session.user.id, tx);
+      if (!current.canEdit || current.video?.projectId !== projectId)
+        throw new ContentError(403, 'Video access changed during upload');
+      // If setActive, deactivate all other versions
+      if (setActive) {
+        await tx.videoVersion.updateMany({
+          where: { videoParentId: videoId },
+          data: { isActive: false },
+        });
+      }
 
-        if (finalizedR2Session) {
-          const consumed = await tx.videoUploadSession.updateMany({
-            where: {
-              id: finalizedR2Session.sessionId,
-              status: 'INITIATED',
-              userId: session.user.id,
-              projectId,
-              objectKey: persistedProviderVideoId,
-            },
-            data: {
-              status: 'FINALIZED',
-              consumedAt: new Date(),
-            },
-          });
-          if (consumed.count !== 1) {
-            throw new Error('Upload session already consumed');
-          }
-          if (finalizedR2Session.reservationId) {
-            await tx.uploadReservation.deleteMany({
-              where: {
-                id: finalizedR2Session.reservationId,
-                billedUserId: finalizedR2Session.billedUserId,
-                purpose: UPLOAD_RESERVATION_PURPOSES.R2_VIDEO,
-              },
-            });
-          }
+      if (finalizedR2Session) {
+        const consumed = await tx.videoUploadSession.updateMany({
+          where: {
+            id: finalizedR2Session.sessionId,
+            status: 'INITIATED',
+            userId: session.user.id,
+            projectId,
+            objectKey: persistedProviderVideoId,
+          },
+          data: {
+            status: 'FINALIZED',
+            consumedAt: new Date(),
+          },
+        });
+        if (consumed.count !== 1) {
+          throw new Error('Upload session already consumed');
         }
-
-        // Handed over in the same transaction that records the size, so the bytes
-        // are never counted twice and never counted zero times.
-        if (bunnyReservation) {
+        if (finalizedR2Session.reservationId) {
           await tx.uploadReservation.deleteMany({
             where: {
-              id: bunnyReservation,
-              billedUserId: video.project.workspace.ownerId,
-              purpose: UPLOAD_RESERVATION_PURPOSES.BUNNY,
+              id: finalizedR2Session.reservationId,
+              billedUserId: finalizedR2Session.billedUserId,
+              purpose: UPLOAD_RESERVATION_PURPOSES.R2_VIDEO,
             },
           });
         }
+      }
 
-        return tx.videoVersion.create({
-          data: {
-            versionNumber: nextVersionNumber,
-            versionLabel: versionLabel?.trim() || null,
-            providerId: normalizedProviderId,
-            videoId: persistedProviderVideoId,
-            originalUrl: videoUrl,
-            title: versionLabel?.trim() || `Version ${nextVersionNumber}`,
-            thumbnailUrl:
-              normalizedProviderId === 'r2'
-                ? (finalizedR2Session?.thumbnailProxyUrl ?? '/placeholder-video-thumbnail.png')
-                : thumbnailUrl || null,
-            duration: duration || null,
-            sizeBytes: versionSizeBytes,
-            isActive: setActive ?? false,
-            videoParentId: videoId,
-          },
-          include: {
-            _count: { select: { comments: true } },
+      // Handed over in the same transaction that records the size, so the bytes
+      // are never counted twice and never counted zero times.
+      if (bunnyReservation) {
+        await tx.uploadReservation.deleteMany({
+          where: {
+            id: bunnyReservation,
+            billedUserId: video.project.workspace.ownerId,
+            purpose: UPLOAD_RESERVATION_PURPOSES.BUNNY,
           },
         });
       }
-    );
+
+      return tx.videoVersion.create({
+        data: {
+          versionNumber: nextVersionNumber,
+          versionLabel: versionLabel?.trim() || null,
+          providerId: normalizedProviderId,
+          videoId: persistedProviderVideoId,
+          originalUrl: videoUrl,
+          title: versionLabel?.trim() || `Version ${nextVersionNumber}`,
+          thumbnailUrl:
+            normalizedProviderId === 'r2'
+              ? (finalizedR2Session?.thumbnailProxyUrl ?? '/placeholder-video-thumbnail.png')
+              : thumbnailUrl || null,
+          duration: duration || null,
+          sizeBytes: versionSizeBytes,
+          isActive: setActive ?? false,
+          videoParentId: videoId,
+        },
+        include: {
+          _count: { select: { comments: true } },
+        },
+      });
+    });
 
     // Notify project owner (fire-and-forget, skip if they added it themselves)
     if (video.project.ownerId !== session.user.id) {
@@ -293,6 +304,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const response = successResponse(version, 201);
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return apiErrors.forbidden(error.message);
     logError('Error creating version:', error);
     return apiErrors.internalError('Failed to create version');
   }

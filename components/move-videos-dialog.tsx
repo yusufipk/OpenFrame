@@ -83,6 +83,33 @@ export function MoveVideosDialog({
     };
   }, [open, projectId]);
 
+  const [folderId, setFolderId] = useState('');
+  const [folders, setFolders] = useState<Array<{ id: string; name: string; canEdit: boolean }>>([]);
+  const [confirmation, setConfirmation] = useState<{
+    message: string;
+    confirmationToken: string;
+  } | null>(null);
+  useEffect(() => {
+    setFolderId('');
+    setConfirmation(null);
+    if (!selectedId) {
+      setFolders([]);
+      return;
+    }
+    let canceled = false;
+    fetch(`/api/projects/${selectedId}/folders`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((p) => {
+        if (!canceled)
+          setFolders((p.data?.folders ?? []).filter((f: { canEdit: boolean }) => f.canEdit));
+      })
+      .catch(() => {
+        if (!canceled) setFolders([]);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [selectedId, open]);
   const count = videoIds.length;
   const noun = count === 1 ? 'video' : 'videos';
 
@@ -93,11 +120,20 @@ export function MoveVideosDialog({
       const res = await fetch(`/api/projects/${projectId}/videos/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoIds, targetProjectId: selectedId }),
+        body: JSON.stringify({
+          videoIds,
+          targetProjectId: selectedId,
+          folderId: folderId || null,
+          confirmationToken: confirmation?.confirmationToken,
+        }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
         toast.error(typeof body?.error === 'string' ? body.error : 'Failed to move videos');
+        return;
+      }
+      if (body?.data?.needsConfirmation) {
+        setConfirmation(body.data);
         return;
       }
       toast.success(typeof body?.data?.message === 'string' ? body.data.message : 'Videos moved');
@@ -152,6 +188,26 @@ export function MoveVideosDialog({
           )}
         </div>
 
+        <label className="space-y-1 text-sm">
+          Destination folder
+          <select
+            aria-label="Destination folder"
+            className="block w-full rounded border bg-background p-2"
+            value={folderId}
+            onChange={(e) => {
+              setFolderId(e.target.value);
+              setConfirmation(null);
+            }}
+          >
+            <option value="">Project root</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {confirmation && <p className="rounded border p-3 text-sm">{confirmation.message}</p>}
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isMoving}>
             Cancel

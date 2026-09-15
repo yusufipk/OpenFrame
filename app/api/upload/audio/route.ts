@@ -1,5 +1,6 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
       return apiErrors.notFound('Video');
     }
 
-    const access = await checkProjectAccess(video.project, session?.user?.id);
+    const access = await checkVideoAccess(video.id, session?.user?.id);
     const shareSession = getShareSessionFromRequest(request, safeVideoId);
     const shareAccess = shareSession
       ? await validateShareLinkAccess({

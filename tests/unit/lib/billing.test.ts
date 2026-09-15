@@ -42,6 +42,8 @@ const dbMock = vi.hoisted(() => ({
   workspace: { count: vi.fn() },
   workspaceMember: { count: vi.fn() },
   projectMember: { count: vi.fn() },
+  projectFolderMember: { count: vi.fn().mockResolvedValue(0) },
+  videoMember: { count: vi.fn().mockResolvedValue(0) },
   invitation: { count: vi.fn() },
   analyticsEvent: { createMany: vi.fn() },
 }));

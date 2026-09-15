@@ -1,6 +1,7 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
@@ -114,7 +115,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check access including workspace membership
-    const access = await checkProjectAccess(video.project, session?.user?.id);
+    const access = await checkVideoAccess(video.id, session?.user?.id);
     const shareSession = getShareSessionFromRequest(request, video.id);
     const shareAccess = shareSession
       ? await validateShareLinkAccess({
@@ -204,8 +205,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       versions,
       projectId: video.projectId,
       project: {
-        name: project.name,
-        ownerId: project.ownerId,
+        name: access.hasProjectAccess ? project.name : 'Shared video',
+        ownerId: access.hasProjectAccess ? project.ownerId : null,
         visibility: project.visibility,
         allowDownloads: project.allowDownloads,
       },
@@ -214,7 +215,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       currentUserName: session?.user?.name || null,
       canComment: canCommentWithMembership || canCommentWithShareLink,
       canDownload: canDownloadWithMembership || canDownloadWithShareLink,
-      canManageTags: access.canEdit,
+      canManageTags: access.canManageProject,
       canResolveComments: access.canEdit,
       canShareVideo: access.canEdit,
       canUploadAssets,

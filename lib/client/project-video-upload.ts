@@ -78,6 +78,7 @@ export async function uploadProjectVideo(
   file: File,
   options: {
     provider: DirectUploadProvider;
+    folderId?: string | null;
     title?: string;
     description?: string | null;
     bunnyCdnHostname?: string | null;
@@ -85,6 +86,7 @@ export async function uploadProjectVideo(
 ): Promise<void> {
   const {
     provider,
+    folderId = null,
     title: titleOverride,
     description = null,
     bunnyCdnHostname = resolvePublicBunnyCdnHostname(),
@@ -102,6 +104,7 @@ export async function uploadProjectVideo(
     if (provider === 'r2') {
       onStatus?.('Initializing upload...');
       const uploaded = await uploadVideoToR2(projectId, file, {
+        folderId,
         onProgress: (progress) => {
           onProgress?.(progress);
           onStatus?.(`Uploading... ${progress}%`);
@@ -126,6 +129,7 @@ export async function uploadProjectVideo(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          folderId,
           title,
           description,
           videoUrl: uploaded.proxyUrl,
@@ -157,7 +161,7 @@ export async function uploadProjectVideo(
       headers: { 'Content-Type': 'application/json' },
       // The server checks this against the quota and holds a reservation for it,
       // so an upload that cannot fit is turned away before any of it is sent.
-      body: JSON.stringify({ title, sizeBytes: file.size.toString() }),
+      body: JSON.stringify({ folderId, title, sizeBytes: file.size.toString() }),
     });
 
     const initPayload = (await initResponse.json().catch(() => null)) as {
@@ -226,6 +230,7 @@ export async function uploadProjectVideo(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        folderId,
         title,
         description,
         videoUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`,

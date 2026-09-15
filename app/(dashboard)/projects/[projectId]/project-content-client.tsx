@@ -1,4 +1,5 @@
 'use client';
+import { ContentAccessControls } from '@/components/content-access-controls';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -79,6 +80,7 @@ interface ProjectContentClientProps {
     members: { role: string }[];
   };
   projectId: string;
+  folderId?: string | null;
   videos: SerializedVideo[];
   allVideoIds: string[];
   canEdit: boolean;
@@ -95,6 +97,7 @@ interface ProjectContentClientProps {
 export function ProjectContentClient({
   project,
   projectId,
+  folderId = null,
   videos,
   allVideoIds,
   canEdit,
@@ -321,6 +324,7 @@ export function ProjectContentClient({
   return (
     <>
       <VideoDragDropUploader
+        folderId={folderId}
         fixedProjectId={projectId}
         fixedProjectName={project.name}
         canUpload={canEdit && directUploadsEnabled}
@@ -388,7 +392,7 @@ export function ProjectContentClient({
                   ) : (
                     <Download className="h-4 w-4 mr-2" />
                   )}
-                  Download project
+                  Download accessible videos
                   <ChevronDown className="h-4 w-4 ml-1" />
                 </Button>
               </DropdownMenuTrigger>
@@ -403,14 +407,14 @@ export function ProjectContentClient({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() =>
-                    startProjectDownload(undefined, { includeAssets: includeAssetsInDownload })
+                    startProjectDownload(allVideoIds, { includeAssets: includeAssetsInDownload })
                   }
                 >
                   Latest version only
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() =>
-                    startProjectDownload(undefined, {
+                    startProjectDownload(allVideoIds, {
                       allVersions: true,
                       includeAssets: includeAssetsInDownload,
                     })
@@ -421,7 +425,7 @@ export function ProjectContentClient({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          {canEdit && (
+          {(isOwner || project.members[0]?.role === 'ADMIN') && (
             <Button variant="outline" size="sm" asChild>
               <Link href={`/projects/${projectId}/share`}>
                 <Share2 className="h-4 w-4 mr-2" />
@@ -447,7 +451,9 @@ export function ProjectContentClient({
           )}
           {canEdit && (
             <Button size="sm" asChild>
-              <Link href={`/projects/${projectId}/videos/new`}>
+              <Link
+                href={`/projects/${projectId}/videos/new${folderId ? `?folderId=${folderId}` : ''}`}
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 Add Video
               </Link>
@@ -535,7 +541,7 @@ export function ProjectContentClient({
                 disabled={selectedCount === 0 || isDeletingSelected}
               >
                 <FolderInput className="h-4 w-4 mr-2" />
-                Move to project
+                Move videos
               </Button>
             )}
             {canEdit && (
@@ -585,7 +591,9 @@ export function ProjectContentClient({
             </p>
             {canEdit && (
               <Button asChild>
-                <Link href={`/projects/${projectId}/videos/new`}>
+                <Link
+                  href={`/projects/${projectId}/videos/new${folderId ? `?folderId=${folderId}` : ''}`}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add Video
                 </Link>
@@ -653,6 +661,9 @@ export function ProjectContentClient({
         </AlertDialogContent>
       </AlertDialog>
 
+      {canEdit && selectedVideoIds.length === 1 && (
+        <ContentAccessControls projectId={projectId} videoId={[...selectedVideoIds][0]} />
+      )}
       <MoveVideosDialog
         open={showMoveSelectedDialog}
         onOpenChange={setShowMoveSelectedDialog}

@@ -220,6 +220,11 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-start justify-center py-12 px-4">
+      <p className="text-sm text-muted-foreground">
+        This link grants separate access to this video and its versions, including when account
+        access is restricted. It never grants access to sibling videos or folder lists. Restricting
+        or moving the content revokes existing links after confirmation.
+      </p>
       <div className="w-full max-w-xl space-y-6">
         <Link
           href={`/projects/${projectId}/videos/${videoId}`}

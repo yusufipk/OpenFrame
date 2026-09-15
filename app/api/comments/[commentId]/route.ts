@@ -1,6 +1,7 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { rateLimit } from '@/lib/rate-limit';
@@ -93,8 +94,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Authorization check: verify user has access to the project
-    const project = comment.version.video.project;
-    const access = await checkProjectAccess(project, session?.user?.id);
+    const access = await checkVideoAccess(comment.version.video.id, session?.user?.id);
 
     if (!access.hasAccess) {
       return apiErrors.forbidden('Access denied');
@@ -148,7 +148,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const project = comment.version.video.project;
     const userId = session?.user?.id ?? null;
-    const access = await checkProjectAccess(project, userId ?? undefined);
+    const access = await checkVideoAccess(comment.version.video.id, userId ?? undefined);
+    const currentShare = getShareSessionFromRequest(request, comment.version.video.id);
+    const currentLinkAccess = currentShare
+      ? await validateShareLinkAccess({
+          token: currentShare.token,
+          projectId: project.id,
+          videoId: comment.version.video.id,
+          requiredPermission: 'COMMENT',
+          passwordVerified: currentShare.passwordVerified,
+        })
+      : null;
+    if (!access?.hasAccess && !currentLinkAccess?.canComment)
+      return apiErrors.forbidden('Access denied');
     const isOwner = userId === project.ownerId;
     const isAuthor = !!userId && comment.authorId === userId;
     const guestIdentityId = !userId ? getGuestIdentityFromRequest(request) : null;
@@ -432,7 +444,19 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const isAuthor = !!userId && comment.authorId === userId;
 
     // Project owners/admins and workspace admins can delete any comment
-    const access = userId ? await checkProjectAccess(project, userId) : null;
+    const access = userId ? await checkVideoAccess(comment.version.video.id, userId) : null;
+    const currentShare = getShareSessionFromRequest(request, comment.version.video.id);
+    const currentLinkAccess = currentShare
+      ? await validateShareLinkAccess({
+          token: currentShare.token,
+          projectId: project.id,
+          videoId: comment.version.video.id,
+          requiredPermission: 'COMMENT',
+          passwordVerified: currentShare.passwordVerified,
+        })
+      : null;
+    if (!access?.hasAccess && !currentLinkAccess?.canComment)
+      return apiErrors.forbidden('Access denied');
     const isPrivilegedUser = !!access?.canEdit;
 
     let canDelete = isAuthor || isPrivilegedUser;

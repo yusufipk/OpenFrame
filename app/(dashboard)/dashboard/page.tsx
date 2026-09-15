@@ -1,3 +1,5 @@
+import Link from 'next/link';
+import { visibleVideoWhere } from '@/lib/content-access';
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -124,7 +126,7 @@ export default async function DashboardPage({
         },
         _count: {
           select: {
-            videos: true,
+            videos: { where: visibleVideoWhere(session?.user?.id) },
             members: true,
           },
         },
@@ -151,14 +153,19 @@ export default async function DashboardPage({
   }));
 
   return (
-    <DashboardClient
-      serializedProjects={serializedProjects}
-      workspaces={workspaces}
-      totalPages={totalPages}
-      canCreateProjects={canCreateProjects}
-      canUploadVideos={canUploadVideos}
-      directUploadsEnabled={isDirectFileUploadEnabled()}
-      directUploadProvider={isS3VideoUploadsEnabled() ? 'r2' : 'bunny'}
-    />
+    <>
+      <DashboardClient
+        serializedProjects={serializedProjects}
+        workspaces={workspaces}
+        totalPages={totalPages}
+        canCreateProjects={canCreateProjects}
+        canUploadVideos={canUploadVideos}
+        directUploadsEnabled={isDirectFileUploadEnabled()}
+        directUploadProvider={isS3VideoUploadsEnabled() ? 'r2' : 'bunny'}
+      />
+      <Link href="/shared" className="text-sm underline">
+        Shared with me
+      </Link>
+    </>
   );
 }

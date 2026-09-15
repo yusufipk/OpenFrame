@@ -426,6 +426,7 @@ describe('useVersionActions uploading a file to Bunny', () => {
     // reserves it before Bunny is asked for anything, so an upload that cannot
     // fit is refused here rather than after it has been sent.
     expect(bodyOf(callsTo(BUNNY_INIT_URL, 'POST')[0])).toEqual({
+      targetVideoId: 'vid1',
       title: 'my clip',
       sizeBytes: '10',
     });
@@ -446,6 +447,7 @@ describe('useVersionActions uploading a file to Bunny', () => {
     await createFromFile(harness);
 
     expect(bodyOf(callsTo(BUNNY_INIT_URL, 'POST')[0])).toEqual({
+      targetVideoId: 'vid1',
       title: 'Client cut',
       sizeBytes: '10',
     });

@@ -1,5 +1,7 @@
+import { contentTransaction, ContentError } from '@/lib/content-mutations';
+import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { db } from '@/lib/db';
 import { logCleanupWarnings } from '@/lib/cleanup-warnings';
@@ -32,11 +34,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Project');
     }
 
-    const access = await checkProjectAccess(project, session.user.id);
-    if (!access.canEdit) {
-      return apiErrors.forbidden('Only project owner or admin can delete videos');
-    }
-
     const body = await request.json();
     const { videoIds } = body as { videoIds?: unknown };
 
@@ -52,9 +49,39 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const normalizedIds = [...new Set(videoIds.map((id) => id.trim()))];
 
+    const allowed = await db.video.count({
+      where: {
+        projectId,
+        id: { in: normalizedIds },
+        AND: visibleVideoWhere(session.user.id, true),
+      },
+    });
+    if (allowed !== normalizedIds.length)
+      return apiErrors.forbidden('One or more videos cannot be deleted');
     let result;
     try {
-      result = await deleteProjectVideosWithCleanup(projectId, normalizedIds);
+      result = await contentTransaction(
+        [projectId],
+        async (tx) => {
+          const permitted = await tx.video.count({
+            where: {
+              projectId,
+              id: { in: normalizedIds },
+              AND: visibleVideoWhere(session.user.id, true),
+            },
+          });
+          if (permitted !== normalizedIds.length) throw new ContentError(403, 'Access changed');
+          // Allow slow batches beyond the ordinary mutation budget, while aborting
+          // and draining all storage workers before the transaction can expire.
+          return deleteProjectVideosWithCleanup(
+            projectId,
+            normalizedIds,
+            tx,
+            AbortSignal.timeout(60000)
+          );
+        },
+        120000
+      );
     } catch (error) {
       if (error instanceof Error && error.message === 'VIDEO_NOT_FOUND') {
         return apiErrors.badRequest('One or more selected videos do not belong to this project');
@@ -67,7 +94,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           error.cleanupInput
         );
         return apiErrors.internalError(
-          'Could not delete the stored media for these videos. Nothing was deleted; please try again.'
+          'Could not delete all stored media. Video records remain so you can retry.'
         );
       }
       throw error;
@@ -87,6 +114,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof ContentError) return apiErrors.forbidden(error.message);
     logError('Error bulk deleting videos:', error);
     return apiErrors.internalError('Failed to delete selected videos');
   }

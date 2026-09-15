@@ -46,7 +46,8 @@ function getUniqueBunnyVideoIds(videoRefs: BunnyVideoRef[]): string[] {
 }
 
 export async function cleanupBunnyStreamVideosBestEffort(
-  videoRefs: BunnyVideoRef[]
+  videoRefs: BunnyVideoRef[],
+  signal?: AbortSignal
 ): Promise<BunnyCleanupResult> {
   const bunnyVideoIds = getUniqueBunnyVideoIds(videoRefs);
   if (bunnyVideoIds.length === 0) {
@@ -74,11 +75,16 @@ export async function cleanupBunnyStreamVideosBestEffort(
   const failedIds = new Set<string>();
 
   await runWithConcurrency(bunnyVideoIds, BUNNY_DELETE_CONCURRENCY, async (bunnyVideoId) => {
+    if (signal?.aborted) {
+      failedIds.add(bunnyVideoId);
+      return;
+    }
     try {
       const response = await fetch(
         `${BUNNY_API_BASE}/library/${libraryId}/videos/${encodeURIComponent(bunnyVideoId)}`,
         {
           method: 'DELETE',
+          ...(signal ? { signal } : {}),
           headers: {
             AccessKey: apiKey,
           },
@@ -103,8 +109,11 @@ export async function cleanupBunnyStreamVideosBestEffort(
   };
 }
 
-export async function cleanupBunnyStreamVideos(videoRefs: BunnyVideoRef[]): Promise<void> {
-  const result = await cleanupBunnyStreamVideosBestEffort(videoRefs);
+export async function cleanupBunnyStreamVideos(
+  videoRefs: BunnyVideoRef[],
+  signal?: AbortSignal
+): Promise<void> {
+  const result = await cleanupBunnyStreamVideosBestEffort(videoRefs, signal);
   if (result.failed === 0) return;
 
   const preview = result.failedIds.slice(0, 3).join(', ');

@@ -1,3 +1,4 @@
+import { visibleVideoWhere } from '@/lib/content-access';
 import { db } from '@/lib/db';
 
 export interface ApprovalCandidate {
@@ -16,7 +17,8 @@ function addCandidate(
 }
 
 export async function getApprovalCandidatesForProject(
-  projectId: string
+  projectId: string,
+  videoId?: string
 ): Promise<ApprovalCandidate[] | null> {
   const project = await db.project.findUnique({
     where: { id: projectId },
@@ -53,6 +55,32 @@ export async function getApprovalCandidatesForProject(
     addCandidate(map, member.user);
   }
 
+  if (videoId) {
+    const [folderMembers, videoMembers] = await Promise.all([
+      db.projectFolderMember.findMany({
+        where: { folder: { projectId } },
+        include: { user: { select: { id: true, name: true, email: true, image: true } } },
+      }),
+      db.videoMember.findMany({
+        where: { videoId },
+        include: { user: { select: { id: true, name: true, email: true, image: true } } },
+      }),
+    ]);
+    for (const member of [...folderMembers, ...videoMembers]) addCandidate(map, member.user);
+    const entries = [...map.values()];
+    for (let i = 0; i < entries.length; i += 16) {
+      await Promise.all(
+        entries.slice(i, i + 16).map(async (candidate) => {
+          if (
+            !(await db.video.count({
+              where: { id: videoId, AND: visibleVideoWhere(candidate.id, false, false) },
+            }))
+          )
+            map.delete(candidate.id);
+        })
+      );
+    }
+  }
   return Array.from(map.values()).sort((a, b) => {
     const aLabel = (a.name || a.email || '').toLowerCase();
     const bLabel = (b.name || b.email || '').toLowerCase();

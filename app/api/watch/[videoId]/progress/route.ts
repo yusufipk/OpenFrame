@@ -1,6 +1,7 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, computeProjectAccess, projectAccessInclude } from '@/lib/auth';
+import { auth, projectAccessInclude } from '@/lib/auth';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { logError } from '@/lib/logger';
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video');
     }
 
-    const access = computeProjectAccess(video.project, userId);
+    const access = await checkVideoAccess(video.id, userId);
 
     if (!access.hasAccess) {
       return apiErrors.forbidden('Access denied');
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video');
     }
 
-    const access = computeProjectAccess(video.project, userId);
+    const access = await checkVideoAccess(video.id, userId);
     if (!access.hasAccess) {
       return apiErrors.forbidden('Access denied');
     }

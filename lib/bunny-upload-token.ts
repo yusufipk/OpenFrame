@@ -31,6 +31,8 @@ interface BunnyUploadTokenPayload {
    * one size to pass the quota check and another to be billed for.
    */
   sz?: string;
+  fid?: string | null;
+  target?: string | null;
 }
 
 interface BunnyUploadTokenSubject {
@@ -70,6 +72,8 @@ function isValidPayload(value: unknown): value is BunnyUploadTokenPayload {
 
 export function createBunnyUploadToken(
   subject: BunnyUploadTokenSubject & {
+    folderId?: string | null;
+    targetVideoId?: string | null;
     reservationId?: string | null;
     declaredSizeBytes?: bigint | null;
   },
@@ -77,6 +81,8 @@ export function createBunnyUploadToken(
 ): string {
   const now = Math.floor(Date.now() / 1000);
   const payload: BunnyUploadTokenPayload = {
+    fid: subject.folderId ?? null,
+    target: subject.targetVideoId ?? null,
     typ: BUNNY_UPLOAD_TOKEN_TYPE,
     uid: subject.userId,
     pid: subject.projectId,
@@ -147,6 +153,8 @@ export function verifyBunnyUploadToken(token: string, subject: BunnyUploadTokenS
 }
 
 export interface BunnyUploadGrant {
+  targetVideoId: string | null;
+  folderId: string | null;
   /** The storage reservation this upload holds, or null if it holds none. */
   reservationId: string | null;
   /** What the client said it was uploading, or null on a grant that predates the claim. */
@@ -178,5 +186,10 @@ export function readBunnyUploadGrant(
     }
   }
 
-  return { reservationId: payload.rid ?? null, declaredSizeBytes };
+  return {
+    reservationId: payload.rid ?? null,
+    declaredSizeBytes,
+    folderId: payload.fid ?? null,
+    targetVideoId: payload.target ?? null,
+  };
 }

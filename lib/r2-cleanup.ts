@@ -41,7 +41,10 @@ export function mediaUrlToKey(url: string): string | null {
 /**
  * Delete a list of media files from R2 (best-effort, logs failures).
  */
-export async function deleteMediaFilesBestEffort(mediaUrls: string[]): Promise<R2CleanupResult> {
+export async function deleteMediaFilesBestEffort(
+  mediaUrls: string[],
+  signal?: AbortSignal
+): Promise<R2CleanupResult> {
   const invalidUrls: string[] = [];
   const mediaKeys = [
     ...new Set(
@@ -64,8 +67,15 @@ export async function deleteMediaFilesBestEffort(mediaUrls: string[]): Promise<R
   }
 
   await runWithConcurrency(mediaKeys, CLEANUP_DELETE_CONCURRENCY, async (key) => {
+    if (signal?.aborted) {
+      failedKeys.add(key);
+      return;
+    }
     try {
-      await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
+      await r2Client.send(
+        new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }),
+        ...(signal ? [{ abortSignal: signal }] : [])
+      );
     } catch (err) {
       failedKeys.add(key);
       logError(`Failed to delete media from R2 (key: ${key}):`, err);

@@ -1,3 +1,4 @@
+import { visibleVideoWhere } from '@/lib/content-access';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import {
@@ -79,7 +80,9 @@ export default async function WorkspacePage({ params, searchParams }: WorkspaceP
         skip,
         take: pageSize,
         include: {
-          _count: { select: { videos: true, members: true } },
+          _count: {
+            select: { videos: { where: visibleVideoWhere(session?.user?.id) }, members: true },
+          },
         },
       },
       _count: { select: { projects: true, members: true } },

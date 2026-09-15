@@ -1,6 +1,7 @@
+import { checkVideoAccess, type ContentClient } from '@/lib/content-access';
 import type { NextRequest } from 'next/server';
 import type { VideoAsset } from '@prisma/client';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getGuestIdentityFromRequest } from '@/lib/guest-identity';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -137,10 +138,11 @@ export function canDeleteAssetForViewer(
 export async function getVideoAssetAccessContext(
   request: NextRequest,
   videoId: string,
-  requiredPermission: 'VIEW' | 'COMMENT' = 'VIEW'
+  requiredPermission: 'VIEW' | 'COMMENT' = 'VIEW',
+  client: ContentClient = db
 ): Promise<VideoAssetAccessContext | null> {
   const session = await auth();
-  const video = await db.video.findUnique({
+  const video = await client.video.findUnique({
     where: { id: videoId },
     select: {
       id: true,
@@ -167,7 +169,7 @@ export async function getVideoAssetAccessContext(
 
   if (!video) return null;
 
-  const access = await checkProjectAccess(video.project, session?.user?.id);
+  const access = await checkVideoAccess(video.id, session?.user?.id, client);
   const shareSession = getShareSessionFromRequest(request, video.id);
   const shareAccess = shareSession
     ? await validateShareLinkAccess({
@@ -198,8 +200,7 @@ export async function getVideoAssetAccessContext(
   const viewerUserId = session?.user?.id ?? null;
   const viewerGuestIdentityId = viewerUserId ? null : getGuestIdentityFromRequest(request);
 
-  const viewerBelongsToProject =
-    access.isOwner || access.isProjectMember || access.isWorkspaceMember || shareAccess.hasAccess;
+  const viewerBelongsToProject = access.hasAccess || shareAccess.hasAccess;
 
   return {
     video,

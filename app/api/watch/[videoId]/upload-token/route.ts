@@ -1,5 +1,6 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video');
     }
 
-    const access = await checkProjectAccess(video.project, session?.user?.id);
+    const access = await checkVideoAccess(video.id, session?.user?.id);
     const shareSession = getShareSessionFromRequest(request, video.id);
     const shareAccess = shareSession
       ? await validateShareLinkAccess({

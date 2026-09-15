@@ -1,6 +1,7 @@
+import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -40,7 +41,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     if (!approvalRequest) return apiErrors.notFound('Approval request');
 
-    const access = await checkProjectAccess(approvalRequest.version.video.project, session.user.id);
+    const access = await checkVideoAccess(approvalRequest.version.video.id, session.user.id);
+    if (!access.hasAccess) return apiErrors.forbidden('Access denied');
     const canCancel = approvalRequest.requestedById === session.user.id || access.canEdit;
     if (!canCancel) return apiErrors.forbidden('Access denied');
 
