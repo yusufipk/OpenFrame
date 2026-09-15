@@ -21,10 +21,6 @@ export default async function SharedContentPage() {
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-2xl font-semibold">Shared with me</h1>
-      <p className="text-muted-foreground">
-        Folders and videos shared directly with your account. Folder access includes inherited
-        contents, but not restricted descendants or sibling folders.
-      </p>
       <div className="grid gap-4 sm:grid-cols-3">
         {folders.map((f) => (
           <Link

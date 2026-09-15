@@ -1,13 +1,20 @@
 import { checkFolderAccess, visibleVideoWhere, visibleFolderWhere } from '@/lib/content-access';
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { GuestGate } from '@/components/guest-gate';
 import { auth, checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ProjectContentClient } from './project-content-client';
+import ProjectLoading from './loading';
 import { isDirectFileUploadEnabled, isS3VideoUploadsEnabled } from '@/lib/feature-flags';
 import { canDownloadProjectMedia } from '@/lib/project-download';
+import {
+  parseProjectContentSort,
+  projectFolderOrderBy,
+  projectVideoOrderBy,
+} from '@/lib/project-content-sort';
 
 function formatDuration(seconds: number | null): string {
   if (!seconds) return '0:00';
@@ -40,7 +47,19 @@ interface ProjectPageProps {
   searchParams: Promise<{ page?: string; sort?: string; folderId?: string; view?: string }>;
 }
 
-export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
+export default async function ProjectPage(props: ProjectPageProps) {
+  const searchParams = await props.searchParams;
+  // Query-only navigation stays in this route segment, so reset its loading boundary.
+  const loadingKey = JSON.stringify([searchParams.folderId || null, searchParams.view === 'all']);
+
+  return (
+    <Suspense key={loadingKey} fallback={<ProjectLoading />}>
+      <ProjectContent {...props} />
+    </Suspense>
+  );
+}
+
+async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   const session = await auth();
   const { projectId } = await params;
   const resolvedSearchParams = await searchParams;
@@ -48,7 +67,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   const folderId = resolvedSearchParams.folderId || null;
   const all = resolvedSearchParams.view === 'all';
   const page = Math.max(1, Number(resolvedSearchParams?.page) || 1);
-  const sortOrder = resolvedSearchParams?.sort === 'asc' ? 'asc' : 'desc';
+  const sortOrder = parseProjectContentSort(resolvedSearchParams.sort);
   const pageSize = 21;
   const skip = (page - 1) * pageSize;
 
@@ -74,7 +93,13 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   if (!access) notFound();
   const folders = await db.projectFolder.findMany({
     where: { projectId, AND: visibleFolderWhere(session?.user?.id) },
-    orderBy: { name: 'asc' },
+    orderBy: projectFolderOrderBy(sortOrder),
+    include: {
+      _count: {
+        // Count direct children using the same visibility rules as the video list.
+        select: { videos: { where: visibleVideoWhere(session?.user?.id) } },
+      },
+    },
   });
   const editableFolders = await db.projectFolder.findMany({
     where: { projectId, AND: visibleFolderWhere(session?.user?.id, true) },
@@ -88,6 +113,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
     accessMode: f.accessMode,
     parentId: f.parentId && visibleIds.has(f.parentId) ? f.parentId : null,
     canEdit: editableIds.has(f.id),
+    videoCount: f._count.videos,
   }));
   const videoWhere = {
     projectId,
@@ -132,7 +158,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       where: videoWhere,
       skip,
       take: pageSize,
-      orderBy: [{ updatedAt: sortOrder }, { id: sortOrder }],
+      orderBy: projectVideoOrderBy(sortOrder),
       include: {
         versions: {
           where: { isActive: true },

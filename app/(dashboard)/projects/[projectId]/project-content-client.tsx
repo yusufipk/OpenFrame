@@ -19,6 +19,8 @@ import {
   Building2,
   ArrowUp,
   ArrowDown,
+  ArrowDownAZ,
+  ArrowUpAZ,
   Globe,
   UserPlus,
   Lock,
@@ -37,6 +39,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -60,6 +64,7 @@ import {
 } from '@/lib/client/project-download';
 import { downloadProgressPercent } from '@/lib/client/download-file';
 import { beginUnloadGuard } from '@/lib/client/unload-guard';
+import { parseProjectContentSort, projectContentSortLabels } from '@/lib/project-content-sort';
 import {
   createDownloadProgressToast,
   type DownloadProgressToastHandle,
@@ -123,7 +128,15 @@ export function ProjectContentClient({
 }: ProjectContentClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sortOrder = searchParams.get('sort') || 'desc';
+  const sortOrder = parseProjectContentSort(searchParams.get('sort'));
+  const SortIcon =
+    sortOrder === 'name-asc'
+      ? ArrowDownAZ
+      : sortOrder === 'name-desc'
+        ? ArrowUpAZ
+        : sortOrder === 'asc'
+          ? ArrowUp
+          : ArrowDown;
   const [localVideos, setLocalVideos] = useState<SerializedVideo[]>(videos);
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -380,27 +393,27 @@ export function ProjectContentClient({
           aria-label="Project actions"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const newOrder = sortOrder === 'desc' ? 'asc' : 'desc';
-                router.push(`?${createQueryString('sort', newOrder)}`);
-              }}
-              className="flex items-center gap-2"
-            >
-              {sortOrder === 'desc' ? (
-                <>
-                  <ArrowDown className="h-4 w-4" />
-                  Newest first
-                </>
-              ) : (
-                <>
-                  <ArrowUp className="h-4 w-4" />
-                  Oldest first
-                </>
-              )}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="flex items-center gap-2">
+                  <SortIcon className="h-4 w-4" />
+                  {projectContentSortLabels[sortOrder]}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuRadioGroup
+                  value={sortOrder}
+                  onValueChange={(value) => router.push(`?${createQueryString('sort', value)}`)}
+                >
+                  {Object.entries(projectContentSortLabels).map(([value, label]) => (
+                    <DropdownMenuRadioItem key={value} value={value}>
+                      {label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {canDownloadProject && localVideos.length > 0 && !selectionMode && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
