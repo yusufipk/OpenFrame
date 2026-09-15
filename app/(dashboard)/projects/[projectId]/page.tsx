@@ -1,5 +1,4 @@
 import { checkFolderAccess, visibleVideoWhere, visibleFolderWhere } from '@/lib/content-access';
-import { ProjectFolderBrowser } from '@/components/project-folder-browser';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
@@ -205,17 +204,12 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
               Back to Projects
             </Link>
           </div>
-          <ProjectFolderBrowser
-            projectId={projectId}
-            folderId={folderId}
-            folders={folderEntries}
-            canEdit={canEdit}
-            canSeeRoot={projectAccess.hasAccess}
-            all={all}
-          />
           <ProjectContentClient
             key={`${folderId ?? 'root'}-${all}`}
             folderId={folderId}
+            folders={folderEntries}
+            canSeeRoot={projectAccess.hasAccess}
+            all={all}
             project={projectData}
             projectId={projectId}
             videos={videos}
@@ -247,17 +241,12 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           Back to Projects
         </Link>
       </div>
-      <ProjectFolderBrowser
-        projectId={projectId}
-        folderId={folderId}
-        folders={folderEntries}
-        canEdit={canEdit}
-        canSeeRoot={projectAccess.hasAccess}
-        all={all}
-      />
       <ProjectContentClient
         key={`${folderId ?? 'root'}-${all}`}
         folderId={folderId}
+        folders={folderEntries}
+        canSeeRoot={projectAccess.hasAccess}
+        all={all}
         project={projectData}
         projectId={projectId}
         videos={videos}

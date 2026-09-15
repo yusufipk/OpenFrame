@@ -1,4 +1,10 @@
 'use client';
+import {
+  AddFolderButton,
+  ProjectFolderBrowser,
+  ProjectFolderCard,
+  type FolderEntry,
+} from '@/components/project-folder-browser';
 import { ContentAccessControls } from '@/components/content-access-controls';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -81,6 +87,9 @@ interface ProjectContentClientProps {
   };
   projectId: string;
   folderId?: string | null;
+  folders: FolderEntry[];
+  canSeeRoot: boolean;
+  all: boolean;
   videos: SerializedVideo[];
   allVideoIds: string[];
   canEdit: boolean;
@@ -98,6 +107,9 @@ export function ProjectContentClient({
   project,
   projectId,
   folderId = null,
+  folders,
+  canSeeRoot,
+  all,
   videos,
   allVideoIds,
   canEdit,
@@ -121,6 +133,7 @@ export function ProjectContentClient({
   const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
   const [showMoveSelectedDialog, setShowMoveSelectedDialog] = useState(false);
 
+  const childFolders = all ? [] : folders.filter((folder) => folder.parentId === folderId);
   const canSelectVideos = canDownloadProject || canEdit;
 
   useEffect(() => {
@@ -332,7 +345,7 @@ export function ProjectContentClient({
       />
 
       {/* Project Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
@@ -425,7 +438,16 @@ export function ProjectContentClient({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          {(isOwner || project.members[0]?.role === 'ADMIN') && (
+          {folderId && canEdit && (
+            <ContentAccessControls
+              key={folderId}
+              projectId={projectId}
+              folderId={folderId}
+              contentName={folders.find((folder) => folder.id === folderId)?.name}
+              share
+            />
+          )}
+          {!folderId && (isOwner || project.members[0]?.role === 'ADMIN') && (
             <Button variant="outline" size="sm" asChild>
               <Link href={`/projects/${projectId}/share`}>
                 <Share2 className="h-4 w-4 mr-2" />
@@ -449,6 +471,7 @@ export function ProjectContentClient({
               </Button>
             </>
           )}
+          {canEdit && <AddFolderButton projectId={projectId} folderId={folderId} />}
           {canEdit && (
             <Button size="sm" asChild>
               <Link
@@ -461,6 +484,15 @@ export function ProjectContentClient({
           )}
         </div>
       </div>
+
+      <ProjectFolderBrowser
+        projectId={projectId}
+        folderId={folderId}
+        folders={folders}
+        canEdit={canEdit}
+        canSeeRoot={canSeeRoot}
+        all={all}
+      />
 
       {selectionMode && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
@@ -563,9 +595,15 @@ export function ProjectContentClient({
         </div>
       )}
 
-      {/* Videos Grid */}
-      {localVideos.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {/* Folders and videos share the same content grid. */}
+      {childFolders.length > 0 || localVideos.length > 0 ? (
+        <div
+          className="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-3"
+          aria-label="Project contents"
+        >
+          {childFolders.map((folder) => (
+            <ProjectFolderCard key={folder.id} projectId={projectId} folder={folder} />
+          ))}
           {localVideos.map((video) => (
             <VideoCard
               key={video.id}
@@ -585,20 +623,16 @@ export function ProjectContentClient({
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Play className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No videos yet</h3>
+            <h3 className="text-lg font-medium mb-2">
+              {all ? 'No videos yet' : 'This folder is empty'}
+            </h3>
             <p className="text-muted-foreground text-center mb-4">
-              Add your first video to start collecting feedback
+              {all
+                ? 'Videos you can access will appear here.'
+                : canEdit
+                  ? 'Add a video or folder to get started.'
+                  : 'No content has been added here yet.'}
             </p>
-            {canEdit && (
-              <Button asChild>
-                <Link
-                  href={`/projects/${projectId}/videos/new${folderId ? `?folderId=${folderId}` : ''}`}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Video
-                </Link>
-              </Button>
-            )}
           </CardContent>
         </Card>
       )}

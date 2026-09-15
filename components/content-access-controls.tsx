@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { Share2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -18,10 +19,14 @@ export function ContentAccessControls({
   projectId,
   folderId,
   videoId,
+  contentName,
+  share = false,
 }: {
   projectId: string;
   folderId?: string | null;
   videoId?: string;
+  contentName?: string;
+  share?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -76,12 +81,15 @@ export function ContentAccessControls({
           void run({ action: 'members' });
         }}
       >
-        Manage access
+        {share && <Share2 className="h-4 w-4 mr-2" />}
+        {share ? 'Share' : 'Manage access'}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Content access</DialogTitle>
+            <DialogTitle>
+              {contentName ? `Share folder: ${contentName}` : 'Content access'}
+            </DialogTitle>
             <DialogDescription>
               Project and workspace managers can access this content. Invitations grant access only
               to this area, never project or workspace membership.

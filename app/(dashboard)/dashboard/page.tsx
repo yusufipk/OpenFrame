@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
@@ -163,9 +162,6 @@ export default async function DashboardPage({
         directUploadsEnabled={isDirectFileUploadEnabled()}
         directUploadProvider={isS3VideoUploadsEnabled() ? 'r2' : 'bunny'}
       />
-      <Link href="/shared" className="text-sm underline">
-        Shared with me
-      </Link>
     </>
   );
 }

@@ -8,6 +8,7 @@ import {
   Video,
   FolderOpen,
   Building2,
+  Share2,
   Settings,
   LogOut,
   User,
@@ -56,6 +57,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Projects', icon: FolderOpen },
   { href: '/workspaces', label: 'Workspaces', icon: Building2 },
+  { href: '/shared', label: 'Shared with me', icon: Share2 },
 ];
 
 interface HeaderProps {
@@ -100,7 +102,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
         {/* Mobile menu */}
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="md:hidden mr-2">
+            <Button variant="ghost" size="icon" className="lg:hidden mr-2">
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle menu</span>
             </Button>
@@ -117,7 +119,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      'flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm font-medium rounded-md transition-colors',
                       pathname === item.href
                         ? 'bg-accent text-accent-foreground'
                         : 'hover:bg-accent hover:text-accent-foreground'
@@ -131,7 +133,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
                 <Link
                   href="/admin"
                   className={cn(
-                    'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                    'flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm font-medium rounded-md transition-colors',
                     pathname.startsWith('/admin')
                       ? 'bg-accent text-accent-foreground'
                       : 'hover:bg-accent hover:text-accent-foreground'
@@ -152,14 +154,14 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden lg:flex items-center gap-1">
           {showAppNavigation &&
             navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                  'flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm font-medium rounded-md transition-colors',
                   pathname === item.href ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                 )}
               >
@@ -171,7 +173,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
             <Link
               href="/admin"
               className={cn(
-                'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                'flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm font-medium rounded-md transition-colors',
                 pathname.startsWith('/admin')
                   ? 'bg-accent text-accent-foreground'
                   : 'hover:bg-accent/50'
