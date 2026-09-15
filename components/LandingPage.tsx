@@ -374,6 +374,18 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
           </div>
         </section>
 
+        <figure className="border-b border-border px-4 py-14 sm:px-6 lg:px-8 lg:py-16">
+          <div className="mx-auto flex w-full max-w-[800px] flex-col items-center gap-5 text-center">
+            <blockquote className="text-2xl font-medium leading-relaxed tracking-[-0.02em] md:text-3xl">
+              <p>“I absolutely love this. It’s way more affordable than Frame.”</p>
+            </blockquote>
+            <figcaption className="text-sm">
+              <span className="font-semibold">Bez Duru</span>
+              <span className="text-muted-foreground"> · Guestvfx</span>
+            </figcaption>
+          </div>
+        </figure>
+
         {/* 3) FEATURES */}
         <section id="features" className="scroll-mt-20">
           {/* Version compare */}
