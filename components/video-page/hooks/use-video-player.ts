@@ -88,7 +88,16 @@ export function useVideoPlayer({
   const [youtubeModuleRevision, setYoutubeModuleRevision] = useState(0);
   const [bunnyPlaybackState, setBunnyPlaybackState] = useState<BunnyPlaybackState>('none');
   const [currentTime, setCurrentTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
+  const [durationMeasurement, setDurationMeasurement] = useState<{
+    versionId: string | null;
+    duration: number;
+  }>({ versionId: null, duration: 0 });
+  const videoDuration =
+    durationMeasurement.versionId === activeVersionId ? durationMeasurement.duration : 0;
+  const setVideoDuration = useCallback(
+    (duration: number) => setDurationMeasurement({ versionId: activeVersionId, duration }),
+    [activeVersionId]
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isFrameMode, setIsFrameMode] = useState(false);
@@ -855,6 +864,7 @@ export function useVideoPlayer({
     iframeRef,
     playerRef,
     scheduleWatchProgressSaveRef,
+    setVideoDuration,
     startBunnyFrameTracking,
     stopBunnyFrameTracking,
     videoRef,
@@ -1332,6 +1342,7 @@ export function useVideoPlayer({
     currentTime,
     setCurrentTime,
     videoDuration,
+    durationVersionId: durationMeasurement.versionId,
     setVideoDuration,
     isPlaying,
     isMuted,

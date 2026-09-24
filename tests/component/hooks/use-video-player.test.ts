@@ -136,7 +136,7 @@ function renderPlayer() {
     setViewingAnnotation: vi.fn(),
   };
 
-  const rendered = renderHook(() => useVideoPlayer(params));
+  const rendered = renderHook((props: Params) => useVideoPlayer(props), { initialProps: params });
 
   act(() => {
     vi.advanceTimersByTime(PLAYER_INIT_DELAY_MS);
@@ -146,7 +146,7 @@ function renderPlayer() {
     video.fire('loadedmetadata');
   });
 
-  return { ...rendered, video, timeline, readout };
+  return { ...rendered, params, video, timeline, readout };
 }
 
 /** Put the player into the playing state the way the media element would. */
@@ -220,6 +220,26 @@ describe('useVideoPlayer seeking', () => {
 
     expect(result.current.isReady).toBe(true);
     expect(result.current.videoDuration).toBe(DURATION);
+  });
+
+  it('associates measured duration with the version that supplied it', () => {
+    const { result, rerender, params, video } = renderPlayer();
+    expect(result.current.durationVersionId).toBe('ver1');
+
+    rerender({
+      ...params,
+      activeVersion: { ...makeVersion(), id: 'ver2', videoId: 'vid2' },
+      activeVersionId: 'ver2',
+      embedUrl: '/api/upload/video/other.mp4',
+    });
+
+    expect(result.current.videoDuration).toBe(0);
+    act(() => vi.advanceTimersByTime(PLAYER_INIT_DELAY_MS));
+    video.duration = 17;
+    act(() => video.fire('loadedmetadata'));
+
+    expect(result.current.videoDuration).toBe(17);
+    expect(result.current.durationVersionId).toBe('ver2');
   });
 
   it('clamps a backwards skip at the start of the video', () => {
