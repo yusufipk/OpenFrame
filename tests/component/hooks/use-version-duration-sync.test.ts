@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useVersionDurationSync } from '@/components/video-page/hooks/use-version-duration-sync';
 import type { VideoData } from '@/components/video-page/types';
 
@@ -51,6 +51,7 @@ function makeVideo(versionDuration: number | null): VideoData {
 function baseParams(overrides: Partial<Params> = {}): Params {
   return {
     videoDuration: 42.4,
+    durationVersionId: 'ver1',
     activeVersionDuration: null,
     activeVersionId: 'ver1',
     propProjectId: 'proj1',
@@ -112,6 +113,39 @@ describe('useVersionDurationSync', () => {
     expect(store.current?.versions[1].duration).toBe(999);
   });
 
+  it('does not save the previous version duration during a version switch', () => {
+    const setVideo = vi.fn();
+    renderHook(() =>
+      useVersionDurationSync(
+        baseParams({
+          activeVersionId: 'ver2',
+          durationVersionId: 'ver1',
+          videoDuration: 17,
+          setVideo,
+        })
+      )
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(setVideo).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [17, 1228],
+    [1230, 17],
+  ])('corrects cached duration %s to measured duration %s', async (cached, measured) => {
+    const { store, setVideo } = makeStore(makeVideo(cached));
+    renderHook(() =>
+      useVersionDurationSync(
+        baseParams({ videoDuration: measured, activeVersionDuration: cached, setVideo })
+      )
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({ duration: measured });
+    await waitFor(() => expect(store.current?.versions[0].duration).toBe(measured));
+  });
+
   it('leaves state null when the video has not loaded yet', async () => {
     const { store, setVideo, spy } = makeStore(null);
 
@@ -145,9 +179,9 @@ describe('useVersionDurationSync', () => {
     expect(setVideo).not.toHaveBeenCalled();
   });
 
-  it('skips the write when the version already has a stored duration', () => {
+  it('skips the write when the stored duration matches playback', () => {
     const setVideo = vi.fn();
-    renderHook(() => useVersionDurationSync(baseParams({ activeVersionDuration: 41, setVideo })));
+    renderHook(() => useVersionDurationSync(baseParams({ activeVersionDuration: 42, setVideo })));
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(setVideo).not.toHaveBeenCalled();
@@ -159,14 +193,38 @@ describe('useVersionDurationSync', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 
-  it('still updates local state when the PATCH fails', async () => {
-    fetchMock.mockRejectedValue(new Error('offline'));
-    const { store, setVideo, spy } = makeStore(makeVideo(null));
+  it('keeps the cached duration when the PATCH fails', async () => {
+    fetchMock.mockResolvedValue({ ok: false });
+    const { store, setVideo } = makeStore(makeVideo(null));
 
     renderHook(() => useVersionDurationSync(baseParams({ setVideo })));
 
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
-    expect(store.current?.versions[0].duration).toBe(42);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(store.current?.versions[0].duration).toBeNull();
+  });
+
+  it('finishes an older duration write before sending the corrected duration', async () => {
+    let finishFirstWrite: ((response: { ok: boolean }) => void) | undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFirstWrite = resolve;
+        })
+    );
+    const setVideo = vi.fn();
+    const initial = baseParams({ videoDuration: 17, setVideo });
+    const { rerender } = renderHook((props: Params) => useVersionDurationSync(props), {
+      initialProps: initial,
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    rerender({ ...initial, videoDuration: 1228 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishFirstWrite?.({ ok: true }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({ duration: 1228 });
   });
 
   it('writes once per measurement, not on every re-render', async () => {
@@ -186,7 +244,7 @@ describe('useVersionDurationSync', () => {
     });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    rerender(baseParams({ activeVersionId: 'ver2', setVideo }));
+    rerender(baseParams({ activeVersionId: 'ver2', durationVersionId: 'ver2', setVideo }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe('/api/projects/proj1/videos/vid1/versions/ver2');

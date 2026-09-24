@@ -331,6 +331,7 @@ export function VideoPageContent({
     currentTime,
     setCurrentTime,
     videoDuration,
+    durationVersionId,
     isPlaying,
     isMuted,
     isFrameMode,
@@ -595,6 +596,7 @@ export function VideoPageContent({
 
   useVersionDurationSync({
     videoDuration,
+    durationVersionId,
     activeVersionDuration,
     activeVersionId,
     propProjectId,
