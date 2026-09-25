@@ -289,6 +289,13 @@ test('owner and guest review one native video through the real room service', as
     );
     await page.getByRole('button', { name: 'Stroke Mode' }).click();
     await expect(page.getByLabel('Live review drawing').getByRole('button')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Drawing options' }).click();
+    await page.getByRole('button', { name: 'Blue', exact: true }).click();
+    await page.getByRole('button', { name: 'Increase stroke width' }).click();
+    await page.getByRole('button', { name: 'Increase stroke width' }).click();
+    await expect(page.getByLabel('Stroke width 5', { exact: true })).toBeVisible();
+    await page.screenshot({ path: 'test-results/live-review-drawing-options.png' });
+    await page.keyboard.press('Escape');
     // The shared canvas is live while the pointer is still down.
     const ownerCanvas = page.getByLabel('Shared drawing canvas');
     const guestCanvas = guestPage.getByLabel('Shared drawing canvas');
@@ -307,6 +314,7 @@ test('owner and guest review one native video through the real room service', as
     );
     await expect.poll(() => guestCanvas.locator('path').count()).toBeGreaterThan(0);
     await page.mouse.up();
+    await expect(guestCanvas.locator('path').first()).toHaveAttribute('stroke', '#007AFF');
     await page.screenshot({ path: 'test-results/live-review-desktop.png' });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect
@@ -356,6 +364,12 @@ test('owner and guest review one native video through the real room service', as
         })
       )
       .toBeGreaterThan(0);
+    const savedDrawing = await db.comment.findFirstOrThrow({
+      where: { versionId: seeded.versionId, annotationData: { not: null } },
+    });
+    expect(JSON.parse(savedDrawing.annotationData!)).toEqual([
+      expect.objectContaining({ color: '#007AFF', width: 5 }),
+    ]);
     await page.reload();
     await expect(page.getByText('Annotated').first()).toBeVisible();
     // Rejoin beyond the former 15-second presenter disconnect timeout.

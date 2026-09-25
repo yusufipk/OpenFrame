@@ -27,6 +27,7 @@ type SocketData = {
   lastSeen: number;
   windowAt: number;
   messageCount: number;
+  intentionalLeave: boolean;
 };
 type Socket = {
   data: SocketData;
@@ -40,6 +41,8 @@ type Room = {
   queue: Promise<void>;
   pending: number;
   lastCommand: Map<string, string>;
+  emptyTimer: ReturnType<typeof setTimeout> | null;
+  ending: boolean;
 };
 declare const Bun: {
   serve: (options: {
@@ -68,6 +71,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65535)
   throw new Error('Invalid live review port');
 const rooms = new Map<string, Room>();
 const sockets = new Set<Socket>();
+const recentlyEndedRooms = new Map<string, number>();
+const EMPTY_ROOM_GRACE_MS = 20_000;
 
 function sameSecret(value: string | null): boolean {
   if (!value) return false;
@@ -104,15 +109,16 @@ async function permission(participantId: string): Promise<Permission> {
   return value.data;
 }
 async function loadRoom(sessionId: string): Promise<Room | null> {
+  if (recentlyEndedRooms.has(sessionId)) return null;
   const cached = rooms.get(sessionId);
-  if (cached) return cached;
+  if (cached) return cached.ending || cached.snapshot.status !== 'active' ? null : cached;
   const session = await db.liveReviewSession.findUnique({
     where: { id: sessionId },
     include: { participants: true },
   });
-  if (!session || session.status !== 'active') return null;
+  if (!session || session.status !== 'active' || recentlyEndedRooms.has(sessionId)) return null;
   const loaded = rooms.get(sessionId);
-  if (loaded) return loaded;
+  if (loaded) return loaded.ending || loaded.snapshot.status !== 'active' ? null : loaded;
   const snapshot: LiveSnapshot = {
     sessionId,
     videoId: session.videoId,
@@ -138,9 +144,66 @@ async function loadRoom(sessionId: string): Promise<Room | null> {
     queue: Promise.resolve(),
     pending: 0,
     lastCommand: new Map(),
+    emptyTimer: null,
+    ending: false,
   };
   rooms.set(sessionId, room);
   return room;
+}
+function cancelEmptyClose(room: Room) {
+  if (room.emptyTimer) clearTimeout(room.emptyTimer);
+  room.emptyTimer = null;
+}
+function hasPendingJoin(room: Room): boolean {
+  return [...sockets].some(
+    (socket) =>
+      socket.data.authenticating &&
+      !socket.data.authenticated &&
+      (!socket.data.sessionId || socket.data.sessionId === room.snapshot.sessionId)
+  );
+}
+async function endRoom(room: Room) {
+  if (room.ending || room.snapshot.status !== 'active') return;
+  room.ending = true;
+  cancelEmptyClose(room);
+  const sessionId = room.snapshot.sessionId;
+  const now = new Date();
+  try {
+    await db.liveReviewSession.updateMany({
+      where: { id: sessionId, status: 'active' },
+      data: { status: 'ended', playing: false, endedAt: now, revision: room.snapshot.revision + 1 },
+    });
+  } catch (cause) {
+    room.ending = false;
+    if (!room.sockets.size) scheduleEmptyClose(room, false);
+    throw cause;
+  }
+  recentlyEndedRooms.set(sessionId, Date.now());
+  room.snapshot.status = 'ended';
+  room.snapshot.playback.playing = false;
+  room.snapshot.revision++;
+  publish(room);
+  for (const client of room.sockets.values()) client.close(1000, 'Room ended');
+  rooms.delete(sessionId);
+}
+function scheduleEmptyClose(room: Room, intentional: boolean) {
+  if (room.sockets.size || room.ending || room.snapshot.status !== 'active') return;
+  cancelEmptyClose(room);
+  if (intentional && !hasPendingJoin(room)) {
+    enqueue(room, async () => {
+      if (!room.sockets.size && !hasPendingJoin(room)) await endRoom(room);
+      else if (!room.sockets.size) scheduleEmptyClose(room, false);
+    });
+    return;
+  }
+  room.emptyTimer = setTimeout(() => {
+    room.emptyTimer = null;
+    enqueue(room, async () => {
+      if (room.sockets.size || room.ending || room.snapshot.status !== 'active') return;
+      if (hasPendingJoin(room)) scheduleEmptyClose(room, false);
+      else await endRoom(room);
+    });
+  }, EMPTY_ROOM_GRACE_MS);
 }
 function enqueue(room: Room, task: () => Promise<void>, source?: Socket) {
   if (source && room.pending >= 100) {
@@ -169,6 +232,7 @@ async function authSocket(socket: Socket, ticket: string) {
     socket.close(1008, 'Invalid ticket');
     return;
   }
+  socket.data.sessionId = claim.sessionId;
   const rights = await permission(claim.participantId).catch(() => null);
   if (!rights?.allowed || rights.sessionId !== claim.sessionId) {
     socket.close(1008, 'Access denied');
@@ -183,6 +247,10 @@ async function authSocket(socket: Socket, ticket: string) {
     where: { id: claim.participantId },
   });
   if (!sockets.has(socket)) return;
+  if (room.ending || room.snapshot.status !== 'active' || rooms.get(claim.sessionId) !== room) {
+    socket.close(1008, 'Room ended');
+    return;
+  }
   if (!participant || participant.sessionId !== claim.sessionId) {
     socket.close(1008, 'Access denied');
     return;
@@ -192,6 +260,7 @@ async function authSocket(socket: Socket, ticket: string) {
     socket.close(1008, 'Room full');
     return;
   }
+  cancelEmptyClose(room);
   room.sockets.set(participant.id, socket);
   if (previous) previous.close(1000, 'Reconnected');
   socket.data = {
@@ -199,6 +268,7 @@ async function authSocket(socket: Socket, ticket: string) {
     authenticated: true,
     sessionId: claim.sessionId,
     participantId: participant.id,
+    authenticating: false,
     lastSeen: Date.now(),
   };
   const current = participantRow(room, participant.id);
@@ -255,6 +325,10 @@ async function handle(socket: Socket, input: LiveClientMessage) {
     return;
   }
   socket.data.lastSeen = Date.now();
+  if (input.type === 'leave') {
+    socket.close(1000, 'Left room');
+    return;
+  }
   if (input.type === 'ping') {
     if (typeof input.clientTime !== 'number' || !Number.isFinite(input.clientTime)) {
       error(socket, 'INVALID_MESSAGE');
@@ -461,17 +535,7 @@ async function handle(socket: Socket, input: LiveClientMessage) {
       error(socket, 'FORBIDDEN');
       return;
     }
-    const now = new Date();
-    await db.liveReviewSession.updateMany({
-      where: { id: sessionId, status: 'active' },
-      data: { status: 'ended', playing: false, endedAt: now, revision: room.snapshot.revision + 1 },
-    });
-    room.snapshot.status = 'ended';
-    room.snapshot.playback.playing = false;
-    room.snapshot.revision++;
-    publish(room);
-    for (const client of room.sockets.values()) client.close(1000, 'Room ended');
-    rooms.delete(sessionId);
+    await endRoom(room);
   }
 }
 async function pause(room: Room) {
@@ -549,6 +613,7 @@ const server = Bun.serve({
       lastSeen: Date.now(),
       windowAt: Date.now(),
       messageCount: 0,
+      intentionalLeave: false,
     };
     return server.upgrade(request, { data }) ? undefined : new Response(null, { status: 400 });
   },
@@ -599,13 +664,18 @@ const server = Bun.serve({
           return;
         }
         socket.data.authenticating = true;
-        void authSocket(socket, value.ticket).catch(() => socket.close(1008));
+        void authSocket(socket, value.ticket)
+          .catch(() => socket.close(1008))
+          .finally(() => {
+            socket.data.authenticating = false;
+          });
         return;
       }
       if (value.type === 'auth') {
         socket.close(1008);
         return;
       }
+      if (value.type === 'leave') socket.data.intentionalLeave = true;
       const room = rooms.get(socket.data.sessionId!);
       if (room) enqueue(room, () => handle(socket, value), socket);
     },
@@ -619,18 +689,25 @@ const server = Bun.serve({
       if (!room || room.sockets.get(participantId) !== socket) return;
       room.sockets.delete(participantId);
       enqueue(room, async () => {
+        if (room.sockets.has(participantId) || room.ending || room.snapshot.status !== 'active')
+          return;
+        if (room.snapshot.presenterId === participantId) await pause(room);
+        if (room.sockets.has(participantId) || room.ending || room.snapshot.status !== 'active')
+          return;
         room.snapshot.participants = room.snapshot.participants.filter(
           (p) => p.id !== participantId
         );
-        if (room.snapshot.presenterId === participantId) await pause(room);
         // Keep the presenter assignment for a validated rejoin. A manager transfer can replace it.
         room.snapshot.revision++;
         publish(room);
+        if (!room.sockets.size) scheduleEmptyClose(room, socket.data.intentionalLeave);
       });
     },
   },
 });
 const sweep = setInterval(() => {
+  for (const [sessionId, endedAt] of recentlyEndedRooms)
+    if (Date.now() - endedAt > 60_000) recentlyEndedRooms.delete(sessionId);
   for (const socket of sockets) {
     if (Date.now() - socket.data.lastSeen > 30_000) {
       socket.close(1008, 'Heartbeat timeout');
@@ -725,6 +802,7 @@ async function shutdown() {
   shuttingDown = true;
   clearInterval(sweep);
   clearInterval(checkpoint);
+  for (const room of rooms.values()) cancelEmptyClose(room);
   await Promise.all(
     [...rooms.values()].map(async (room) => {
       enqueue(room, () => pause(room));

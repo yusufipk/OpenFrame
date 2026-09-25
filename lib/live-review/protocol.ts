@@ -1,10 +1,9 @@
 // Shared wire contract. Media URLs and access credentials never appear in room snapshots.
-export interface LiveStroke {
+import type { AnnotationStroke } from '@/components/annotation/types';
+
+export interface LiveStroke extends AnnotationStroke {
   id: string;
   participantId: string;
-  points: { x: number; y: number }[];
-  color: string;
-  width: number;
 }
 
 export interface LiveParticipant {
@@ -40,6 +39,7 @@ export interface LiveSnapshot {
 export type LiveClientMessage =
   | { type: 'auth'; ticket: string }
   | { type: 'ping'; clientTime: number }
+  | { type: 'leave' }
   | { type: 'status'; status: LiveParticipant['status'] }
   | {
       type: 'playback';

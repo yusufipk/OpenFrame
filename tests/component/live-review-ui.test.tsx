@@ -112,7 +112,7 @@ describe('LiveReviewCanvas', () => {
     const { container } = render(<LiveReviewCanvas {...base} strokes={[]} />);
     const canvas = await screen.findByLabelText('Shared drawing canvas');
     expect(container.querySelector('button')).toBeNull();
-    expect(controlsContainer.querySelectorAll('button')).toHaveLength(3);
+    expect(controlsContainer.querySelectorAll('button')).toHaveLength(4);
     expect(canvas).toHaveClass('pointer-events-none');
     fireEvent.pointerDown(canvas, { clientX: 80, clientY: 45, pointerId: 1 });
     fireEvent.pointerMove(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
@@ -126,6 +126,38 @@ describe('LiveReviewCanvas', () => {
     expect(onStroke).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
     expect(canvas).toHaveClass('pointer-events-none');
+  });
+
+  it('shares the chosen color and width and preserves them when saved as a comment', async () => {
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+      currentTime: { configurable: true, value: 8 },
+    });
+    Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
+    render(<LiveReviewCanvas {...base} strokes={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Drawing options' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Blue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Increase stroke width' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Increase stroke width' }));
+    expect(screen.getByLabelText('Stroke width 5')).toBeVisible();
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Drawing options' }), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
+    const canvas = screen.getByLabelText('Shared drawing canvas');
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 45, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
+    expect(onStroke).toHaveBeenLastCalledWith(
+      expect.objectContaining({ color: '#007AFF', width: 5 }),
+      1
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save drawing as comment' }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        [expect.objectContaining({ color: '#007AFF', width: 5, participantId: 'me' })],
+        8
+      )
+    );
   });
 
   it('exits Stroke Mode when the comments composer unmounts', async () => {

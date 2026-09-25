@@ -1,17 +1,17 @@
 'use client';
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Pencil, Save, Trash2, Undo2 } from 'lucide-react';
+import { Check, ChevronDown, Pencil, Save, Trash2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Popover } from 'radix-ui';
+import { AnnotationSurface, type AnnotationSurfaceHandle } from '@/components/annotation/surface';
+import { AnnotationSettings } from '@/components/annotation/settings';
+import {
+  DEFAULT_ANNOTATION_COLOR,
+  DEFAULT_ANNOTATION_WIDTH,
+} from '@/components/annotation/palette';
+export { pointInContent } from '@/components/annotation/surface';
 import type { LiveStroke } from '@/lib/live-review/protocol';
 import { LIVE_MAX_STROKE_POINTS } from '@/lib/live-review/protocol';
 
@@ -53,21 +53,6 @@ export function getVideoContentRect(
   };
 }
 
-export function pointInContent(clientX: number, clientY: number, bounds: DOMRect): Point | null {
-  if (
-    !bounds.width ||
-    !bounds.height ||
-    clientX < bounds.left ||
-    clientX > bounds.right ||
-    clientY < bounds.top ||
-    clientY > bounds.bottom
-  )
-    return null;
-  return { x: (clientX - bounds.left) / bounds.width, y: (clientY - bounds.top) / bounds.height };
-}
-
-const COLOR = '#FF3B30';
-const WIDTH = 3;
 const EMIT_INTERVAL_MS = 50;
 
 export function LiveReviewCanvas({
@@ -86,7 +71,9 @@ export function LiveReviewCanvas({
   onSave,
 }: LiveReviewCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const surfaceRef = useRef<AnnotationSurfaceHandle>(null);
+  const [color, setColor] = useState<string>(DEFAULT_ANNOTATION_COLOR);
+  const [width, setWidth] = useState(DEFAULT_ANNOTATION_WIDTH);
   const [contentRect, setContentRect] = useState<ContentRect | null>(null);
   const [active, setActive] = useState<LiveStroke | null>(null);
   const activeRef = useRef<LiveStroke | null>(null);
@@ -121,6 +108,7 @@ export function LiveReviewCanvas({
     if (epochRef.current !== canvasEpoch) {
       epochRef.current = canvasEpoch;
       rejectedIdsRef.current.clear();
+      surfaceRef.current?.cancelActive();
       activeRef.current = null;
       setActive(null);
       setPending([]);
@@ -133,6 +121,7 @@ export function LiveReviewCanvas({
     if (!rejectedStroke) return;
     rejectedIdsRef.current.add(rejectedStroke.id);
     if (activeRef.current?.id === rejectedStroke.id) {
+      surfaceRef.current?.cancelActive();
       activeRef.current = null;
       setActive(null);
     }
@@ -148,6 +137,7 @@ export function LiveReviewCanvas({
 
   useEffect(() => {
     if (!canDraw || !isPaused || !strokeMode) {
+      surfaceRef.current?.cancelActive();
       activeRef.current = null;
       setActive(null);
     }
@@ -179,63 +169,28 @@ export function LiveReviewCanvas({
     [onStroke]
   );
 
-  const start = (event: PointerEvent<SVGSVGElement>) => {
-    if (!drawable || !svgRef.current) return;
-    const point = pointInContent(
-      event.clientX,
-      event.clientY,
-      svgRef.current.getBoundingClientRect()
-    );
-    if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const stroke: LiveStroke = {
-      id: crypto.randomUUID(),
-      participantId: participantId!,
-      points: [point],
-      color: COLOR,
-      width: WIDTH,
-    };
+  const createStroke = (point: Point, strokeColor: string, strokeWidth: number): LiveStroke => ({
+    id: crypto.randomUUID(),
+    participantId: participantId!,
+    points: [point],
+    color: strokeColor,
+    width: strokeWidth,
+  });
+  const start = (stroke: LiveStroke) => {
     activeRef.current = stroke;
     setActive(stroke);
     lastEmitRef.current = 0;
   };
-
-  const move = (event: PointerEvent<SVGSVGElement>) => {
-    const previous = activeRef.current;
-    if (
-      !previous ||
-      rejectedIdsRef.current.has(previous.id) ||
-      !drawable ||
-      !svgRef.current ||
-      previous.points.length >= LIVE_MAX_STROKE_POINTS
-    )
-      return;
-    const point = pointInContent(
-      event.clientX,
-      event.clientY,
-      svgRef.current.getBoundingClientRect()
-    );
-    if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const stroke = { ...previous, points: [...previous.points, point] };
+  const move = (stroke: LiveStroke) => {
+    if (!drawable || rejectedIdsRef.current.has(stroke.id)) return;
     activeRef.current = stroke;
     setActive(stroke);
     if (performance.now() - lastEmitRef.current >= EMIT_INTERVAL_MS) emit(stroke);
   };
-
-  const finish = (event: PointerEvent<SVGSVGElement>) => {
-    const stroke = activeRef.current;
-    if (!stroke) return;
-    event.preventDefault();
-    event.stopPropagation();
+  const finish = (stroke: LiveStroke) => {
     activeRef.current = null;
     setActive(null);
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    if (stroke.points.length < 2 || !drawable || rejectedIdsRef.current.has(stroke.id)) return;
+    if (!drawable || rejectedIdsRef.current.has(stroke.id)) return;
     setPending((previous) => [...previous, stroke]);
     emit(stroke);
   };
@@ -261,11 +216,6 @@ export function LiveReviewCanvas({
     }
   };
 
-  const path = (stroke: LiveStroke) =>
-    stroke.points
-      .map((point, index) => `${index ? 'L' : 'M'} ${point.x * 1000} ${point.y * 1000}`)
-      .join(' ');
-
   return (
     <div
       ref={containerRef}
@@ -273,9 +223,23 @@ export function LiveReviewCanvas({
       aria-label="Live review drawing"
     >
       {contentRect && (
-        <svg
-          ref={svgRef}
-          aria-label="Shared drawing canvas"
+        <AnnotationSurface<LiveStroke>
+          ref={surfaceRef}
+          strokes={active ? visible.filter((stroke) => stroke.id !== active.id) : visible}
+          activeStroke={active}
+          enabled={drawable}
+          color={color}
+          width={width}
+          maxPoints={LIVE_MAX_STROKE_POINTS}
+          createStroke={createStroke}
+          onStrokeStart={start}
+          onStrokeChange={move}
+          onStrokeEnd={finish}
+          onStrokeCancel={() => {
+            activeRef.current = null;
+            setActive(null);
+          }}
+          ariaLabel="Shared drawing canvas"
           className={
             drawable
               ? 'absolute touch-none cursor-crosshair pointer-events-auto'
@@ -287,38 +251,19 @@ export function LiveReviewCanvas({
             width: contentRect.width,
             height: contentRect.height,
           }}
-          viewBox="0 0 1000 1000"
-          preserveAspectRatio="none"
-          onPointerDown={start}
-          onPointerMove={move}
-          onPointerUp={finish}
-          onPointerCancel={finish}
           onClick={(event) => event.stopPropagation()}
-        >
-          {[...visible, ...(active ? [active] : [])].map((stroke) => (
-            <path
-              key={stroke.id}
-              d={path(stroke)}
-              fill="none"
-              stroke={stroke.color}
-              strokeWidth={stroke.width}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-        </svg>
+        />
       )}
       {controlsContainer &&
         createPortal(
           <div
-            className="flex flex-wrap items-center gap-1"
+            className="flex flex-wrap items-center gap-0.5"
             onClick={(event) => event.stopPropagation()}
           >
             <Button
               size="sm"
               variant={strokeMode ? 'secondary' : 'ghost'}
-              className="h-7 gap-1 px-2 text-xs"
+              className="h-7 gap-1 px-1.5 text-xs"
               aria-pressed={strokeMode}
               disabled={!editable}
               onClick={() => setStrokeMode((previous) => !previous)}
@@ -327,10 +272,41 @@ export function LiveReviewCanvas({
               <Pencil className="h-3.5 w-3.5" />
               Stroke Mode
             </Button>
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-6"
+                  disabled={!editable}
+                  aria-label="Drawing options"
+                  title="Drawing options"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" style={{ color }} />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  side="top"
+                  align="end"
+                  sideOffset={6}
+                  aria-label="Drawing options"
+                  className="z-[80] max-w-[calc(100vw-24px)] w-64 border bg-popover text-popover-foreground p-3 shadow-md"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <AnnotationSettings
+                    color={color}
+                    width={width}
+                    onColorChange={setColor}
+                    onWidthChange={setWidth}
+                  />
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7"
+              className="h-7 w-6"
               aria-label="Undo my stroke"
               title="Undo my stroke"
               disabled={!editable || !ownStrokes.length}
@@ -341,7 +317,7 @@ export function LiveReviewCanvas({
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7"
+              className="h-7 w-6"
               aria-label={alreadySaved ? 'Saved as comment' : 'Save drawing as comment'}
               title={
                 alreadySaved
@@ -357,7 +333,7 @@ export function LiveReviewCanvas({
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7"
+                className="h-7 w-6"
                 aria-label="Clear drawings"
                 title="Clear drawings"
                 disabled={!isPaused || !visible.length}

@@ -22,14 +22,15 @@ async function connectRoomSocket(
   videoId: string,
   versionId: string,
   action: 'start' | 'join',
-  guestName?: string
+  guestName?: string,
+  reconnectId?: string
 ): Promise<string> {
   return page.evaluate(
-    async ({ key, videoId, versionId, action, guestName }) => {
+    async ({ key, videoId, versionId, action, guestName, reconnectId }) => {
       const response = await fetch(`/api/videos/${videoId}/live-review`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action, versionId, guestName }),
+        body: JSON.stringify({ action, versionId, guestName, participantId: reconnectId }),
       });
       if (!response.ok) throw new Error(`Room ${action} returned ${response.status}`);
       const { data } = (await response.json()) as {
@@ -74,7 +75,7 @@ async function connectRoomSocket(
       });
       return data.participantId;
     },
-    { key, videoId, versionId, action, guestName }
+    { key, videoId, versionId, action, guestName, reconnectId }
   );
 }
 
@@ -120,6 +121,16 @@ async function closeRoomSocket(page: Page, key: string): Promise<void> {
     const probe = (window as ProbeWindow).liveReviewPermissionSockets?.[key];
     if (!probe) return;
     if (probe.heartbeat) window.clearInterval(probe.heartbeat);
+    probe.socket.close();
+  }, key);
+}
+
+async function leaveRoomSocket(page: Page, key: string): Promise<void> {
+  await page.evaluate((key) => {
+    const probe = (window as ProbeWindow).liveReviewPermissionSockets?.[key];
+    if (!probe || probe.socket.readyState !== WebSocket.OPEN)
+      throw new Error('Room socket is closed');
+    probe.socket.send(JSON.stringify({ type: 'leave' }));
     probe.socket.close();
   }, key);
 }
@@ -434,4 +445,199 @@ test('live room enforces guest permissions and socket command controls', async (
     if (guestPage) await closeRoomSocket(guestPage, 'guest');
     await guestContext.close();
   }
+});
+
+test('last intentional leave ends the room after other participants have left', async ({
+  page,
+  browser,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.version(seededUser, { title: 'Live review leave video' });
+  await db.videoVersion.update({
+    where: { id: seeded.versionId },
+    data: { providerId: 'r2', videoId: `videos/${seeded.versionId}.mp4`, duration: 12 },
+  });
+  const link = await seed.shareLink({ projectId: seeded.project.id, videoId: seeded.videoId });
+  const guestContext = await browser.newContext({ storageState: undefined });
+  try {
+    await page.goto('/dashboard');
+    await connectRoomSocket(page, 'owner', seeded.videoId, seeded.versionId, 'start');
+    const session = await db.liveReviewSession.findFirstOrThrow({
+      where: { videoId: seeded.videoId, status: 'active' },
+    });
+    const guestPage = await guestContext.newPage();
+    await guestPage.goto(`/watch/${seeded.videoId}?shareToken=${link.token}`);
+    await expect(guestPage).toHaveURL(new RegExp(`/watch/${seeded.videoId}$`));
+    await connectRoomSocket(
+      guestPage,
+      'guest',
+      seeded.videoId,
+      seeded.versionId,
+      'join',
+      'Leaving guest'
+    );
+    await expect
+      .poll(async () => (await latestSnapshot(page, 'owner')).participants.length)
+      .toBe(2);
+
+    const staleJoin = await page.evaluate(
+      async ({ videoId, versionId }) => {
+        const response = await fetch(`/api/videos/${videoId}/live-review`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'join', versionId }),
+        });
+        if (!response.ok) throw new Error(`Stale ticket request returned ${response.status}`);
+        return ((await response.json()) as { data: { ticket: string; websocketUrl: string } }).data;
+      },
+      { videoId: seeded.videoId, versionId: seeded.versionId }
+    );
+
+    await leaveRoomSocket(guestPage, 'guest');
+    await expect
+      .poll(async () => (await latestSnapshot(page, 'owner')).participants.length)
+      .toBe(1);
+    expect(
+      (await db.liveReviewSession.findUniqueOrThrow({ where: { id: session.id } })).status
+    ).toBe('active');
+
+    await leaveRoomSocket(page, 'owner');
+    await expect
+      .poll(
+        async () =>
+          (await db.liveReviewSession.findUniqueOrThrow({ where: { id: session.id } })).status
+      )
+      .toBe('ended');
+    const ended = await db.liveReviewSession.findUniqueOrThrow({ where: { id: session.id } });
+    expect(ended.endedAt).not.toBeNull();
+    expect(ended.playing).toBe(false);
+
+    const rejectedTicket = await page.evaluate(
+      ({ ticket, websocketUrl }) =>
+        new Promise<{ closeCode: number; sawSnapshot: boolean }>((resolve, reject) => {
+          const socket = new WebSocket(websocketUrl);
+          let sawSnapshot = false;
+          const timeout = window.setTimeout(
+            () => reject(new Error('Stale ticket stayed open')),
+            8000
+          );
+          socket.onopen = () => socket.send(JSON.stringify({ type: 'auth', ticket }));
+          socket.onmessage = () => {
+            sawSnapshot = true;
+          };
+          socket.onclose = (event) => {
+            window.clearTimeout(timeout);
+            resolve({ closeCode: event.code, sawSnapshot });
+          };
+          socket.onerror = () => reject(new Error('Stale ticket socket failed'));
+        }),
+      staleJoin
+    );
+    expect(rejectedTicket).toEqual({ closeCode: 1008, sawSnapshot: false });
+    const joinStatus = await page.evaluate(
+      async ({ videoId, versionId }) =>
+        (
+          await fetch(`/api/videos/${videoId}/live-review`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'join', versionId }),
+          })
+        ).status,
+      { videoId: seeded.videoId, versionId: seeded.versionId }
+    );
+    expect(joinStatus).toBe(404);
+  } finally {
+    await closeRoomSocket(page, 'owner');
+    const guestPage = guestContext.pages()[0];
+    if (guestPage) await closeRoomSocket(guestPage, 'guest');
+    await guestContext.close();
+  }
+});
+
+test('empty disconnect grace keeps a rejoining presenter and ends an abandoned room', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.version(seededUser, { title: 'Live review reconnect video' });
+  await db.videoVersion.update({
+    where: { id: seeded.versionId },
+    data: { providerId: 'r2', videoId: `videos/${seeded.versionId}.mp4`, duration: 12 },
+  });
+  await page.goto('/dashboard');
+  const ownerId = await connectRoomSocket(page, 'owner', seeded.videoId, seeded.versionId, 'start');
+  const session = await db.liveReviewSession.findFirstOrThrow({
+    where: { videoId: seeded.videoId, status: 'active' },
+  });
+  try {
+    await closeRoomSocket(page, 'owner');
+    await page.waitForTimeout(16_000);
+    const rejoinedId = await connectRoomSocket(
+      page,
+      'rejoined',
+      seeded.videoId,
+      seeded.versionId,
+      'join',
+      undefined,
+      ownerId
+    );
+    expect(rejoinedId).toBe(ownerId);
+    expect((await latestSnapshot(page, 'rejoined')).presenterId).toBe(ownerId);
+    const replacementId = await connectRoomSocket(
+      page,
+      'replacement',
+      seeded.videoId,
+      seeded.versionId,
+      'join',
+      undefined,
+      ownerId
+    );
+    expect(replacementId).toBe(ownerId);
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as ProbeWindow).liveReviewPermissionSockets?.rejoined.closeCode)
+      )
+      .toBe(1000);
+    await page.waitForTimeout(6_000);
+    const stillActive = await db.liveReviewSession.findUniqueOrThrow({ where: { id: session.id } });
+    expect(stillActive.status).toBe('active');
+    expect(
+      (await latestSnapshot(page, 'replacement')).participants.map((person) => person.id)
+    ).toContain(ownerId);
+    await leaveRoomSocket(page, 'replacement');
+    await expect
+      .poll(
+        async () =>
+          (await db.liveReviewSession.findUniqueOrThrow({ where: { id: session.id } })).status
+      )
+      .toBe('ended');
+  } finally {
+    await closeRoomSocket(page, 'owner');
+    await closeRoomSocket(page, 'rejoined');
+    await closeRoomSocket(page, 'replacement');
+  }
+
+  const abandoned = await seed.version(seededUser, { title: 'Live review abandoned video' });
+  await db.videoVersion.update({
+    where: { id: abandoned.versionId },
+    data: { providerId: 'r2', videoId: `videos/${abandoned.versionId}.mp4`, duration: 12 },
+  });
+  await connectRoomSocket(page, 'abandoned', abandoned.videoId, abandoned.versionId, 'start');
+  const abandonedSession = await db.liveReviewSession.findFirstOrThrow({
+    where: { videoId: abandoned.videoId, status: 'active' },
+  });
+  await closeRoomSocket(page, 'abandoned');
+  await expect
+    .poll(
+      async () =>
+        (await db.liveReviewSession.findUniqueOrThrow({ where: { id: abandonedSession.id } }))
+          .status,
+      { timeout: 27_000 }
+    )
+    .toBe('ended');
+  const ended = await db.liveReviewSession.findUniqueOrThrow({
+    where: { id: abandonedSession.id },
+  });
+  expect(ended.endedAt).not.toBeNull();
 });

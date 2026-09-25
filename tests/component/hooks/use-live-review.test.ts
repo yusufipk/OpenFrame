@@ -229,6 +229,7 @@ describe('useLiveReview', () => {
   it('reuses the same participant after a remount and forgets it on explicit leave', async () => {
     const first = await joinRoom();
     first.unmount();
+    expect(first.socket.sent).not.toContainEqual({ type: 'leave' });
     const second = renderHook(() => useLiveReview(first.params));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -246,6 +247,7 @@ describe('useLiveReview', () => {
     expect(second.result.current.isPresenter).toBe(true);
     expect(second.result.current.playbackLocked).toBe(false);
     act(() => second.result.current.leave());
+    expect(socket.sent).toContainEqual({ type: 'leave' });
     expect(sessionStorage.getItem('live-review:vid')).toBeNull();
     second.unmount();
   });

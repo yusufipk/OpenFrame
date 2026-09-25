@@ -548,6 +548,7 @@ export function useLiveReview({
   }, [connectionStatus, isJoined, versionId]);
 
   const leave = useCallback(() => {
+    send({ type: 'leave' });
     rememberParticipant(videoId, null);
     generationRef.current += 1;
     closeConnection();
@@ -561,7 +562,7 @@ export function useLiveReview({
     setError(null);
     setRejectedStroke(null);
     void refreshDiscovery();
-  }, [closeConnection, refreshDiscovery, setStatus, videoId]);
+  }, [closeConnection, refreshDiscovery, send, setStatus, videoId]);
 
   useEffect(() => {
     return () => {
