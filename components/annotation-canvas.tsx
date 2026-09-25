@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Undo2, Trash2, Minus, Plus, X } from 'lucide-react';
 
@@ -20,6 +21,7 @@ interface AnnotationCanvasProps {
   onConfirm?: (strokes: AnnotationStroke[]) => void;
   onCancel?: () => void;
   onDismiss?: () => void; // For view mode, close overlay
+  toolbarContainer?: HTMLElement | null;
 }
 
 const COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#AF52DE', '#FFFFFF'];
@@ -33,7 +35,7 @@ const REF_WIDTH = 1000;
 
 export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCanvasProps>(
   function AnnotationCanvas(
-    { mode, strokes: initialStrokes, onConfirm, onCancel, onDismiss },
+    { mode, strokes: initialStrokes, onConfirm, onCancel, onDismiss, toolbarContainer },
     ref
   ) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -98,7 +100,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
       currentStrokeRef.current = currentStroke;
     }, [currentStroke]);
 
-    // Resize canvas to match container — listener registered once, never re-added.
+    // Keep normalized strokes aligned when the media viewport changes size.
     useEffect(() => {
       const resizeCanvas = () => {
         const canvas = canvasRef.current;
@@ -114,8 +116,14 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
       };
 
       resizeCanvas();
+      const observer =
+        typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resizeCanvas) : null;
+      if (containerRef.current) observer?.observe(containerRef.current);
       window.addEventListener('resize', resizeCanvas);
-      return () => window.removeEventListener('resize', resizeCanvas);
+      return () => {
+        observer?.disconnect();
+        window.removeEventListener('resize', resizeCanvas);
+      };
     }, [renderStrokes]); // renderStrokes is stable (useCallback with no deps that change)
 
     // Re-render on stroke changes
@@ -221,6 +229,88 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
       );
     }
 
+    const toolbar = (
+      <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]">
+        {/* Colors */}
+        <div className="flex items-center justify-center flex-wrap gap-1.5">
+          {COLORS.map((c) => (
+            <button
+              key={c}
+              className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 shrink-0"
+              style={{
+                backgroundColor: c,
+                borderColor: color === c ? 'white' : 'transparent',
+                boxShadow: color === c ? `0 0 0 2px ${c}` : 'none',
+              }}
+              onClick={() => setColor(c)}
+            />
+          ))}
+        </div>
+
+        <div className="hidden sm:block w-px h-6 bg-border mx-1" />
+
+        {/* Brush size */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setWidth((w) => Math.max(MIN_WIDTH, w - 1))}
+          >
+            <Minus className="h-3 w-3" />
+          </Button>
+          <span className="text-xs tabular-nums w-4 text-center">{width}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setWidth((w) => Math.min(MAX_WIDTH, w + 1))}
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </div>
+
+        <div className="hidden sm:block w-px h-6 bg-border mx-1" />
+
+        {/* Actions */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={handleUndo}
+            disabled={strokes.length === 0}
+            title="Undo"
+          >
+            <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+            onClick={handleClear}
+            disabled={strokes.length === 0}
+            title="Clear all"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="hidden sm:block w-px h-6 bg-border mx-1" />
+
+        {/* Close */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onCancel}
+          title="Close annotation tool"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+
     return (
       <div
         ref={containerRef}
@@ -239,86 +329,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
           onTouchEnd={handlePointerUp}
         />
 
-        {/* Toolbar */}
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]">
-          {/* Colors */}
-          <div className="flex items-center justify-center flex-wrap gap-1.5">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 shrink-0"
-                style={{
-                  backgroundColor: c,
-                  borderColor: color === c ? 'white' : 'transparent',
-                  boxShadow: color === c ? `0 0 0 2px ${c}` : 'none',
-                }}
-                onClick={() => setColor(c)}
-              />
-            ))}
-          </div>
-
-          <div className="hidden sm:block w-px h-6 bg-border mx-1" />
-
-          {/* Brush size */}
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setWidth((w) => Math.max(MIN_WIDTH, w - 1))}
-            >
-              <Minus className="h-3 w-3" />
-            </Button>
-            <span className="text-xs tabular-nums w-4 text-center">{width}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setWidth((w) => Math.min(MAX_WIDTH, w + 1))}
-            >
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
-
-          <div className="hidden sm:block w-px h-6 bg-border mx-1" />
-
-          {/* Actions */}
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={handleUndo}
-              disabled={strokes.length === 0}
-              title="Undo"
-            >
-              <Undo2 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-destructive hover:bg-destructive/10"
-              onClick={handleClear}
-              disabled={strokes.length === 0}
-              title="Clear all"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="hidden sm:block w-px h-6 bg-border mx-1" />
-
-          {/* Close */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onCancel}
-            title="Close annotation tool"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        {toolbarContainer === undefined
+          ? toolbar
+          : toolbarContainer
+            ? createPortal(toolbar, toolbarContainer)
+            : null}
       </div>
     );
   }

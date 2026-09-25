@@ -65,7 +65,7 @@ export async function GET(
         select: { video: { select: videoSelect } },
       }),
       db.videoVersion.findMany({
-        where: { thumbnailUrl: imageUrl },
+        where: { OR: [{ thumbnailUrl: imageUrl }, { originalUrl: imageUrl }] },
         take: 2,
         select: { video: { select: videoSelect } },
       }),

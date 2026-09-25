@@ -655,3 +655,16 @@ describe('notifyProjectOwner', () => {
     expect(dbMock.notificationSetting.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('still image notifications', () => {
+  it('uses an image label and omits playback time from email and Telegram', async () => {
+    dbMock.notificationSetting.findMany.mockResolvedValue([settingsRow({ userId: 'owner' })]);
+    await notifyProjectOwner('owner', { ...COMMENT_EVENT, mediaType: 'IMAGE', timestamp: null });
+    expect(mail.sendMail).toHaveBeenCalledTimes(1);
+    expect(sentMail().html).toContain('Image');
+    expect(sentMail().html).not.toContain('>At<');
+    expect(telegramPayload().text).toContain('Image:');
+    expect(telegramPayload().text).not.toContain(' at null');
+    expect(telegramPayload().text).not.toContain(' at 0:00');
+  });
+});

@@ -394,6 +394,7 @@ model Video {
   id          String   @id @default(cuid())
   title       String
   description String?  @db.Text
+  mediaType   MediaType @default(VIDEO)
   
   folderId    String?
   folder      ProjectFolder? @relation(fields: [folderId, projectId], references: [id, projectId], onDelete: NoAction, onUpdate: NoAction)
@@ -421,6 +422,11 @@ model Video {
   @@map("videos")
 }
 
+enum MediaType {
+  VIDEO
+  IMAGE
+}
+
 model VideoVersion {
   id              String   @id @default(cuid())
   versionNumber   Int      // 1, 2, 3...
@@ -436,6 +442,7 @@ model VideoVersion {
   thumbnailUrl    String?
   duration        Int?     // Duration in seconds
   sizeBytes       BigInt   @default(0) @map("size_bytes") // R2-hosted video file size
+  thumbnailSizeBytes BigInt @default(0) @map("thumbnail_size_bytes")
   
   // Status
   isActive        Boolean  @default(true) // Currently displayed version

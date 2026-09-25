@@ -36,6 +36,7 @@ import type { VideoSource } from '@/lib/video-providers';
 
 interface VideoPageHeaderProps {
   mode: 'dashboard' | 'watch';
+  mediaType?: 'VIDEO' | 'IMAGE';
   backHref: string;
   title: string;
   projectName: string;
@@ -58,6 +59,7 @@ interface VideoPageHeaderProps {
   projectId?: string;
   videoId: string;
   directUploadsEnabled: boolean;
+  imageUploadsEnabled?: boolean;
   showVersionDialog: boolean;
   setShowVersionDialog: (open: boolean) => void;
   newVersionMode: 'url' | 'file';
@@ -84,6 +86,7 @@ interface VideoPageHeaderProps {
 
 export const VideoPageHeader = memo(function VideoPageHeader({
   mode,
+  mediaType = 'VIDEO',
   backHref,
   title,
   projectName,
@@ -106,6 +109,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   projectId,
   videoId,
   directUploadsEnabled,
+  imageUploadsEnabled = false,
   showVersionDialog,
   setShowVersionDialog,
   newVersionMode,
@@ -244,7 +248,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               ) : null}
             </Button>
 
-            {versions.length >= 2 && (
+            {mediaType !== 'IMAGE' && versions.length >= 2 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -262,6 +266,8 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                   open={showVersionDialog}
                   onOpenChange={setShowVersionDialog}
                   directUploadsEnabled={directUploadsEnabled}
+                  imageUploadsEnabled={imageUploadsEnabled}
+                  mediaType={mediaType}
                   newVersionMode={newVersionMode}
                   onNewVersionModeChange={setNewVersionMode}
                   newVersionUrl={newVersionUrl}
@@ -294,13 +300,13 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                       <DropdownMenuItem asChild>
                         <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
                           <Share2 className="h-4 w-4 mr-2" />
-                          Share Video
+                          {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
                         </Link>
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem disabled>
                         <Share2 className="h-4 w-4 mr-2" />
-                        Share Video
+                        {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem

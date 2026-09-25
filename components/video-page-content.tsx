@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, type SetStateAction } from 'react';
 import Hls from 'hls.js';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
 import { PlayerCore } from '@/components/video-page/player-core';
+import { ImageReviewPlayer } from '@/components/video-page/image-review-player';
 import { VideoPageHeader } from '@/components/video-page/video-page-header';
 import { ImagePreviewDialog } from '@/components/video-page/image-preview-dialog';
 import { CompareVersionsDialog } from '@/components/video-page/compare-versions-dialog';
@@ -74,6 +75,7 @@ interface VideoPageContentProps {
   videoId: string;
   projectId?: string;
   directUploadsEnabled?: boolean;
+  imageUploadsEnabled?: boolean;
   directUploadProvider?: import('@/components/video-page/types').DirectUploadProvider;
 }
 
@@ -82,6 +84,7 @@ export function VideoPageContent({
   videoId,
   projectId: propProjectId,
   directUploadsEnabled = false,
+  imageUploadsEnabled = false,
   directUploadProvider = 'bunny',
 }: VideoPageContentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -161,6 +164,9 @@ export function VideoPageContent({
   const normalizedGuestName = guestName.trim();
   const canUploadAssets = !!video?.canUploadAssets;
   const canDownloadAssets = !!video?.canDownloadAssets;
+  const isImage =
+    video?.mediaType === 'IMAGE' ||
+    video?.versions?.some((version) => version.providerId === 'r2-image');
 
   const {
     assets,
@@ -183,46 +189,6 @@ export function VideoPageContent({
     canDownloadAssets,
     guestName: normalizedGuestName,
   });
-
-  const {
-    showVersionDialog,
-    setShowVersionDialog,
-    newVersionUrl,
-    newVersionLabel,
-    setNewVersionLabel,
-    newVersionSource,
-    newVersionUrlError,
-    isCreatingVersion,
-    newVersionMode,
-    setNewVersionMode,
-    newVersionFile,
-    setNewVersionFile,
-    newVersionUploadProgress,
-    newVersionUploadStatus,
-    handleNewVersionUrlChange,
-    handleCreateVersion,
-    showDeleteVersionDialog,
-    setShowDeleteVersionDialog,
-    setVersionToDelete,
-    isDeletingVersion,
-    handleDeleteVersion,
-  } = useVersionActions({
-    projectId: propProjectId,
-    videoId,
-    directUploadsEnabled,
-    directUploadProvider,
-    setVideo,
-    activeVersionId,
-    setActiveVersionId,
-  });
-
-  // Memoize version selection handler to prevent recreating on each render
-  const handleVersionSelect = useCallback(
-    (versionId: string) => {
-      setActiveVersionId(versionId);
-    },
-    [setActiveVersionId]
-  );
 
   // Memoize toggle show resolved handler
   const handleToggleShowResolved = useCallback(() => {
@@ -411,7 +377,7 @@ export function VideoPageContent({
     handleDismissResume,
   } = useWatchProgress({
     videoId,
-    activeVersionId,
+    activeVersionId: isImage ? null : activeVersionId,
     isAuthenticated: !!video?.isAuthenticated,
     pathname,
     playerRef,
@@ -541,6 +507,7 @@ export function VideoPageContent({
     setPreviewImage,
   } = useCommentActions({
     videoId,
+    isImage,
     setVideo,
     activeVersionId,
     activeVersion,
@@ -562,6 +529,59 @@ export function VideoPageContent({
     fetchVersionComments,
     fetchAssets,
   });
+
+  const setReviewVersionId = useCallback(
+    (value: SetStateAction<string | null>) => {
+      const nextVersionId = typeof value === 'function' ? value(activeVersionId) : value;
+      if (nextVersionId !== activeVersionId) {
+        setIsAnnotating(false);
+        setAnnotationStrokes(null);
+        setViewingAnnotation(null);
+        cancelEditingComment();
+      }
+      setActiveVersionId(nextVersionId);
+    },
+    [activeVersionId, cancelEditingComment, setActiveVersionId]
+  );
+
+  const {
+    showVersionDialog,
+    setShowVersionDialog,
+    newVersionUrl,
+    newVersionLabel,
+    setNewVersionLabel,
+    newVersionSource,
+    newVersionUrlError,
+    isCreatingVersion,
+    newVersionMode,
+    setNewVersionMode,
+    newVersionFile,
+    setNewVersionFile,
+    newVersionUploadProgress,
+    newVersionUploadStatus,
+    handleNewVersionUrlChange,
+    handleCreateVersion,
+    showDeleteVersionDialog,
+    setShowDeleteVersionDialog,
+    setVersionToDelete,
+    isDeletingVersion,
+    handleDeleteVersion,
+  } = useVersionActions({
+    projectId: propProjectId,
+    videoId,
+    mediaType: isImage ? 'IMAGE' : 'VIDEO',
+    imageUploadsEnabled,
+    directUploadsEnabled,
+    directUploadProvider,
+    setVideo,
+    activeVersionId,
+    setActiveVersionId: setReviewVersionId,
+  });
+
+  const handleVersionSelect = useCallback(
+    (versionId: string) => setReviewVersionId(versionId),
+    [setReviewVersionId]
+  );
 
   const commentMarkers = useMemo<CommentMarker[]>(() => {
     return filteredComments.map((comment) => ({
@@ -595,7 +615,7 @@ export function VideoPageContent({
   }, [editAnnotationData, comments, editingCommentId]);
 
   useVersionDurationSync({
-    videoDuration,
+    videoDuration: isImage ? 0 : videoDuration,
     durationVersionId,
     activeVersionDuration,
     activeVersionId,
@@ -768,9 +788,15 @@ export function VideoPageContent({
   return (
     <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
-        <div className={cn('flex-1 w-full flex flex-col min-h-0', isFullscreenMode && 'relative')}>
+        <div
+          className={cn(
+            'flex-1 w-full min-w-0 flex flex-col min-h-0',
+            isFullscreenMode && 'relative'
+          )}
+        >
           <VideoPageHeader
             mode={mode}
+            mediaType={isImage ? 'IMAGE' : 'VIDEO'}
             backHref={backHref}
             title={video.title}
             projectName={video.project.name}
@@ -793,6 +819,7 @@ export function VideoPageContent({
             projectId={projectId}
             videoId={videoId}
             directUploadsEnabled={directUploadsEnabled}
+            imageUploadsEnabled={imageUploadsEnabled}
             showVersionDialog={showVersionDialog}
             setShowVersionDialog={setShowVersionDialog}
             newVersionMode={newVersionMode}
@@ -817,81 +844,107 @@ export function VideoPageContent({
             onOpenApprovalsPanel={handleOpenApprovalsPanel}
           />
 
-          <PlayerCore
-            activeVersionId={activeVersionId}
-            activeProviderId={activeVersion?.providerId}
-            embedUrl={embedUrl}
-            videoRef={videoRef}
-            iframeRef={iframeRef}
-            bunnyViewportRef={bunnyViewportRef}
-            timelineRef={timelineRef}
-            progressRef={progressRef}
-            playheadRef={playheadRef}
-            scrubReadoutRef={scrubReadoutRef}
-            videoContainerRef={videoContainerRef}
-            showScrubReadout={showScrubReadout}
-            isFullscreenMode={isFullscreenMode}
-            cursorIdle={cursorIdle}
-            isPlaying={isPlaying}
-            handlePlayPause={handlePlayPause}
-            handleVideoMouseMove={handleVideoMouseMove}
-            handleVideoMouseLeave={handleVideoMouseLeave}
-            isBunnyPortraitSource={isBunnyPortraitSource}
-            bunnyPortraitFrameWidth={bunnyPortraitFrameWidth}
-            showBunnyProcessingOverlay={showBunnyProcessingOverlay}
-            showBunnyErrorOverlay={showBunnyErrorOverlay}
-            showResumePrompt={showResumePrompt}
-            savedProgress={savedProgress}
-            formatTime={formatTime}
-            handleResumeFromSaved={handleResumeFromSavedWithSync}
-            handleDismissResume={handleDismissResume}
-            isAnnotating={isAnnotating}
-            annotationCanvasRef={annotationCanvasRef}
-            setAnnotationStrokes={setAnnotationStrokes}
-            setIsAnnotating={setIsAnnotating}
-            setViewingAnnotation={setViewingAnnotation}
-            viewingAnnotation={viewingAnnotation}
-            isEditingAnnotation={isEditingAnnotation}
-            editAnnotationCanvasRef={editAnnotationCanvasRef}
-            editAnnotationInitialStrokes={editAnnotationInitialStrokes}
-            setEditAnnotationData={setEditAnnotationData}
-            setIsEditingAnnotation={setIsEditingAnnotation}
-            currentTime={currentTime}
-            duration={duration}
-            isFrameMode={isFrameMode}
-            frameStepLabel={frameStepLabel}
-            handleSkip={handleSkip}
-            handleFrameModeToggle={handleFrameModeToggle}
-            handleMuteToggle={handleMuteToggle}
-            isMuted={isMuted}
-            selectedQualityLabel={selectedQualityLabel}
-            selectedQualityLevel={selectedQualityLevel}
-            qualityOptions={qualityOptions}
-            handleQualityChange={handleQualityChange}
-            subtitles={subtitles}
-            subtitleTracks={subtitleTracks}
-            subtitleTrackKey={subtitleTrackKey}
-            activeSubtitleLanguage={activeCaptionLanguage}
-            onSelectSubtitleLanguage={selectCaptionLanguage}
-            canManageSubtitles={canManageSubtitles}
-            onUploadSubtitle={uploadSubtitle}
-            onDeleteSubtitle={deleteSubtitle}
-            isUploadingSubtitle={isUploadingSubtitle}
-            playbackSpeed={playbackSpeed}
-            speedOptions={speedOptions}
-            handleSpeedChange={handleSpeedChange}
-            toggleFullscreen={toggleFullscreen}
-            showComments={showComments}
-            setShowComments={setShowComments}
-            setIsMobileCommentsOpen={setIsMobileCommentsOpen}
-            handleTimelineMouseDown={handleTimelineMouseDown}
-            handleTimelineMouseMove={handleTimelineMouseMove}
-            handleSeekToTimestamp={handleSeekToTimestamp}
-            commentMarkers={commentMarkers}
-          />
+          {isImage ? (
+            <ImageReviewPlayer
+              key={activeVersion.id}
+              versionId={activeVersion.id}
+              src={activeVersion.originalUrl}
+              title={video.title}
+              isFullscreenMode={isFullscreenMode}
+              toggleFullscreen={toggleFullscreen}
+              showComments={showComments}
+              setShowComments={setShowComments}
+              setIsMobileCommentsOpen={setIsMobileCommentsOpen}
+              isAnnotating={isAnnotating}
+              annotationCanvasRef={annotationCanvasRef}
+              setAnnotationStrokes={setAnnotationStrokes}
+              setIsAnnotating={setIsAnnotating}
+              setViewingAnnotation={setViewingAnnotation}
+              viewingAnnotation={viewingAnnotation}
+              isEditingAnnotation={isEditingAnnotation}
+              editAnnotationCanvasRef={editAnnotationCanvasRef}
+              editAnnotationInitialStrokes={editAnnotationInitialStrokes}
+              setEditAnnotationData={setEditAnnotationData}
+              setIsEditingAnnotation={setIsEditingAnnotation}
+            />
+          ) : (
+            <PlayerCore
+              activeVersionId={activeVersionId}
+              activeProviderId={activeVersion?.providerId}
+              embedUrl={embedUrl}
+              videoRef={videoRef}
+              iframeRef={iframeRef}
+              bunnyViewportRef={bunnyViewportRef}
+              timelineRef={timelineRef}
+              progressRef={progressRef}
+              playheadRef={playheadRef}
+              scrubReadoutRef={scrubReadoutRef}
+              videoContainerRef={videoContainerRef}
+              showScrubReadout={showScrubReadout}
+              isFullscreenMode={isFullscreenMode}
+              cursorIdle={cursorIdle}
+              isPlaying={isPlaying}
+              handlePlayPause={handlePlayPause}
+              handleVideoMouseMove={handleVideoMouseMove}
+              handleVideoMouseLeave={handleVideoMouseLeave}
+              isBunnyPortraitSource={isBunnyPortraitSource}
+              bunnyPortraitFrameWidth={bunnyPortraitFrameWidth}
+              showBunnyProcessingOverlay={showBunnyProcessingOverlay}
+              showBunnyErrorOverlay={showBunnyErrorOverlay}
+              showResumePrompt={showResumePrompt}
+              savedProgress={savedProgress}
+              formatTime={formatTime}
+              handleResumeFromSaved={handleResumeFromSavedWithSync}
+              handleDismissResume={handleDismissResume}
+              isAnnotating={isAnnotating}
+              annotationCanvasRef={annotationCanvasRef}
+              setAnnotationStrokes={setAnnotationStrokes}
+              setIsAnnotating={setIsAnnotating}
+              setViewingAnnotation={setViewingAnnotation}
+              viewingAnnotation={viewingAnnotation}
+              isEditingAnnotation={isEditingAnnotation}
+              editAnnotationCanvasRef={editAnnotationCanvasRef}
+              editAnnotationInitialStrokes={editAnnotationInitialStrokes}
+              setEditAnnotationData={setEditAnnotationData}
+              setIsEditingAnnotation={setIsEditingAnnotation}
+              currentTime={currentTime}
+              duration={duration}
+              isFrameMode={isFrameMode}
+              frameStepLabel={frameStepLabel}
+              handleSkip={handleSkip}
+              handleFrameModeToggle={handleFrameModeToggle}
+              handleMuteToggle={handleMuteToggle}
+              isMuted={isMuted}
+              selectedQualityLabel={selectedQualityLabel}
+              selectedQualityLevel={selectedQualityLevel}
+              qualityOptions={qualityOptions}
+              handleQualityChange={handleQualityChange}
+              subtitles={subtitles}
+              subtitleTracks={subtitleTracks}
+              subtitleTrackKey={subtitleTrackKey}
+              activeSubtitleLanguage={activeCaptionLanguage}
+              onSelectSubtitleLanguage={selectCaptionLanguage}
+              canManageSubtitles={canManageSubtitles}
+              onUploadSubtitle={uploadSubtitle}
+              onDeleteSubtitle={deleteSubtitle}
+              isUploadingSubtitle={isUploadingSubtitle}
+              playbackSpeed={playbackSpeed}
+              speedOptions={speedOptions}
+              handleSpeedChange={handleSpeedChange}
+              toggleFullscreen={toggleFullscreen}
+              showComments={showComments}
+              setShowComments={setShowComments}
+              setIsMobileCommentsOpen={setIsMobileCommentsOpen}
+              handleTimelineMouseDown={handleTimelineMouseDown}
+              handleTimelineMouseMove={handleTimelineMouseMove}
+              handleSeekToTimestamp={handleSeekToTimestamp}
+              commentMarkers={commentMarkers}
+            />
+          )}
         </div>
 
         <CommentsPane
+          isImage={isImage}
           isMobileCommentsOpen={isMobileCommentsOpen}
           setIsMobileCommentsOpen={setIsMobileCommentsOpen}
           isFullscreenMode={isFullscreenMode}
@@ -992,6 +1045,7 @@ export function VideoPageContent({
           }
           composer={
             <CommentComposer
+              isImage={isImage}
               isRecording={isRecording}
               recordingTime={recordingTime}
               stopRecording={stopRecording}
@@ -1039,14 +1093,16 @@ export function VideoPageContent({
 
       <ImagePreviewDialog previewImage={previewImage} onClose={() => setPreviewImage(null)} />
 
-      <CompareVersionsDialog
-        open={showCompareDialog}
-        onOpenChange={setShowCompareDialog}
-        versions={video.versions}
-        selectedCompareVersions={selectedCompareVersions}
-        onToggleVersion={compareActions.onToggleVersion}
-        onCompare={compareActions.onCompare}
-      />
+      {!isImage && (
+        <CompareVersionsDialog
+          open={showCompareDialog}
+          onOpenChange={setShowCompareDialog}
+          versions={video.versions}
+          selectedCompareVersions={selectedCompareVersions}
+          onToggleVersion={compareActions.onToggleVersion}
+          onCompare={compareActions.onCompare}
+        />
+      )}
 
       {mode === 'dashboard' ? (
         <>

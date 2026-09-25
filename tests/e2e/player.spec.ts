@@ -47,7 +47,7 @@ async function uploadAndOpen(page: Page, projectId: string, title: string): Prom
   await expect(directUploadTab).toBeVisible();
   await directUploadTab.click();
 
-  await page.getByLabel('Video Files').setInputFiles(SAMPLE_VIDEO);
+  await page.getByLabel('Files').setInputFiles(SAMPLE_VIDEO);
   await page.getByLabel('Title').fill(title);
   await page.getByRole('button', { name: 'Add Video', exact: true }).click();
 

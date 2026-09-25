@@ -228,13 +228,13 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
-          Back to Video
+          Back to Review
         </Link>
 
         <Card className="border-border/50 shadow-lg">
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <CardTitle className="text-2xl">Share Video</CardTitle>
+              <CardTitle className="text-2xl">Share for Review</CardTitle>
               <ContentAccessControls
                 projectId={projectId}
                 videoId={videoId}
@@ -243,7 +243,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
               />
             </div>
             <CardDescription>
-              Create a private link so reviewers can watch and comment on this single video.
+              Create a private link so reviewers can view and comment on this file.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

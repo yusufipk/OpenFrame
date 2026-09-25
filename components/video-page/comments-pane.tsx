@@ -51,6 +51,7 @@ import type {
 } from '@/components/video-page/types';
 
 interface CommentsPaneProps {
+  isImage?: boolean;
   isMobileCommentsOpen: boolean;
   setIsMobileCommentsOpen: (open: boolean) => void;
   isFullscreenMode: boolean;
@@ -154,6 +155,7 @@ function voiceNoteFileName(
 }
 
 export const CommentsPane = memo(function CommentsPane({
+  isImage = false,
   isMobileCommentsOpen,
   setIsMobileCommentsOpen,
   isFullscreenMode,
@@ -442,20 +444,30 @@ export const CommentsPane = memo(function CommentsPane({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() =>
-                            handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
-                              pauseAfterSeek: true,
-                              timestampEnd: comment.timestampEnd,
-                            })
-                          }
-                          className="flex items-center gap-1 text-xs text-primary hover:underline px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
-                          title="Jump to this timestamp"
-                        >
-                          <Clock className="h-3 w-3" />
-                          {formatCommentRange(comment.timestamp, comment.timestampEnd)}
-                          <ArrowUpRight className="h-3 w-3" />
-                        </button>
+                        {!isImage && (
+                          <button
+                            onClick={() =>
+                              handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                                pauseAfterSeek: true,
+                                timestampEnd: comment.timestampEnd,
+                              })
+                            }
+                            className="flex items-center gap-1 text-xs text-primary hover:underline px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                            title="Jump to this timestamp"
+                          >
+                            <Clock className="h-3 w-3" />
+                            {formatCommentRange(comment.timestamp, comment.timestampEnd)}
+                            <ArrowUpRight className="h-3 w-3" />
+                          </button>
+                        )}
+                        {isImage && comment.annotationData && (
+                          <button
+                            onClick={() => handleSeekToTimestamp(0, comment.annotationData)}
+                            className="rounded bg-violet-500/15 px-2 py-1 text-xs text-violet-400 hover:bg-violet-500/25"
+                          >
+                            View annotation
+                          </button>
+                        )}
                         {canResolveComments && (
                           <Button
                             variant="ghost"
@@ -767,19 +779,25 @@ export const CommentsPane = memo(function CommentsPane({
                                     </AvatarFallback>
                                   </Avatar>
                                   <span className="font-medium text-xs">{replyAuthor}</span>
-                                  <button
-                                    onClick={() =>
-                                      handleSeekToTimestamp(reply.timestamp, reply.annotationData, {
-                                        pauseAfterSeek: true,
-                                        timestampEnd: reply.timestampEnd,
-                                      })
-                                    }
-                                    className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/20"
-                                    title="Jump to this reply"
-                                  >
-                                    <Clock className="h-2.5 w-2.5" />
-                                    {formatCommentRange(reply.timestamp, reply.timestampEnd)}
-                                  </button>
+                                  {!isImage && (
+                                    <button
+                                      onClick={() =>
+                                        handleSeekToTimestamp(
+                                          reply.timestamp,
+                                          reply.annotationData,
+                                          {
+                                            pauseAfterSeek: true,
+                                            timestampEnd: reply.timestampEnd,
+                                          }
+                                        )
+                                      }
+                                      className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/20"
+                                      title="Jump to this reply"
+                                    >
+                                      <Clock className="h-2.5 w-2.5" />
+                                      {formatCommentRange(reply.timestamp, reply.timestampEnd)}
+                                    </button>
+                                  )}
                                   <span className="text-xs text-muted-foreground">
                                     {new Date(reply.createdAt).toLocaleDateString()}
                                   </span>
@@ -1070,31 +1088,33 @@ export const CommentsPane = memo(function CommentsPane({
                               rows={1}
                               className="resize-none text-sm"
                             />
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Button
-                                size="sm"
-                                variant={replyRangeStart !== null ? 'default' : 'outline'}
-                                className="h-7 text-xs"
-                                onClick={toggleReplyRangeSelection}
-                              >
-                                {replyRangeButtonLabel}
-                              </Button>
-                              {replyRangeLabel && (
-                                <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
-                                  {replyRangeLabel}
-                                </span>
-                              )}
-                              {replyRangeStart !== null && (
+                            {!isImage && (
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <Button
                                   size="sm"
-                                  variant="ghost"
+                                  variant={replyRangeStart !== null ? 'default' : 'outline'}
                                   className="h-7 text-xs"
-                                  onClick={clearReplyRangeSelection}
+                                  onClick={toggleReplyRangeSelection}
                                 >
-                                  Clear
+                                  {replyRangeButtonLabel}
                                 </Button>
-                              )}
-                            </div>
+                                {replyRangeLabel && (
+                                  <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
+                                    {replyRangeLabel}
+                                  </span>
+                                )}
+                                {replyRangeStart !== null && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={clearReplyRangeSelection}
+                                  >
+                                    Clear
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                             <div className="flex gap-1 mt-2">
                               <Button
                                 size="sm"
@@ -1174,31 +1194,33 @@ export const CommentsPane = memo(function CommentsPane({
                                 onChange={(e) => handleImageSelect(e, 'reply')}
                               />
                             </div>
-                            <div className="mt-2 flex items-center gap-2 flex-wrap">
-                              <Button
-                                size="sm"
-                                variant={replyRangeStart !== null ? 'default' : 'outline'}
-                                className="h-7 text-xs"
-                                onClick={toggleReplyRangeSelection}
-                              >
-                                {replyRangeButtonLabel}
-                              </Button>
-                              {replyRangeLabel && (
-                                <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
-                                  {replyRangeLabel}
-                                </span>
-                              )}
-                              {replyRangeStart !== null && (
+                            {!isImage && (
+                              <div className="mt-2 flex items-center gap-2 flex-wrap">
                                 <Button
                                   size="sm"
-                                  variant="ghost"
+                                  variant={replyRangeStart !== null ? 'default' : 'outline'}
                                   className="h-7 text-xs"
-                                  onClick={clearReplyRangeSelection}
+                                  onClick={toggleReplyRangeSelection}
                                 >
-                                  Clear
+                                  {replyRangeButtonLabel}
                                 </Button>
-                              )}
-                            </div>
+                                {replyRangeLabel && (
+                                  <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
+                                    {replyRangeLabel}
+                                  </span>
+                                )}
+                                {replyRangeStart !== null && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={clearReplyRangeSelection}
+                                  >
+                                    Clear
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                             <div className="flex gap-1 mt-1">
                               <Button
                                 size="sm"

@@ -40,7 +40,7 @@ test('a video file is uploaded to object storage and a second version is added',
   await expect(directUploadTab).toBeVisible();
   await directUploadTab.click();
 
-  await page.getByLabel('Video Files').setInputFiles(SAMPLE_VIDEO);
+  await page.getByLabel('Files').setInputFiles(SAMPLE_VIDEO);
   await expect(page.getByText('sample.mp4')).toBeVisible();
 
   await page.getByLabel('Title').fill(title);

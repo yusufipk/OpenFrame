@@ -86,6 +86,28 @@ async function seedDownloadable(
   return { owner, workspace, project, video, version, videoPath };
 }
 
+async function seedDownloadableImage(allowDownloads: boolean): Promise<DownloadFixture> {
+  const { owner, workspace, project } = await seedProject({
+    visibility: 'PRIVATE',
+    allowDownloads,
+  });
+  const fileName = `55555555-5555-4555-8555-${String(nextSeq()).padStart(12, '0')}.png`;
+  const videoPath = `/api/upload/image/${fileName}`;
+  const video = await db.video.create({
+    data: { projectId: project.id, title: 'Approved still', mediaType: 'IMAGE' },
+  });
+  const version = await createVersion({
+    videoParentId: video.id,
+    providerId: 'r2-image',
+    providerVideoId: `images/${fileName}`,
+    originalUrl: videoPath,
+    thumbnailUrl: videoPath,
+    duration: null,
+    sizeBytes: BigInt(2048),
+  });
+  return { owner, workspace, project, video, version, videoPath };
+}
+
 function projectDownloadUrl(projectId: string): string {
   return `/api/projects/${projectId}/download`;
 }
@@ -104,6 +126,41 @@ interface Manifest {
 // GET /api/projects/[projectId]/download
 // ---------------------------------------------------------------------------
 describe('GET /api/projects/[projectId]/download', () => {
+  it('includes an image review in the project manifest for its owner', async () => {
+    const fixture = await seedDownloadableImage(false);
+    signedInAs(fixture.owner);
+    const response = await callRoute(
+      downloadProject,
+      apiRequest(projectDownloadUrl(fixture.project.id)),
+      { projectId: fixture.project.id }
+    );
+    expect(response.status).toBe(200);
+    expect((await readData<Manifest>(response)).files).toEqual([
+      { fileName: '01-Approved still-v1.png', url: fixture.videoPath, sizeBytes: 2048 },
+    ]);
+  });
+
+  it('refuses image exports to a commentator until project downloads are enabled', async () => {
+    const fixture = await seedDownloadableImage(false);
+    const commentator = await createUser();
+    await addProjectMember({
+      projectId: fixture.project.id,
+      userId: commentator.id,
+      role: 'COMMENTATOR',
+    });
+    signedInAs(commentator);
+    const url = projectDownloadUrl(fixture.project.id);
+    expect(
+      (await callRoute(downloadProject, apiRequest(url), { projectId: fixture.project.id })).status
+    ).toBe(403);
+    await db.project.update({ where: { id: fixture.project.id }, data: { allowDownloads: true } });
+    const allowed = await callRoute(downloadProject, apiRequest(url), {
+      projectId: fixture.project.id,
+    });
+    expect(allowed.status).toBe(200);
+    expect((await readData<Manifest>(allowed)).files[0]?.url).toBe(fixture.videoPath);
+  });
+
   it('returns 403 to a signed-in stranger even when downloads are allowed', async () => {
     const fixture = await seedDownloadable({ allowDownloads: true });
     // The stranger owns a real tenant of their own, so nothing about this call is

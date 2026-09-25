@@ -24,8 +24,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { VideoSource } from '@/lib/video-providers';
+import { isImageFile } from '@/lib/client/project-image-upload';
 
 interface VersionActionsDialogProps {
+  mediaType?: 'VIDEO' | 'IMAGE';
+  imageUploadsEnabled?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   directUploadsEnabled: boolean;
@@ -48,6 +51,8 @@ interface VersionActionsDialogProps {
 
 export const VersionActionsDialog = memo(function VersionActionsDialog({
   open,
+  mediaType = 'VIDEO',
+  imageUploadsEnabled = false,
   onOpenChange,
   directUploadsEnabled,
   newVersionMode,
@@ -78,24 +83,28 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
         <DialogHeader>
           <DialogTitle>Add New Version</DialogTitle>
           <DialogDescription>
-            Upload a new version of this video. The new version will become active.
+            Upload a new version of this {mediaType === 'IMAGE' ? 'image' : 'video'}. The new
+            version will become active.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <Tabs
-            value={newVersionMode}
+            value={mediaType === 'IMAGE' ? 'file' : newVersionMode}
             onValueChange={(v) => onNewVersionModeChange(v as 'url' | 'file')}
             className="mb-2"
           >
             <TabsList
-              className={`grid w-full ${directUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}
+              className={`grid w-full ${mediaType === 'IMAGE' || !directUploadsEnabled ? 'grid-cols-1' : 'grid-cols-2'}`}
             >
-              <TabsTrigger value="url">Link URL</TabsTrigger>
-              {directUploadsEnabled ? <TabsTrigger value="file">Upload File</TabsTrigger> : null}
+              {mediaType === 'VIDEO' ? <TabsTrigger value="url">Link URL</TabsTrigger> : null}
+              {(mediaType === 'IMAGE' && imageUploadsEnabled) ||
+              (mediaType === 'VIDEO' && directUploadsEnabled) ? (
+                <TabsTrigger value="file">Upload File</TabsTrigger>
+              ) : null}
             </TabsList>
           </Tabs>
 
-          {newVersionMode === 'url' ? (
+          {mediaType === 'VIDEO' && newVersionMode === 'url' ? (
             <div className="space-y-2">
               <Label htmlFor="versionUrl">Video URL</Label>
               <div className="relative">
@@ -126,7 +135,9 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
             </div>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="versionFile">Video File</Label>
+              <Label htmlFor="versionFile">
+                {mediaType === 'IMAGE' ? 'Image File' : 'Video File'}
+              </Label>
               <div className="flex items-center justify-center w-full">
                 <label
                   htmlFor="versionFile"
@@ -149,24 +160,35 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
                         <p className="mb-1 text-sm text-muted-foreground">
                           <span className="font-semibold">Click to upload</span> or drag and drop
                         </p>
-                        <p className="text-xs text-muted-foreground">MP4, WebM, or OGG</p>
+                        <p className="text-xs text-muted-foreground">
+                          {mediaType === 'IMAGE'
+                            ? 'PNG, JPEG, or WebP, up to 20 MiB and 20 megapixels'
+                            : 'MP4, WebM, or OGG'}
+                        </p>
                       </>
                     )}
                   </div>
                   <input
                     id="versionFile"
                     type="file"
-                    accept="video/*"
+                    accept={mediaType === 'IMAGE' ? 'image/png,image/jpeg,image/webp' : 'video/*'}
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file && file.type.startsWith('video/')) {
+                      if (
+                        file &&
+                        (mediaType === 'IMAGE' ? isImageFile(file) : file.type.startsWith('video/'))
+                      ) {
                         onNewVersionFileChange(file);
                       } else {
-                        toast.error('Please select a valid video file');
+                        toast.error(
+                          mediaType === 'IMAGE'
+                            ? 'Choose a PNG, JPEG, or WebP image'
+                            : 'Please select a valid video file'
+                        );
                       }
                     }}
-                    disabled={isCreatingVersion}
+                    disabled={isCreatingVersion || (mediaType === 'IMAGE' && !imageUploadsEnabled)}
                   />
                 </label>
               </div>
@@ -201,8 +223,9 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
           <Button
             onClick={onCreateVersion}
             disabled={
-              (newVersionMode === 'url' && !newVersionSource) ||
-              (newVersionMode === 'file' && !newVersionFile) ||
+              (mediaType === 'VIDEO' && newVersionMode === 'url' && !newVersionSource) ||
+              (mediaType === 'IMAGE' && !imageUploadsEnabled) ||
+              ((mediaType === 'IMAGE' || newVersionMode === 'file') && !newVersionFile) ||
               isCreatingVersion
             }
             className="w-full"

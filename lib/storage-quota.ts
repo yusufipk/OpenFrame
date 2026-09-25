@@ -158,13 +158,13 @@ export async function getUserTotalStorageBytes(userId: string): Promise<bigint> 
         AND provider IN ('R2_IMAGE', 'R2_AUDIO', 'R2_VIDEO')
     `,
       db.$queryRaw<[{ total: bigint }]>`
-      SELECT COALESCE(SUM(vv.size_bytes), 0)::bigint AS total
+      SELECT COALESCE(SUM(vv.size_bytes + vv.thumbnail_size_bytes), 0)::bigint AS total
       FROM video_versions vv
       INNER JOIN videos v ON v.id = vv."videoParentId"
       INNER JOIN projects p ON p.id = v."projectId"
       INNER JOIN workspaces w ON w.id = p."workspaceId"
       WHERE w."ownerId" = ${userId}
-        AND vv."providerId" = 'r2'
+        AND vv."providerId" IN ('r2', 'r2-image')
     `,
       db.$queryRaw<[{ total: bigint }]>`
       SELECT COALESCE(SUM(size_bytes), 0)::bigint AS total
@@ -292,13 +292,13 @@ export async function reserveStorageQuota(
           AND provider IN ('R2_IMAGE', 'R2_AUDIO', 'R2_VIDEO')
       `;
       const [r2VideoRow] = await tx.$queryRaw<[{ total: bigint }]>`
-        SELECT COALESCE(SUM(vv.size_bytes), 0)::bigint AS total
+        SELECT COALESCE(SUM(vv.size_bytes + vv.thumbnail_size_bytes), 0)::bigint AS total
         FROM video_versions vv
         INNER JOIN videos v ON v.id = vv."videoParentId"
         INNER JOIN projects p ON p.id = v."projectId"
         INNER JOIN workspaces w ON w.id = p."workspaceId"
         WHERE w."ownerId" = ${userId}
-          AND vv."providerId" = 'r2'
+          AND vv."providerId" IN ('r2', 'r2-image')
       `;
       const [subtitleRow] = await tx.$queryRaw<[{ total: bigint }]>`
         SELECT COALESCE(SUM(size_bytes), 0)::bigint AS total

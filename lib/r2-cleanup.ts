@@ -109,7 +109,7 @@ export async function collectVideoMediaUrls(videoId: string): Promise<string[]> 
       select: { sourceUrl: true },
     }),
     db.videoVersion.findMany({
-      where: { videoParentId: videoId, providerId: 'r2' },
+      where: { videoParentId: videoId, providerId: { in: ['r2', 'r2-image'] } },
       select: { originalUrl: true, thumbnailUrl: true },
     }),
     db.videoSubtitle.findMany({
@@ -155,7 +155,7 @@ export async function collectProjectMediaUrls(projectId: string): Promise<string
       select: { sourceUrl: true },
     }),
     db.videoVersion.findMany({
-      where: { providerId: 'r2', video: { projectId } },
+      where: { providerId: { in: ['r2', 'r2-image'] }, video: { projectId } },
       select: { originalUrl: true, thumbnailUrl: true },
     }),
     db.videoSubtitle.findMany({
@@ -201,7 +201,7 @@ export async function collectWorkspaceMediaUrls(workspaceId: string): Promise<st
       select: { sourceUrl: true },
     }),
     db.videoVersion.findMany({
-      where: { providerId: 'r2', video: { project: { workspaceId } } },
+      where: { providerId: { in: ['r2', 'r2-image'] }, video: { project: { workspaceId } } },
       select: { originalUrl: true, thumbnailUrl: true },
     }),
     db.videoSubtitle.findMany({

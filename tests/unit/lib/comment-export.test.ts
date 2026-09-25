@@ -440,3 +440,16 @@ describe('buildCommentsPdf', () => {
     expect(chunks.every((chunk) => chunk.length <= 96)).toBe(true);
   });
 });
+
+describe('still image exports', () => {
+  it('leaves playback columns empty and labels the image in CSV and PDF', () => {
+    const meta: ExportMeta = { ...META, mediaType: 'IMAGE' };
+    const rows = csvRows([row({ timestamp: 0 })], meta);
+    expect(rows[0][0]).toBe('"image_title"');
+    expect(rows[1].slice(8, 11)).toEqual(['""', '""', '""']);
+    const pdf = buildCommentsPdf([row({ timestamp: 0 })], meta).toString('utf8');
+    expect(pdf).toContain('Image: My Video');
+    expect(pdf).toContain('Comment by Alice');
+    expect(pdf).not.toContain('00:00:00');
+  });
+});

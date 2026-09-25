@@ -47,7 +47,8 @@ export const DownloadControls = memo(function DownloadControls({
     videoCanDownload &&
     (activeVersion.providerId === 'bunny' ||
       activeVersion.providerId === 'direct' ||
-      activeVersion.providerId === 'r2');
+      activeVersion.providerId === 'r2' ||
+      activeVersion.providerId === 'r2-image');
 
   if (activeVersion.providerId === 'bunny') {
     return (
@@ -184,7 +185,8 @@ export const DownloadMenuItems = memo(function DownloadMenuItems({
     videoCanDownload &&
     (activeVersion.providerId === 'bunny' ||
       activeVersion.providerId === 'direct' ||
-      activeVersion.providerId === 'r2');
+      activeVersion.providerId === 'r2' ||
+      activeVersion.providerId === 'r2-image');
 
   if (activeVersion.providerId === 'bunny') {
     return (

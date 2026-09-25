@@ -79,7 +79,8 @@ export function useDownloadActions({ activeVersion, video }: UseDownloadActionsP
       if (
         activeVersion.providerId !== 'bunny' &&
         activeVersion.providerId !== 'direct' &&
-        activeVersion.providerId !== 'r2'
+        activeVersion.providerId !== 'r2' &&
+        activeVersion.providerId !== 'r2-image'
       ) {
         toast.error('This video source does not support direct download');
         return;
@@ -113,8 +114,10 @@ export function useDownloadActions({ activeVersion, video }: UseDownloadActionsP
           }
 
           downloadUrl = `/api/versions/${activeVersion.id}/download?source=${preference}`;
-        } else if (activeVersion.providerId === 'r2') {
-          if (!activeVersion.originalUrl.startsWith('/api/upload/video/')) {
+        } else if (activeVersion.providerId === 'r2' || activeVersion.providerId === 'r2-image') {
+          const allowedPrefix =
+            activeVersion.providerId === 'r2-image' ? '/api/upload/image/' : '/api/upload/video/';
+          if (!activeVersion.originalUrl.startsWith(allowedPrefix)) {
             throw new Error('Direct download URL is not allowed');
           }
           downloadUrl = activeVersion.originalUrl;
@@ -139,10 +142,12 @@ export function useDownloadActions({ activeVersion, video }: UseDownloadActionsP
               : `${video.title} v${activeVersion.versionNumber}`
           ) || 'video';
 
-        if (activeVersion.providerId === 'r2') {
+        if (activeVersion.providerId === 'r2' || activeVersion.providerId === 'r2-image') {
           // Same-origin proxy: the download attribute applies and streams
           // without buffering the whole file in memory (any size).
-          const ext = extensionFromUrl(activeVersion.originalUrl) || 'mp4';
+          const ext =
+            extensionFromUrl(activeVersion.originalUrl) ||
+            (activeVersion.providerId === 'r2-image' ? 'png' : 'mp4');
           navigateDownload(downloadUrl, `${baseName}.${ext}`);
         } else {
           // Bunny (CDN redirect) and direct hosts are cross-origin, so the

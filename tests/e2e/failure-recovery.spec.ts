@@ -80,7 +80,7 @@ test('an upload that fails at the storage PUT leaves the form up and creates not
 
   await page.goto(`/projects/${project.id}/videos/new`);
   await page.getByRole('tab', { name: 'Direct Upload' }).click();
-  await page.getByLabel('Video Files').setInputFiles(SAMPLE_VIDEO);
+  await page.getByLabel('Files').setInputFiles(SAMPLE_VIDEO);
   await page.getByLabel('Title').fill('Doomed Upload');
   await page.getByRole('button', { name: 'Add Video', exact: true }).click();
 
@@ -131,9 +131,11 @@ test('a bulk delete that comes back 500 says so and leaves every video in place'
 
   // A non-JSON body on purpose: it drives the client's own fallback message
   // rather than echoing a string this test supplied.
-  await page.route('**/api/projects/*/videos/bulk-delete', (route) =>
-    route.fulfill({ status: 500, contentType: 'text/plain', body: 'boom' })
-  );
+  let refusedDeletes = 0;
+  await page.route('**/api/projects/*/videos/bulk-delete', (route) => {
+    refusedDeletes += 1;
+    return route.fulfill({ status: 500, contentType: 'text/plain', body: 'boom' });
+  });
 
   await page.goto(`/projects/${project.id}`);
   await enterSelectionMode(page, first);
@@ -145,7 +147,8 @@ test('a bulk delete that comes back 500 says so and leaves every video in place'
   const dialog = page.getByRole('alertdialog');
   await dialog.getByRole('button', { name: 'Delete selected' }).click();
 
-  await expect(page.getByText('Failed to delete selected videos')).toBeVisible();
+  await expect(page.getByText('Failed to delete selected files')).toBeVisible();
+  expect(refusedDeletes).toBe(1);
 
   // The dialog stays open so the failed action can be retried from where it
   // was. It has to be dismissed before the cards behind it can be asserted on:
