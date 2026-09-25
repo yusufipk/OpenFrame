@@ -32,8 +32,8 @@ test('the owner creates a review link and a stranger opens it through the guest 
   const linkField = page.locator('input[readonly]');
   await expect(linkField).toBeVisible();
   const shareUrl = await linkField.inputValue();
-  expect(shareUrl).toContain('/watch/');
-  expect(shareUrl).toContain('shareToken=');
+  expect(new URL(shareUrl).pathname).toMatch(/^\/s\/[A-Za-z0-9_-]{16}$/);
+  expect(new URL(shareUrl).search).toBe('');
 
   // A stranger, in a context with no session at all.
   //
@@ -129,4 +129,16 @@ anonTest('an expired share link is refused', async ({ page, seed }) => {
 
   await expect(page.getByText('Share session is invalid')).toBeVisible();
   await expect(page.getByPlaceholder('Add a comment...')).toHaveCount(0);
+});
+
+anonTest('an existing long watch link still opens a shared video', async ({ page, seed }) => {
+  const owner = await seed.user();
+  const seeded = await seed.version(owner);
+  const token = '1234567890abcdefghijklmnopqrstuv';
+  await seed.shareLink({ projectId: seeded.project.id, videoId: seeded.videoId, token });
+
+  await page.goto(`/watch/${seeded.videoId}?shareToken=${token}`);
+
+  await expect(page).toHaveURL(new RegExp(`/watch/${seeded.videoId}$`));
+  await expect(page.getByRole('heading', { name: 'Welcome to OpenFrame' })).toBeVisible();
 });

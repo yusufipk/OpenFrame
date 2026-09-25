@@ -53,15 +53,12 @@ function resolveShareBaseUrl(request: NextRequest): string {
   return request.nextUrl.origin;
 }
 
-function buildWatchUrl(request: NextRequest, videoId: string, token: string): string {
-  const url = new URL(`/watch/${videoId}`, resolveShareBaseUrl(request));
-  url.searchParams.set('shareToken', token);
-  return url.toString();
+function buildShareUrl(request: NextRequest, token: string): string {
+  return new URL(`/s/${encodeURIComponent(token)}`, resolveShareBaseUrl(request)).toString();
 }
 
 function serializeShareLink(
   request: NextRequest,
-  videoId: string,
   link: {
     id: string;
     token: string;
@@ -88,7 +85,7 @@ function serializeShareLink(
       createdAt: link.createdAt,
       hasPassword: !!link.passwordHash,
     },
-    shareUrl: buildWatchUrl(request, videoId, link.token),
+    shareUrl: buildShareUrl(request, link.token),
   };
 }
 
@@ -128,7 +125,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     });
 
-    const response = successResponse(serializeShareLink(request, videoId, link));
+    const response = successResponse(serializeShareLink(request, link));
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
@@ -167,7 +164,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
     const passwordHash = password ? await bcrypt.hash(password, 12) : null;
-    const token = randomBytes(24).toString('base64url');
+    const token = randomBytes(12).toString('base64url');
 
     let link: {
       id: string;
@@ -265,7 +262,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       userId: video?.project.ownerId ?? null,
     });
 
-    const response = successResponse(serializeShareLink(request, videoId, link));
+    const response = successResponse(serializeShareLink(request, link));
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
@@ -328,7 +325,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           ...(allowGuests !== undefined ? { allowGuests } : {}),
           ...(allowDownloads !== undefined ? { allowDownloads } : {}),
           ...(passwordHashUpdate !== undefined ? { passwordHash: passwordHashUpdate } : {}),
-          ...(shouldRotateToken ? { token: randomBytes(24).toString('base64url') } : {}),
+          ...(shouldRotateToken ? { token: randomBytes(12).toString('base64url') } : {}),
         },
         select: {
           id: true,
@@ -343,7 +340,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       });
     });
 
-    const response = successResponse(serializeShareLink(request, videoId, updated));
+    const response = successResponse(serializeShareLink(request, updated));
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     if (error instanceof ContentError) return errorResponse(error.message, error.status);

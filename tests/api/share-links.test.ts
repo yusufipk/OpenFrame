@@ -51,6 +51,14 @@ function shareCookie(videoId: string, token: string, passwordVerified = false) {
   };
 }
 
+function expectShortVideoUrl(payload: SharePayload, token: string) {
+  expect(payload.link?.token).toBe(token);
+  expect(payload.shareUrl).not.toBeNull();
+  const url = new URL(payload.shareUrl!);
+  expect(url.pathname).toBe(`/s/${token}`);
+  expect(url.search).toBe('');
+}
+
 describe('share link management', () => {
   it.each([
     ['GET', getShare],
@@ -93,6 +101,44 @@ describe('share link management', () => {
     expect(response.status).toBe(403);
     expect(await db.shareLink.count()).toBe(0);
   });
+
+  it.each([
+    ['GET', getShare],
+    ['PATCH', patchShare],
+    ['DELETE', revokeShare],
+  ] as const)(
+    'returns 403 for %s to a COMMENTATOR and preserves the link',
+    async (method, handler) => {
+      const scenario = await seedVersion();
+      const link = await createShareLink({
+        projectId: scenario.project.id,
+        videoId: scenario.video.id,
+        permission: 'COMMENT',
+      });
+      const commentator = await createUser();
+      await addProjectMember({
+        projectId: scenario.project.id,
+        userId: commentator.id,
+        role: 'COMMENTATOR',
+      });
+      signedInAs(commentator);
+
+      const response = await callRoute(
+        handler,
+        apiRequest(shareUrl(scenario.project.id, scenario.video.id), {
+          method,
+          ...(method === 'PATCH' ? { body: { allowGuests: false } } : {}),
+        }),
+        { projectId: scenario.project.id, videoId: scenario.video.id }
+      );
+
+      expect(response.status).toBe(403);
+      expect(await db.shareLink.findUnique({ where: { id: link.id } })).toMatchObject({
+        token: link.token,
+        allowGuests: link.allowGuests,
+      });
+    }
+  );
 
   it('returns 404 when the video belongs to another project', async () => {
     const mine = await seedVersion();
@@ -142,7 +188,8 @@ describe('share link management', () => {
     expect(payload.link?.hasPassword).toBe(true);
     expect(payload.link?.allowGuests).toBe(false);
     expect(payload.link?.allowDownloads).toBe(true);
-    expect(payload.shareUrl).toContain(`shareToken=${payload.link?.token}`);
+    expect(payload.link?.token).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expectShortVideoUrl(payload, payload.link!.token);
     expect(JSON.stringify(payload)).not.toContain('correct horse');
 
     const stored = await db.shareLink.findFirstOrThrow();
@@ -193,6 +240,12 @@ describe('share link management', () => {
     expect(await db.shareLink.count()).toBe(1);
     expect(second.link?.id).toBe(first.link?.id);
     expect(second.link?.token).not.toBe(first.link?.token);
+    expect(first.link?.token).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(second.link?.token).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expectShortVideoUrl(second, second.link!.token);
+    expect((await db.shareLink.findUniqueOrThrow({ where: { id: first.link!.id } })).token).toBe(
+      second.link?.token
+    );
   });
 
   it('lets a workspace ADMIN manage the link for a project they are not a member of', async () => {
@@ -227,6 +280,31 @@ describe('share link management', () => {
     );
 
     expect(payload).toEqual({ link: null, shareUrl: null });
+  });
+
+  it('keeps a stored 32-character token and serializes its short URL on GET', async () => {
+    const scenario = await seedVersion();
+    const legacyToken = '1234567890abcdefghijklmnopqrstuv';
+    const link = await createShareLink({
+      projectId: scenario.project.id,
+      videoId: scenario.video.id,
+      permission: 'COMMENT',
+      token: legacyToken,
+    });
+    signedInAs(scenario.owner);
+
+    const response = await callRoute(
+      getShare,
+      apiRequest(shareUrl(scenario.project.id, scenario.video.id)),
+      { projectId: scenario.project.id, videoId: scenario.video.id }
+    );
+    const payload = await readData<SharePayload>(response);
+
+    expect(response.status).toBe(200);
+    expectShortVideoUrl(payload, legacyToken);
+    expect((await db.shareLink.findUniqueOrThrow({ where: { id: link.id } })).token).toBe(
+      legacyToken
+    );
   });
 
   it('ignores a project-wide VIEW link when reading the video share settings', async () => {
@@ -289,6 +367,35 @@ describe('share link management', () => {
     expect(stored.allowGuests).toBe(false);
     expect(stored.allowDownloads).toBe(true);
     expect(stored.token).toBe(link.token);
+    expectShortVideoUrl(await readData<SharePayload>(response), link.token);
+  });
+
+  it('rotates to a 16-character token when adding a password', async () => {
+    const scenario = await seedVersion();
+    const link = await createShareLink({
+      projectId: scenario.project.id,
+      videoId: scenario.video.id,
+      permission: 'COMMENT',
+      token: '1234567890abcdefghijklmnopqrstuv',
+    });
+    signedInAs(scenario.owner);
+
+    const response = await callRoute(
+      patchShare,
+      apiRequest(shareUrl(scenario.project.id, scenario.video.id), {
+        method: 'PATCH',
+        body: { password: 'new secret' },
+      }),
+      { projectId: scenario.project.id, videoId: scenario.video.id }
+    );
+    const payload = await readData<SharePayload>(response);
+    const stored = await db.shareLink.findUniqueOrThrow({ where: { id: link.id } });
+
+    expect(response.status).toBe(200);
+    expect(stored.token).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(stored.token).not.toBe(link.token);
+    expect(await bcrypt.compare('new secret', stored.passwordHash!)).toBe(true);
+    expectShortVideoUrl(payload, stored.token);
   });
 
   it('clears the password and rotates the token on clearPassword', async () => {
@@ -316,6 +423,8 @@ describe('share link management', () => {
     // Dropping the password must invalidate the old URL, otherwise anyone who
     // already had the token silently gains unprotected access.
     expect(stored.token).not.toBe(link.token);
+    expect(stored.token).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expectShortVideoUrl(await readData<SharePayload>(response), stored.token);
   });
 
   it('revokes only the COMMENT link for that video', async () => {

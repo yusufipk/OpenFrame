@@ -187,13 +187,14 @@ export class Seed {
   shareLink(input: {
     projectId: string;
     videoId?: string | null;
+    token?: string;
     expiresAt?: Date | null;
     password?: string;
   }) {
     return createShareLink({
       projectId: input.projectId,
       videoId: input.videoId ?? null,
-      token: `e2e-share-${uniqueTag()}`,
+      token: input.token ?? `e2e-share-${uniqueTag()}`,
       expiresAt: input.expiresAt ?? null,
       ...(input.password === undefined ? {} : { password: input.password }),
     });
