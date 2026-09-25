@@ -29,7 +29,7 @@ interface UseLiveReviewParams {
   enabled?: boolean;
 }
 
-const DISCOVERY_INTERVAL_MS = 15000;
+const DISCOVERY_INTERVAL_MS = 2000;
 const PING_INTERVAL_MS = 5000;
 const SYNC_INTERVAL_MS = 1000;
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
@@ -40,6 +40,36 @@ function errorMessage(body: unknown, fallback: string): string {
     return body.error;
   }
   return fallback;
+}
+
+function savedParticipant(videoId: string, sessionId: string | undefined): string | undefined {
+  if (!sessionId) return;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(`live-review:${videoId}`) ?? 'null');
+    return saved?.sessionId === sessionId && typeof saved.participantId === 'string'
+      ? saved.participantId
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberParticipant(videoId: string, ticket: LiveJoinResult | null) {
+  try {
+    if (ticket) {
+      sessionStorage.setItem(
+        `live-review:${videoId}`,
+        JSON.stringify({
+          sessionId: ticket.sessionId,
+          participantId: ticket.participantId,
+        })
+      );
+    } else {
+      sessionStorage.removeItem(`live-review:${videoId}`);
+    }
+  } catch {
+    // Storage restrictions must not prevent joining a room.
+  }
 }
 
 export function useLiveReview({
@@ -63,6 +93,7 @@ export function useLiveReview({
   const rejectedStrokeSequenceRef = useRef(0);
   const [isJoined, setIsJoined] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const discoveryRequestRef = useRef<AbortController | null>(null);
   const joinRef = useRef<LiveJoinResult | null>(null);
   const snapshotRef = useRef<LiveSnapshot | null>(null);
   const participantRef = useRef<string | null>(null);
@@ -196,29 +227,47 @@ export function useLiveReview({
   }, [clearConnectionTimers]);
 
   const refreshDiscovery = useCallback(async () => {
-    if (!enabled || !videoId) return;
+    if (!enabled || !videoId || discoveryRequestRef.current) return;
+    const controller = new AbortController();
+    discoveryRequestRef.current = controller;
     try {
       const response = await fetch(`/api/videos/${encodeURIComponent(videoId)}/live-review`, {
         cache: 'no-store',
+        signal: controller.signal,
       });
       if (!response.ok) return;
       const body = await response.json();
-      setDiscovery(body.data as LiveDiscovery);
+      if (!controller.signal.aborted) setDiscovery(body.data as LiveDiscovery);
     } catch {
       // Discovery is optional while the rest of the video page works normally.
+    } finally {
+      if (discoveryRequestRef.current === controller) discoveryRequestRef.current = null;
     }
   }, [enabled, videoId]);
 
   useEffect(() => {
     if (!enabled || !videoId) return;
     const timer = setTimeout(() => void refreshDiscovery(), 0);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      discoveryRequestRef.current?.abort();
+      discoveryRequestRef.current = null;
+    };
   }, [enabled, videoId, refreshDiscovery]);
 
   useEffect(() => {
     if (!enabled || !discovery?.enabled || isJoined) return;
-    const timer = setInterval(() => void refreshDiscovery(), DISCOVERY_INTERVAL_MS);
-    return () => clearInterval(timer);
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') void refreshDiscovery();
+    };
+    const timer = setInterval(refreshVisible, DISCOVERY_INTERVAL_MS);
+    window.addEventListener('focus', refreshVisible);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', refreshVisible);
+      document.removeEventListener('visibilitychange', refreshVisible);
+    };
   }, [discovery?.enabled, enabled, isJoined, refreshDiscovery]);
 
   const getTicket = useCallback(
@@ -233,7 +282,9 @@ export function useLiveReview({
               ? (joinRef.current?.versionId ?? discovery?.session?.versionId ?? versionId)
               : versionId,
           guestName: guestName?.trim() || undefined,
-          participantId: existingParticipantId,
+          participantId:
+            existingParticipantId ??
+            (action === 'join' ? savedParticipant(videoId, discovery?.session?.id) : undefined),
         }),
       });
       const body = await response.json().catch(() => null);
@@ -244,7 +295,7 @@ export function useLiveReview({
       }
       return body.data as LiveJoinResult;
     },
-    [discovery?.session?.versionId, guestName, versionId, videoId]
+    [discovery?.session?.id, discovery?.session?.versionId, guestName, versionId, videoId]
   );
 
   const connectRef = useRef<(ticket: LiveJoinResult, generation: number) => void>(() => {});
@@ -285,6 +336,7 @@ export function useLiveReview({
           snapshotRef.current = room;
           setSnapshot(room);
           if (room.status === 'ended') {
+            rememberParticipant(videoId, null);
             generationRef.current += 1;
             closeConnection();
             joinRef.current = null;
@@ -396,6 +448,7 @@ export function useLiveReview({
             const nextTicket = await getTicket('join', joinRef.current.participantId);
             if (generation !== generationRef.current) return;
             joinRef.current = nextTicket;
+            rememberParticipant(videoId, nextTicket);
             snapshotRef.current = null;
             bestPingRef.current = Number.POSITIVE_INFINITY;
             setSnapshot(null);
@@ -405,6 +458,7 @@ export function useLiveReview({
             const status =
               cause && typeof cause === 'object' && 'status' in cause ? cause.status : null;
             if (status === 401 || status === 403 || status === 404) {
+              rememberParticipant(videoId, null);
               joinRef.current = null;
               participantRef.current = null;
               setParticipantId(null);
@@ -421,7 +475,7 @@ export function useLiveReview({
         RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)]
       );
     },
-    [getTicket, refreshDiscovery, setStatus]
+    [getTicket, refreshDiscovery, setStatus, videoId]
   );
   useEffect(() => {
     reconnectRef.current = reconnect;
@@ -451,6 +505,7 @@ export function useLiveReview({
         const ticket = await getTicket(action);
         if (generation !== generationRef.current) return;
         joinRef.current = ticket;
+        rememberParticipant(videoId, ticket);
         participantRef.current = ticket.participantId;
         setParticipantId(ticket.participantId);
         setIsJoined(true);
@@ -465,6 +520,9 @@ export function useLiveReview({
         }
       } catch (cause) {
         if (generation !== generationRef.current) return;
+        const status =
+          cause && typeof cause === 'object' && 'status' in cause ? cause.status : null;
+        if (status === 401 || status === 403 || status === 404) rememberParticipant(videoId, null);
         joinRef.current = null;
         participantRef.current = null;
         setParticipantId(null);
@@ -490,6 +548,7 @@ export function useLiveReview({
   }, [connectionStatus, isJoined, versionId]);
 
   const leave = useCallback(() => {
+    rememberParticipant(videoId, null);
     generationRef.current += 1;
     closeConnection();
     joinRef.current = null;
@@ -502,7 +561,7 @@ export function useLiveReview({
     setError(null);
     setRejectedStroke(null);
     void refreshDiscovery();
-  }, [closeConnection, refreshDiscovery, setStatus]);
+  }, [closeConnection, refreshDiscovery, setStatus, videoId]);
 
   useEffect(() => {
     return () => {

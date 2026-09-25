@@ -118,7 +118,7 @@ export const CommentComposer = memo(function CommentComposer({
 
   return (
     <div className="shrink-0 p-4 border-t bg-background">
-      {liveDrawingControls}
+      {isRecording && liveDrawingControls}
       {isRecording ? (
         <div className="flex items-center gap-3 p-3 bg-destructive/10 border border-destructive/30 rounded-lg">
           <div className="h-3 w-3 rounded-full bg-destructive animate-pulse" />
@@ -185,7 +185,7 @@ export const CommentComposer = memo(function CommentComposer({
             rows={1}
             className="resize-none text-sm"
           />
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 flex-wrap">
             <Button
               size="sm"
               variant={hasCommentRange ? 'default' : 'outline'}
@@ -194,6 +194,7 @@ export const CommentComposer = memo(function CommentComposer({
             >
               {rangeButtonLabel}
             </Button>
+            {liveDrawingControls}
             {commentRangeLabel && (
               <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
                 {commentRangeLabel}
@@ -247,7 +248,7 @@ export const CommentComposer = memo(function CommentComposer({
             </div>
           )}
           <ImageAttachmentStrip files={imageFiles} onRemoveFile={removeImageFile} />
-          <div className="mb-2 flex items-center gap-2 flex-wrap">
+          <div className="mb-2 flex items-center gap-1 flex-wrap">
             <Button
               size="sm"
               variant={hasCommentRange ? 'default' : 'outline'}
@@ -256,6 +257,7 @@ export const CommentComposer = memo(function CommentComposer({
             >
               {rangeButtonLabel}
             </Button>
+            {liveDrawingControls}
             {commentRangeLabel && (
               <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
                 {commentRangeLabel}

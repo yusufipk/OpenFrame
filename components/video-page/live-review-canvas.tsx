@@ -312,13 +312,13 @@ export function LiveReviewCanvas({
       {controlsContainer &&
         createPortal(
           <div
-            className="flex flex-wrap items-center gap-1 mb-2"
+            className="flex flex-wrap items-center gap-1"
             onClick={(event) => event.stopPropagation()}
           >
             <Button
               size="sm"
               variant={strokeMode ? 'secondary' : 'ghost'}
-              className="h-7 gap-1.5 text-xs"
+              className="h-7 gap-1 px-2 text-xs"
               aria-pressed={strokeMode}
               disabled={!editable}
               onClick={() => setStrokeMode((previous) => !previous)}

@@ -139,8 +139,8 @@ test('owner and guest review one native video through the real room service', as
   await waitForVideo(page);
   const room = page.getByRole('region', { name: 'Live review' });
   await expect(room).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Start room' })).toBeVisible();
-  const startButton = page.getByRole('button', { name: 'Start room' });
+  await expect(page.getByRole('button', { name: 'Start Live Review' })).toBeVisible();
+  const startButton = page.getByRole('button', { name: 'Start Live Review' });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(() =>
@@ -151,7 +151,7 @@ test('owner and guest review one native video through the real room service', as
         )
     )
     .toBeGreaterThanOrEqual(389);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: 'instant' }));
   await expect(startButton).toBeInViewport();
   const startBounds = await startButton.boundingBox();
   expect(startBounds!.x).toBeGreaterThanOrEqual(0);
@@ -159,9 +159,6 @@ test('owner and guest review one native video through the real room service', as
   await page.screenshot({ path: 'test-results/live-review-mobile-idle.png' });
   await page.setViewportSize({ width: 1280, height: 720 });
   expect(startBounds!.height).toBeLessThanOrEqual(40);
-  await startButton.click();
-  await expect(room.getByText('Connected', { exact: true })).toBeVisible();
-  expect((await room.boundingBox())!.height).toBeLessThanOrEqual(48);
 
   const guestContext = await browser.newContext({ storageState: undefined });
   await guestContext.addInitScript(() => {
@@ -184,7 +181,14 @@ test('owner and guest review one native video through the real room service', as
     await guestPage.getByRole('button', { name: 'Continue' }).click();
     await waitForVideo(guestPage);
     const guestRoom = guestPage.getByRole('region', { name: 'Live review' });
-    await guestPage.getByRole('button', { name: 'Join room' }).click();
+    await expect(guestPage.getByRole('button', { name: 'Join Live Review' })).toHaveCount(0);
+    await startButton.click();
+    await expect(room.getByText('Connected', { exact: true })).toBeVisible();
+    expect((await room.boundingBox())!.height).toBeLessThanOrEqual(48);
+    await expect(guestPage.getByRole('button', { name: 'Join Live Review' })).toBeVisible({
+      timeout: 5000,
+    });
+    await guestPage.getByRole('button', { name: 'Join Live Review' }).click();
     await expect(guestRoom.getByText('Connected', { exact: true })).toBeVisible();
     await expect(
       room.getByRole('button', { name: 'Room participants, 2', exact: true })
@@ -270,6 +274,11 @@ test('owner and guest review one native video through the real room service', as
       )
       .toBe(true);
 
+    const strokeModeBounds = await page.getByRole('button', { name: 'Stroke Mode' }).boundingBox();
+    const setInBounds = await page
+      .getByRole('button', { name: 'Set In', exact: true })
+      .boundingBox();
+    expect(Math.abs(strokeModeBounds!.y - setInBounds!.y)).toBeLessThanOrEqual(1);
     await page.getByRole('button', { name: 'Stroke Mode' }).click();
     await page.getByRole('button', { name: /^Assets/ }).click();
     await expect(page.getByLabel('Shared drawing canvas')).toHaveClass(/pointer-events-none/);
@@ -312,7 +321,7 @@ test('owner and guest review one native video through the real room service', as
           )
       )
       .toBeGreaterThanOrEqual(389);
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: 'instant' }));
     await page.screenshot({ path: 'test-results/live-review-mobile.png' });
     await page.getByTitle('Show comments', { exact: true }).click();
     await expect
@@ -349,8 +358,18 @@ test('owner and guest review one native video through the real room service', as
       .toBeGreaterThan(0);
     await page.reload();
     await expect(page.getByText('Annotated').first()).toBeVisible();
-    await page.getByRole('button', { name: 'Join room' }).click();
+    // Rejoin beyond the former 15-second presenter disconnect timeout.
+    await page.waitForTimeout(16000);
+    await page.getByRole('button', { name: 'Join Live Review' }).click();
     await expect(room.getByText('Connected', { exact: true })).toBeVisible();
+
+    const resumedRoom = await db.liveReviewSession.findUniqueOrThrow({
+      where: { id: stableRoom.id },
+    });
+    expect(resumedRoom.presenterId).toBe(stableRoom.presenterId);
+    const resumedTime = await videoTime(page);
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => videoTime(guestPage)).toBeGreaterThan(resumedTime + 0.5);
 
     // Control transfer changes who can issue commands. The former presenter
     // remains in the room as a follower.
@@ -384,7 +403,7 @@ test('owner and guest review one native video through the real room service', as
     await guestPage.keyboard.press('ArrowLeft');
     await expect.poll(() => videoTime(page)).toBeLessThan(beforeGuestSeek - 0.5);
     await room.getByRole('button', { name: 'End room' }).click();
-    await expect(guestPage.getByRole('button', { name: 'Join room' })).toHaveCount(0);
+    await expect(guestPage.getByRole('button', { name: 'Join Live Review' })).toHaveCount(0);
   } finally {
     await guestContext.close();
   }

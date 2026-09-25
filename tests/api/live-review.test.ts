@@ -99,6 +99,10 @@ describe('live review access and session lifecycle', () => {
 
   it('requires the same account for a participant reconnect', async () => {
     const fixture = await startFixture();
+    await db.liveReviewParticipant.update({
+      where: { id: fixture.data.participantId },
+      data: { lastSeenAt: new Date(Date.now() - 60_000) },
+    });
     const other = await createUser();
     signedInAs(other);
     const response = await call(fixture.video.id, {
@@ -120,9 +124,43 @@ describe('live review access and session lifecycle', () => {
     expect(
       await db.liveReviewParticipant.count({ where: { sessionId: fixture.data.sessionId } })
     ).toBe(1);
+    const room = await db.liveReviewSession.findUniqueOrThrow({
+      where: { id: fixture.data.sessionId },
+    });
+    expect(room.presenterId).toBe(fixture.data.participantId);
+    expect(room.controlEpoch).toBe(1);
   });
 
-  it('restores manager rights after a reload creates a new participant', async () => {
+  it('does not take control back when the manager rejoins after a transfer', async () => {
+    const fixture = await startFixture();
+    const secondJoin = await call(fixture.video.id, {
+      action: 'join',
+      versionId: fixture.version.id,
+    });
+    expect(secondJoin.status).toBe(200);
+    const second = await readData<{ participantId: string }>(secondJoin);
+    await db.liveReviewSession.update({
+      where: { id: fixture.data.sessionId },
+      data: { presenterId: second.participantId, controlEpoch: 2 },
+    });
+
+    const rejoin = await call(fixture.video.id, {
+      action: 'join',
+      versionId: fixture.version.id,
+      participantId: fixture.data.participantId,
+    });
+    expect(rejoin.status).toBe(200);
+    expect((await readData<{ participantId: string }>(rejoin)).participantId).toBe(
+      fixture.data.participantId
+    );
+    const room = await db.liveReviewSession.findUniqueOrThrow({
+      where: { id: fixture.data.sessionId },
+    });
+    expect(room.presenterId).toBe(second.participantId);
+    expect(room.controlEpoch).toBe(2);
+  });
+
+  it('grants manager rights to a new owner participant', async () => {
     const fixture = await startFixture();
     const response = await call(fixture.video.id, {
       action: 'join',
@@ -211,6 +249,27 @@ describe('live review access and session lifecycle', () => {
         )
       ).status
     ).toBe(200);
+    const alternateShare = await createShareLink({
+      projectId: fixture.project.id,
+      videoId: fixture.video.id,
+      permission: 'VIEW',
+    });
+    expect(
+      (
+        await call(
+          fixture.video.id,
+          { action: 'join', versionId: fixture.version.id, participantId: guest.participantId },
+          {
+            [getShareSessionCookieName(fixture.video.id)]: createShareSessionValue(
+              alternateShare.token,
+              fixture.video.id,
+              false
+            ),
+            openframe_guest_identity: identityCookie,
+          }
+        )
+      ).status
+    ).toBe(403);
     const row = await db.liveReviewParticipant.findUniqueOrThrow({
       where: { id: guest.participantId },
     });

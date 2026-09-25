@@ -89,6 +89,7 @@ function videoStub() {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  sessionStorage.clear();
   vi.useFakeTimers();
   FakeSocket.instances = [];
   let ticketNumber = 0;
@@ -155,6 +156,131 @@ async function joinRoom() {
 }
 
 describe('useLiveReview', () => {
+  it('discovers rooms opened elsewhere within two seconds without reloading', async () => {
+    let session: { id: string; versionId: string } | null = null;
+    fetchMock.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({ data: { enabled: true, available: true, canStart: true, session } }),
+      })
+    );
+    const { result, unmount } = renderHook(() =>
+      useLiveReview({
+        videoId: 'vid',
+        versionId: 'ver',
+        providerId: 'r2',
+        videoRef: { current: null },
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.discovery?.session).toBeNull();
+    session = { id: 'room', versionId: 'ver' };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(result.current.discovery?.session?.id).toBe('room');
+    session = null;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(result.current.discovery?.session).toBeNull();
+    unmount();
+    const count = fetchMock.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(count);
+  });
+
+  it('skips background discovery and refreshes immediately when the tab becomes visible', async () => {
+    let visibility = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(
+      () => visibility as DocumentVisibilityState
+    );
+    const { unmount } = renderHook(() =>
+      useLiveReview({
+        videoId: 'vid',
+        versionId: 'ver',
+        providerId: 'r2',
+        videoRef: { current: null },
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const count = fetchMock.mock.calls.length;
+    visibility = 'hidden';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(count);
+    visibility = 'visible';
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(count + 1);
+    unmount();
+  });
+
+  it('reuses the same participant after a remount and forgets it on explicit leave', async () => {
+    const first = await joinRoom();
+    first.unmount();
+    const second = renderHook(() => useLiveReview(first.params));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await second.result.current.join();
+    });
+    const post = fetchMock.mock.calls.filter((call) => call[1]?.method === 'POST').at(-1);
+    expect(JSON.parse(post![1]!.body as string).participantId).toBe('self');
+    const socket = FakeSocket.instances.at(-1)!;
+    act(() => {
+      socket.open();
+      socket.deliver({ type: 'snapshot', snapshot: room({ presenterId: 'self' }) });
+    });
+    expect(second.result.current.isPresenter).toBe(true);
+    expect(second.result.current.playbackLocked).toBe(false);
+    act(() => second.result.current.leave());
+    expect(sessionStorage.getItem('live-review:vid')).toBeNull();
+    second.unmount();
+  });
+
+  it('does not reuse a participant from a previous room and clears rejected identity', async () => {
+    sessionStorage.setItem(
+      'live-review:vid',
+      JSON.stringify({ sessionId: 'old-room', participantId: 'old-self' })
+    );
+    const { result, unmount } = renderHook(() =>
+      useLiveReview({
+        videoId: 'vid',
+        versionId: 'ver',
+        providerId: 'r2',
+        videoRef: { current: null },
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: 'Access denied' }),
+    });
+    await act(async () => {
+      await result.current.join();
+    });
+    const post = fetchMock.mock.calls.filter((call) => call[1]?.method === 'POST').at(-1);
+    expect(JSON.parse(post![1]!.body as string).participantId).toBeUndefined();
+    expect(sessionStorage.getItem('live-review:vid')).toBeNull();
+    expect(result.current.isJoined).toBe(false);
+    unmount();
+  });
+
   it('identifies rejected strokes and clears the rejection on a new canvas epoch', async () => {
     const { result, socket } = await joinRoom();
     act(() => socket.deliver({ type: 'snapshot', snapshot: room() }));

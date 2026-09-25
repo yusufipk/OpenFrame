@@ -623,36 +623,9 @@ const server = Bun.serve({
           (p) => p.id !== participantId
         );
         if (room.snapshot.presenterId === participantId) await pause(room);
+        // Keep the presenter assignment for a validated rejoin. A manager transfer can replace it.
         room.snapshot.revision++;
         publish(room);
-        if (room.snapshot.presenterId === participantId)
-          setTimeout(() => {
-            if (
-              room.sockets.has(participantId) ||
-              room.snapshot.presenterId !== participantId ||
-              room.snapshot.status !== 'active'
-            )
-              return;
-            enqueue(room, async () => {
-              const epoch = room.snapshot.controlEpoch + 1;
-              const revision = room.snapshot.revision + 1;
-              const changed = await db.liveReviewSession.updateMany({
-                where: {
-                  id: sessionId,
-                  status: 'active',
-                  presenterId: participantId,
-                  controlEpoch: room.snapshot.controlEpoch,
-                },
-                data: { presenterId: null, controlEpoch: epoch, revision, playing: false },
-              });
-              if (changed.count) {
-                room.snapshot.presenterId = null;
-                room.snapshot.controlEpoch = epoch;
-                room.snapshot.revision = revision;
-                publish(room);
-              }
-            });
-          }, 15_000);
       });
     },
   },

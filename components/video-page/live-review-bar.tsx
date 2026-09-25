@@ -58,7 +58,7 @@ export const LiveReviewEntryControl = memo(function LiveReviewEntryControl({
           title={!discovery.available ? 'Live review is unavailable right now' : undefined}
           onClick={onJoin}
         >
-          Join room
+          Join Live Review
         </Button>
       ) : supported && discovery.canStart ? (
         <Button
@@ -67,7 +67,7 @@ export const LiveReviewEntryControl = memo(function LiveReviewEntryControl({
           title={!discovery.available ? 'Live review is unavailable right now' : undefined}
           onClick={onStart}
         >
-          Start room
+          Start Live Review
         </Button>
       ) : null}
       {error && (

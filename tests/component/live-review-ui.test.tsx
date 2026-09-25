@@ -251,17 +251,17 @@ describe('LiveReviewBar', () => {
       </>
     );
     expect(screen.queryByRole('region', { name: 'Live review' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Start room' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start Live Review' }));
     expect(actions.onStart).toHaveBeenCalledTimes(1);
     rerender(<LiveReviewEntryControl {...base} discovery={{ ...discovery, enabled: false }} />);
-    expect(screen.queryByRole('button', { name: 'Start room' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start Live Review' })).toBeNull();
     rerender(<LiveReviewEntryControl {...base} provider="youtube" />);
-    expect(screen.queryByRole('button', { name: 'Start room' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start Live Review' })).toBeNull();
   });
 
   it('blocks room creation while unavailable without an explanatory row', () => {
     render(<LiveReviewEntryControl {...base} discovery={{ ...discovery, available: false }} />);
-    const button = screen.getByRole('button', { name: 'Start room' });
+    const button = screen.getByRole('button', { name: 'Start Live Review' });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', 'Live review is unavailable right now');
   });

@@ -812,7 +812,12 @@ export function VideoPageContent({
   return (
     <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
-        <div className={cn('flex-1 w-full flex flex-col min-h-0', isFullscreenMode && 'relative')}>
+        <div
+          className={cn(
+            'flex-1 w-full min-w-0 flex flex-col min-h-0',
+            isFullscreenMode && 'relative'
+          )}
+        >
           <VideoPageHeader
             mode={mode}
             backHref={backHref}
