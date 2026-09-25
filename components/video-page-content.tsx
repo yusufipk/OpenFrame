@@ -9,6 +9,7 @@ import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
 import { LiveReviewBar } from '@/components/video-page/live-review-bar';
 import { LiveReviewCanvas } from '@/components/video-page/live-review-canvas';
 import type { LiveStroke } from '@/lib/live-review/protocol';
+import { versionCommentsPath } from '@/lib/client/version-comments';
 import { PlayerCore } from '@/components/video-page/player-core';
 import { VideoPageHeader } from '@/components/video-page/video-page-header';
 import { ImagePreviewDialog } from '@/components/video-page/image-preview-dialog';
@@ -316,7 +317,7 @@ export function VideoPageContent({
       const versionId = liveReview.snapshot?.versionId;
       if (!versionId || !liveReview.canDraw)
         throw new Error('Join the paused room to save a drawing.');
-      const response = await fetch(`/api/versions/${versionId}/comments`, {
+      const response = await fetch(versionCommentsPath(versionId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
