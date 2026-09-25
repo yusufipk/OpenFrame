@@ -72,6 +72,14 @@ describe('sanitizeLandingPath', () => {
     expect(sanitizeLandingPath('/vs/frameio')).toBe('/vs/frameio');
   });
 
+  it('redacts raw and encoded short share tokens from landing paths', () => {
+    expect(sanitizeLandingPath('/s/abcdefghijklmnop')).toBe('/s');
+    expect(sanitizeLandingPath('/s%2Fabcdefghijklmnop')).toBe('/s');
+    expect(sanitizeLandingPath('/%73/abcdefghijklmnop')).toBe('/s');
+    expect(sanitizeLandingPath('/s/abcdefghijklmnop?source=mail')).toBe('/s');
+    expect(sanitizeLandingPath('/settings')).toBe('/settings');
+  });
+
   it('falls back to / for anything that is not a path', () => {
     expect(sanitizeLandingPath('https://open-frame.net/x')).toBe('/');
     expect(sanitizeLandingPath(null)).toBe('/');
