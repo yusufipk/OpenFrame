@@ -9,6 +9,7 @@ import type {
   LiveSnapshot,
   LiveStroke,
 } from '@/lib/live-review/protocol';
+import { applyDrawingDelta } from '@/lib/live-review/deltas';
 import {
   desiredPlaybackPosition,
   estimateServerOffset,
@@ -96,6 +97,7 @@ export function useLiveReview({
   const discoveryRequestRef = useRef<AbortController | null>(null);
   const joinRef = useRef<LiveJoinResult | null>(null);
   const snapshotRef = useRef<LiveSnapshot | null>(null);
+  const awaitingResyncRef = useRef(false);
   const participantRef = useRef<string | null>(null);
   const statusRef = useRef<ConnectionStatus>('idle');
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -311,7 +313,11 @@ export function useLiveReview({
       socket.onopen = () => {
         if (generation !== generationRef.current) return;
         socket.send(
-          JSON.stringify({ type: 'auth', ticket: ticket.ticket } satisfies LiveClientMessage)
+          JSON.stringify({
+            type: 'auth',
+            ticket: ticket.ticket,
+            capabilities: ['stroke-delta'],
+          } satisfies LiveClientMessage)
         );
       };
       socket.onmessage = (event) => {
@@ -330,8 +336,16 @@ export function useLiveReview({
             room.versionId !== ticket.versionId
           )
             return;
-          if (!shouldAcceptSnapshot(snapshotRef.current, room)) return;
+          const current = snapshotRef.current;
+          const sameRevisionRecovery =
+            awaitingResyncRef.current &&
+            current !== null &&
+            room.revision === current.revision &&
+            room.controlEpoch >= current.controlEpoch &&
+            room.canvasEpoch >= current.canvasEpoch;
+          if (!shouldAcceptSnapshot(current, room) && !sameRevisionRecovery) return;
           const previous = snapshotRef.current;
+          awaitingResyncRef.current = false;
           if (previous && previous.canvasEpoch !== room.canvasEpoch) setRejectedStroke(null);
           snapshotRef.current = room;
           setSnapshot(room);
@@ -379,6 +393,23 @@ export function useLiveReview({
             previous?.controlEpoch !== room.controlEpoch
           ) {
             applyPlayback(room, previous === null || presenterChanged);
+          }
+        } else if (message.type === 'stroke-delta' || message.type === 'stroke-remove') {
+          if (message.sessionId !== ticket.sessionId || message.versionId !== ticket.versionId)
+            return;
+          if (awaitingResyncRef.current) return;
+          const result = applyDrawingDelta(snapshotRef.current, message);
+          if (result.status === 'applied') {
+            snapshotRef.current = result.snapshot;
+            setSnapshot(result.snapshot);
+          } else if (result.status === 'resync' && socket.readyState === WebSocket.OPEN) {
+            awaitingResyncRef.current = true;
+            socket.send(
+              JSON.stringify({
+                type: 'resync',
+                revision: snapshotRef.current?.revision ?? -1,
+              } satisfies LiveClientMessage)
+            );
           }
         } else if (message.type === 'pong') {
           const now = Date.now();
@@ -450,6 +481,7 @@ export function useLiveReview({
             joinRef.current = nextTicket;
             rememberParticipant(videoId, nextTicket);
             snapshotRef.current = null;
+            awaitingResyncRef.current = false;
             bestPingRef.current = Number.POSITIVE_INFINITY;
             setSnapshot(null);
             connectRef.current(nextTicket, generation);
@@ -494,6 +526,7 @@ export function useLiveReview({
       closeConnection();
       joinRef.current = null;
       snapshotRef.current = null;
+      awaitingResyncRef.current = false;
       setSnapshot(null);
       setIsJoined(false);
       setError(null);
@@ -554,6 +587,7 @@ export function useLiveReview({
     closeConnection();
     joinRef.current = null;
     snapshotRef.current = null;
+    awaitingResyncRef.current = false;
     participantRef.current = null;
     setSnapshot(null);
     setParticipantId(null);

@@ -3,10 +3,12 @@ import { Client } from 'pg';
 import { db } from '../lib/db';
 import { redeemLiveTicket } from '../lib/live-review/tickets';
 import { applyLiveStroke } from '../lib/live-review/strokes';
+import { PermissionScheduler, permissionCheckPhase } from '../lib/live-review/permission-scheduler';
 import {
   LIVE_MAX_MESSAGE_BYTES,
   LIVE_MAX_STROKE_POINTS,
   type LiveClientMessage,
+  type LiveDrawingDelta,
   type LiveParticipant,
   type LiveSnapshot,
   type LiveStroke,
@@ -28,6 +30,7 @@ type SocketData = {
   windowAt: number;
   messageCount: number;
   intentionalLeave: boolean;
+  strokeDeltas: boolean;
 };
 type Socket = {
   data: SocketData;
@@ -80,20 +83,35 @@ function sameSecret(value: string | null): boolean {
   const b = Buffer.from(value);
   return a.length === b.length && timingSafeEqual(a, b);
 }
-function send(socket: Socket, value: unknown) {
+function sendEncoded(socket: Socket, value: string) {
   if ((socket.getBufferedAmount?.() ?? 0) > 256 * 1024) {
     socket.close(1013, 'Slow client');
     return;
   }
-  socket.send(JSON.stringify(value));
+  socket.send(value);
+}
+function send(socket: Socket, value: unknown) {
+  sendEncoded(socket, JSON.stringify(value));
 }
 function error(socket: Socket, code: string, strokeId?: string) {
   send(socket, { type: 'error', code, message: code, ...(strokeId ? { strokeId } : {}) });
 }
 function publish(room: Room) {
   room.snapshot.serverTime = Date.now();
-  for (const socket of room.sockets.values())
-    send(socket, { type: 'snapshot', snapshot: room.snapshot });
+  const encoded = JSON.stringify({ type: 'snapshot', snapshot: room.snapshot });
+  for (const socket of room.sockets.values()) sendEncoded(socket, encoded);
+}
+function publishDrawing(room: Room, delta: LiveDrawingDelta) {
+  room.snapshot.serverTime = delta.serverTime;
+  const encoded = JSON.stringify(delta);
+  let legacy: string | undefined;
+  for (const socket of room.sockets.values()) {
+    if (socket.data.strokeDeltas) sendEncoded(socket, encoded);
+    else {
+      legacy ??= JSON.stringify({ type: 'snapshot', snapshot: room.snapshot });
+      sendEncoded(socket, legacy);
+    }
+  }
 }
 async function permission(participantId: string): Promise<Permission> {
   const response = await fetch(new URL('/api/internal/live-review/access', appUrl), {
@@ -282,6 +300,7 @@ async function authSocket(socket: Socket, ticket: string) {
   if (current) Object.assign(current, entry);
   else room.snapshot.participants.push(entry);
   room.snapshot.revision++;
+  permissionChecks.add(socket, permissionCheckPhase(participant.id));
   await db.liveReviewParticipant.update({
     where: { id: participant.id },
     data: { lastSeenAt: new Date(), canComment: rights.canComment },
@@ -337,7 +356,11 @@ async function handle(socket: Socket, input: LiveClientMessage) {
     send(socket, { type: 'pong', clientTime: input.clientTime, serverTime: Date.now() });
     return;
   }
-  if (!['status', 'playback', 'transfer', 'stroke', 'undo', 'clear', 'end'].includes(input.type)) {
+  if (
+    !['resync', 'status', 'playback', 'transfer', 'stroke', 'undo', 'clear', 'end'].includes(
+      input.type
+    )
+  ) {
     error(socket, 'INVALID_MESSAGE');
     return;
   }
@@ -347,6 +370,7 @@ async function handle(socket: Socket, input: LiveClientMessage) {
     return;
   }
   if (room.snapshot.status !== 'active' || room.sockets.get(participantId) !== socket) return;
+  permissionChecks.checked(socket);
   const member = participantRow(room, participantId);
   if (!member) {
     socket.close(1008);
@@ -354,6 +378,14 @@ async function handle(socket: Socket, input: LiveClientMessage) {
   }
   member.canComment = rights.canComment;
   member.isManager = rights.isManager;
+  if (input.type === 'resync') {
+    if (!Number.isSafeInteger(input.revision) || input.revision < -1) {
+      error(socket, 'INVALID_MESSAGE');
+      return;
+    }
+    send(socket, { type: 'snapshot', snapshot: { ...room.snapshot, serverTime: Date.now() } });
+    return;
+  }
   if (input.type === 'status') {
     if (!['ready', 'buffering', 'blocked'].includes(input.status)) {
       error(socket, 'INVALID_MESSAGE');
@@ -491,13 +523,32 @@ async function handle(socket: Socket, input: LiveClientMessage) {
       error(socket, 'FORBIDDEN', strokeValid ? input.stroke.id : undefined);
       return;
     }
+    const previous = room.snapshot.strokes.find((stroke) => stroke.id === input.stroke.id);
+    const fromIndex = previous?.points.length ?? 0;
     const change = applyLiveStroke(room.snapshot.strokes, input.stroke, participantId);
     if (change !== 'updated') {
       error(socket, change === 'stale' ? 'STALE_STROKE' : 'CANVAS_LIMIT', input.stroke.id);
       return;
     }
-    room.snapshot.revision++;
-    publish(room);
+    if (previous && fromIndex === input.stroke.points.length) return;
+    const baseRevision = room.snapshot.revision++;
+    publishDrawing(room, {
+      type: 'stroke-delta',
+      sessionId,
+      versionId: room.snapshot.versionId,
+      canvasEpoch: room.snapshot.canvasEpoch,
+      baseRevision,
+      revision: room.snapshot.revision,
+      serverTime: Date.now(),
+      stroke: {
+        id: input.stroke.id,
+        participantId,
+        color: input.stroke.color,
+        width: input.stroke.width,
+      },
+      fromIndex,
+      points: input.stroke.points.slice(fromIndex),
+    });
     return;
   }
   if (input.type === 'undo') {
@@ -513,9 +564,18 @@ async function handle(socket: Socket, input: LiveClientMessage) {
       (stroke) => stroke.participantId === participantId
     );
     if (index >= 0) {
-      room.snapshot.strokes.splice(index, 1);
-      room.snapshot.revision++;
-      publish(room);
+      const [removed] = room.snapshot.strokes.splice(index, 1);
+      const baseRevision = room.snapshot.revision++;
+      publishDrawing(room, {
+        type: 'stroke-remove',
+        sessionId,
+        versionId: room.snapshot.versionId,
+        canvasEpoch: room.snapshot.canvasEpoch,
+        baseRevision,
+        revision: room.snapshot.revision,
+        serverTime: Date.now(),
+        strokeId: removed.id,
+      });
     }
     return;
   }
@@ -614,6 +674,7 @@ const server = Bun.serve({
       windowAt: Date.now(),
       messageCount: 0,
       intentionalLeave: false,
+      strokeDeltas: false,
     };
     return server.upgrade(request, { data }) ? undefined : new Response(null, { status: 400 });
   },
@@ -663,6 +724,8 @@ const server = Bun.serve({
           socket.close(1008);
           return;
         }
+        socket.data.strokeDeltas =
+          Array.isArray(value.capabilities) && value.capabilities.includes('stroke-delta');
         socket.data.authenticating = true;
         void authSocket(socket, value.ticket)
           .catch(() => socket.close(1008))
@@ -681,6 +744,7 @@ const server = Bun.serve({
     },
     close(socket) {
       sockets.delete(socket);
+      permissionChecks.remove(socket);
       if (shuttingDown) return;
       const sessionId = socket.data.sessionId;
       const participantId = socket.data.participantId;
@@ -705,6 +769,36 @@ const server = Bun.serve({
     },
   },
 });
+const permissionChecks = new PermissionScheduler<Socket>(
+  async (socket) => {
+    const { participantId, sessionId } = socket.data;
+    if (!participantId || !sessionId || !sockets.has(socket)) return;
+    const p = await permission(participantId);
+    if (!sockets.has(socket)) return;
+    if (!p.allowed || p.sessionId !== sessionId) {
+      socket.close(1008, 'Access revoked');
+      return;
+    }
+    const room = rooms.get(sessionId);
+    if (!room) return;
+    enqueue(room, async () => {
+      if (room.snapshot.status !== 'active' || room.sockets.get(participantId) !== socket) return;
+      if (room.snapshot.presenterId === participantId && !p.canComment) {
+        socket.close(1008, 'Presenter permission revoked');
+        return;
+      }
+      const member = participantRow(room, participantId);
+      if (member && (member.canComment !== p.canComment || member.isManager !== p.isManager)) {
+        member.canComment = p.canComment;
+        member.isManager = p.isManager;
+        room.snapshot.revision++;
+        publish(room);
+      }
+    });
+  },
+  (socket) => socket.close(1011, 'Permission unavailable')
+);
+const permissionTimer = setInterval(() => permissionChecks.tick(), 100);
 const sweep = setInterval(() => {
   for (const [sessionId, endedAt] of recentlyEndedRooms)
     if (Date.now() - endedAt > 60_000) recentlyEndedRooms.delete(sessionId);
@@ -713,38 +807,6 @@ const sweep = setInterval(() => {
       socket.close(1008, 'Heartbeat timeout');
       continue;
     }
-    if (socket.data.authenticated && socket.data.participantId)
-      void permission(socket.data.participantId)
-        .then((p) => {
-          if (!p.allowed || p.sessionId !== socket.data.sessionId) {
-            socket.close(1008, 'Access revoked');
-            return;
-          }
-          const room = rooms.get(socket.data.sessionId!);
-          if (!room) return;
-          enqueue(room, async () => {
-            if (
-              room.snapshot.status !== 'active' ||
-              room.sockets.get(socket.data.participantId!) !== socket
-            )
-              return;
-            if (room.snapshot.presenterId === socket.data.participantId && !p.canComment) {
-              socket.close(1008, 'Presenter permission revoked');
-              return;
-            }
-            const member = participantRow(room, socket.data.participantId!);
-            if (
-              member &&
-              (member.canComment !== p.canComment || member.isManager !== p.isManager)
-            ) {
-              member.canComment = p.canComment;
-              member.isManager = p.isManager;
-              room.snapshot.revision++;
-              publish(room);
-            }
-          });
-        })
-        .catch(() => socket.close(1011, 'Permission unavailable'));
   }
   void (async () => {
     const occupied = [...rooms.values()]
@@ -802,6 +864,8 @@ async function shutdown() {
   shuttingDown = true;
   clearInterval(sweep);
   clearInterval(checkpoint);
+  clearInterval(permissionTimer);
+  permissionChecks.clear();
   for (const room of rooms.values()) cancelEmptyClose(room);
   await Promise.all(
     [...rooms.values()].map(async (room) => {

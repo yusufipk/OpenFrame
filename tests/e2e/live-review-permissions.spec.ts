@@ -555,6 +555,49 @@ test('last intentional leave ends the room after other participants have left', 
   }
 });
 
+test('idle guest loses the socket after share access is revoked', async ({
+  page,
+  browser,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.version(seededUser, { title: 'Live review idle revocation video' });
+  await db.videoVersion.update({
+    where: { id: seeded.versionId },
+    data: { providerId: 'r2', videoId: `videos/${seeded.versionId}.mp4`, duration: 12 },
+  });
+  const link = await seed.shareLink({ projectId: seeded.project.id, videoId: seeded.videoId });
+  const guestContext = await browser.newContext({ storageState: undefined });
+  try {
+    await page.goto('/dashboard');
+    await connectRoomSocket(page, 'owner', seeded.videoId, seeded.versionId, 'start');
+    const guestPage = await guestContext.newPage();
+    await guestPage.goto(`/watch/${seeded.videoId}?shareToken=${link.token}`);
+    await expect(guestPage).toHaveURL(new RegExp(`/watch/${seeded.videoId}$`));
+    await connectRoomSocket(guestPage, 'idleGuest', seeded.videoId, seeded.versionId, 'join');
+    await expect
+      .poll(async () => (await latestSnapshot(page, 'owner')).participants.length)
+      .toBe(2);
+
+    // The probe sends only its automatic pings after this point.
+    await db.shareLink.delete({ where: { id: link.id } });
+    await expect
+      .poll(
+        () =>
+          guestPage.evaluate(
+            () => (window as ProbeWindow).liveReviewPermissionSockets?.idleGuest.closeCode ?? null
+          ),
+        { timeout: 20_000, intervals: [200] }
+      )
+      .toBe(1008);
+  } finally {
+    await closeRoomSocket(page, 'owner');
+    const guestPage = guestContext.pages()[0];
+    if (guestPage) await closeRoomSocket(guestPage, 'idleGuest');
+    await guestContext.close();
+  }
+});
+
 test('empty disconnect grace keeps a rejoining presenter and ends an abandoned room', async ({
   page,
   seed,

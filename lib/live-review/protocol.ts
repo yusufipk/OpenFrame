@@ -1,5 +1,6 @@
 // Shared wire contract. Media URLs and access credentials never appear in room snapshots.
 import type { AnnotationStroke } from '@/components/annotation/types';
+import type { AnnotationPoint } from '@/components/annotation/types';
 
 export interface LiveStroke extends AnnotationStroke {
   id: string;
@@ -36,8 +37,27 @@ export interface LiveSnapshot {
   serverTime: number;
 }
 
+export interface LiveDrawingRevision {
+  sessionId: string;
+  versionId: string;
+  canvasEpoch: number;
+  baseRevision: number;
+  revision: number;
+  serverTime: number;
+}
+
+export type LiveDrawingDelta =
+  | (LiveDrawingRevision & {
+      type: 'stroke-delta';
+      stroke: Omit<LiveStroke, 'points'>;
+      fromIndex: number;
+      points: AnnotationPoint[];
+    })
+  | (LiveDrawingRevision & { type: 'stroke-remove'; strokeId: string });
+
 export type LiveClientMessage =
-  | { type: 'auth'; ticket: string }
+  | { type: 'auth'; ticket: string; capabilities?: 'stroke-delta'[] }
+  | { type: 'resync'; revision: number }
   | { type: 'ping'; clientTime: number }
   | { type: 'leave' }
   | { type: 'status'; status: LiveParticipant['status'] }
@@ -57,6 +77,7 @@ export type LiveClientMessage =
 
 export type LiveServerMessage =
   | { type: 'snapshot'; snapshot: LiveSnapshot }
+  | LiveDrawingDelta
   | { type: 'pong'; clientTime: number; serverTime: number }
   | { type: 'comments'; versionId: string }
   | { type: 'error'; code: string; message: string; strokeId?: string };

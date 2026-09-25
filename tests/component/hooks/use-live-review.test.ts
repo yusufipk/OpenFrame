@@ -3,6 +3,24 @@ import { act, renderHook } from '@testing-library/react';
 import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
 import type { LiveSnapshot } from '@/lib/live-review/protocol';
 
+const drawingStroke = { id: 'stroke-1', participantId: 'self', color: '#ff0000', width: 2 };
+
+function strokeDelta(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'stroke-delta',
+    sessionId: 'room',
+    versionId: 'ver',
+    canvasEpoch: 0,
+    baseRevision: 1,
+    revision: 2,
+    serverTime: Date.now(),
+    stroke: drawingStroke,
+    fromIndex: 0,
+    points: [{ x: 0.1, y: 0.2 }],
+    ...overrides,
+  };
+}
+
 class FakeSocket {
   static instances: FakeSocket[] = [];
   static readonly OPEN = 1;
@@ -301,9 +319,93 @@ describe('useLiveReview', () => {
     expect(result.current.rejectedStroke).toBeNull();
   });
 
+  it('applies drawing deltas and accepts a later full snapshot', async () => {
+    const { result, socket } = await joinRoom();
+    act(() => socket.deliver({ type: 'snapshot', snapshot: room() }));
+    act(() => socket.deliver(strokeDelta()));
+    expect(result.current.snapshot?.strokes).toEqual([
+      { ...drawingStroke, points: [{ x: 0.1, y: 0.2 }] },
+    ]);
+    act(() =>
+      socket.deliver(
+        strokeDelta({ baseRevision: 2, revision: 3, fromIndex: 1, points: [{ x: 0.3, y: 0.4 }] })
+      )
+    );
+    expect(result.current.snapshot?.strokes[0].points).toHaveLength(2);
+    act(() =>
+      socket.deliver({
+        type: 'stroke-remove',
+        sessionId: 'room',
+        versionId: 'ver',
+        canvasEpoch: 0,
+        baseRevision: 3,
+        revision: 4,
+        serverTime: Date.now(),
+        strokeId: 'stroke-1',
+      })
+    );
+    expect(result.current.snapshot?.strokes).toEqual([]);
+    act(() =>
+      socket.deliver({
+        type: 'snapshot',
+        snapshot: room({
+          revision: 5,
+          strokes: [{ ...drawingStroke, points: [{ x: 0.5, y: 0.6 }] }],
+        }),
+      })
+    );
+    expect(result.current.snapshot?.strokes[0].points).toEqual([{ x: 0.5, y: 0.6 }]);
+  });
+
+  it('requests one full snapshot on a gap and ignores deltas until recovery', async () => {
+    const { result, socket } = await joinRoom();
+    act(() => socket.deliver({ type: 'snapshot', snapshot: room() }));
+    act(() => socket.deliver(strokeDelta({ baseRevision: 2, revision: 3 })));
+    expect(socket.sent).toContainEqual({ type: 'resync', revision: 1 });
+    expect(result.current.snapshot?.strokes).toEqual([]);
+    act(() => socket.deliver(strokeDelta({ baseRevision: 1, revision: 2 })));
+    expect(result.current.snapshot?.strokes).toEqual([]);
+    expect(
+      socket.sent.filter((message) => (message as { type: string }).type === 'resync')
+    ).toHaveLength(1);
+    act(() =>
+      socket.deliver({
+        type: 'snapshot',
+        snapshot: room({
+          revision: 3,
+          strokes: [{ ...drawingStroke, points: [{ x: 0.1, y: 0.2 }] }],
+        }),
+      })
+    );
+    expect(result.current.snapshot?.revision).toBe(3);
+    act(() =>
+      socket.deliver(
+        strokeDelta({ baseRevision: 3, revision: 4, fromIndex: 1, points: [{ x: 0.3, y: 0.4 }] })
+      )
+    );
+    expect(result.current.snapshot?.strokes[0].points).toHaveLength(2);
+    act(() => socket.deliver(strokeDelta({ sessionId: 'another', baseRevision: 4, revision: 5 })));
+    expect(result.current.snapshot?.revision).toBe(4);
+  });
+
+  it('accepts an authoritative snapshot at the same revision during recovery', async () => {
+    const { result, socket } = await joinRoom();
+    act(() => socket.deliver({ type: 'snapshot', snapshot: room() }));
+    act(() => socket.deliver(strokeDelta({ fromIndex: 2 })));
+    expect(socket.sent).toContainEqual({ type: 'resync', revision: 1 });
+    act(() => socket.deliver({ type: 'snapshot', snapshot: room() }));
+    act(() => socket.deliver(strokeDelta()));
+    expect(result.current.snapshot?.revision).toBe(2);
+    expect(result.current.snapshot?.strokes).toHaveLength(1);
+  });
+
   it('authenticates first, rejects stale snapshots, and locks follower playback', async () => {
     const { result, socket, video } = await joinRoom();
-    expect(socket.sent[0]).toEqual({ type: 'auth', ticket: 'ticket-1' });
+    expect(socket.sent[0]).toEqual({
+      type: 'auth',
+      ticket: 'ticket-1',
+      capabilities: ['stroke-delta'],
+    });
     act(() => {
       socket.deliver({ type: 'snapshot', snapshot: room() });
     });
@@ -348,7 +450,11 @@ describe('useLiveReview', () => {
     act(() => {
       replacement.open();
     });
-    expect(replacement.sent[0]).toEqual({ type: 'auth', ticket: 'ticket-2' });
+    expect(replacement.sent[0]).toEqual({
+      type: 'auth',
+      ticket: 'ticket-2',
+      capabilities: ['stroke-delta'],
+    });
     expect(result.current.snapshot).toBeNull();
     unmount();
     expect(replacement.close).toHaveBeenCalled();
