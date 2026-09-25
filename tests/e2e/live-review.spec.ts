@@ -438,6 +438,83 @@ test('owner and guest review one native video through the real room service', as
     await page.getByRole('button', { name: 'Join Live Review' }).click();
     await expect(room.getByText('Connected', { exact: true })).toBeVisible();
 
+    const savedComment = page
+      .getByText(commentBody)
+      .locator('xpath=ancestor::div[contains(@class, "group")][1]');
+    const savedTimestamp = savedComment.getByTitle('Jump to this timestamp');
+    const annotationPreview = page.getByTitle('Click to dismiss annotation');
+    const openSavedAnnotation = async () => {
+      await savedTimestamp.click();
+      await expect.poll(() => videoTime(page)).toBeCloseTo(annotatedComment.timestamp, 0);
+      await expect
+        .poll(() =>
+          page.locator('video').evaluate((video) => ({
+            paused: (video as HTMLVideoElement).paused,
+            seeking: (video as HTMLVideoElement).seeking,
+          }))
+        )
+        .toEqual({ paused: true, seeking: false });
+      await expect(annotationPreview).toBeVisible();
+      await expect(annotationPreview.locator('path')).not.toHaveCount(0);
+    };
+
+    await openSavedAnnotation();
+    await page.keyboard.press('Space');
+    await expect
+      .poll(() => page.locator('video').evaluate((video) => (video as HTMLVideoElement).paused))
+      .toBe(false);
+    await expect(annotationPreview).toHaveCount(0);
+    await expect
+      .poll(() =>
+        guestPage.locator('video').evaluate((video) => (video as HTMLVideoElement).paused)
+      )
+      .toBe(false);
+    await page.keyboard.press('Space');
+    await expect
+      .poll(() => page.locator('video').evaluate((video) => (video as HTMLVideoElement).paused))
+      .toBe(true);
+    await expect
+      .poll(() =>
+        guestPage.locator('video').evaluate((video) => (video as HTMLVideoElement).paused)
+      )
+      .toBe(true);
+
+    await openSavedAnnotation();
+    const previewTime = await videoTime(page);
+    await page.keyboard.press('ArrowRight');
+    await expect(annotationPreview).toHaveCount(0);
+    await expect.poll(() => videoTime(guestPage)).toBeGreaterThan(previewTime + 0.5);
+
+    await openSavedAnnotation();
+    await page.getByTitle('Back 10s').locator('xpath=preceding-sibling::button[1]').click();
+    await expect
+      .poll(() => page.locator('video').evaluate((video) => (video as HTMLVideoElement).paused))
+      .toBe(false);
+    await expect(annotationPreview).toHaveCount(0);
+    await expect
+      .poll(() =>
+        guestPage.locator('video').evaluate((video) => (video as HTMLVideoElement).paused)
+      )
+      .toBe(false);
+    await page.keyboard.press('Space');
+    await expect
+      .poll(() => page.locator('video').evaluate((video) => (video as HTMLVideoElement).paused))
+      .toBe(true);
+    await expect
+      .poll(() =>
+        guestPage.locator('video').evaluate((video) => (video as HTMLVideoElement).paused)
+      )
+      .toBe(true);
+
+    await openSavedAnnotation();
+    const resumedTimeline = page.locator('div.h-8.bg-muted.cursor-pointer');
+    const resumedTimelineBox = await resumedTimeline.boundingBox();
+    if (!resumedTimelineBox) throw new Error('Presenter timeline has no layout box after rejoin.');
+    await resumedTimeline.click({
+      position: { x: resumedTimelineBox.width * 0.1, y: resumedTimelineBox.height / 2 },
+    });
+    await expect(annotationPreview).toHaveCount(0);
+
     const resumedRoom = await db.liveReviewSession.findUniqueOrThrow({
       where: { id: stableRoom.id },
     });

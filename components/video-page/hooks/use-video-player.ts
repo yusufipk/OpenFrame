@@ -82,6 +82,14 @@ export function useVideoPlayer({
   setViewingAnnotation,
   playbackLocked = false,
 }: UseVideoPlayerParams) {
+  const annotationSeekRef = useRef<number | null>(null);
+  const dismissAnnotation = useCallback(() => {
+    annotationSeekRef.current = null;
+    setViewingAnnotation(null);
+  }, [setViewingAnnotation]);
+  useEffect(() => {
+    dismissAnnotation();
+  }, [activeProviderId, activeVersionId, dismissAnnotation]);
   const [isApiLoaded, setIsApiLoaded] = useState(false);
   const [isReady, setIsReady] = useState(false);
   // Bumped every time the YouTube player loads or unloads a module. It is the only
@@ -322,6 +330,7 @@ export function useVideoPlayer({
             },
             onStateChange: (event: YT.OnStateChangeEvent) => {
               setIsPlaying(event.data === YT.PlayerState.PLAYING);
+              if (event.data === YT.PlayerState.PLAYING) dismissAnnotation();
 
               if (event.data === YT.PlayerState.PAUSED) {
                 const playerCurrentTime = playerRef.current?.getCurrentTime?.() || 0;
@@ -881,6 +890,7 @@ export function useVideoPlayer({
     startBunnyFrameTracking,
     stopBunnyFrameTracking,
     videoRef,
+    dismissAnnotation,
   ]);
 
   const toggleFullscreen = useCallback(() => {
@@ -1061,9 +1071,28 @@ export function useVideoPlayer({
     if (isPlaying) {
       playerRef.current.pauseVideo();
     } else {
+      dismissAnnotation();
       playerRef.current.playVideo();
     }
-  }, [isPlaying, playbackLocked, playerRef]);
+  }, [isPlaying, playbackLocked, playerRef, dismissAnnotation]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onSeeking = () => {
+      const annotationTime = annotationSeekRef.current;
+      annotationSeekRef.current = null;
+      if (annotationTime !== null && Math.abs(video.currentTime - annotationTime) < 0.05) return;
+      dismissAnnotation();
+    };
+    // Media events also cover playback and seeks applied by the live presenter.
+    video.addEventListener('play', dismissAnnotation);
+    video.addEventListener('seeking', onSeeking);
+    return () => {
+      video.removeEventListener('play', dismissAnnotation);
+      video.removeEventListener('seeking', onSeeking);
+    };
+  }, [videoRef, isReady, activeVersionId, dismissAnnotation]);
 
   const handleSeekToTimestamp = useCallback(
     (
@@ -1072,6 +1101,8 @@ export function useVideoPlayer({
       options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
     ) => {
       if (playbackLocked) return;
+      // Keep the preview through its own asynchronous media seek, but not later seeks.
+      annotationSeekRef.current = annotation ? timestamp : null;
       setCurrentTime(timestamp);
       if (playerRef.current?.seekTo) {
         const playerState = playerRef.current.getPlayerState?.();
@@ -1082,7 +1113,7 @@ export function useVideoPlayer({
             ? playerState === ytPlayingState || playerState === ytBufferingState
             : isPlaying;
         const hasRangeEnd = options?.timestampEnd !== undefined && options.timestampEnd !== null;
-        const shouldPauseAfterSeek = options?.pauseAfterSeek || hasRangeEnd;
+        const shouldPauseAfterSeek = !!annotation || options?.pauseAfterSeek || hasRangeEnd;
 
         playerRef.current.seekTo(timestamp, true);
         if (shouldPauseAfterSeek) {
@@ -1159,13 +1190,7 @@ export function useVideoPlayer({
 
       switch (shortcut) {
         case 'toggle-play':
-          if (playerRef.current) {
-            if (isPlaying) {
-              playerRef.current.pauseVideo();
-            } else {
-              playerRef.current.playVideo();
-            }
-          }
+          handlePlayPause();
           break;
         case 'skip-back':
           handleSkip(-5);
@@ -1191,6 +1216,7 @@ export function useVideoPlayer({
           break;
         case 'jump-back':
           if (playerRef.current?.seekTo) {
+            dismissAnnotation();
             const newTime = Math.max(0, currentTime - 10);
             playerRef.current.seekTo(newTime, true);
             setCurrentTime(newTime);
@@ -1199,6 +1225,7 @@ export function useVideoPlayer({
           break;
         case 'jump-forward':
           if (playerRef.current?.seekTo) {
+            dismissAnnotation();
             const newTime = Math.min(duration, currentTime + 10);
             playerRef.current.seekTo(newTime, true);
             setCurrentTime(newTime);
@@ -1225,6 +1252,8 @@ export function useVideoPlayer({
     toggleFullscreen,
     playerRef,
     playbackLocked,
+    handlePlayPause,
+    dismissAnnotation,
   ]);
 
   const handleSpeedChange = useCallback(
@@ -1292,6 +1321,7 @@ export function useVideoPlayer({
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (playbackLocked) return;
       if (!timelineRef.current) return;
+      dismissAnnotation();
       // Cache the rect once for the whole drag; the rAF loop reads dragTimeRef.
       dragRectRef.current = timelineRef.current.getBoundingClientRect();
       const newTime = timeFromClientX(e.clientX);
@@ -1313,6 +1343,7 @@ export function useVideoPlayer({
       isPlaying,
       playbackLocked,
       playerRef,
+      dismissAnnotation,
     ]
   );
 

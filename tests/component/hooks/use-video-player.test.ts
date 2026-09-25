@@ -216,6 +216,93 @@ afterEach(() => {
 });
 
 describe('useVideoPlayer seeking', () => {
+  const annotation = JSON.stringify([
+    {
+      points: [
+        { x: 0.2, y: 0.3 },
+        { x: 0.4, y: 0.5 },
+      ],
+      color: '#007AFF',
+      width: 3,
+    },
+  ]);
+
+  it('keeps a comment preview through its own seek and dismisses it on a later media seek', () => {
+    const { result, video, params } = renderPlayer();
+    act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: true }));
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(JSON.parse(annotation));
+    act(() => {
+      video.fire('seeking');
+      video.fire('seeked');
+      video.fire('timeupdate');
+    });
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(JSON.parse(annotation));
+    act(() => {
+      video.currentTime = 20;
+      video.fire('seeking');
+    });
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
+  });
+
+  it('pauses an annotated timeline jump even when normal timestamp jumps keep playing', () => {
+    const { result, video, params } = renderPlayer();
+    startPlayback(video);
+    act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: false }));
+    expect(video.paused).toBe(true);
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(JSON.parse(annotation));
+  });
+
+  it('dismisses a preview when another seek overtakes the comment seek', () => {
+    const { result, video, params } = renderPlayer();
+    act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: true }));
+    act(() => {
+      video.currentTime = 20;
+      video.fire('seeking');
+    });
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
+  });
+
+  it('dismisses a preview on version change before the next player is ready', () => {
+    const { result, params, rerender } = renderPlayer();
+    act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: true }));
+    rerender({
+      ...params,
+      activeVersionId: 'ver2',
+      activeProviderId: 'youtube',
+      canInitializePlayer: false,
+    });
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
+  });
+
+  it.each(['Space', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyL'])(
+    'dismisses a comment preview for the %s shortcut',
+    (key) => {
+      const { result, params } = renderPlayer();
+      act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: true }));
+      expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(JSON.parse(annotation));
+      pressKey(key);
+      expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
+    }
+  );
+
+  it('dismisses a comment preview for the play button and timeline scrubbing', () => {
+    const { result, params } = renderPlayer();
+    act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: true }));
+    act(() => result.current.handlePlayPause());
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
+    act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: true }));
+    act(() => result.current.handleTimelineMouseDown(mouseEventAt(50)));
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
+  });
+
+  it('dismisses a preview when native playback resumes, including presenter-driven playback', () => {
+    const { video, params } = renderPlayer({ playbackLocked: true });
+    // A follower can already have a saved preview open when local controls become locked.
+    params.setViewingAnnotation(JSON.parse(annotation));
+    startPlayback(video);
+    expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
+  });
+
   it('blocks local playback, timestamp seek and speed changes for a follower', () => {
     const { result, video } = renderPlayer({ playbackLocked: true });
     act(() => {
