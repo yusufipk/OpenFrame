@@ -315,6 +315,22 @@ test('owner and guest review one native video through the real room service', as
     await expect.poll(() => guestCanvas.locator('path').count()).toBeGreaterThan(0);
     await page.mouse.up();
     await expect(guestCanvas.locator('path').first()).toHaveAttribute('stroke', '#007AFF');
+    await guestPage.getByRole('button', { name: 'Stroke Mode' }).click();
+    const guestCanvasBox = await guestCanvas.boundingBox();
+    if (!guestCanvasBox) throw new Error('Guest drawing canvas has no layout box.');
+    await guestPage.mouse.move(
+      guestCanvasBox.x + guestCanvasBox.width * 0.6,
+      guestCanvasBox.y + guestCanvasBox.height * 0.2
+    );
+    await guestPage.mouse.down();
+    await guestPage.mouse.move(
+      guestCanvasBox.x + guestCanvasBox.width * 0.8,
+      guestCanvasBox.y + guestCanvasBox.height * 0.4,
+      { steps: 4 }
+    );
+    await guestPage.mouse.up();
+    await expect(ownerCanvas.locator('path')).toHaveCount(2);
+    await expect(ownerCanvas.locator('path').nth(1)).toHaveAttribute('stroke', '#FF3B30');
     await page.screenshot({ path: 'test-results/live-review-desktop.png' });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect
@@ -354,24 +370,69 @@ test('owner and guest review one native video through the real room service', as
       )
       .toBe(true);
     await page.screenshot({ path: 'test-results/live-review-mobile-comments.png' });
+    const commentBody = 'Please adjust the blue marked area';
+    await mobileComposer.fill(commentBody);
+    await mobileComposer.press('Control+Enter');
+    await expect
+      .poll(() =>
+        db.comment.findFirst({
+          where: { versionId: seeded.versionId, content: commentBody },
+          select: { annotationData: true },
+        })
+      )
+      .toEqual({
+        annotationData: expect.any(String),
+      });
+    const annotatedComment = await db.comment.findFirstOrThrow({
+      where: { versionId: seeded.versionId, content: commentBody },
+    });
+    expect(JSON.parse(annotatedComment.annotationData!)).toEqual([
+      expect.objectContaining({ color: '#007AFF', width: 5 }),
+    ]);
     await page.getByRole('button', { name: 'Close comments panel' }).click();
     await page.setViewportSize({ width: 1280, height: 720 });
+    const ownerStrokeMode = page.getByRole('button', { name: 'Stroke Mode' });
+    if ((await ownerStrokeMode.getAttribute('aria-pressed')) !== 'true') {
+      await ownerStrokeMode.click();
+    }
+    const nextCanvasBox = await ownerCanvas.boundingBox();
+    if (!nextCanvasBox) throw new Error('Drawing canvas has no layout box after commenting.');
+    await page.mouse.move(
+      nextCanvasBox.x + nextCanvasBox.width * 0.2,
+      nextCanvasBox.y + nextCanvasBox.height * 0.6
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      nextCanvasBox.x + nextCanvasBox.width * 0.4,
+      nextCanvasBox.y + nextCanvasBox.height * 0.8,
+      { steps: 4 }
+    );
+    await page.mouse.up();
+    await expect(guestCanvas.locator('path')).toHaveCount(3);
+    await page.getByRole('button', { name: 'Undo my stroke' }).click();
+    await expect(guestCanvas.locator('path')).toHaveCount(2);
     await page.getByRole('button', { name: 'Save drawing as comment' }).click();
     await expect
       .poll(() =>
         db.comment.count({
-          where: { versionId: seeded.versionId, annotationData: { not: null } },
+          where: { versionId: seeded.versionId, content: null, annotationData: { not: null } },
         })
       )
-      .toBeGreaterThan(0);
+      .toBe(1);
     const savedDrawing = await db.comment.findFirstOrThrow({
-      where: { versionId: seeded.versionId, annotationData: { not: null } },
+      where: { versionId: seeded.versionId, content: null, annotationData: { not: null } },
     });
     expect(JSON.parse(savedDrawing.annotationData!)).toEqual([
       expect.objectContaining({ color: '#007AFF', width: 5 }),
     ]);
     await page.reload();
-    await expect(page.getByText('Annotated').first()).toBeVisible();
+    await expect(page.getByText(commentBody)).toBeVisible();
+    await expect(
+      page
+        .getByText(commentBody)
+        .locator('xpath=ancestor::div[contains(@class, "group")][1]')
+        .getByText('Annotated')
+    ).toBeVisible();
     // Rejoin beyond the former 15-second presenter disconnect timeout.
     await page.waitForTimeout(16000);
     await page.getByRole('button', { name: 'Join Live Review' }).click();

@@ -6,6 +6,7 @@ import {
   LiveReviewCanvas,
   getVideoContentRect,
   pointInContent,
+  type LiveReviewCanvasHandle,
 } from '@/components/video-page/live-review-canvas';
 import type { LiveDiscovery, LiveStroke } from '@/lib/live-review/protocol';
 
@@ -103,6 +104,36 @@ describe('LiveReviewCanvas', () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
+  it('exposes only own live strokes to the comment composer while drawing is allowed', () => {
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+      currentTime: { configurable: true, value: 12.5 },
+    });
+    Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 600);
+    const ref = createRef<LiveReviewCanvasHandle>();
+    const { rerender } = render(<LiveReviewCanvas {...base} ref={ref} />);
+    expect(ref.current?.getAnnotation()).toEqual({
+      timestamp: 12.5,
+      strokes: [
+        {
+          points: [
+            { x: 0.1, y: 0.2 },
+            { x: 0.3, y: 0.4 },
+          ],
+          color: '#ff0000',
+          width: 3,
+        },
+      ],
+    });
+    rerender(<LiveReviewCanvas {...base} ref={ref} canDraw={false} />);
+    expect(ref.current?.getAnnotation()).toBeNull();
+    rerender(<LiveReviewCanvas {...base} ref={ref} isPaused={false} />);
+    expect(ref.current?.getAnnotation()).toBeNull();
+    rerender(<LiveReviewCanvas {...base} ref={ref} strokes={[other]} />);
+    expect(ref.current?.getAnnotation()).toBeNull();
+  });
+
   it('keeps controls outside the video and only captures strokes in Stroke Mode', async () => {
     Object.defineProperties(video, {
       videoWidth: { configurable: true, value: 1920 },
@@ -158,6 +189,36 @@ describe('LiveReviewCanvas', () => {
         8
       )
     );
+  });
+
+  it('keeps completed points for comment capture while the server echoes only part of the stroke', () => {
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+    });
+    Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
+    const ref = createRef<LiveReviewCanvasHandle>();
+    const { rerender } = render(<LiveReviewCanvas {...base} ref={ref} strokes={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
+    const canvas = screen.getByLabelText('Shared drawing canvas');
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 45, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 240, clientY: 135, pointerId: 1 });
+    const completed = ref.current!.getAnnotation()!;
+    expect(completed.strokes[0].points.length).toBeGreaterThan(1);
+    const emitted = onStroke.mock.calls.at(-1)![0];
+    rerender(
+      <LiveReviewCanvas
+        {...base}
+        ref={ref}
+        strokes={[{ ...emitted, participantId: 'me', points: [emitted.points[0]] }]}
+      />
+    );
+    expect(ref.current!.getAnnotation()).toEqual(completed);
+    rerender(
+      <LiveReviewCanvas {...base} ref={ref} strokes={[{ ...emitted, participantId: 'me' }]} />
+    );
+    expect(ref.current!.getAnnotation()).toEqual(completed);
   });
 
   it('exits Stroke Mode when the comments composer unmounts', async () => {

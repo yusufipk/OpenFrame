@@ -232,6 +232,37 @@ afterEach(() => {
 });
 
 describe('useCommentActions adding a comment', () => {
+  it('attaches the current live drawing to the typed comment at its video timestamp', async () => {
+    const strokes = [{ points: [{ x: 0.2, y: 0.4 }], color: '#007AFF', width: 5 }];
+    const harness = renderActions({
+      getAnnotationForComment: () => ({ strokes, timestamp: 18.5 }),
+    });
+    act(() => harness.result.current.actions.setCommentText('Fix this edge'));
+    await act(async () => {
+      await harness.result.current.actions.handleAddComment();
+    });
+    expect(bodyOf(callsTo(`/api/versions/${ACTIVE_VERSION}/comments`, 'POST')[0])).toMatchObject({
+      content: 'Fix this edge',
+      annotationData: strokes,
+      timestamp: 18.5,
+    });
+    expect(stableDeps.setViewingAnnotation).toHaveBeenCalledWith(null);
+  });
+
+  it('does not attach stale normal annotations when the live canvas has no available drawing', async () => {
+    const harness = renderActions({
+      annotationStrokes: [{ points: [{ x: 0.1, y: 0.1 }], color: '#ff0000', width: 3 }],
+      getAnnotationForComment: () => null,
+    });
+    act(() => harness.result.current.actions.setCommentText('Plain live comment'));
+    await act(async () => {
+      await harness.result.current.actions.handleAddComment();
+    });
+    expect(
+      bodyOf(callsTo(`/api/versions/${ACTIVE_VERSION}/comments`, 'POST')[0])
+    ).not.toHaveProperty('annotationData');
+  });
+
   it('shows the comment before the server answers, then swaps in the saved row', async () => {
     const pendingRequest = deferred<unknown>();
     fetchMock.mockReturnValue(pendingRequest.promise);

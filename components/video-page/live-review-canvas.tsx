@@ -1,6 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+  type RefObject,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Pencil, Save, Trash2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,11 +23,13 @@ import {
 export { pointInContent } from '@/components/annotation/surface';
 import type { LiveStroke } from '@/lib/live-review/protocol';
 import { LIVE_MAX_STROKE_POINTS } from '@/lib/live-review/protocol';
+import type { AnnotationStroke } from '@/components/annotation/types';
 
 type Point = LiveStroke['points'][number];
 type ContentRect = { left: number; top: number; width: number; height: number };
 
 export interface LiveReviewCanvasProps {
+  ref?: Ref<LiveReviewCanvasHandle>;
   controlsContainer: HTMLElement | null;
   strokes: LiveStroke[];
   canvasEpoch: number;
@@ -32,6 +43,10 @@ export interface LiveReviewCanvasProps {
   onUndo: (canvasEpoch: number) => void;
   onClear: (canvasEpoch: number) => void;
   onSave: (strokes: LiveStroke[], timestamp: number) => Promise<void>;
+}
+
+export interface LiveReviewCanvasHandle {
+  getAnnotation: () => { strokes: AnnotationStroke[]; timestamp: number } | null;
 }
 
 /** Bounds of the image inside an object-fit: contain video element. */
@@ -56,6 +71,7 @@ export function getVideoContentRect(
 const EMIT_INTERVAL_MS = 50;
 
 export function LiveReviewCanvas({
+  ref,
   controlsContainer,
   strokes,
   canvasEpoch,
@@ -131,8 +147,10 @@ export function LiveReviewCanvas({
 
   useEffect(() => {
     if (!strokes.length) return;
-    const acknowledged = new Set(strokes.map((stroke) => stroke.id));
-    setPending((previous) => previous.filter((stroke) => !acknowledged.has(stroke.id)));
+    const acknowledged = new Map(strokes.map((stroke) => [stroke.id, stroke.points.length]));
+    setPending((previous) =>
+      previous.filter((stroke) => (acknowledged.get(stroke.id) ?? 0) < stroke.points.length)
+    );
   }, [strokes]);
 
   useEffect(() => {
@@ -147,16 +165,30 @@ export function LiveReviewCanvas({
     if (!controlsContainer) setStrokeMode(false);
   }, [controlsContainer]);
 
-  // Server snapshots acknowledge local strokes by id. Keep only strokes still awaiting an echo.
+  // A partial echo must not replace a completed local stroke awaiting its final echo.
   const visible = useMemo(() => {
-    const acknowledged = new Set(strokes.map((stroke) => stroke.id));
-    return [...strokes, ...pending.filter((stroke) => !acknowledged.has(stroke.id))];
+    const merged = new Map(strokes.map((stroke) => [stroke.id, stroke]));
+    for (const stroke of pending) {
+      if ((merged.get(stroke.id)?.points.length ?? 0) < stroke.points.length)
+        merged.set(stroke.id, stroke);
+    }
+    return [...merged.values()];
   }, [strokes, pending]);
   const ownStrokes = visible.filter((stroke) => stroke.participantId === participantId);
   const fingerprint = ownStrokes.map((stroke) => `${stroke.id}:${stroke.points.length}`).join('|');
   const alreadySaved = fingerprint.length > 0 && savedFingerprint === fingerprint;
   const editable = canDraw && isPaused && !!participantId && !!contentRect;
   const drawable = editable && strokeMode && !!controlsContainer;
+
+  useImperativeHandle(ref, () => ({
+    getAnnotation: () => {
+      if (!editable || !ownStrokes.length || !videoRef.current) return null;
+      return {
+        strokes: ownStrokes.map(({ points, color, width }) => ({ points, color, width })),
+        timestamp: videoRef.current.currentTime,
+      };
+    },
+  }));
 
   const emit = useCallback(
     (stroke: LiveStroke) => {

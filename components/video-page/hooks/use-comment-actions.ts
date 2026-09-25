@@ -50,6 +50,7 @@ interface UseCommentActionsParams extends CommentActionsConfig {
   setIsAnnotating: Dispatch<SetStateAction<boolean>>;
   setViewingAnnotation: Dispatch<SetStateAction<AnnotationStroke[] | null>>;
   annotationCanvasRef: RefObject<AnnotationCanvasHandle | null>;
+  getAnnotationForComment?: () => { strokes: AnnotationStroke[]; timestamp: number } | null;
   editAnnotationCanvasRef: RefObject<AnnotationCanvasHandle | null>;
   fetchVersionComments: (versionId: string, useEtag: boolean) => Promise<void>;
   fetchAssets: () => Promise<void>;
@@ -86,6 +87,7 @@ export function useCommentActions({
   setIsAnnotating,
   setViewingAnnotation,
   annotationCanvasRef,
+  getAnnotationForComment,
   editAnnotationCanvasRef,
   fetchVersionComments,
   fetchAssets,
@@ -283,26 +285,23 @@ export function useCommentActions({
 
   const handleAddComment = useCallback(
     async (voiceData?: { url: string; duration: number }) => {
-      if (
-        !voiceData &&
-        imageFiles.length === 0 &&
-        !commentText.trim() &&
-        !annotationStrokes &&
-        !isAnnotating
-      )
-        return;
+      const capturedAnnotation = getAnnotationForComment?.();
       if (!activeVersion || !activeVersionId) return;
 
-      let effectiveStrokes = annotationStrokes;
-      if (isAnnotating && annotationCanvasRef.current) {
+      let effectiveStrokes = getAnnotationForComment
+        ? (capturedAnnotation?.strokes ?? null)
+        : annotationStrokes;
+      if (!getAnnotationForComment && isAnnotating && annotationCanvasRef.current) {
         const canvasStrokes = annotationCanvasRef.current.getStrokes();
         if (canvasStrokes.length > 0) {
           effectiveStrokes = canvasStrokes;
         }
       }
+      if (!voiceData && imageFiles.length === 0 && !commentText.trim() && !effectiveStrokes?.length)
+        return;
 
       const tempId = `temp-${Date.now()}`;
-      const commentTimestamp = commentRangeStart ?? currentTime;
+      const commentTimestamp = commentRangeStart ?? capturedAnnotation?.timestamp ?? currentTime;
       const serializedAnnotation = effectiveStrokes ? JSON.stringify(effectiveStrokes) : null;
       const hasImages = imageFiles.length > 0;
       const optimisticComment: Comment = {
@@ -344,7 +343,7 @@ export function useCommentActions({
       setAnnotationStrokes(null);
       setIsAnnotating(false);
       clearCommentRangeSelection();
-      setViewingAnnotation(effectiveStrokes || null);
+      setViewingAnnotation(getAnnotationForComment ? null : effectiveStrokes || null);
 
       setIsSubmittingComment(true);
       isMutatingRef.current = true;
@@ -454,6 +453,7 @@ export function useCommentActions({
       annotationStrokes,
       isAnnotating,
       annotationCanvasRef,
+      getAnnotationForComment,
       setSelectedTagId,
       setAnnotationStrokes,
       setIsAnnotating,

@@ -7,7 +7,10 @@ import { cn } from '@/lib/utils';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
 import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
 import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
-import { LiveReviewCanvas } from '@/components/video-page/live-review-canvas';
+import {
+  LiveReviewCanvas,
+  type LiveReviewCanvasHandle,
+} from '@/components/video-page/live-review-canvas';
 import type { LiveStroke } from '@/lib/live-review/protocol';
 import { versionCommentsPath } from '@/lib/client/version-comments';
 import { PlayerCore } from '@/components/video-page/player-core';
@@ -294,6 +297,8 @@ export function VideoPageContent({
     supportsSubtitles,
   });
   const [liveDrawingControls, setLiveDrawingControls] = useState<HTMLDivElement | null>(null);
+  const liveDrawingRef = useRef<LiveReviewCanvasHandle>(null);
+  const getLiveAnnotation = useCallback(() => liveDrawingRef.current?.getAnnotation() ?? null, []);
   const refreshLiveComments = useCallback(() => {
     if (activeVersionId) void fetchVersionComments(activeVersionId, false);
   }, [activeVersionId, fetchVersionComments]);
@@ -602,6 +607,7 @@ export function VideoPageContent({
     setIsAnnotating,
     setViewingAnnotation,
     annotationCanvasRef,
+    getAnnotationForComment: liveReview.isJoined ? getLiveAnnotation : undefined,
     editAnnotationCanvasRef,
     fetchVersionComments,
     fetchAssets,
@@ -899,6 +905,7 @@ export function VideoPageContent({
             liveOverlay={
               liveReview.isJoined && liveReview.snapshot ? (
                 <LiveReviewCanvas
+                  ref={liveDrawingRef}
                   controlsContainer={liveDrawingControls}
                   rejectedStroke={liveReview.rejectedStroke}
                   strokes={liveReview.snapshot.strokes}
