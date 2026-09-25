@@ -60,7 +60,9 @@ services:
   # needs, so no bucket CORS configuration is involved.
   minio-test:
     profiles: ['e2e']
-    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: localhost/openframe-minio-test:2025-09-07
+    build: ./scripts/minio-test
+    pull_policy: never
     container_name: openframe-minio-test
     command: ['server', '/data', '--console-address', ':9001']
     environment:
@@ -88,7 +90,8 @@ services:
   # would surface as a presigned PUT returning NoSuchBucket.
   minio-test-init:
     profiles: ['e2e']
-    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: localhost/openframe-minio-test:2025-09-07
+    pull_policy: never
     container_name: openframe-minio-test-init
     depends_on:
       minio-test:

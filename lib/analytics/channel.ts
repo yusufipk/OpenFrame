@@ -90,6 +90,16 @@ const LANDING_PATH_PATTERN = /^\/[A-Za-z0-9\-._~%!$&'()*+,;=:@/]*$/;
  */
 export function sanitizeLandingPath(pathname: string | null | undefined): string {
   if (typeof pathname !== 'string' || !pathname.startsWith('/')) return '/';
+  // Share tokens can arrive with percent-encoded path characters. Keep them out
+  // of first-touch cookies and analytics rows even when the route is encoded.
+  let decodedPath = pathname;
+  for (let pass = 0; pass < 2; pass += 1) {
+    if (decodedPath.startsWith('/s/')) return '/s';
+    decodedPath = decodedPath.replace(/%([0-9a-f]{2})/gi, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16))
+    );
+  }
+  if (decodedPath.startsWith('/s/')) return '/s';
   const path = (pathname.split('?')[0]?.split('#')[0] ?? '/').slice(0, MAX_PATH_LENGTH);
   if (!path || !LANDING_PATH_PATTERN.test(path)) return '/';
   return path;
