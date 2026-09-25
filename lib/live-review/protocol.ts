@@ -31,6 +31,7 @@ export interface LiveSnapshot {
   controlEpoch: number;
   presenterId: string | null;
   playback: LivePlayback;
+  annotation?: { commentId: string; strokes: AnnotationStroke[] } | null;
   participants: LiveParticipant[];
   strokes: LiveStroke[];
   canvasEpoch: number;
@@ -68,6 +69,7 @@ export type LiveClientMessage =
       position: number;
       playing: boolean;
       rate: number;
+      commentId?: string;
     }
   | { type: 'transfer'; participantId: string; controlEpoch: number }
   | { type: 'stroke'; canvasEpoch: number; stroke: Omit<LiveStroke, 'participantId'> }

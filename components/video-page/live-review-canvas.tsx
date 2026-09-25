@@ -32,6 +32,7 @@ export interface LiveReviewCanvasProps {
   ref?: Ref<LiveReviewCanvasHandle>;
   controlsContainer: HTMLElement | null;
   strokes: LiveStroke[];
+  previewStrokes?: AnnotationStroke[];
   canvasEpoch: number;
   rejectedStroke?: { id: string; sequence: number } | null;
   participantId: string | null;
@@ -74,6 +75,7 @@ export function LiveReviewCanvas({
   ref,
   controlsContainer,
   strokes,
+  previewStrokes = [],
   canvasEpoch,
   rejectedStroke,
   participantId,
@@ -254,6 +256,22 @@ export function LiveReviewCanvas({
       className="absolute inset-0 z-30 pointer-events-none"
       aria-label="Live review drawing"
     >
+      {contentRect && isPaused && previewStrokes.length > 0 && (
+        <AnnotationSurface
+          strokes={previewStrokes}
+          activeStroke={null}
+          enabled={false}
+          color={color}
+          width={width}
+          createStroke={createStroke}
+          onStrokeStart={() => {}}
+          onStrokeChange={() => {}}
+          onStrokeEnd={() => {}}
+          ariaLabel="Shared annotation preview"
+          className="absolute pointer-events-none"
+          style={contentRect}
+        />
+      )}
       {contentRect && (
         <AnnotationSurface<LiveStroke>
           ref={surfaceRef}
@@ -368,7 +386,7 @@ export function LiveReviewCanvas({
                 className="h-7 w-6"
                 aria-label="Clear drawings"
                 title="Clear drawings"
-                disabled={!isPaused || !visible.length}
+                disabled={!isPaused || (!visible.length && !previewStrokes.length)}
                 onClick={() => onClear(canvasEpoch)}
               >
                 <Trash2 className="h-3.5 w-3.5" />

@@ -122,7 +122,7 @@ interface PlayerCoreProps {
   handleSeekToTimestamp: (
     timestamp: number,
     annotation?: string | null,
-    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
+    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null; commentId?: string }
   ) => void;
   commentMarkers: CommentMarker[];
 }
@@ -617,9 +617,11 @@ export const PlayerCore = memo(function PlayerCore({
               return (
                 <button
                   key={comment.id}
+                  onMouseDown={(event) => event.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                      commentId: comment.id,
                       pauseAfterSeek: true,
                       timestampEnd: comment.timestampEnd,
                     });
@@ -650,9 +652,11 @@ export const PlayerCore = memo(function PlayerCore({
             return (
               <button
                 key={comment.id}
+                onMouseDown={(event) => event.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                    commentId: comment.id,
                     pauseAfterSeek: comment.timestampEnd !== null,
                     timestampEnd: comment.timestampEnd,
                   });

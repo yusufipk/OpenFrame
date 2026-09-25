@@ -108,6 +108,7 @@ export function useLiveReview({
   const serverOffsetRef = useRef(0);
   const bestPingRef = useRef(Number.POSITIVE_INFINITY);
   const applyingUntilRef = useRef(0);
+  const pendingPlaybackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPlaybackSentRef = useRef(0);
   const lastPlaybackKeyRef = useRef('');
   const commandSequenceRef = useRef(0);
@@ -379,6 +380,8 @@ export function useLiveReview({
               if (current && current.presenterId !== participantRef.current) applyPlayback(current);
             }, SYNC_INTERVAL_MS);
           }
+          const annotationSelected =
+            room.annotation != null && previous?.canvasEpoch !== room.canvasEpoch;
           const presenterChanged = previous?.presenterId !== room.presenterId;
           const playbackChanged =
             previous === null ||
@@ -389,10 +392,11 @@ export function useLiveReview({
           if (
             room.presenterId !== participantRef.current ||
             playbackChanged ||
+            annotationSelected ||
             presenterChanged ||
             previous?.controlEpoch !== room.controlEpoch
           ) {
-            applyPlayback(room, previous === null || presenterChanged);
+            applyPlayback(room, previous === null || presenterChanged || annotationSelected);
           }
         } else if (message.type === 'stroke-delta' || message.type === 'stroke-remove') {
           if (message.sessionId !== ticket.sessionId || message.versionId !== ticket.versionId)
@@ -614,7 +618,6 @@ export function useLiveReview({
     if (!isJoined || providerId === 'youtube') return;
     const video = videoRef.current;
     if (!video) return;
-    let pendingPlaybackTimer: ReturnType<typeof setTimeout> | null = null;
     const onLocalChange = () => {
       const room = snapshotRef.current;
       if (!room || room.versionId !== versionId || statusRef.current !== 'connected') return;
@@ -637,9 +640,9 @@ export function useLiveReview({
       if (key === lastPlaybackKeyRef.current) return;
       const wait = 120 - (now - lastPlaybackSentRef.current);
       if (wait > 0) {
-        if (pendingPlaybackTimer) clearTimeout(pendingPlaybackTimer);
-        pendingPlaybackTimer = setTimeout(() => {
-          pendingPlaybackTimer = null;
+        if (pendingPlaybackTimerRef.current) clearTimeout(pendingPlaybackTimerRef.current);
+        pendingPlaybackTimerRef.current = setTimeout(() => {
+          pendingPlaybackTimerRef.current = null;
           onLocalChange();
         }, wait);
         return;
@@ -673,7 +676,7 @@ export function useLiveReview({
     video.addEventListener('canplay', onReady);
     video.addEventListener('loadedmetadata', onMetadata);
     return () => {
-      if (pendingPlaybackTimer) clearTimeout(pendingPlaybackTimer);
+      if (pendingPlaybackTimerRef.current) clearTimeout(pendingPlaybackTimerRef.current);
       video.removeEventListener('play', onLocalChange);
       video.removeEventListener('pause', onLocalChange);
       video.removeEventListener('seeked', onLocalChange);
@@ -685,6 +688,34 @@ export function useLiveReview({
       video.removeEventListener('loadedmetadata', onMetadata);
     };
   }, [applyPlayback, isJoined, providerId, reportStatus, send, versionId, videoRef]);
+
+  const selectComment = useCallback(
+    (commentId: string, pauseAfterSeek = true) => {
+      const room = snapshotRef.current;
+      if (
+        !room ||
+        room.versionId !== versionId ||
+        room.presenterId !== participantRef.current ||
+        statusRef.current !== 'connected'
+      )
+        return false;
+      if (pendingPlaybackTimerRef.current) {
+        clearTimeout(pendingPlaybackTimerRef.current);
+        pendingPlaybackTimerRef.current = null;
+      }
+      lastPlaybackKeyRef.current = '';
+      return send({
+        type: 'playback',
+        commandId: `${participantRef.current}:${Date.now()}:${++commandSequenceRef.current}`,
+        controlEpoch: room.controlEpoch,
+        position: room.playback.position,
+        playing: pauseAfterSeek ? false : !(videoRef.current?.paused ?? !room.playback.playing),
+        rate: room.playback.rate,
+        commentId,
+      });
+    },
+    [send, versionId, videoRef]
+  );
 
   const transfer = useCallback(
     (nextParticipantId: string) => {
@@ -774,6 +805,7 @@ export function useLiveReview({
     join: () => begin('join'),
     leave,
     transfer,
+    selectComment,
     end,
     sendStroke,
     undo,

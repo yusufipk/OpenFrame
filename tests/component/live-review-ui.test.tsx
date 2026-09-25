@@ -88,6 +88,43 @@ describe('LiveReviewCanvas', () => {
     onSave.mockClear();
   });
 
+  it('renders saved previews separately from drawings attached to new comments', () => {
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+      currentTime: { configurable: true, value: 0 },
+    });
+    Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
+    const ref = createRef<LiveReviewCanvasHandle>();
+    const previewStrokes = [{ points: [{ x: 0.2, y: 0.3 }], color: '#00ff00', width: 4 }];
+    const { rerender } = render(
+      <LiveReviewCanvas
+        {...base}
+        ref={ref}
+        strokes={[]}
+        previewStrokes={previewStrokes}
+        isManager
+      />
+    );
+    const preview = screen.getByLabelText('Shared annotation preview');
+    expect(preview.querySelector('path')).toHaveAttribute('stroke', '#00ff00');
+    expect(preview).toHaveClass('pointer-events-none');
+    expect(ref.current?.getAnnotation()).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save drawing as comment' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear drawings' }));
+    expect(onClear).toHaveBeenCalledWith(1);
+    rerender(
+      <LiveReviewCanvas
+        {...base}
+        ref={ref}
+        strokes={[]}
+        previewStrokes={previewStrokes}
+        isPaused={false}
+      />
+    );
+    expect(screen.queryByLabelText('Shared annotation preview')).not.toBeInTheDocument();
+  });
+
   it('saves only the participant own strokes at the paused timestamp', async () => {
     Object.defineProperties(video, {
       videoWidth: { configurable: true, value: 1920 },

@@ -117,6 +117,29 @@ test('owner and guest review one native video through the real room service', as
   seed,
   seededUser,
 }, testInfo) => {
+  let observePlainSelection = false;
+  let plainSelectionCommand: { commentId: string; playing: boolean } | null = null;
+  let acceptedPlainSelection = false;
+  page.on('websocket', (socket) => {
+    socket.on('framesent', (event) => {
+      if (!observePlainSelection) return;
+      const message = JSON.parse(String(event.payload));
+      if (message.type === 'playback' && message.commentId) {
+        plainSelectionCommand = { commentId: message.commentId, playing: message.playing };
+      }
+    });
+    socket.on('framereceived', (event) => {
+      if (!observePlainSelection || !plainSelectionCommand) return;
+      const message = JSON.parse(String(event.payload));
+      if (
+        message.type === 'snapshot' &&
+        message.snapshot.playback.position === 4 &&
+        message.snapshot.playback.playing
+      ) {
+        acceptedPlainSelection = true;
+      }
+    });
+  });
   const seeded = await seed.version(seededUser, { title: 'Live review test video' });
   await db.videoVersion.update({
     where: { id: seeded.versionId },
@@ -395,6 +418,28 @@ test('owner and guest review one native video through the real room service', as
     if ((await ownerStrokeMode.getAttribute('aria-pressed')) !== 'true') {
       await ownerStrokeMode.click();
     }
+    await expect(ownerCanvas).toHaveClass(/pointer-events-auto/);
+    await expect
+      .poll(() =>
+        ownerCanvas.evaluate((canvas) => {
+          const video = document.querySelector('video')!;
+          const videoBox = video.getBoundingClientRect();
+          const canvasBox = canvas.getBoundingClientRect();
+          const scale = Math.min(
+            videoBox.width / video.videoWidth,
+            videoBox.height / video.videoHeight
+          );
+          const expectedWidth = video.videoWidth * scale;
+          const expectedHeight = video.videoHeight * scale;
+          return Math.max(
+            Math.abs(canvasBox.width - expectedWidth),
+            Math.abs(canvasBox.height - expectedHeight),
+            Math.abs(canvasBox.left - (videoBox.left + (videoBox.width - expectedWidth) / 2)),
+            Math.abs(canvasBox.top - (videoBox.top + (videoBox.height - expectedHeight) / 2))
+          );
+        })
+      )
+      .toBeLessThan(1);
     const nextCanvasBox = await ownerCanvas.boundingBox();
     if (!nextCanvasBox) throw new Error('Drawing canvas has no layout box after commenting.');
     await page.mouse.move(
@@ -425,6 +470,22 @@ test('owner and guest review one native video through the real room service', as
     expect(JSON.parse(savedDrawing.annotationData!)).toEqual([
       expect.objectContaining({ color: '#007AFF', width: 5 }),
     ]);
+    await db.comment.update({
+      where: { id: annotatedComment.id },
+      data: { timestamp: 0 },
+    });
+    const zeroTimestampComment = await db.comment.findUniqueOrThrow({
+      where: { id: annotatedComment.id },
+    });
+    expect(zeroTimestampComment.timestamp).toBe(0);
+    const plainMarker = await db.comment.create({
+      data: {
+        versionId: seeded.versionId,
+        authorId: seededUser.id,
+        timestamp: 4,
+        content: 'Plain playback marker',
+      },
+    });
     await page.reload();
     await expect(page.getByText(commentBody)).toBeVisible();
     await expect(
@@ -442,10 +503,45 @@ test('owner and guest review one native video through the real room service', as
       .getByText(commentBody)
       .locator('xpath=ancestor::div[contains(@class, "group")][1]');
     const savedTimestamp = savedComment.getByTitle('Jump to this timestamp');
-    const annotationPreview = page.getByTitle('Click to dismiss annotation');
+    await expect(savedTimestamp).toContainText('0:00');
+    const ownerPreview = page.getByLabel('Shared annotation preview');
+    const guestPreview = guestPage.getByLabel('Shared annotation preview');
+    const savedStrokes = JSON.parse(zeroTimestampComment.annotationData!) as Array<{
+      points: Array<{ x: number; y: number }>;
+      color: string;
+      width: number;
+    }>;
+    const expectedPaths = savedStrokes.map((stroke) => ({
+      d: stroke.points
+        .map((point, index) => `${index ? 'L' : 'M'} ${point.x * 1000} ${point.y * 1000}`)
+        .join(' '),
+      color: stroke.color,
+      width: stroke.width,
+    }));
+    const previewPaths = (preview: typeof ownerPreview) =>
+      preview.evaluate((svg) => {
+        const width = svg.getBoundingClientRect().width;
+        return [...svg.querySelectorAll('path')].map((path) => ({
+          d: path.getAttribute('d'),
+          color: path.getAttribute('stroke'),
+          width:
+            Math.round(Number(path.getAttribute('stroke-width')) * (1000 / width) * 1000) / 1000,
+        }));
+      });
+    const expectSharedPreview = async () => {
+      await expect(ownerPreview).toBeVisible();
+      await expect(guestPreview).toBeVisible();
+      await expect.poll(() => previewPaths(ownerPreview)).toEqual(expectedPaths);
+      await expect.poll(() => previewPaths(guestPreview)).toEqual(expectedPaths);
+    };
+    const expectClearedPreview = async () => {
+      await expect(ownerPreview).toHaveCount(0);
+      await expect(guestPreview).toHaveCount(0);
+    };
     const openSavedAnnotation = async () => {
       await savedTimestamp.click();
-      await expect.poll(() => videoTime(page)).toBeCloseTo(annotatedComment.timestamp, 0);
+      await expect.poll(() => videoTime(page)).toBeLessThan(0.25);
+      await expect.poll(() => videoTime(guestPage)).toBeLessThan(0.25);
       await expect
         .poll(() =>
           page.locator('video').evaluate((video) => ({
@@ -454,8 +550,15 @@ test('owner and guest review one native video through the real room service', as
           }))
         )
         .toEqual({ paused: true, seeking: false });
-      await expect(annotationPreview).toBeVisible();
-      await expect(annotationPreview.locator('path')).not.toHaveCount(0);
+      await expect
+        .poll(() =>
+          guestPage.locator('video').evaluate((video) => ({
+            paused: (video as HTMLVideoElement).paused,
+            seeking: (video as HTMLVideoElement).seeking,
+          }))
+        )
+        .toEqual({ paused: true, seeking: false });
+      await expectSharedPreview();
     };
 
     await openSavedAnnotation();
@@ -463,26 +566,27 @@ test('owner and guest review one native video through the real room service', as
     await expect
       .poll(() => page.locator('video').evaluate((video) => (video as HTMLVideoElement).paused))
       .toBe(false);
-    await expect(annotationPreview).toHaveCount(0);
+    await expectClearedPreview();
     await expect
       .poll(() =>
         guestPage.locator('video').evaluate((video) => (video as HTMLVideoElement).paused)
       )
       .toBe(false);
-    await page.keyboard.press('Space');
+    observePlainSelection = true;
+    await page.getByTitle('0:04 - Plain playback marker...', { exact: true }).click();
     await expect
-      .poll(() => page.locator('video').evaluate((video) => (video as HTMLVideoElement).paused))
-      .toBe(true);
-    await expect
-      .poll(() =>
-        guestPage.locator('video').evaluate((video) => (video as HTMLVideoElement).paused)
-      )
-      .toBe(true);
+      .poll(() => plainSelectionCommand)
+      .toEqual({ commentId: plainMarker.id, playing: true });
+    await expect.poll(() => acceptedPlainSelection).toBe(true);
+    await expect.poll(() => videoTime(guestPage)).toBeGreaterThanOrEqual(4);
+    observePlainSelection = false;
+    // A native waiting event may pause the room after the accepted playing seek.
+    // Selecting the next annotation must pause and align both peers in either case.
 
     await openSavedAnnotation();
     const previewTime = await videoTime(page);
     await page.keyboard.press('ArrowRight');
-    await expect(annotationPreview).toHaveCount(0);
+    await expectClearedPreview();
     await expect.poll(() => videoTime(guestPage)).toBeGreaterThan(previewTime + 0.5);
 
     await openSavedAnnotation();
@@ -490,7 +594,7 @@ test('owner and guest review one native video through the real room service', as
     await expect
       .poll(() => page.locator('video').evaluate((video) => (video as HTMLVideoElement).paused))
       .toBe(false);
-    await expect(annotationPreview).toHaveCount(0);
+    await expectClearedPreview();
     await expect
       .poll(() =>
         guestPage.locator('video').evaluate((video) => (video as HTMLVideoElement).paused)
@@ -513,7 +617,7 @@ test('owner and guest review one native video through the real room service', as
     await resumedTimeline.click({
       position: { x: resumedTimelineBox.width * 0.1, y: resumedTimelineBox.height / 2 },
     });
-    await expect(annotationPreview).toHaveCount(0);
+    await expectClearedPreview();
 
     const resumedRoom = await db.liveReviewSession.findUniqueOrThrow({
       where: { id: stableRoom.id },

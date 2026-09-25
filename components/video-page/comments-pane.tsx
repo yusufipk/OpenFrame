@@ -70,7 +70,7 @@ interface CommentsPaneProps {
   handleSeekToTimestamp: (
     timestamp: number,
     annotation?: string | null,
-    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
+    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null; commentId?: string }
   ) => void;
   currentUserId: string | null;
   projectOwnerId: string;
@@ -446,6 +446,7 @@ export const CommentsPane = memo(function CommentsPane({
                         <button
                           onClick={() =>
                             handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                              commentId: comment.id,
                               pauseAfterSeek: true,
                               timestampEnd: comment.timestampEnd,
                             })
@@ -771,6 +772,7 @@ export const CommentsPane = memo(function CommentsPane({
                                   <button
                                     onClick={() =>
                                       handleSeekToTimestamp(reply.timestamp, reply.annotationData, {
+                                        commentId: reply.id,
                                         pauseAfterSeek: true,
                                         timestampEnd: reply.timestampEnd,
                                       })

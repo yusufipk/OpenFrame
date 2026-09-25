@@ -3,6 +3,7 @@ import { Client } from 'pg';
 import { db } from '../lib/db';
 import { redeemLiveTicket } from '../lib/live-review/tickets';
 import { applyLiveStroke } from '../lib/live-review/strokes';
+import { validateAnnotationStrokes } from '../lib/validation';
 import { PermissionScheduler, permissionCheckPhase } from '../lib/live-review/permission-scheduler';
 import {
   LIVE_MAX_MESSAGE_BYTES,
@@ -151,6 +152,7 @@ async function loadRoom(sessionId: string): Promise<Room | null> {
       rate: session.rate,
       updatedAt: session.playbackAt.getTime(),
     },
+    annotation: null,
     participants: [],
     strokes: [],
     canvasEpoch: 0,
@@ -199,6 +201,7 @@ async function endRoom(room: Room) {
   recentlyEndedRooms.set(sessionId, Date.now());
   room.snapshot.status = 'ended';
   room.snapshot.playback.playing = false;
+  room.snapshot.annotation = null;
   room.snapshot.revision++;
   publish(room);
   for (const client of room.sockets.values()) client.close(1000, 'Room ended');
@@ -419,17 +422,47 @@ async function handle(socket: Socket, input: LiveClientMessage) {
       !Number.isFinite(input.rate) ||
       input.rate < 0.25 ||
       input.rate > 16 ||
-      typeof input.playing !== 'boolean'
+      typeof input.playing !== 'boolean' ||
+      (input.commentId !== undefined &&
+        (typeof input.commentId !== 'string' ||
+          input.commentId.length === 0 ||
+          input.commentId.length > 128))
     ) {
       error(socket, 'INVALID_MESSAGE');
       return;
     }
     if (room.lastCommand.get(participantId) === input.commandId) return;
+    let annotation: LiveSnapshot['annotation'] = null;
+    let position = input.position;
+    if (input.commentId !== undefined) {
+      const comment = await db.comment.findFirst({
+        where: { id: input.commentId, versionId: room.snapshot.versionId },
+        select: { timestamp: true, annotationData: true },
+      });
+      if (!comment || !Number.isFinite(comment.timestamp) || comment.timestamp < 0) {
+        error(socket, 'INVALID_COMMENT');
+        return;
+      }
+      let strokes = null;
+      if (comment.annotationData !== null) {
+        try {
+          strokes = validateAnnotationStrokes(JSON.parse(comment.annotationData));
+        } catch {
+          // Stored annotation data can predate current validation rules.
+        }
+        if (strokes === null) {
+          error(socket, 'INVALID_COMMENT');
+          return;
+        }
+      }
+      position = comment.timestamp;
+      if (strokes !== null) annotation = { commentId: input.commentId, strokes };
+    }
     const version = await db.videoVersion.findUnique({
       where: { id: room.snapshot.versionId },
       select: { duration: true },
     });
-    if (!version || (version.duration !== null && input.position > version.duration + 1)) {
+    if (!version || (version.duration !== null && position > version.duration + 1)) {
       error(socket, 'INVALID_POSITION');
       return;
     }
@@ -443,8 +476,8 @@ async function handle(socket: Socket, input: LiveClientMessage) {
         controlEpoch: input.controlEpoch,
       },
       data: {
-        position: input.position,
-        playing: input.playing,
+        position,
+        playing: annotation === null && input.playing,
         rate: input.rate,
         playbackAt: now,
         revision,
@@ -456,14 +489,16 @@ async function handle(socket: Socket, input: LiveClientMessage) {
       return;
     }
     const previous = room.snapshot.playback;
-    if (input.playing || Math.abs(input.position - previous.position) > 0.1) {
+    if (input.commentId !== undefined || input.playing || position !== previous.position) {
       room.snapshot.strokes = [];
       room.snapshot.canvasEpoch++;
     }
+    if (input.commentId !== undefined) room.snapshot.annotation = annotation;
+    else if (input.playing || position !== previous.position) room.snapshot.annotation = null;
     room.snapshot.revision = revision;
     room.snapshot.playback = {
-      position: input.position,
-      playing: input.playing,
+      position,
+      playing: annotation === null && input.playing,
       rate: input.rate,
       updatedAt: now.getTime(),
     };
@@ -585,6 +620,7 @@ async function handle(socket: Socket, input: LiveClientMessage) {
       return;
     }
     room.snapshot.strokes = [];
+    room.snapshot.annotation = null;
     room.snapshot.canvasEpoch++;
     room.snapshot.revision++;
     publish(room);

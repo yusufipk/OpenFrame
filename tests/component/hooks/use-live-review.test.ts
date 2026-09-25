@@ -174,6 +174,134 @@ async function joinRoom() {
 }
 
 describe('useLiveReview', () => {
+  it('selects a saved comment even at the current zero timestamp and cancels older pending playback', async () => {
+    const { result, socket, video } = await joinRoom();
+    act(() => {
+      socket.deliver({
+        type: 'snapshot',
+        snapshot: room({
+          presenterId: 'self',
+          playback: { position: 0, playing: false, rate: 1, updatedAt: Date.now() },
+        }),
+      });
+    });
+    act(() => {
+      expect(result.current.selectComment('comment-zero')).toBe(true);
+    });
+    expect(socket.sent).toContainEqual(
+      expect.objectContaining({
+        type: 'playback',
+        commentId: 'comment-zero',
+        position: 0,
+        playing: false,
+        controlEpoch: 1,
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      video.currentTime = 1;
+      video.fire('seeked');
+    });
+    act(() => {
+      video.currentTime = 2;
+      video.fire('seeked');
+    });
+    act(() => {
+      result.current.selectComment('comment-zero');
+    });
+    const sent = socket.sent.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    expect(socket.sent).toHaveLength(sent);
+  });
+
+  it.each(['self', 'other'])(
+    'seeks exactly to the saved annotation frame for presenter %s',
+    async (presenterId) => {
+      const { socket, video } = await joinRoom();
+      const annotation = {
+        commentId: 'comment-zero',
+        strokes: [
+          {
+            points: [{ x: 0.2, y: 0.3 }],
+            color: '#00ff00',
+            width: 4,
+          },
+        ],
+      };
+      const initial = room({
+        presenterId,
+        playback: { position: 0, playing: false, rate: 1, updatedAt: Date.now() },
+      });
+      act(() => {
+        socket.deliver({ type: 'snapshot', snapshot: initial });
+      });
+      video.currentTime = 0.05;
+      act(() => {
+        socket.deliver({
+          type: 'snapshot',
+          snapshot: { ...initial, revision: 2, canvasEpoch: 1, annotation },
+        });
+      });
+      expect(video.currentTime).toBe(0);
+      video.currentTime = 0.05;
+      act(() => {
+        socket.deliver({
+          type: 'snapshot',
+          snapshot: { ...initial, revision: 3, canvasEpoch: 2, annotation },
+        });
+      });
+      expect(video.currentTime).toBe(0);
+    }
+  );
+
+  it('preserves playback for plain point markers when pausing is not requested', async () => {
+    const { result, socket, video } = await joinRoom();
+    act(() => {
+      socket.deliver({ type: 'snapshot', snapshot: room({ presenterId: 'self' }) });
+    });
+    video.paused = false;
+    act(() => {
+      result.current.selectComment('plain-point', false);
+    });
+    expect(socket.sent).toContainEqual(
+      expect.objectContaining({
+        type: 'playback',
+        commentId: 'plain-point',
+        playing: true,
+      })
+    );
+  });
+
+  it('refuses follower selection and preserves canonical previews through stroke deltas', async () => {
+    const { result, socket } = await joinRoom();
+    const annotation = {
+      commentId: 'comment-zero',
+      strokes: [
+        {
+          points: [{ x: 0.2, y: 0.3 }],
+          color: '#00ff00',
+          width: 4,
+        },
+      ],
+    };
+    act(() => {
+      socket.deliver({ type: 'snapshot', snapshot: room({ annotation }) });
+    });
+    const sent = socket.sent.length;
+    act(() => {
+      expect(result.current.selectComment('comment-zero')).toBe(false);
+    });
+    expect(socket.sent).toHaveLength(sent);
+    act(() => {
+      socket.deliver(strokeDelta());
+    });
+    expect(result.current.snapshot?.annotation).toEqual(annotation);
+  });
+
   it('discovers rooms opened elsewhere within two seconds without reloading', async () => {
     let session: { id: string; versionId: string } | null = null;
     fetchMock.mockImplementation(() =>

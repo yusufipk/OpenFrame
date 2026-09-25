@@ -398,7 +398,7 @@ export function VideoPageContent({
     handleVideoMouseMove,
     handleVideoMouseLeave,
     handlePlayPause,
-    handleSeekToTimestamp,
+    handleSeekToTimestamp: handleLocalSeekToTimestamp,
     handleMuteToggle,
     handleFrameModeToggle,
     handleSkip,
@@ -429,6 +429,23 @@ export function VideoPageContent({
     setViewingAnnotation,
     playbackLocked: liveReview.playbackLocked,
   });
+
+  const { isJoined: isLiveReviewJoined, selectComment: selectLiveComment } = liveReview;
+  const handleSeekToTimestamp = useCallback(
+    (
+      timestamp: number,
+      annotation?: string | null,
+      options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null; commentId?: string }
+    ) => {
+      if (isLiveReviewJoined && options?.commentId) {
+        setViewingAnnotation(null);
+        selectLiveComment(options.commentId, options.pauseAfterSeek);
+        return;
+      }
+      handleLocalSeekToTimestamp(timestamp, annotation, options);
+    },
+    [handleLocalSeekToTimestamp, isLiveReviewJoined, selectLiveComment]
+  );
 
   const { youtubeCaptionTracks, activeYoutubeCaptionLanguage, selectYoutubeCaptionLanguage } =
     useYoutubeCaptions({
@@ -909,6 +926,7 @@ export function VideoPageContent({
                   controlsContainer={liveDrawingControls}
                   rejectedStroke={liveReview.rejectedStroke}
                   strokes={liveReview.snapshot.strokes}
+                  previewStrokes={liveReview.snapshot.annotation?.strokes}
                   canvasEpoch={liveReview.snapshot.canvasEpoch}
                   participantId={liveReview.participantId}
                   canDraw={liveReview.canDraw}
