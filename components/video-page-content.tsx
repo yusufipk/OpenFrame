@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
 import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
-import { LiveReviewBar } from '@/components/video-page/live-review-bar';
+import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
 import { LiveReviewCanvas } from '@/components/video-page/live-review-canvas';
 import type { LiveStroke } from '@/lib/live-review/protocol';
 import { versionCommentsPath } from '@/lib/client/version-comments';
@@ -293,6 +293,7 @@ export function VideoPageContent({
     videoRef,
     supportsSubtitles,
   });
+  const [liveDrawingControls, setLiveDrawingControls] = useState<HTMLDivElement | null>(null);
   const refreshLiveComments = useCallback(() => {
     if (activeVersionId) void fetchVersionComments(activeVersionId, false);
   }, [activeVersionId, fetchVersionComments]);
@@ -825,6 +826,17 @@ export function VideoPageContent({
             activeVersionId={activeVersionId}
             onVersionSelect={headerActions.onVersionSelect}
             versionSelectionLocked={liveReview.isJoined}
+            liveReviewControl={
+              <LiveReviewEntryControl
+                discovery={liveReview.discovery}
+                provider={activeProviderId}
+                isJoined={liveReview.isJoined}
+                busy={isCreatingVersion || liveReview.connectionStatus === 'connecting'}
+                error={liveReview.error}
+                onStart={liveReview.start}
+                onJoin={liveReview.join}
+              />
+            }
             onDeleteCurrentVersionClick={headerActions.onDeleteCurrentVersionClick}
             showDeleteVersionDialog={showDeleteVersionDialog}
             setShowDeleteVersionDialog={setShowDeleteVersionDialog}
@@ -882,6 +894,7 @@ export function VideoPageContent({
             liveOverlay={
               liveReview.isJoined && liveReview.snapshot ? (
                 <LiveReviewCanvas
+                  controlsContainer={liveDrawingControls}
                   rejectedStroke={liveReview.rejectedStroke}
                   strokes={liveReview.snapshot.strokes}
                   canvasEpoch={liveReview.snapshot.canvasEpoch}
@@ -1072,6 +1085,11 @@ export function VideoPageContent({
           composer={
             <CommentComposer
               liveReviewActive={liveReview.isJoined}
+              liveDrawingControls={
+                liveReview.isJoined ? (
+                  <div ref={setLiveDrawingControls} aria-label="Live drawing controls" />
+                ) : null
+              }
               isRecording={isRecording}
               recordingTime={recordingTime}
               stopRecording={stopRecording}

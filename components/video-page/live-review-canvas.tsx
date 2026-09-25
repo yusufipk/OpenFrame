@@ -9,6 +9,8 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react';
+import { createPortal } from 'react-dom';
+import { Check, Pencil, Save, Trash2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { LiveStroke } from '@/lib/live-review/protocol';
 import { LIVE_MAX_STROKE_POINTS } from '@/lib/live-review/protocol';
@@ -17,6 +19,7 @@ type Point = LiveStroke['points'][number];
 type ContentRect = { left: number; top: number; width: number; height: number };
 
 export interface LiveReviewCanvasProps {
+  controlsContainer: HTMLElement | null;
   strokes: LiveStroke[];
   canvasEpoch: number;
   rejectedStroke?: { id: string; sequence: number } | null;
@@ -68,6 +71,7 @@ const WIDTH = 3;
 const EMIT_INTERVAL_MS = 50;
 
 export function LiveReviewCanvas({
+  controlsContainer,
   strokes,
   canvasEpoch,
   rejectedStroke,
@@ -87,6 +91,7 @@ export function LiveReviewCanvas({
   const [active, setActive] = useState<LiveStroke | null>(null);
   const activeRef = useRef<LiveStroke | null>(null);
   const [pending, setPending] = useState<LiveStroke[]>([]);
+  const [strokeMode, setStrokeMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
@@ -142,11 +147,15 @@ export function LiveReviewCanvas({
   }, [strokes]);
 
   useEffect(() => {
-    if (!canDraw || !isPaused) {
+    if (!canDraw || !isPaused || !strokeMode) {
       activeRef.current = null;
       setActive(null);
     }
-  }, [canDraw, isPaused]);
+  }, [canDraw, isPaused, strokeMode]);
+
+  useEffect(() => {
+    if (!controlsContainer) setStrokeMode(false);
+  }, [controlsContainer]);
 
   // Server snapshots acknowledge local strokes by id. Keep only strokes still awaiting an echo.
   const visible = useMemo(() => {
@@ -156,7 +165,8 @@ export function LiveReviewCanvas({
   const ownStrokes = visible.filter((stroke) => stroke.participantId === participantId);
   const fingerprint = ownStrokes.map((stroke) => `${stroke.id}:${stroke.points.length}`).join('|');
   const alreadySaved = fingerprint.length > 0 && savedFingerprint === fingerprint;
-  const drawable = canDraw && isPaused && !!participantId && !!contentRect;
+  const editable = canDraw && isPaused && !!participantId && !!contentRect;
+  const drawable = editable && strokeMode && !!controlsContainer;
 
   const emit = useCallback(
     (stroke: LiveStroke) => {
@@ -231,14 +241,14 @@ export function LiveReviewCanvas({
   };
 
   const undo = () => {
-    if (!drawable || !ownStrokes.length) return;
+    if (!editable || !ownStrokes.length) return;
     const lastId = ownStrokes[ownStrokes.length - 1].id;
     setPending((previous) => previous.filter((stroke) => stroke.id !== lastId));
     onUndo(canvasEpoch);
   };
 
   const save = async () => {
-    if (!drawable || !ownStrokes.length || !videoRef.current || saving || alreadySaved) return;
+    if (!editable || !ownStrokes.length || !videoRef.current || saving || alreadySaved) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -299,45 +309,71 @@ export function LiveReviewCanvas({
           ))}
         </svg>
       )}
-      {isPaused && (drawable || isManager) && (
-        <div
-          className="absolute bottom-3 left-3 flex flex-wrap items-center gap-2 rounded-md bg-background/95 p-2 text-xs shadow pointer-events-auto"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {drawable && (
-            <Button size="sm" variant="outline" disabled={!ownStrokes.length} onClick={undo}>
-              Undo my stroke
-            </Button>
-          )}
-          {drawable && (
+      {controlsContainer &&
+        createPortal(
+          <div
+            className="flex flex-wrap items-center gap-1 mb-2"
+            onClick={(event) => event.stopPropagation()}
+          >
             <Button
               size="sm"
-              disabled={!ownStrokes.length || saving || alreadySaved}
+              variant={strokeMode ? 'secondary' : 'ghost'}
+              className="h-7 gap-1.5 text-xs"
+              aria-pressed={strokeMode}
+              disabled={!editable}
+              onClick={() => setStrokeMode((previous) => !previous)}
+              title={isPaused ? 'Draw on the shared frame' : 'Pause playback to draw'}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Stroke Mode
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              aria-label="Undo my stroke"
+              title="Undo my stroke"
+              disabled={!editable || !ownStrokes.length}
+              onClick={undo}
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              aria-label={alreadySaved ? 'Saved as comment' : 'Save drawing as comment'}
+              title={
+                alreadySaved
+                  ? 'Saved as comment'
+                  : 'Save drawing as comment. Unsaved drawings clear when playback moves or the room ends.'
+              }
+              disabled={!editable || !ownStrokes.length || saving || alreadySaved}
               onClick={save}
             >
-              {saving ? 'Saving' : alreadySaved ? 'Saved as comment' : 'Save my drawing as comment'}
+              {alreadySaved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
             </Button>
-          )}
-          {isManager && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!visible.length}
-              onClick={() => onClear(canvasEpoch)}
-            >
-              Clear drawings
-            </Button>
-          )}
-          <span className="text-muted-foreground">
-            Unsaved live drawings disappear when playback moves or the room ends.
-          </span>
-          {saveError && (
-            <span role="alert" className="text-destructive">
-              {saveError}
-            </span>
-          )}
-        </div>
-      )}
+            {isManager && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                aria-label="Clear drawings"
+                title="Clear drawings"
+                disabled={!isPaused || !visible.length}
+                onClick={() => onClear(canvasEpoch)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {saveError && (
+              <span role="alert" className="w-full text-xs text-destructive">
+                {saveError}
+              </span>
+            )}
+          </div>,
+          controlsContainer
+        )}
     </div>
   );
 }

@@ -1,7 +1,15 @@
 'use client';
 
 import { memo } from 'react';
+import { AlertCircle, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { LiveDiscovery, LiveSnapshot } from '@/lib/live-review/protocol';
 
 export interface LiveReviewBarProps {
@@ -22,9 +30,58 @@ export interface LiveReviewBarProps {
   onRetryPlayback: () => void;
 }
 
-export const LiveReviewBar = memo(function LiveReviewBar({
+export type LiveReviewEntryControlProps = Pick<
+  LiveReviewBarProps,
+  'discovery' | 'provider' | 'isJoined' | 'busy' | 'error' | 'onStart' | 'onJoin'
+>;
+
+export const LiveReviewEntryControl = memo(function LiveReviewEntryControl({
   discovery,
   provider,
+  isJoined,
+  busy,
+  error,
+  onStart,
+  onJoin,
+}: LiveReviewEntryControlProps) {
+  if (!discovery?.enabled || isJoined) return null;
+
+  const supported = provider === 'bunny' || provider === 'r2' || !!discovery.session;
+  if ((!supported || (!discovery.session && !discovery.canStart)) && !error) return null;
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      {supported && discovery.session ? (
+        <Button
+          size="sm"
+          disabled={busy || !discovery.available}
+          title={!discovery.available ? 'Live review is unavailable right now' : undefined}
+          onClick={onJoin}
+        >
+          Join room
+        </Button>
+      ) : supported && discovery.canStart ? (
+        <Button
+          size="sm"
+          disabled={busy || !discovery.available}
+          title={!discovery.available ? 'Live review is unavailable right now' : undefined}
+          onClick={onStart}
+        >
+          Start room
+        </Button>
+      ) : null}
+      {error && (
+        <span role="alert" title={error} className="text-destructive">
+          <AlertCircle aria-hidden="true" className="h-4 w-4" />
+          <span className="sr-only">{error}</span>
+        </span>
+      )}
+    </div>
+  );
+});
+
+export const LiveReviewBar = memo(function LiveReviewBar({
+  discovery,
   snapshot,
   participantId,
   connection,
@@ -32,16 +89,13 @@ export const LiveReviewBar = memo(function LiveReviewBar({
   autoplayBlocked,
   busy,
   error,
-  onStart,
-  onJoin,
   onLeave,
   onTransfer,
   onEnd,
   onRetryPlayback,
 }: LiveReviewBarProps) {
-  if (!discovery?.enabled) return null;
+  if (!discovery?.enabled || !isJoined) return null;
 
-  const supported = provider === 'bunny' || provider === 'r2' || !!discovery.session;
   const manager =
     snapshot?.participants.find((person) => person.id === participantId)?.isManager ?? false;
   const presenter = snapshot?.participants.find((person) => person.id === snapshot.presenterId);
@@ -49,113 +103,99 @@ export const LiveReviewBar = memo(function LiveReviewBar({
   const active = snapshot?.status === 'active';
 
   return (
-    <section
-      aria-label="Live review"
-      className="rounded-lg border bg-card px-3 py-2 text-sm shadow-sm"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <strong className="font-medium">Live review</strong>
-        {!supported ? (
-          <span className="text-muted-foreground">
-            Live review is available for uploaded videos. YouTube playback cannot join this room.
+    <section aria-label="Live review" className="border-b bg-card px-3 py-1 text-sm">
+      <div className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
+        <strong className="hidden shrink-0 font-medium sm:block">Live review</strong>
+        <span
+          role="status"
+          className={connected ? 'shrink-0 text-emerald-600' : 'shrink-0 text-amber-600'}
+        >
+          {connection === 'connected'
+            ? 'Connected'
+            : connection === 'reconnecting'
+              ? 'Reconnecting'
+              : connection === 'blocked'
+                ? 'Connection lost'
+                : 'Connecting'}
+        </span>
+        {active && (
+          <span
+            className="hidden max-w-48 truncate text-muted-foreground sm:block"
+            title={presenter?.name}
+          >
+            Presenter: {presenter?.name ?? 'Waiting for presenter'}
           </span>
-        ) : !discovery.available ? (
-          <span role="status" className="text-muted-foreground">
-            Live review is unavailable right now.
-          </span>
-        ) : !isJoined ? (
-          <>
-            {discovery.session && (
-              <span className="text-muted-foreground">A room is open for this video.</span>
-            )}
-            {discovery.session ? (
-              <Button size="sm" disabled={busy} onClick={onJoin}>
-                Join room
+        )}
+        {active && snapshot && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label={`Room participants, ${snapshot.participants.length}`}
+              >
+                <UsersRound className="mr-1 h-4 w-4" />
+                {snapshot.participants.length}
+                <span className="hidden sm:inline"> participants</span>
               </Button>
-            ) : discovery.canStart ? (
-              <Button size="sm" disabled={busy} onClick={onStart}>
-                Start room
-              </Button>
-            ) : (
-              <span className="text-muted-foreground">No room is open for this version.</span>
-            )}
-          </>
-        ) : (
-          <>
-            <span role="status" className={connected ? 'text-emerald-600' : 'text-amber-600'}>
-              {connection === 'connected'
-                ? 'Connected'
-                : connection === 'reconnecting'
-                  ? 'Reconnecting'
-                  : connection === 'blocked'
-                    ? 'Connection lost'
-                    : 'Connecting'}
-            </span>
-            {active && (
-              <span className="min-w-0 break-all text-muted-foreground">
-                Presenter: {presenter?.name ?? 'Waiting for presenter'}
-              </span>
-            )}
-            <span className="text-muted-foreground">
-              {snapshot?.participants.length ?? 0} participants
-            </span>
-            <Button size="sm" variant="outline" disabled={busy} onClick={onLeave}>
-              Leave
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
+              <DropdownMenuLabel>Room participants</DropdownMenuLabel>
+              {snapshot.participants.map((person) => {
+                const canTransfer =
+                  manager &&
+                  person.canComment &&
+                  person.id !== snapshot.presenterId &&
+                  person.status !== 'blocked';
+
+                return (
+                  <DropdownMenuItem
+                    key={person.id}
+                    aria-disabled={!canTransfer || !connected || busy}
+                    onSelect={(event) => {
+                      if (canTransfer && connected && !busy) onTransfer(person.id);
+                      else event.preventDefault();
+                    }}
+                    className="flex flex-col items-start gap-0.5"
+                  >
+                    <span className="max-w-full truncate">
+                      {person.name}
+                      {person.id === participantId ? ' (you)' : ''}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {person.isManager ? 'Manager, ' : ''}
+                      {person.id === snapshot.presenterId ? 'Presenter, ' : ''}
+                      {person.status}
+                      {canTransfer ? ', make presenter' : ''}
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {autoplayBlocked && (
+          <span role="alert" className="flex shrink-0 items-center gap-2">
+            Browser playback needs your action.
+            <Button size="sm" onClick={onRetryPlayback}>
+              Enable playback
             </Button>
-            {manager && active && (
-              <Button size="sm" variant="destructive" disabled={busy || !connected} onClick={onEnd}>
-                End room
-              </Button>
-            )}
-          </>
+          </span>
+        )}
+        {error && (
+          <span role="alert" title={error} className="max-w-48 truncate text-destructive">
+            {error}
+          </span>
+        )}
+        <Button size="sm" variant="outline" disabled={busy} onClick={onLeave}>
+          Leave
+        </Button>
+        {manager && active && (
+          <Button size="sm" variant="destructive" disabled={busy || !connected} onClick={onEnd}>
+            End room
+          </Button>
         )}
       </div>
-      {isJoined && active && snapshot && (
-        <ul aria-label="Room participants" className="mt-2 flex flex-wrap gap-2">
-          {snapshot.participants.map((person) => (
-            <li
-              key={person.id}
-              className="flex max-w-full flex-wrap items-center gap-1 rounded-md border px-2 py-1"
-            >
-              <span className="min-w-0 break-all">
-                {person.name}
-                {person.id === participantId ? ' (you)' : ''}
-              </span>
-              {person.isManager && <span className="text-muted-foreground">Manager</span>}
-              {person.id === snapshot.presenterId && (
-                <span className="text-muted-foreground">Presenter</span>
-              )}
-              <span className="text-muted-foreground">{person.status}</span>
-              {manager &&
-                person.canComment &&
-                person.id !== snapshot.presenterId &&
-                person.status !== 'blocked' && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={!connected || busy}
-                    onClick={() => onTransfer(person.id)}
-                  >
-                    Make presenter
-                  </Button>
-                )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {autoplayBlocked && isJoined && (
-        <div role="alert" className="mt-2 flex items-center gap-2">
-          <span>Browser playback needs your action.</span>
-          <Button size="sm" onClick={onRetryPlayback}>
-            Enable playback
-          </Button>
-        </div>
-      )}
-      {error && (
-        <p role="alert" className="mt-2 text-destructive">
-          {error}
-        </p>
-      )}
     </section>
   );
 });

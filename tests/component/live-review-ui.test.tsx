@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createRef } from 'react';
-import { LiveReviewBar } from '@/components/video-page/live-review-bar';
+import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
 import {
   LiveReviewCanvas,
   getVideoContentRect,
@@ -59,7 +59,10 @@ describe('LiveReviewCanvas', () => {
   const onUndo = vi.fn();
   const onClear = vi.fn();
   const onSave = vi.fn().mockResolvedValue(undefined);
+  const controlsContainer = document.createElement('div');
+  beforeEach(() => document.body.append(controlsContainer));
   const base = {
+    controlsContainer,
     strokes: [own, other],
     canvasEpoch: 1,
     participantId: 'me',
@@ -75,6 +78,7 @@ describe('LiveReviewCanvas', () => {
   const originalBounds = Element.prototype.getBoundingClientRect;
 
   afterEach(() => {
+    controlsContainer.remove();
     Element.prototype.getBoundingClientRect = originalBounds;
     vi.restoreAllMocks();
     onStroke.mockReset();
@@ -91,12 +95,57 @@ describe('LiveReviewCanvas', () => {
     });
     Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
     render(<LiveReviewCanvas {...base} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Save my drawing as comment' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save drawing as comment' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith([own], 12.5));
     const saved = await screen.findByRole('button', { name: 'Saved as comment' });
     expect(saved).toBeDisabled();
     fireEvent.click(saved);
     expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps controls outside the video and only captures strokes in Stroke Mode', async () => {
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+    });
+    Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
+    const { container } = render(<LiveReviewCanvas {...base} strokes={[]} />);
+    const canvas = await screen.findByLabelText('Shared drawing canvas');
+    expect(container.querySelector('button')).toBeNull();
+    expect(controlsContainer.querySelectorAll('button')).toHaveLength(3);
+    expect(canvas).toHaveClass('pointer-events-none');
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 45, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
+    expect(onStroke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
+    expect(canvas).toHaveClass('pointer-events-auto');
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 45, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
+    expect(onStroke).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
+    expect(canvas).toHaveClass('pointer-events-none');
+  });
+
+  it('exits Stroke Mode when the comments composer unmounts', async () => {
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+    });
+    Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
+    const { rerender } = render(<LiveReviewCanvas {...base} />);
+    const canvas = await screen.findByLabelText('Shared drawing canvas');
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
+    expect(canvas).toHaveClass('pointer-events-auto');
+    rerender(<LiveReviewCanvas {...base} controlsContainer={null} />);
+    expect(canvas).toHaveClass('pointer-events-none');
+    rerender(<LiveReviewCanvas {...base} />);
+    expect(screen.getByRole('button', { name: 'Stroke Mode' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(canvas).toHaveClass('pointer-events-none');
   });
 
   it('discards local drawing when the canvas epoch changes', async () => {
@@ -107,6 +156,7 @@ describe('LiveReviewCanvas', () => {
     Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
     const { rerender } = render(<LiveReviewCanvas {...base} strokes={[]} />);
     const canvas = await screen.findByLabelText('Shared drawing canvas');
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
     fireEvent.pointerDown(canvas, { clientX: 80, clientY: 45, pointerId: 1 });
     fireEvent.pointerMove(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
     fireEvent.pointerUp(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
@@ -125,6 +175,7 @@ describe('LiveReviewCanvas', () => {
     vi.spyOn(performance, 'now').mockReturnValue(100);
     const { rerender } = render(<LiveReviewCanvas {...base} strokes={[]} />);
     const canvas = await screen.findByLabelText('Shared drawing canvas');
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke Mode' }));
     fireEvent.pointerDown(canvas, { clientX: 80, clientY: 45, pointerId: 1 });
     fireEvent.pointerMove(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
     const strokeId = onStroke.mock.calls[0]?.[0].id as string;
@@ -136,7 +187,7 @@ describe('LiveReviewCanvas', () => {
     fireEvent.pointerUp(canvas, { clientX: 160, clientY: 90, pointerId: 1 });
     expect(canvas.querySelectorAll('path')).toHaveLength(0);
     expect(onStroke).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('button', { name: 'Save my drawing as comment' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Save drawing as comment' })).toBeDisabled();
   });
 
   it('does not offer drawing controls while playback is running', () => {
@@ -146,7 +197,8 @@ describe('LiveReviewCanvas', () => {
     });
     Element.prototype.getBoundingClientRect = () => box(0, 0, 800, 450);
     render(<LiveReviewCanvas {...base} isPaused={false} />);
-    expect(screen.queryByRole('button', { name: 'Save my drawing as comment' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save drawing as comment' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stroke Mode' })).toBeDisabled();
   });
 
   it('keeps a drawing click from toggling the underlying player', async () => {
@@ -191,19 +243,26 @@ describe('LiveReviewBar', () => {
     ...actions,
   };
 
-  it('hides the room when disabled and explains unsupported video', () => {
+  it('keeps idle controls in the header without a room bar', () => {
     const { rerender } = render(
-      <LiveReviewBar {...base} discovery={{ ...discovery, enabled: false }} />
+      <>
+        <LiveReviewEntryControl {...base} />
+        <LiveReviewBar {...base} />
+      </>
     );
     expect(screen.queryByRole('region', { name: 'Live review' })).toBeNull();
-    rerender(<LiveReviewBar {...base} provider="youtube" />);
-    expect(screen.getByText(/YouTube playback cannot join/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Start room' }));
+    expect(actions.onStart).toHaveBeenCalledTimes(1);
+    rerender(<LiveReviewEntryControl {...base} discovery={{ ...discovery, enabled: false }} />);
+    expect(screen.queryByRole('button', { name: 'Start room' })).toBeNull();
+    rerender(<LiveReviewEntryControl {...base} provider="youtube" />);
     expect(screen.queryByRole('button', { name: 'Start room' })).toBeNull();
   });
 
-  it('shows honest unavailable state and blocks room creation', () => {
-    render(<LiveReviewBar {...base} discovery={{ ...discovery, available: false }} />);
-    expect(screen.getByText('Live review is unavailable right now.')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Start room' })).toBeNull();
+  it('blocks room creation while unavailable without an explanatory row', () => {
+    render(<LiveReviewEntryControl {...base} discovery={{ ...discovery, available: false }} />);
+    const button = screen.getByRole('button', { name: 'Start room' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Live review is unavailable right now');
   });
 });

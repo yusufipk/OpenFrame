@@ -1,6 +1,6 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -46,6 +46,7 @@ interface VideoPageHeaderProps {
   activeVersion: Version;
   activeVersionId: string | null;
   versionSelectionLocked?: boolean;
+  liveReviewControl?: ReactNode;
   onVersionSelect: (versionId: string) => void;
   onDeleteCurrentVersionClick: () => void;
   showDeleteVersionDialog: boolean;
@@ -96,6 +97,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   activeVersionId,
   onVersionSelect,
   versionSelectionLocked = false,
+  liveReviewControl,
   onDeleteCurrentVersionClick,
   showDeleteVersionDialog,
   setShowDeleteVersionDialog,
@@ -168,10 +170,12 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               disabled={versionSelectionLocked}
               title={versionSelectionLocked ? 'Leave the live room to change versions' : undefined}
             >
-              <Badge variant="secondary" className="mr-2">
+              <Badge variant="secondary" className="sm:mr-2">
                 v{activeVersion.versionNumber}
               </Badge>
-              {activeVersion.versionLabel || `Version ${activeVersion.versionNumber}`}
+              <span className="hidden sm:inline-block max-w-40 truncate">
+                {activeVersion.versionLabel || `Version ${activeVersion.versionNumber}`}
+              </span>
               <ChevronDown className="h-4 w-4 ml-2" />
             </Button>
           </DropdownMenuTrigger>
@@ -204,6 +208,8 @@ export const VideoPageHeader = memo(function VideoPageHeader({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {liveReviewControl}
 
         <VersionDeleteDialog
           open={showDeleteVersionDialog}
