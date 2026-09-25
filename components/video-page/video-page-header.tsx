@@ -45,6 +45,7 @@ interface VideoPageHeaderProps {
   versions: Version[];
   activeVersion: Version;
   activeVersionId: string | null;
+  versionSelectionLocked?: boolean;
   onVersionSelect: (versionId: string) => void;
   onDeleteCurrentVersionClick: () => void;
   showDeleteVersionDialog: boolean;
@@ -94,6 +95,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   activeVersion,
   activeVersionId,
   onVersionSelect,
+  versionSelectionLocked = false,
   onDeleteCurrentVersionClick,
   showDeleteVersionDialog,
   setShowDeleteVersionDialog,
@@ -160,7 +162,12 @@ export const VideoPageHeader = memo(function VideoPageHeader({
       <div className="flex items-center gap-1.5 shrink-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={versionSelectionLocked}
+              title={versionSelectionLocked ? 'Leave the live room to change versions' : undefined}
+            >
               <Badge variant="secondary" className="mr-2">
                 v{activeVersion.versionNumber}
               </Badge>
@@ -221,6 +228,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               <Button
                 variant="outline"
                 size="sm"
+                disabled={versionSelectionLocked}
                 onClick={() => setShowVersionDialog(true)}
                 className="hidden sm:inline-flex"
               >

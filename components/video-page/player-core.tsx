@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type RefObject } from 'react';
+import { memo, type ReactNode, type RefObject } from 'react';
 import {
   AlertCircle,
   Clock,
@@ -41,6 +41,7 @@ import type {
 } from '@/components/video-page/types';
 
 interface PlayerCoreProps {
+  liveOverlay?: ReactNode;
   activeVersionId: string | null;
   activeProviderId: string | undefined;
   embedUrl: string;
@@ -197,6 +198,7 @@ export const PlayerCore = memo(function PlayerCore({
   handleTimelineMouseMove,
   handleSeekToTimestamp,
   commentMarkers,
+  liveOverlay,
 }: PlayerCoreProps) {
   return (
     <>
@@ -303,6 +305,7 @@ export const PlayerCore = memo(function PlayerCore({
             </div>
           )}
 
+          {liveOverlay}
           {showBunnyErrorOverlay && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/65">
               <div className="max-w-sm rounded-md border bg-background/95 px-4 py-3 text-center shadow-lg">

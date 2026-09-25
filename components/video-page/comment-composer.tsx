@@ -18,6 +18,7 @@ import { MentionTextarea } from '@/components/video-page/mention-textarea';
 import type { CommentTag, VideoAsset } from '@/components/video-page/types';
 
 interface CommentComposerProps {
+  liveReviewActive?: boolean;
   isRecording: boolean;
   recordingTime: number;
   stopRecording: () => void;
@@ -101,6 +102,7 @@ export const CommentComposer = memo(function CommentComposer({
   projectId,
   pauseVideoForAnnotation,
   assets,
+  liveReviewActive = false,
 }: CommentComposerProps) {
   const rangeButtonLabel =
     commentRangeStart === null || commentRangeEnd !== null ? 'Set In' : 'Set Out';
@@ -319,6 +321,7 @@ export const CommentComposer = memo(function CommentComposer({
               </Button>
               <Button
                 size="icon"
+                disabled={liveReviewActive}
                 variant={annotationStrokes ? 'default' : 'outline'}
                 className={annotationStrokes ? 'bg-violet-500 hover:bg-violet-600' : ''}
                 onClick={() => {
@@ -327,9 +330,11 @@ export const CommentComposer = memo(function CommentComposer({
                   setIsAnnotating(true);
                 }}
                 title={
-                  annotationStrokes
-                    ? 'Annotation added ✓ (click to redraw)'
-                    : 'Draw annotation on video'
+                  liveReviewActive
+                    ? 'Use the shared canvas in the live room'
+                    : annotationStrokes
+                      ? 'Annotation added ✓ (click to redraw)'
+                      : 'Draw annotation on video'
                 }
               >
                 <Pencil className="h-4 w-4" />

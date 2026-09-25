@@ -108,7 +108,7 @@ function makeTimeline(): HTMLDivElement {
   return timeline;
 }
 
-function renderPlayer() {
+function renderPlayer(overrides: Partial<Params> = {}) {
   const video = createVideoStub();
   const timeline = makeTimeline();
   const readout = document.createElement('div');
@@ -134,6 +134,7 @@ function renderPlayer() {
     speedOptions: SPEED_OPTIONS,
     scheduleWatchProgressSaveRef: { current: vi.fn() },
     setViewingAnnotation: vi.fn(),
+    ...overrides,
   };
 
   const rendered = renderHook((props: Params) => useVideoPlayer(props), { initialProps: params });
@@ -215,6 +216,23 @@ afterEach(() => {
 });
 
 describe('useVideoPlayer seeking', () => {
+  it('blocks local playback, timestamp seek and speed changes for a follower', () => {
+    const { result, video } = renderPlayer({ playbackLocked: true });
+    act(() => {
+      result.current.handlePlayPause();
+      result.current.handleSeekToTimestamp(20);
+      result.current.handleSpeedChange(1.5);
+    });
+    pressKey('Space');
+    pressKey('ArrowRight');
+    expect(video.play).not.toHaveBeenCalled();
+    expect(video.currentTime).toBe(0);
+    expect(video.playbackRate).toBe(1);
+    expect(result.current.currentTime).toBe(0);
+    pressKey('KeyM');
+    expect(video.muted).toBe(true);
+  });
+
   it('takes its duration from the loaded metadata', () => {
     const { result } = renderPlayer();
 
@@ -358,6 +376,25 @@ describe('useVideoPlayer frame stepping', () => {
 });
 
 describe('useVideoPlayer scrubbing', () => {
+  it('cancels a drag when playback control moves to another participant', () => {
+    const { result, video, params, rerender } = renderPlayer();
+    act(() => result.current.handleTimelineMouseDown(mouseEventAt(10)));
+    expect(result.current.isDragging).toBe(true);
+    expect(video.currentTime).toBe(6);
+
+    rerender({ ...params, playbackLocked: true });
+    expect(result.current.isDragging).toBe(false);
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 90 }));
+      video.currentTime = 2;
+      video.fire('timeupdate');
+      window.dispatchEvent(new MouseEvent('mouseup'));
+    });
+    expect(result.current.currentTime).toBe(2);
+    expect(video.currentTime).toBe(2);
+    expect(video.play).not.toHaveBeenCalled();
+  });
+
   it('seeks to the fraction of the duration the pointer landed on', () => {
     const { result, video } = renderPlayer();
 

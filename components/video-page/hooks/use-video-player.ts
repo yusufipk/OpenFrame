@@ -57,6 +57,7 @@ interface UseVideoPlayerParams {
     (input: { progress: number; duration?: number; immediate?: boolean; force?: boolean }) => void
   >;
   setViewingAnnotation: (strokes: AnnotationStroke[] | null) => void;
+  playbackLocked?: boolean;
 }
 
 export function useVideoPlayer({
@@ -79,6 +80,7 @@ export function useVideoPlayer({
   speedOptions,
   scheduleWatchProgressSaveRef,
   setViewingAnnotation,
+  playbackLocked = false,
 }: UseVideoPlayerParams) {
   const [isApiLoaded, setIsApiLoaded] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -103,6 +105,7 @@ export function useVideoPlayer({
   const [isFrameMode, setIsFrameMode] = useState(false);
   const [estimatedFrameRate, setEstimatedFrameRate] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const activeDragging = isDragging && !playbackLocked;
   const isDraggingRef = useRef(false);
   // Scrubbing: the playhead position is driven directly via DOM (rAF) to avoid
   // per-frame React re-renders. These refs feed that loop.
@@ -201,8 +204,18 @@ export function useVideoPlayer({
   }, [stopBunnyFrameTracking, videoRef]);
 
   useEffect(() => {
-    isDraggingRef.current = isDragging;
-  }, [isDragging]);
+    isDraggingRef.current = activeDragging;
+  }, [activeDragging]);
+
+  useEffect(() => {
+    if (!playbackLocked || !isDragging) return;
+    isDraggingRef.current = false;
+    scrubTargetRef.current = null;
+    isSeekingRef.current = false;
+    wasPlayingBeforeScrubRef.current = false;
+    const timer = setTimeout(() => setIsDragging(false), 0);
+    return () => clearTimeout(timer);
+  }, [isDragging, playbackLocked]);
 
   useEffect(() => {
     const viewportEl = bunnyViewportRef.current;
@@ -914,7 +927,7 @@ export function useVideoPlayer({
     if (!isReady || !playerRef.current) return;
 
     const interval = setInterval(() => {
-      if (!isDragging && playerRef.current) {
+      if (!activeDragging && playerRef.current) {
         if (playerRef.current.getCurrentTime) {
           setCurrentTime(playerRef.current.getCurrentTime());
         }
@@ -922,7 +935,7 @@ export function useVideoPlayer({
     }, 250);
 
     return () => clearInterval(interval);
-  }, [isReady, isDragging, activeVersion?.providerId, playerRef]);
+  }, [isReady, activeDragging, activeVersion?.providerId, playerRef]);
 
   const duration = useMemo(() => {
     return videoDuration || activeVersion?.duration || 0;
@@ -1011,7 +1024,7 @@ export function useVideoPlayer({
   // from a requestAnimationFrame loop for 60fps-smooth motion. During a drag we
   // also request a (coalesced) seek so the frame previews live like an editor.
   useEffect(() => {
-    if (!isPlaying && !isDragging) return;
+    if (!isPlaying && !activeDragging) return;
     let raf = 0;
     const tick = () => {
       if (isDraggingRef.current) {
@@ -1024,14 +1037,14 @@ export function useVideoPlayer({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, isDragging, applyPlayhead, requestScrubSeek, playerRef]);
+  }, [isPlaying, activeDragging, applyPlayhead, requestScrubSeek, playerRef]);
 
   // When idle (paused, not dragging), keep the playhead in sync with seeks and
   // comment jumps. useLayoutEffect avoids a one-frame flash on mount/seek.
   useLayoutEffect(() => {
-    if (isPlaying || isDragging) return;
+    if (isPlaying || activeDragging) return;
     applyPlayhead(currentTime);
-  }, [currentTime, isPlaying, isDragging, applyPlayhead]);
+  }, [currentTime, isPlaying, activeDragging, applyPlayhead]);
 
   const resolveSkipAmount = useCallback(
     (seconds: number) => resolveSkipAmountFor(seconds, { isFrameMode, frameStepSeconds }),
@@ -1043,13 +1056,14 @@ export function useVideoPlayer({
   }, []);
 
   const handlePlayPause = useCallback(() => {
+    if (playbackLocked) return;
     if (!playerRef.current) return;
     if (isPlaying) {
       playerRef.current.pauseVideo();
     } else {
       playerRef.current.playVideo();
     }
-  }, [isPlaying, playerRef]);
+  }, [isPlaying, playbackLocked, playerRef]);
 
   const handleSeekToTimestamp = useCallback(
     (
@@ -1057,6 +1071,7 @@ export function useVideoPlayer({
       annotation?: string | null,
       options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
     ) => {
+      if (playbackLocked) return;
       setCurrentTime(timestamp);
       if (playerRef.current?.seekTo) {
         const playerState = playerRef.current.getPlayerState?.();
@@ -1090,7 +1105,7 @@ export function useVideoPlayer({
         setViewingAnnotation(null);
       }
     },
-    [isPlaying, playerRef, setViewingAnnotation]
+    [isPlaying, playbackLocked, playerRef, setViewingAnnotation]
   );
 
   const handleMuteToggle = useCallback(() => {
@@ -1105,11 +1120,19 @@ export function useVideoPlayer({
 
   const handleSkip = useCallback(
     (seconds: number) => {
+      if (playbackLocked) return;
       const newTime = clampSeekTime(currentTime + resolveSkipAmount(seconds), duration);
       handleSeekToTimestamp(newTime);
       flashSeekReadout();
     },
-    [currentTime, duration, flashSeekReadout, handleSeekToTimestamp, resolveSkipAmount]
+    [
+      currentTime,
+      duration,
+      flashSeekReadout,
+      handleSeekToTimestamp,
+      playbackLocked,
+      resolveSkipAmount,
+    ]
   );
 
   useEffect(() => {
@@ -1125,6 +1148,7 @@ export function useVideoPlayer({
       const shortcut = resolvePlayerShortcut(e);
       if (shortcut === null) return;
       e.preventDefault();
+      if (playbackLocked && shortcut !== 'toggle-mute' && shortcut !== 'toggle-fullscreen') return;
 
       const stepPlaybackSpeed = (direction: 1 | -1) => {
         const newSpeed = getAdjacentPlaybackSpeed(speedOptions, playbackSpeed, direction);
@@ -1200,14 +1224,16 @@ export function useVideoPlayer({
     handleSkip,
     toggleFullscreen,
     playerRef,
+    playbackLocked,
   ]);
 
   const handleSpeedChange = useCallback(
     (speed: number) => {
+      if (playbackLocked) return;
       setPlaybackSpeed(speed);
       playerRef.current?.setPlaybackRate(speed);
     },
-    [playerRef]
+    [playbackLocked, playerRef]
   );
 
   const handleQualityChange = useCallback(
@@ -1264,6 +1290,7 @@ export function useVideoPlayer({
 
   const handleTimelineMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (playbackLocked) return;
       if (!timelineRef.current) return;
       // Cache the rect once for the whole drag; the rAF loop reads dragTimeRef.
       dragRectRef.current = timelineRef.current.getBoundingClientRect();
@@ -1278,22 +1305,36 @@ export function useVideoPlayer({
       setCurrentTime(newTime);
       requestScrubSeek(newTime);
     },
-    [applyPlayhead, requestScrubSeek, timeFromClientX, timelineRef, isPlaying, playerRef]
+    [
+      applyPlayhead,
+      requestScrubSeek,
+      timeFromClientX,
+      timelineRef,
+      isPlaying,
+      playbackLocked,
+      playerRef,
+    ]
   );
 
   const handleTimelineMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (playbackLocked) return;
       if (!isDraggingRef.current) return;
       const newTime = timeFromClientX(e.clientX);
       dragTimeRef.current = newTime;
       setCurrentTime(newTime);
     },
-    [timeFromClientX]
+    [playbackLocked, timeFromClientX]
   );
 
   // Commit the final scrub position and restore playback if needed.
   const endScrub = useCallback(() => {
     if (!isDraggingRef.current) return;
+    if (playbackLocked) {
+      setIsDragging(false);
+      wasPlayingBeforeScrubRef.current = false;
+      return;
+    }
     setIsDragging(false);
     const finalTime = dragTimeRef.current;
     setCurrentTime(finalTime);
@@ -1311,7 +1352,7 @@ export function useVideoPlayer({
       playerRef.current?.playVideo?.();
       wasPlayingBeforeScrubRef.current = false;
     }
-  }, [playerRef, videoRef]);
+  }, [playbackLocked, playerRef, videoRef]);
 
   const handleTimelineMouseUp = useCallback(() => {
     endScrub();
@@ -1321,8 +1362,9 @@ export function useVideoPlayer({
   // timeline) so a fast or off-bar drag keeps scrubbing smoothly, and release
   // anywhere to commit the seek.
   useEffect(() => {
-    if (!isDragging) return;
+    if (!activeDragging) return;
     const onMove = (e: MouseEvent) => {
+      if (playbackLocked) return;
       const newTime = timeFromClientX(e.clientX);
       dragTimeRef.current = newTime;
       setCurrentTime(newTime);
@@ -1333,7 +1375,7 @@ export function useVideoPlayer({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', endScrub);
     };
-  }, [isDragging, timeFromClientX, endScrub]);
+  }, [activeDragging, playbackLocked, timeFromClientX, endScrub]);
 
   return {
     isReady,
@@ -1349,8 +1391,8 @@ export function useVideoPlayer({
     isFrameMode,
     frameStepSeconds,
     frameStepLabel,
-    isDragging,
-    showScrubReadout: isDragging || isSeekReadoutVisible,
+    isDragging: activeDragging,
+    showScrubReadout: activeDragging || isSeekReadoutVisible,
     playbackSpeed,
     qualityOptions,
     selectedQualityLevel,

@@ -94,6 +94,22 @@ afterEach(() => {
 });
 
 describe('useWatchProgress resume prompt', () => {
+  it('does not offer or apply a saved seek while joined to a room', async () => {
+    loadedProgress = { progress: 123.5, percentage: 42 };
+    const player = makePlayer();
+    const { result } = await renderWatchProgress(
+      baseParams({ isJoined: true, playerRef: { current: player } })
+    );
+
+    expect(result.current.showResumePrompt).toBe(false);
+    let returned: number | null = 1;
+    act(() => {
+      returned = result.current.handleResumeFromSaved();
+    });
+    expect(returned).toBeNull();
+    expect(player.seekTo).not.toHaveBeenCalled();
+  });
+
   it('offers to resume from a part-watched position', async () => {
     loadedProgress = { progress: 123.5, percentage: 42 };
     const { result } = await renderWatchProgress(baseParams());

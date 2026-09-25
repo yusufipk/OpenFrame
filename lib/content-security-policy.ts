@@ -1,3 +1,5 @@
+import { liveReviewEnabled, liveReviewPublicUrl } from '@/lib/live-review/config';
+
 function resolveBunnyCdnHostname(): string | null {
   const raw = process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL;
   if (!raw) return null;
@@ -64,6 +66,9 @@ export function buildContentSecurityPolicy(): string {
     'https://www.youtube.com',
     cdnOrigin,
     ...resolveR2ConnectOrigins(),
+    ...(liveReviewEnabled() && liveReviewPublicUrl()
+      ? [new URL(liveReviewPublicUrl()!).origin]
+      : []),
     // Allow Next.js HMR websocket in development
     ...(isDev ? ['ws://localhost:* wss://localhost:*'] : []),
   ].filter(Boolean);
