@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Clock, Loader2, Pencil, Trash2 } from 'lucide-react';
 import type { AnnotationStroke } from '@/components/annotation-canvas';
 import { validateAnnotationStrokes } from '@/lib/validation';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ interface AttachmentComment {
   id: string;
   content: string;
   annotationData: string | null;
+  timestamp: number | null;
   createdAt: string;
   author: { id: string; name: string | null; image: string | null } | null;
   guestName: string | null;
@@ -33,6 +34,11 @@ interface AttachmentCommentsPanelProps {
   target: AttachmentCommentTarget;
   guestName?: string | null;
   onCommentsChanged: () => void;
+  timedMedia?: boolean;
+  playbackTime?: number | null;
+  getPlaybackTime?: () => number | null;
+  onPausePlayback?: () => void;
+  onSeekTimestamp?: (seconds: number) => void;
   canAnnotate?: boolean;
   isAnnotating?: boolean;
   onStartAnnotation?: () => void;
@@ -46,11 +52,24 @@ interface AttachmentCommentsPanelProps {
 
 const PAGE_SIZE = 30;
 
+function formatTime(seconds: number) {
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total / 60) % 60;
+  const rest = String(total % 60).padStart(2, '0');
+  return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}` : `${minutes}:${rest}`;
+}
+
 export function AttachmentCommentsPanel({
   videoId,
   target,
   guestName,
   onCommentsChanged,
+  timedMedia = false,
+  playbackTime = null,
+  getPlaybackTime,
+  onPausePlayback,
+  onSeekTimestamp,
   canAnnotate = false,
   isAnnotating = false,
   onStartAnnotation,
@@ -70,6 +89,16 @@ export function AttachmentCommentsPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [includeTime, setIncludeTime] = useState(true);
+  const [draftTime, setDraftTime] = useState<number | undefined>(undefined);
+  const captureTime = () => {
+    const time = getPlaybackTime?.() ?? null;
+    if (time !== null) {
+      setDraftTime(time);
+      onPausePlayback?.();
+    }
+    return time;
+  };
   const requestRef = useRef<AbortController | null>(null);
   const mutationRef = useRef(false);
   const imageUrl = target.type === 'comment-image' ? target.url : null;
@@ -135,6 +164,11 @@ export function AttachmentCommentsPanel({
       setError('Write a comment or draw on the image before posting.');
       return;
     }
+    const timestamp = timedMedia && includeTime ? (draftTime ?? captureTime()) : null;
+    if (timedMedia && includeTime && timestamp === null) {
+      setError('Wait for playback to load, or remove the timestamp to post a general comment.');
+      return;
+    }
     mutationRef.current = true;
     setSubmitting(true);
     onSubmittingChange?.(true);
@@ -146,6 +180,7 @@ export function AttachmentCommentsPanel({
         body: JSON.stringify({
           target,
           content,
+          ...(timedMedia ? { timestamp } : {}),
           ...(annotationData.length ? { annotationData } : {}),
           ...(guestName ? { guestName } : {}),
         }),
@@ -153,6 +188,8 @@ export function AttachmentCommentsPanel({
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Comment could not be posted.');
       setDraft('');
+      setDraftTime(undefined);
+      setIncludeTime(true);
       onAnnotationSaved?.();
       await load();
       onCommentsChanged();
@@ -225,6 +262,20 @@ export function AttachmentCommentsPanel({
                 </Button>
               )}
             </div>
+            {timedMedia && comment.timestamp != null && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mb-2 gap-1 tabular-nums"
+                aria-label={`Jump to ${formatTime(comment.timestamp)}`}
+                disabled={playbackTime === null || !onSeekTimestamp}
+                onClick={() => onSeekTimestamp?.(comment.timestamp!)}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                {formatTime(comment.timestamp)}
+              </Button>
+            )}
             {comment.content && (
               <p className="whitespace-pre-wrap break-words text-sm">{comment.content}</p>
             )}
@@ -282,6 +333,29 @@ export function AttachmentCommentsPanel({
             void post();
           }}
         >
+          {timedMedia && (
+            <Button
+              type="button"
+              variant={includeTime ? 'secondary' : 'outline'}
+              size="sm"
+              className="gap-1 tabular-nums"
+              aria-label={includeTime ? 'Remove timestamp' : 'Attach timestamp'}
+              aria-pressed={includeTime}
+              disabled={submitting}
+              onClick={() => {
+                if (!includeTime) captureTime();
+                else setDraftTime(undefined);
+                setIncludeTime(!includeTime);
+              }}
+            >
+              <Clock className="h-3.5 w-3.5" />
+              {includeTime
+                ? (draftTime ?? playbackTime) !== null
+                  ? `At ${formatTime((draftTime ?? playbackTime)!)}`
+                  : 'Waiting for playback'
+                : 'General comment'}
+            </Button>
+          )}
           {canAnnotate && (
             <Button
               type="button"
@@ -300,7 +374,10 @@ export function AttachmentCommentsPanel({
             aria-label="Comment on this file"
             placeholder="Comment on this file"
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              if (timedMedia && includeTime && draftTime === undefined) captureTime();
+              setDraft(event.target.value);
+            }}
             maxLength={10000}
             rows={3}
           />

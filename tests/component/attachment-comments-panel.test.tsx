@@ -95,4 +95,91 @@ describe('AttachmentCommentsPanel', () => {
     expect(changed).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.some((call) => call[1]?.method === 'DELETE')).toBe(true);
   });
+  it('pins playback time while drafting and retrying, seeks a saved time, and supports general comments', async () => {
+    let currentTime = 65.5;
+    const bodies: Array<{ timestamp: number | null }> = [];
+    const timedComment = { ...comment, timestamp: 65.5 };
+    const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        bodies.push(JSON.parse(String(init.body)));
+        return bodies.length === 1
+          ? json({ error: 'Try again' }, 503)
+          : json({ data: { comment: timedComment } }, 201);
+      }
+      return json({
+        data: {
+          comments: bodies.length > 1 ? [timedComment] : [],
+          total: bodies.length > 1 ? 1 : 0,
+          hasMore: false,
+          canComment: true,
+        },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const pause = vi.fn();
+    const seek = vi.fn();
+    const props = {
+      videoId: 'video-1',
+      target: { type: 'comment-audio' as const, id: 'voice-1' },
+      onCommentsChanged: vi.fn(),
+      timedMedia: true,
+      getPlaybackTime: () => currentTime,
+      onPausePlayback: pause,
+      onSeekTimestamp: seek,
+    };
+    const { rerender } = render(<AttachmentCommentsPanel {...props} playbackTime={currentTime} />);
+    const composer = await screen.findByRole('textbox', { name: 'Comment on this file' });
+    fireEvent.change(composer, { target: { value: 'Quiet this section' } });
+    expect(pause).toHaveBeenCalledTimes(1);
+    currentTime = 90;
+    rerender(<AttachmentCommentsPanel {...props} playbackTime={currentTime} />);
+    expect(screen.getByRole('button', { name: 'Remove timestamp' })).toHaveTextContent('At 1:05');
+    fireEvent.click(screen.getByRole('button', { name: 'Post comment' }));
+    await screen.findByRole('alert');
+    expect(bodies[0].timestamp).toBe(65.5);
+    currentTime = 120;
+    fireEvent.click(screen.getByRole('button', { name: 'Post comment' }));
+    const jump = await screen.findByRole('button', { name: 'Jump to 1:05' });
+    expect(bodies[1].timestamp).toBe(65.5);
+    fireEvent.click(jump);
+    expect(seek).toHaveBeenCalledWith(65.5);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove timestamp' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Whole file note' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post comment' }));
+    await waitFor(() => expect(bodies).toHaveLength(3));
+    expect(bodies[2].timestamp).toBeNull();
+  });
+
+  it('preserves a zero timestamp and refuses to silently timestamp unavailable playback', async () => {
+    let currentTime: number | null = null;
+    const bodies: Array<{ timestamp: number | null }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          bodies.push(JSON.parse(String(init.body)));
+          return json({ data: { comment } }, 201);
+        }
+        return json({ data: { comments: [], total: 0, hasMore: false, canComment: true } });
+      })
+    );
+    render(
+      <AttachmentCommentsPanel
+        videoId="video-1"
+        target={{ type: 'comment-audio', id: 'voice-1' }}
+        onCommentsChanged={vi.fn()}
+        timedMedia
+        getPlaybackTime={() => currentTime}
+      />
+    );
+    const composer = await screen.findByRole('textbox');
+    fireEvent.change(composer, { target: { value: 'Start here' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post comment' }));
+    await screen.findByRole('alert');
+    expect(bodies).toHaveLength(0);
+    currentTime = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Post comment' }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].timestamp).toBe(0);
+  });
 });

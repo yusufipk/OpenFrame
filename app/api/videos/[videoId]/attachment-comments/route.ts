@@ -26,6 +26,7 @@ import { validateShareLinkAccess } from '@/lib/share-links';
 import { validateAnnotationStrokes } from '@/lib/validation';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
+const MAX_ATTACHMENT_TIMESTAMP_SECONDS = 86400;
 
 function parsePageNumber(value: string | null, fallback: number, max: number): number | null {
   if (value === null) return fallback;
@@ -76,6 +77,7 @@ function serializeComment(
   comment: {
     id: string;
     content: string;
+    timestamp: number | null;
     annotationData: string | null;
     createdAt: Date;
     authorId: string | null;
@@ -91,6 +93,7 @@ function serializeComment(
   return {
     id: comment.id,
     content: comment.content,
+    timestamp: comment.timestamp,
     annotationData: comment.annotationData,
     createdAt: comment.createdAt,
     author: comment.author,
@@ -239,6 +242,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         select: {
           id: true,
           content: true,
+          timestamp: true,
           annotationData: true,
           createdAt: true,
           authorId: true,
@@ -298,6 +302,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (!target) return apiErrors.badRequest('Invalid attachment target');
     if (typeof body.content !== 'string' || body.content.length > 10000)
       return apiErrors.badRequest('Comment content must be 0 to 10,000 characters');
+    const rawTimestamp: unknown = body.timestamp;
+    const timestamp = rawTimestamp === undefined || rawTimestamp === null ? null : rawTimestamp;
+    if (
+      timestamp !== null &&
+      (typeof timestamp !== 'number' ||
+        !Number.isFinite(timestamp) ||
+        timestamp < 0 ||
+        timestamp > MAX_ATTACHMENT_TIMESTAMP_SECONDS)
+    ) {
+      return apiErrors.badRequest('Timestamp must be a finite number from 0 to 86400 seconds');
+    }
     let annotationData: string | null = null;
     if (body.annotationData !== undefined && body.annotationData !== null) {
       if (!Array.isArray(body.annotationData)) {
@@ -343,6 +358,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
       const canonicalTarget = await resolveAttachmentCommentTarget(tx, videoId, target);
       if (!canonicalTarget) return { status: 'notfound' } as const;
+      if (timestamp !== null && canonicalTarget.type !== 'comment-audio') {
+        if (canonicalTarget.type !== 'asset') return { status: 'invalidTimestampTarget' } as const;
+        const asset = await tx.videoAsset.findUnique({
+          where: { id: canonicalTarget.id },
+          select: { kind: true },
+        });
+        if (!asset || (asset.kind !== 'AUDIO' && asset.kind !== 'VIDEO')) {
+          return { status: 'invalidTimestampTarget' } as const;
+        }
+      }
       if (annotationData && canonicalTarget.type !== 'comment-image') {
         if (canonicalTarget.type !== 'asset') return { status: 'invalidAnnotationTarget' } as const;
         const asset = await tx.videoAsset.findUnique({
@@ -363,6 +388,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           sourceCommentId: canonicalTarget.type === 'asset' ? null : canonicalTarget.id,
           sourceUrl: canonicalTarget.type === 'comment-image' ? canonicalTarget.url : null,
           content,
+          timestamp,
           annotationData,
           authorId: userId ?? null,
           guestName: userId ? null : guestName,
@@ -371,6 +397,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         select: {
           id: true,
           content: true,
+          timestamp: true,
           annotationData: true,
           createdAt: true,
           authorId: true,
@@ -383,6 +410,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     if (result.status === 'forbidden') return apiErrors.forbidden('Access denied');
     if (result.status === 'notfound') return apiErrors.notFound('Attachment');
+    if (result.status === 'invalidTimestampTarget')
+      return apiErrors.badRequest('Timestamps require an audio or video attachment');
     if (result.status === 'invalidAnnotationTarget')
       return apiErrors.badRequest('Annotations require an image attachment');
     const response = successResponse(

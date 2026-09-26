@@ -30,7 +30,7 @@ async function uploadedMedia() {
   })
     .png()
     .toBuffer();
-  const wav = Buffer.alloc(44 + 16000);
+  const wav = Buffer.alloc(44 + 16000 * 70);
   wav.write('RIFF');
   wav.writeUInt32LE(wav.length - 8, 4);
   wav.write('WAVEfmt ', 8);
@@ -42,7 +42,7 @@ async function uploadedMedia() {
   wav.writeUInt16LE(2, 32);
   wav.writeUInt16LE(16, 34);
   wav.write('data', 36);
-  wav.writeUInt32LE(16000, 40);
+  wav.writeUInt32LE(16000 * 70, 40);
   const mp4 = await readFile(path.join(REPO_ROOT, 'tests/fixtures/sample.mp4'));
   const entries = [
     { key: `images/${randomUUID()}.png`, body: png, type: 'image/png', route: 'image' },
@@ -125,6 +125,36 @@ async function viewImageAnnotation(page: Page, expectedPath: string) {
   for (const key of ['x', 'y', 'width', 'height'] as const) {
     expect(canvasBounds[key]).toBeCloseTo(imageBounds[key], 0);
   }
+}
+
+async function seekPreviewMedia(page: Page, kind: 'audio' | 'video', time: number) {
+  const media = page.getByRole('dialog').locator(kind);
+  await expect
+    .poll(() => media.evaluate((element: HTMLMediaElement) => element.readyState))
+    .toBeGreaterThan(0);
+  await media.evaluate((element: HTMLMediaElement, timestamp) => {
+    element.pause();
+    element.currentTime = timestamp;
+  }, time);
+  await expect
+    .poll(() => media.evaluate((element: HTMLMediaElement) => element.currentTime))
+    .toBeCloseTo(time, 2);
+}
+
+async function expectTimestamp(
+  page: Page,
+  content: string,
+  kind: 'audio' | 'video',
+  time: number,
+  label: string
+) {
+  const row = await db.attachmentComment.findFirstOrThrow({ where: { content } });
+  expect(row.timestamp).toBeCloseTo(time, 2);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: `Jump to ${label}`, exact: true }).click();
+  await expect
+    .poll(() => dialog.locator(kind).evaluate((element: HTMLMediaElement) => element.currentTime))
+    .toBeCloseTo(time, 2);
 }
 
 async function closePreview(page: Page) {
@@ -247,12 +277,22 @@ test('asset image, audio and video previews have independent persistent comments
     await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toHaveCount(0);
     await expect(page.getByRole('dialog').locator('audio')).toBeVisible();
     const audioComment = `Reduce the background noise ${seeded.videoId}`;
+    await seekPreviewMedia(page, 'audio', 65.25);
+    await page
+      .getByRole('dialog')
+      .getByRole('textbox', { name: 'Comment on this file' })
+      .fill(audioComment);
+    await seekPreviewMedia(page, 'audio', 10);
     await postFileComment(page, audioComment);
+    await expectTimestamp(page, audioComment, 'audio', 65.25, '1:05');
     await closePreview(page);
     await page.getByRole('button', { name: 'Play video', exact: true }).click();
     await expect(page.getByRole('dialog').locator('video')).toBeVisible();
     await expect(page.getByRole('dialog').getByText(audioComment, { exact: true })).toHaveCount(0);
+    await seekPreviewMedia(page, 'video', 1.25);
     await postFileComment(page, `Shorten this asset ${seeded.videoId}`);
+    await seekPreviewMedia(page, 'video', 0);
+    await expectTimestamp(page, `Shorten this asset ${seeded.videoId}`, 'video', 1.25, '0:01');
     await closePreview(page);
     expect(await db.comment.count({ where: { versionId: seeded.versionId } })).toBe(0);
     await page.reload();
@@ -263,6 +303,15 @@ test('asset image, audio and video previews have independent persistent comments
     ]) {
       await page.getByRole('button', { name: `1 comments on ${name}`, exact: true }).click();
       await expect(page.getByRole('dialog').getByText(content, { exact: true })).toBeVisible();
+      const kind = name === 'Audio proof' ? 'audio' : 'video';
+      await seekPreviewMedia(page, kind, 0);
+      await expectTimestamp(
+        page,
+        content,
+        kind,
+        name === 'Audio proof' ? 65.25 : 1.25,
+        name === 'Audio proof' ? '1:05' : '0:01'
+      );
       await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toHaveCount(
         0
       );
@@ -346,7 +395,9 @@ test('comment images and voice previews isolate discussions and allow guest feed
     expect((await downloaded).suggestedFilename()).toBe(media.urls[1].split('/').pop());
     await closePreview(page);
     await page.getByRole('button', { name: 'Open voice preview', exact: true }).nth(0).click();
+    await seekPreviewMedia(page, 'audio', 12.5);
     await postFileComment(page, `Voice reference ${seeded.videoId}`);
+    await expectTimestamp(page, `Voice reference ${seeded.videoId}`, 'audio', 12.5, '0:12');
     await closePreview(page);
     await images.nth(2).click();
     await expect(page.getByRole('dialog').getByText(first, { exact: true })).toHaveCount(0);
@@ -356,6 +407,7 @@ test('comment images and voice previews isolate discussions and allow guest feed
     await expect(
       page.getByRole('dialog').getByText(`Voice reference ${seeded.videoId}`, { exact: true })
     ).toHaveCount(0);
+    await seekPreviewMedia(page, 'audio', 3.25);
     await postFileComment(page, `Reply voice reference ${seeded.videoId}`);
     await closePreview(page);
     await page.reload();
@@ -418,4 +470,80 @@ test('comment images and voice previews isolate discussions and allow guest feed
   } finally {
     await media.cleanup();
   }
+});
+
+test('YouTube asset comments use trusted iframe time and seek on replay', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.version(seededUser);
+  await db.videoAsset.create({
+    data: {
+      videoId: seeded.videoId,
+      kind: 'VIDEO',
+      provider: 'YOUTUBE',
+      displayName: 'YouTube time proof',
+      sourceUrl: 'https://www.youtube.com/watch?v=timestamp01',
+      providerVideoId: 'timestamp01',
+      billedUserId: seededUser.id,
+      uploadedByUserId: seededUser.id,
+    },
+  });
+  let frames = 0;
+  await page.route('https://www.youtube.com/embed/timestamp01?*', async (route) => {
+    frames += 1;
+    // Exercise the real cross-origin message boundary without a remote video dependency.
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><body data-time="42.5"><script>
+      let currentTime = 42.5;
+      window.addEventListener('message', event => {
+        const message = JSON.parse(event.data);
+        if (message.event === 'command' && message.func === 'seekTo') {
+          currentTime = message.args[0];
+          document.body.dataset.time = String(currentTime);
+        }
+        if (message.event === 'listening' || message.event === 'command') {
+          parent.postMessage(JSON.stringify({ event:'infoDelivery', info:{ currentTime } }), event.origin);
+        }
+      });
+    </script></body>`,
+    });
+  });
+  await page.goto(`/projects/${seeded.project.id}/videos/${seeded.videoId}`);
+  await page.getByRole('button', { name: /^Assets/ }).click();
+  await page.getByRole('button', { name: 'Play video', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Remove timestamp' })).toHaveText('At 0:42');
+  expect(frames).toBe(1);
+  await dialog.locator('iframe').evaluate((iframe: HTMLIFrameElement) => {
+    const data = JSON.stringify({ event: 'infoDelivery', info: { currentTime: 99 } });
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data,
+        origin: 'https://evil.example',
+        source: iframe.contentWindow,
+      })
+    );
+    window.dispatchEvent(
+      new MessageEvent('message', { data, origin: 'https://www.youtube.com', source: window })
+    );
+  });
+  const content = `YouTube timing ${seeded.videoId}`;
+  await postFileComment(page, content);
+  expect((await db.attachmentComment.findFirstOrThrow({ where: { content } })).timestamp).toBe(
+    42.5
+  );
+  await closePreview(page);
+  await page.reload();
+  await page.getByRole('button', { name: /^Assets/ }).click();
+  await page.getByRole('button', { name: 'Play video', exact: true }).click();
+  const frame = page.frameLocator('[role="dialog"] iframe');
+  await frame.locator('body').evaluate((body) => {
+    body.dataset.time = '0';
+  });
+  await page.getByRole('button', { name: 'Jump to 0:42', exact: true }).click();
+  await expect(frame.locator('body')).toHaveAttribute('data-time', '42.5');
+  expect(frames).toBe(2);
 });

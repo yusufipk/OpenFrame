@@ -12,6 +12,13 @@ import {
   type AttachmentCommentTarget,
 } from '@/lib/attachment-comment-target';
 
+export interface AttachmentPlayback {
+  currentTime: number | null;
+  getCurrentTime: () => number | null;
+  pause: () => void;
+  seekTo: (seconds: number) => void;
+}
+
 interface MediaPreviewDialogProps {
   open: boolean;
   onClose: () => void;
@@ -25,6 +32,7 @@ interface MediaPreviewDialogProps {
   guestName?: string | null;
   onCommentsChanged: () => void;
   canDownload?: boolean;
+  playback?: AttachmentPlayback;
 }
 
 export function MediaPreviewDialog({
@@ -40,6 +48,7 @@ export function MediaPreviewDialog({
   guestName,
   onCommentsChanged,
   canDownload = false,
+  playback,
 }: MediaPreviewDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -83,6 +92,7 @@ export function MediaPreviewDialog({
             guestName={guestName}
             onCommentsChanged={onCommentsChanged}
             canDownload={canDownload}
+            playback={playback}
           >
             {children}
           </MediaPreviewBody>
@@ -102,8 +112,38 @@ function MediaPreviewBody({
   guestName,
   onCommentsChanged,
   canDownload,
+  playback,
 }: Omit<MediaPreviewDialogProps, 'open' | 'onClose' | 'headerActions'>) {
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
+  const mediaRef = useRef<HTMLDivElement>(null);
+  const [nativeTime, setNativeTime] = useState<number | null>(null);
+  const nativeMedia = () => mediaRef.current?.querySelector<HTMLMediaElement>('audio,video');
+  const getTime = () => {
+    if (playback) return playback.getCurrentTime();
+    const media = nativeMedia();
+    return media && media.readyState > 0 && Number.isFinite(media.currentTime)
+      ? media.currentTime
+      : null;
+  };
+  const pause = () => {
+    if (playback) playback.pause();
+    else nativeMedia()?.pause();
+  };
+  const seekTo = (seconds: number) => {
+    if (playback) {
+      playback.pause();
+      playback.seekTo(seconds);
+      return;
+    }
+    const media = nativeMedia();
+    if (!media || media.readyState === 0) return;
+    media.pause();
+    media.currentTime = Math.max(
+      0,
+      Math.min(seconds, Number.isFinite(media.duration) ? media.duration : seconds)
+    );
+    setNativeTime(media.currentTime);
+  };
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [viewingAnnotation, setViewingAnnotation] = useState<{
     id: string;
@@ -115,6 +155,11 @@ function MediaPreviewBody({
       <div
         className="flex h-[42%] min-h-[180px] min-w-0 flex-none items-center justify-center overflow-hidden bg-black/90 p-3 md:h-auto md:min-h-0 md:flex-1 md:p-4"
         inert={submitting}
+        ref={mediaRef}
+        onLoadedMetadataCapture={() => setNativeTime(getTime())}
+        onTimeUpdateCapture={() => setNativeTime(getTime())}
+        onSeekedCapture={() => setNativeTime(getTime())}
+        onEmptiedCapture={() => setNativeTime(null)}
       >
         {children ??
           (kind === 'IMAGE' && src ? (
@@ -151,6 +196,11 @@ function MediaPreviewBody({
           target={target}
           guestName={guestName}
           onCommentsChanged={onCommentsChanged}
+          timedMedia={kind === 'AUDIO' || kind === 'VIDEO'}
+          playbackTime={playback ? playback.currentTime : nativeTime}
+          getPlaybackTime={getTime}
+          onPausePlayback={pause}
+          onSeekTimestamp={seekTo}
           canAnnotate={kind === 'IMAGE' && !!src}
           isAnnotating={isAnnotating}
           onStartAnnotation={() => {

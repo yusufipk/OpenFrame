@@ -165,6 +165,20 @@ export const AssetsPane = memo(function AssetsPane({
   const bunnyPreviewPlayerRef = useRef<BunnyPreviewPlayerHandle | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const youtubePreviewStateRef = useRef({ currentTime: 0, isPlaying: false, isMuted: false });
+  const [youtubeTime, setYoutubeTime] = useState<number | null>(null);
+  const youtubeTimeRef = useRef<number | null>(null);
+  const sendYouTubeCommand = useCallback((func: string, args: unknown[] = []) => {
+    youtubeIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'command', func, args }),
+      'https://www.youtube.com'
+    );
+  }, []);
+  const subscribeYouTube = useCallback(() => {
+    youtubeIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'listening', id: 'asset-preview', channel: 'widget' }),
+      'https://www.youtube.com'
+    );
+  }, []);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const bunnyInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
@@ -220,21 +234,13 @@ export const AssetsPane = memo(function AssetsPane({
   useEffect(() => {
     if (!selectedAsset || selectedAsset.kind !== 'VIDEO') return;
 
-    const sendYouTubeCommand = (func: string, args: unknown[] = []) => {
-      const iframe = youtubeIframeRef.current;
-      if (!iframe?.contentWindow) return;
-      iframe.contentWindow.postMessage(
-        JSON.stringify({
-          event: 'command',
-          func,
-          args,
-        }),
-        '*'
-      );
-    };
-
     const onMessage = (event: MessageEvent) => {
       if (!selectedAsset || selectedAsset.provider !== 'YOUTUBE') return;
+      if (
+        event.source !== youtubeIframeRef.current?.contentWindow ||
+        event.origin !== 'https://www.youtube.com'
+      )
+        return;
       if (typeof event.data !== 'string') return;
       let parsed: unknown;
       try {
@@ -242,12 +248,24 @@ export const AssetsPane = memo(function AssetsPane({
       } catch {
         return;
       }
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !['infoDelivery', 'initialDelivery'].includes(String((parsed as { event?: unknown }).event))
+      )
+        return;
       const info = (
         parsed as { info?: { currentTime?: number; playerState?: number; muted?: boolean } }
       )?.info;
       if (!info) return;
-      if (typeof info.currentTime === 'number') {
+      if (
+        typeof info.currentTime === 'number' &&
+        Number.isFinite(info.currentTime) &&
+        info.currentTime >= 0
+      ) {
         youtubePreviewStateRef.current.currentTime = info.currentTime;
+        youtubeTimeRef.current = info.currentTime;
+        setYoutubeTime(info.currentTime);
       }
       if (typeof info.playerState === 'number') {
         youtubePreviewStateRef.current.isPlaying = info.playerState === 1;
@@ -262,7 +280,8 @@ export const AssetsPane = memo(function AssetsPane({
       const target = event.target as HTMLElement | null;
       if (
         target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        (target.closest('button, a, input, textarea, select, [role="button"]') ||
+          target.isContentEditable)
       )
         return;
 
@@ -342,11 +361,18 @@ export const AssetsPane = memo(function AssetsPane({
 
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('message', onMessage);
+    const listeningTimer =
+      selectedAsset.provider === 'YOUTUBE'
+        ? window.setInterval(() => {
+            if (youtubeTimeRef.current === null) subscribeYouTube();
+          }, 500)
+        : null;
     return () => {
+      if (listeningTimer !== null) window.clearInterval(listeningTimer);
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('message', onMessage);
     };
-  }, [selectedAsset]);
+  }, [selectedAsset, sendYouTubeCommand, subscribeYouTube]);
 
   useEffect(() => {
     if (!selectedAsset || selectedAsset.provider !== 'BUNNY') return;
@@ -1110,6 +1136,9 @@ export const AssetsPane = memo(function AssetsPane({
   };
 
   const handleOpenAsset = (asset: VideoAsset) => {
+    youtubeTimeRef.current = null;
+    setYoutubeTime(null);
+    youtubePreviewStateRef.current = { currentTime: 0, isPlaying: false, isMuted: false };
     stopVoice();
     onAttachmentCommentsChanged();
     if (asset.provider === 'BUNNY' && !bunnyReadyByAssetId[asset.id]) {
@@ -1559,6 +1588,21 @@ export const AssetsPane = memo(function AssetsPane({
         guestName={guestName}
         onCommentsChanged={onAttachmentCommentsChanged}
         canDownload={canDownloadAssets}
+        playback={
+          selectedAsset?.provider === 'YOUTUBE'
+            ? {
+                currentTime: youtubeTime,
+                getCurrentTime: () => youtubeTimeRef.current,
+                pause: () => sendYouTubeCommand('pauseVideo'),
+                seekTo: (seconds) => {
+                  sendYouTubeCommand('seekTo', [seconds, true]);
+                  youtubeTimeRef.current = seconds;
+                  youtubePreviewStateRef.current.currentTime = seconds;
+                  setYoutubeTime(seconds);
+                },
+              }
+            : undefined
+        }
         headerActions={
           selectedAsset?.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
             <Button asChild variant="outline" size="sm">
@@ -1609,6 +1653,7 @@ export const AssetsPane = memo(function AssetsPane({
             <div className="h-full w-full overflow-hidden rounded-md bg-black">
               <iframe
                 ref={youtubeIframeRef}
+                onLoad={subscribeYouTube}
                 className="h-full w-full"
                 src={`https://www.youtube.com/embed/${selectedAsset.providerVideoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1${typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''}`}
                 title={selectedAsset.displayName}

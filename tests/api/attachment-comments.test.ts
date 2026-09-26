@@ -30,6 +30,7 @@ type Target =
 type ListedComment = {
   id: string;
   content: string;
+  timestamp: number | null;
   annotationData: string | null;
   guestName: string | null;
   author: { id: string; name: string | null; image: string | null } | null;
@@ -65,6 +66,14 @@ async function postWithAnnotation(
   return callRoute(POST, apiRequest(url(videoId), { body: { target, content, annotationData } }), {
     videoId,
   });
+}
+
+async function postWithTimestamp(videoId: string, target: Target, timestamp: unknown) {
+  return callRoute(
+    POST,
+    apiRequest(url(videoId), { body: { target, content: 'Playback note', timestamp } }),
+    { videoId }
+  );
 }
 
 const DRAWING = [
@@ -181,6 +190,173 @@ describe('video attachment comments API', () => {
     expect((await remove(video.id, created.comment.id)).status).toBe(200);
     expect(await db.attachmentComment.findUnique({ where: { id: created.comment.id } })).toBeNull();
     expect(await db.attachmentComment.count({ where: { assetId: target.id } })).toBe(1);
+  });
+
+  it('persists zero and fractional timestamps on audio and video assets', async () => {
+    const { owner, video } = await seedVersion({ visibility: 'PRIVATE' });
+    const audio = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'AUDIO',
+      provider: 'R2_AUDIO',
+      sourceUrl: AUDIO_A,
+    });
+    const videoAsset = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'VIDEO',
+      provider: 'BUNNY',
+      sourceUrl: 'https://example.com/attachment-video.mp4',
+    });
+    signedInAs(owner);
+
+    for (const [target, timestamp] of [
+      [{ type: 'asset' as const, id: audio.id }, 0],
+      [{ type: 'asset' as const, id: videoAsset.id }, 12.375],
+    ] as const) {
+      const response = await postWithTimestamp(video.id, target, timestamp);
+      expect(response.status).toBe(201);
+      const created = (await readData<{ comment: ListedComment }>(response)).comment;
+      expect(created.timestamp).toBe(timestamp);
+      expect(
+        await db.attachmentComment.findUniqueOrThrow({ where: { id: created.id } })
+      ).toMatchObject({ timestamp });
+      const listed = await readData<{ comments: ListedComment[] }>(await list(video.id, target));
+      expect(listed.comments).toEqual([expect.objectContaining({ id: created.id, timestamp })]);
+    }
+  });
+
+  it('accepts a timestamp on comment audio after resolving it to an audio asset', async () => {
+    const { owner, video, version } = await seedVersion({ visibility: 'PRIVATE' });
+    const audio = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'AUDIO',
+      provider: 'R2_AUDIO',
+      sourceUrl: AUDIO_A,
+    });
+    const source = await createComment({
+      versionId: version.id,
+      authorId: owner.id,
+      voiceUrl: AUDIO_A,
+    });
+    signedInAs(owner);
+    const target: Target = { type: 'comment-audio', id: source.id };
+
+    const response = await postWithTimestamp(video.id, target, 3.25);
+    expect(response.status).toBe(201);
+    const created = (await readData<{ comment: ListedComment }>(response)).comment;
+    expect(created.timestamp).toBe(3.25);
+    expect(
+      await db.attachmentComment.findUniqueOrThrow({ where: { id: created.id } })
+    ).toMatchObject({
+      targetType: 'ASSET',
+      assetId: audio.id,
+      timestamp: 3.25,
+    });
+    const listed = await readData<{ comments: ListedComment[] }>(await list(video.id, target));
+    expect(listed.comments).toEqual([expect.objectContaining({ id: created.id, timestamp: 3.25 })]);
+  });
+
+  it('returns null for legacy and explicit null timestamps', async () => {
+    const { owner, video, target } = await assetScenario();
+    signedInAs(owner);
+
+    const legacy = await post(video.id, target, 'General image note');
+    expect(legacy.status).toBe(201);
+    expect((await readData<{ comment: ListedComment }>(legacy)).comment.timestamp).toBeNull();
+    const explicitNull = await postWithTimestamp(video.id, target, null);
+    expect(explicitNull.status).toBe(201);
+    expect((await readData<{ comment: ListedComment }>(explicitNull)).comment.timestamp).toBeNull();
+    expect(await db.attachmentComment.count({ where: { timestamp: null } })).toBe(2);
+    const listed = await readData<{ comments: ListedComment[] }>(await list(video.id, target));
+    expect(listed.comments.map((comment) => comment.timestamp)).toEqual([null, null]);
+  });
+
+  it('enforces the timestamp range in the database', async () => {
+    const { owner, video } = await seedVersion({ visibility: 'PRIVATE' });
+    const audio = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'AUDIO',
+      provider: 'R2_AUDIO',
+      sourceUrl: AUDIO_A,
+    });
+    const target: Target = { type: 'asset', id: audio.id };
+    signedInAs(owner);
+    const response = await postWithTimestamp(video.id, target, 86400);
+    expect(response.status).toBe(201);
+    const created = (await readData<{ comment: ListedComment }>(response)).comment;
+
+    await expect(
+      db.$executeRaw`UPDATE attachment_comments SET "timestamp" = ${86400.001} WHERE id = ${created.id}`
+    ).rejects.toThrow();
+    await expect(
+      db.$executeRaw`UPDATE attachment_comments SET "timestamp" = ${-0.001} WHERE id = ${created.id}`
+    ).rejects.toThrow();
+    expect(
+      await db.attachmentComment.findUniqueOrThrow({ where: { id: created.id } })
+    ).toMatchObject({
+      timestamp: 86400,
+    });
+  });
+
+  it.each([
+    ['negative', -0.5],
+    ['above maximum', 86400.001],
+    ['NaN string', 'NaN'],
+    ['infinity string', 'Infinity'],
+    ['numeric string', '12.5'],
+  ])('rejects %s timestamps without adding a row', async (_label, timestamp) => {
+    const { owner, video } = await seedVersion({ visibility: 'PRIVATE' });
+    const audio = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'AUDIO',
+      provider: 'R2_AUDIO',
+      sourceUrl: AUDIO_A,
+    });
+    signedInAs(owner);
+
+    expect(
+      (await postWithTimestamp(video.id, { type: 'asset', id: audio.id }, timestamp)).status
+    ).toBe(400);
+    expect(await db.attachmentComment.count()).toBe(0);
+  });
+
+  it('rejects timestamp zero on image assets and comment images', async () => {
+    const { owner, video, version, target } = await assetScenario();
+    const source = await createComment({ versionId: version.id, authorId: owner.id });
+    await db.comment.update({ where: { id: source.id }, data: { imageUrl: IMAGE_C } });
+    signedInAs(owner);
+
+    expect((await postWithTimestamp(video.id, target, 0)).status).toBe(400);
+    expect(
+      (await postWithTimestamp(video.id, { type: 'comment-image', id: source.id, url: IMAGE_C }, 0))
+        .status
+    ).toBe(400);
+    expect(await db.attachmentComment.count()).toBe(0);
+  });
+
+  it('refuses timestamped writes without permission and preserves the existing row', async () => {
+    const { owner, video } = await seedVersion({ visibility: 'PRIVATE' });
+    const audio = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'AUDIO',
+      provider: 'R2_AUDIO',
+      sourceUrl: AUDIO_A,
+    });
+    const target: Target = { type: 'asset', id: audio.id };
+    signedInAs(owner);
+    expect((await postWithTimestamp(video.id, target, 5)).status).toBe(201);
+
+    signedOut();
+    expect((await postWithTimestamp(video.id, target, 6)).status).toBe(403);
+    signedInAs(await createUser());
+    expect((await postWithTimestamp(video.id, target, 7)).status).toBe(403);
+    expect(await db.attachmentComment.count()).toBe(1);
+    expect(await db.attachmentComment.findFirstOrThrow()).toMatchObject({ timestamp: 5 });
   });
 
   it('persists an annotation-only image comment and returns canonical strokes in POST and GET', async () => {
