@@ -3,7 +3,8 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type { AnnotationCanvasHandle, AnnotationStroke } from '@/components/annotation-canvas';
 import { AttachmentImagePreview } from '@/components/video-page/attachment-image-preview';
-import { Volume2, X } from 'lucide-react';
+import { NativePreviewPlayer } from '@/components/video-page/native-preview-player';
+import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { AttachmentCommentsPanel } from '@/components/video-page/attachment-comments-panel';
@@ -47,7 +48,6 @@ export function MediaPreviewDialog({
   target,
   guestName,
   onCommentsChanged,
-  canDownload = false,
   playback,
 }: MediaPreviewDialogProps) {
   return (
@@ -91,7 +91,6 @@ export function MediaPreviewDialog({
             target={target}
             guestName={guestName}
             onCommentsChanged={onCommentsChanged}
-            canDownload={canDownload}
             playback={playback}
           >
             {children}
@@ -111,9 +110,8 @@ function MediaPreviewBody({
   target,
   guestName,
   onCommentsChanged,
-  canDownload,
   playback,
-}: Omit<MediaPreviewDialogProps, 'open' | 'onClose' | 'headerActions'>) {
+}: Omit<MediaPreviewDialogProps, 'open' | 'onClose' | 'headerActions' | 'canDownload'>) {
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const mediaRef = useRef<HTMLDivElement>(null);
   const [nativeTime, setNativeTime] = useState<number | null>(null);
@@ -151,9 +149,9 @@ function MediaPreviewBody({
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   return (
-    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
       <div
-        className="flex h-[42%] min-h-[180px] min-w-0 flex-none items-center justify-center overflow-hidden bg-black/90 p-3 md:h-auto md:min-h-0 md:flex-1 md:p-4"
+        className="flex h-[42%] min-h-[180px] min-w-0 flex-none items-center justify-center overflow-hidden bg-black md:h-auto md:min-h-0 md:flex-1"
         inert={submitting}
         ref={mediaRef}
         onLoadedMetadataCapture={() => setNativeTime(getTime())}
@@ -163,28 +161,19 @@ function MediaPreviewBody({
       >
         {children ??
           (kind === 'IMAGE' && src ? (
-            <AttachmentImagePreview
-              src={src}
-              title={title}
-              isAnnotating={isAnnotating}
-              canvasRef={canvasRef}
-              viewingAnnotation={viewingAnnotation}
-              onCancel={() => setIsAnnotating(false)}
-              onDismiss={() => setViewingAnnotation(null)}
-            />
-          ) : kind === 'AUDIO' && src ? (
-            <div className="flex w-full max-w-xl flex-col items-center gap-8 rounded-xl bg-background/10 px-6 py-10 text-white">
-              <Volume2 className="h-12 w-12" />
-              <p className="max-w-full truncate text-center text-sm">{title}</p>
-              <audio
-                controls
-                controlsList={canDownload ? undefined : 'nodownload'}
-                preload="metadata"
+            <div className="h-full w-full p-3 md:p-4">
+              <AttachmentImagePreview
                 src={src}
-                className="w-full"
-                aria-label={title}
+                title={title}
+                isAnnotating={isAnnotating}
+                canvasRef={canvasRef}
+                viewingAnnotation={viewingAnnotation}
+                onCancel={() => setIsAnnotating(false)}
+                onDismiss={() => setViewingAnnotation(null)}
               />
             </div>
+          ) : (kind === 'AUDIO' || kind === 'VIDEO') && src ? (
+            <NativePreviewPlayer src={src} title={title} kind={kind} />
           ) : (
             <p className="text-sm text-white/70">Preview is unavailable.</p>
           ))}

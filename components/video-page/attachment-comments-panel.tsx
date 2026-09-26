@@ -1,11 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Clock, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Clock, Loader2, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import type { AnnotationStroke } from '@/components/annotation-canvas';
 import { validateAnnotationStrokes } from '@/lib/validation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { AttachmentCommentTarget } from '@/lib/attachment-comment-target';
 
 interface AttachmentComment {
@@ -239,72 +246,105 @@ export function AttachmentCommentsPanel({
         ) : comments.length === 0 && !error ? (
           <p className="text-sm text-muted-foreground">No comments on this file yet.</p>
         ) : null}
-        {comments.map((comment) => (
-          <article key={comment.id} className="rounded-lg border bg-muted/30 p-3">
-            <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="min-w-0 text-xs font-medium truncate">
-                {comment.author?.name || comment.guestName || 'Reviewer'}
-              </div>
-              {comment.canDelete && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  aria-label="Delete comment"
-                  disabled={deletingId === comment.id}
-                  onClick={() => void remove(comment.id)}
-                >
-                  {deletingId === comment.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
+        {comments.map((comment) => {
+          const authorName = comment.author?.name || comment.guestName || 'Reviewer';
+          return (
+            <article
+              key={comment.id}
+              className="group min-w-0 rounded-lg border p-3 transition-colors hover:bg-accent/50"
+            >
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Avatar className="h-6 w-6 shrink-0">
+                    <AvatarImage src={comment.author?.image ?? undefined} />
+                    <AvatarFallback className="text-xs">{authorName.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <span className="truncate text-sm font-medium" title={authorName}>
+                    {authorName}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {timedMedia && comment.timestamp != null && (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs tabular-nums text-primary transition-colors hover:bg-primary/20 hover:underline disabled:pointer-events-none disabled:opacity-50"
+                      aria-label={`Jump to ${formatTime(comment.timestamp)}`}
+                      disabled={playbackTime === null || !onSeekTimestamp}
+                      onClick={() => onSeekTimestamp?.(comment.timestamp!)}
+                    >
+                      <Clock className="h-3 w-3" />
+                      {formatTime(comment.timestamp)}
+                      <ArrowUpRight className="h-3 w-3" />
+                    </button>
                   )}
-                </Button>
+                  {canAnnotate && comment.annotationData && (
+                    <button
+                      type="button"
+                      className="rounded bg-violet-500/15 px-2 py-1 text-xs text-violet-400 hover:bg-violet-500/25 aria-pressed:bg-violet-500/25 disabled:pointer-events-none disabled:opacity-50"
+                      aria-pressed={viewingAnnotationId === comment.id}
+                      disabled={isAnnotating || submitting}
+                      onClick={() => {
+                        try {
+                          const strokes = validateAnnotationStrokes(
+                            JSON.parse(comment.annotationData!)
+                          );
+                          if (strokes?.length) onViewAnnotation?.(comment.id, strokes);
+                          else setError('This annotation could not be displayed.');
+                        } catch {
+                          setError('This annotation could not be displayed.');
+                        }
+                      }}
+                    >
+                      View annotation
+                    </button>
+                  )}
+                  {comment.canDelete && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          aria-label="Comment actions"
+                          disabled={deletingId === comment.id}
+                        >
+                          {deletingId === comment.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <MoreVertical className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onSelect={() => void remove(comment.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+              </div>
+              {comment.content && (
+                <p className="mb-2 whitespace-pre-wrap break-words text-sm">{comment.content}</p>
               )}
-            </div>
-            {timedMedia && comment.timestamp != null && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="mb-2 gap-1 tabular-nums"
-                aria-label={`Jump to ${formatTime(comment.timestamp)}`}
-                disabled={playbackTime === null || !onSeekTimestamp}
-                onClick={() => onSeekTimestamp?.(comment.timestamp!)}
-              >
-                <Clock className="h-3.5 w-3.5" />
-                {formatTime(comment.timestamp)}
-              </Button>
-            )}
-            {comment.content && (
-              <p className="whitespace-pre-wrap break-words text-sm">{comment.content}</p>
-            )}
-            {canAnnotate && comment.annotationData && (
-              <Button
-                type="button"
-                variant={viewingAnnotationId === comment.id ? 'secondary' : 'outline'}
-                size="sm"
-                className="mt-2 gap-1"
-                aria-pressed={viewingAnnotationId === comment.id}
-                disabled={isAnnotating || submitting}
-                onClick={() => {
-                  try {
-                    const strokes = validateAnnotationStrokes(JSON.parse(comment.annotationData!));
-                    if (strokes?.length) onViewAnnotation?.(comment.id, strokes);
-                    else setError('This annotation could not be displayed.');
-                  } catch {
-                    setError('This annotation could not be displayed.');
-                  }
-                }}
-              >
-                <Pencil className="h-3.5 w-3.5" /> View annotation
-              </Button>
-            )}
-            <time className="mt-2 block text-xs text-muted-foreground" dateTime={comment.createdAt}>
-              {new Date(comment.createdAt).toLocaleString()}
-            </time>
-          </article>
-        ))}
+              <div className="flex items-center justify-between gap-2">
+                <time className="text-xs text-muted-foreground" dateTime={comment.createdAt}>
+                  {new Date(comment.createdAt).toLocaleDateString()}
+                </time>
+                {canAnnotate && comment.annotationData && (
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-violet-500 px-2 py-0.5 text-[10px] font-medium text-white">
+                    <Pencil className="h-2.5 w-2.5" />
+                    Annotated
+                  </span>
+                )}
+              </div>
+            </article>
+          );
+        })}
         {hasMore && !loading && (
           <Button
             variant="outline"

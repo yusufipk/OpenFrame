@@ -141,6 +141,61 @@ async function seekPreviewMedia(page: Page, kind: 'audio' | 'video', time: numbe
     .toBeCloseTo(time, 2);
 }
 
+async function exercisePreviewControls(page: Page, kind: 'audio' | 'video') {
+  const dialog = page.getByRole('dialog');
+  const media = dialog.locator(kind);
+  await expect
+    .poll(() => media.evaluate((element: HTMLMediaElement) => element.readyState))
+    .toBeGreaterThan(0);
+  await dialog.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect
+    .poll(() => media.evaluate((element: HTMLMediaElement) => element.paused))
+    .toBe(false);
+  await dialog.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => media.evaluate((element: HTMLMediaElement) => element.paused)).toBe(true);
+  await dialog.getByRole('button', { name: 'Mute', exact: true }).click();
+  await expect(media).toHaveJSProperty('muted', true);
+  await dialog.getByRole('button', { name: 'Unmute', exact: true }).click();
+  await expect(media).toHaveJSProperty('muted', false);
+  const seek = dialog.getByRole('slider', { name: 'Seek playback' });
+  await seek.focus();
+  await seek.press('Home');
+  await expect
+    .poll(() => media.evaluate((element: HTMLMediaElement) => element.currentTime))
+    .toBe(0);
+  await seek.press('ArrowRight');
+  await expect
+    .poll(() => media.evaluate((element: HTMLMediaElement) => element.currentTime))
+    .toBeGreaterThan(0);
+  if (kind === 'video') {
+    await dialog.getByRole('button', { name: 'Fullscreen', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+  }
+  await dialog.getByRole('button', { name: '1x', exact: true }).click();
+  await page.getByRole('menuitem', { name: '1.5x', exact: true }).click();
+  await expect(media).toHaveJSProperty('playbackRate', 1.5);
+  await dialog.getByRole('button', { name: '1.5x', exact: true }).click();
+  await page.getByRole('menuitem', { name: '1x', exact: true }).click();
+  if (kind === 'video') {
+    await dialog.getByRole('button', { name: 'Exit fullscreen', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  }
+  for (const width of [320, 402, 768, 1440]) {
+    await page.setViewportSize({ width, height: 874 });
+    await expect.poll(async () => (await dialog.boundingBox())!.width).toBeLessThanOrEqual(width);
+    for (const control of [
+      seek,
+      dialog.getByRole('button', { name: 'Play', exact: true }),
+      dialog.getByRole('button', { name: '1x', exact: true }),
+    ]) {
+      await expect(control).toBeVisible();
+      const bounds = (await control.boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    }
+  }
+}
+
 async function expectTimestamp(
   page: Page,
   content: string,
@@ -275,7 +330,8 @@ test('asset image, audio and video previews have independent persistent comments
     });
     await page.getByRole('button', { name: 'Play recording', exact: true }).click();
     await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toHaveCount(0);
-    await expect(page.getByRole('dialog').locator('audio')).toBeVisible();
+    await expect(page.getByRole('dialog').locator('audio')).toBeAttached();
+    await exercisePreviewControls(page, 'audio');
     const audioComment = `Reduce the background noise ${seeded.videoId}`;
     await seekPreviewMedia(page, 'audio', 65.25);
     await page
@@ -288,6 +344,7 @@ test('asset image, audio and video previews have independent persistent comments
     await closePreview(page);
     await page.getByRole('button', { name: 'Play video', exact: true }).click();
     await expect(page.getByRole('dialog').locator('video')).toBeVisible();
+    await exercisePreviewControls(page, 'video');
     await expect(page.getByRole('dialog').getByText(audioComment, { exact: true })).toHaveCount(0);
     await seekPreviewMedia(page, 'video', 1.25);
     await postFileComment(page, `Shorten this asset ${seeded.videoId}`);
@@ -324,8 +381,9 @@ test('asset image, audio and video previews have independent persistent comments
     );
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: 'Delete comment', exact: true })
+      .getByRole('button', { name: 'Comment actions', exact: true })
       .click();
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
     expect((await deleted).ok()).toBe(true);
     expect(await db.attachmentComment.count({ where: { content: imageComment } })).toBe(0);
     await closePreview(page);

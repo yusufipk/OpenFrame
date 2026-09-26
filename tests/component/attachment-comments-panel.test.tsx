@@ -90,7 +90,8 @@ describe('AttachmentCommentsPanel', () => {
     );
     expect(await screen.findByText('Raise the contrast')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Comment on this file' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete comment' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Comment actions' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByText('Raise the contrast')).not.toBeInTheDocument());
     expect(changed).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.some((call) => call[1]?.method === 'DELETE')).toBe(true);

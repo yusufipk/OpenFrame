@@ -1662,16 +1662,7 @@ export const AssetsPane = memo(function AssetsPane({
                 allowFullScreen
               />
             </div>
-          ) : selectedAsset.provider === 'R2_VIDEO' && selectedAsset.sourceUrl ? (
-            <video
-              className="h-full w-full rounded-md bg-black object-contain"
-              src={selectedAsset.sourceUrl}
-              controls
-              controlsList={canDownloadAssets ? undefined : 'nodownload'}
-              playsInline
-              preload="metadata"
-            />
-          ) : (
+          ) : selectedAsset.provider === 'R2_VIDEO' && selectedAsset.sourceUrl ? undefined : (
             <BunnyPreviewPlayer
               ref={bunnyPreviewPlayerRef}
               providerVideoId={selectedAsset.providerVideoId}
