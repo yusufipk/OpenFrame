@@ -113,7 +113,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const comments = await db.comment.findMany({
       where: commentsFilter,
-      orderBy: { timestamp: 'asc' },
+      orderBy: [{ timestamp: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       skip: offset,
       take: limit,
       select: {
@@ -264,8 +264,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const attachedImageUrls = imageUrlsResult.urls;
     const primaryImageUrl = attachedImageUrls[0] ?? null;
 
+    const isImage = version.video.mediaType === 'IMAGE';
+
+    // Still image comments have no playback position. Zero remains the storage
+    // sentinel for compatibility with existing comment consumers.
+    if (isImage && timestampEnd !== undefined && timestampEnd !== null) {
+      return apiErrors.badRequest('Image comments cannot have a time range');
+    }
+    if (isImage && timestamp !== undefined && timestamp !== null && Number(timestamp) !== 0) {
+      return apiErrors.badRequest('Image comments cannot have a playback timestamp');
+    }
+
     // Validate required fields
-    if (timestamp === undefined || timestamp === null) {
+    if (!isImage && (timestamp === undefined || timestamp === null)) {
       return apiErrors.badRequest('Timestamp is required');
     }
 
@@ -291,7 +302,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return { value: parsed };
     };
 
-    const parsedTimestampResult = parseCommentTimestamp(timestamp, 'Timestamp');
+    const parsedTimestampResult = parseCommentTimestamp(isImage ? 0 : timestamp, 'Timestamp');
     if ('error' in parsedTimestampResult) {
       return parsedTimestampResult.error;
     }
@@ -515,10 +526,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const isOwnProject = session?.user?.id === project.ownerId;
     if (!isOwnProject) {
       const baseUrl = process.env.NEXTAUTH_URL || '';
-      const videoTitle = version.video.title || 'Untitled Video';
-      const mins = Math.floor(parseFloat(timestamp) / 60);
-      const secs = Math.floor(parseFloat(timestamp) % 60);
-      const ts = `${mins}:${secs.toString().padStart(2, '0')}`;
+      const videoTitle = version.video.title || (isImage ? 'Untitled Image' : 'Untitled Video');
+      const mins = Math.floor(parsedTimestamp / 60);
+      const secs = Math.floor(parsedTimestamp % 60);
+      const ts = isImage ? null : `${mins}:${secs.toString().padStart(2, '0')}`;
 
       if (parentId) {
         // It's a reply — look up parent author
@@ -534,6 +545,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           replyText: content?.trim() || (primaryImageUrl ? '(image attachment)' : '(voice note)'),
           parentAuthor: parentComment?.author?.name || parentComment?.guestName || 'Someone',
           timestamp: ts,
+          mediaType: version.video.mediaType,
           url: `${baseUrl}/watch/${version.video.id}`,
         }).catch((err) => logError('Notification failed:', err));
       } else {
@@ -544,6 +556,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           commentAuthor: commentAuthorName,
           commentText: content?.trim() || (primaryImageUrl ? '(image attachment)' : '(voice note)'),
           timestamp: ts,
+          mediaType: version.video.mediaType,
           url: `${baseUrl}/watch/${version.video.id}`,
         }).catch((err) => logError('Notification failed:', err));
       }

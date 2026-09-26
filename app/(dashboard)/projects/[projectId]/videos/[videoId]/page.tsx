@@ -1,6 +1,10 @@
 import { VideoPageContent } from '@/components/video-page-content';
 import { auth } from '@/lib/auth';
-import { isDirectFileUploadEnabled, isS3VideoUploadsEnabled } from '@/lib/feature-flags';
+import {
+  hasR2Config,
+  isDirectFileUploadEnabled,
+  isS3VideoUploadsEnabled,
+} from '@/lib/feature-flags';
 import { requireVideoProjectAccessOrRedirect } from '@/lib/route-access';
 
 interface VideoPageProps {
@@ -25,6 +29,7 @@ export default async function VideoPage({ params }: VideoPageProps) {
       videoId={videoId}
       projectId={projectId}
       directUploadsEnabled={isDirectFileUploadEnabled()}
+      imageUploadsEnabled={hasR2Config()}
       directUploadProvider={isS3VideoUploadsEnabled() ? 'r2' : 'bunny'}
     />
   );

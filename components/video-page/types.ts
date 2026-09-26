@@ -139,6 +139,7 @@ export interface Comment {
 
 export interface VideoData {
   id: string;
+  mediaType?: 'VIDEO' | 'IMAGE';
   title: string;
   description: string | null;
   projectId: string;

@@ -128,6 +128,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ? providerId.trim().toLowerCase()
         : 'youtube';
 
+    if (normalizedProviderIdEarly === 'r2-image') {
+      return apiErrors.badRequest('Use the image upload endpoint for image reviews');
+    }
+
     if (normalizedProviderIdEarly === 'r2') {
       if (!videoUrl.startsWith('/api/upload/video/')) {
         return apiErrors.badRequest('Video URL must be a valid upload path');

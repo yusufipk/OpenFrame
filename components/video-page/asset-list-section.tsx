@@ -1,7 +1,15 @@
 'use client';
 
 import { memo, type ReactNode } from 'react';
-import { Download, Image as ImageIcon, Loader2, Play, Trash2, Volume2 } from 'lucide-react';
+import {
+  Download,
+  Image as ImageIcon,
+  Loader2,
+  MessageSquare,
+  Play,
+  Trash2,
+  Volume2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -29,6 +37,7 @@ interface AssetListSectionProps {
   onDeleteAsset: (assetId: string) => void;
   onLoadMoreAssets: () => void;
   renderAssetPreview: (asset: VideoAsset) => ReactNode;
+  attachmentCommentCounts: Record<string, number>;
 }
 
 /**
@@ -123,6 +132,7 @@ export const AssetListSection = memo(function AssetListSection({
   onDeleteAsset,
   onLoadMoreAssets,
   renderAssetPreview,
+  attachmentCommentCounts,
 }: AssetListSectionProps) {
   if (isLoadingAssets) {
     return (
@@ -144,6 +154,7 @@ export const AssetListSection = memo(function AssetListSection({
   return (
     <div className="space-y-2">
       {assets.map((asset) => {
+        const commentCount = attachmentCommentCounts[`asset:${asset.id}`] || 0;
         const isBunnyProcessing =
           asset.provider === 'BUNNY' &&
           !!bunnyProcessingByAssetId[asset.id] &&
@@ -176,7 +187,7 @@ export const AssetListSection = memo(function AssetListSection({
                 {asset.uploadedByUser?.name || asset.uploadedByGuestName || 'Unknown'} •{' '}
                 {new Date(asset.createdAt).toLocaleDateString()}
               </p>
-              <div className="pt-1 flex items-center gap-1">
+              <div className="pt-1 flex flex-wrap items-center gap-1">
                 <Button
                   size="icon"
                   variant="outline"
@@ -205,6 +216,19 @@ export const AssetListSection = memo(function AssetListSection({
                     <Play className="h-3 w-3" />
                   )}
                 </Button>
+
+                {commentCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 gap-1 px-2 text-xs"
+                    aria-label={`${commentCount} comments on ${asset.displayName}`}
+                    onClick={() => onViewAsset(asset)}
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    {commentCount}
+                  </Button>
+                )}
 
                 {canDownloadAssets && asset.provider !== 'YOUTUBE' && (
                   <AssetDownloadControl

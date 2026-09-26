@@ -8,7 +8,11 @@ import { auth, checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ProjectContentClient } from './project-content-client';
 import ProjectLoading from './loading';
-import { isDirectFileUploadEnabled, isS3VideoUploadsEnabled } from '@/lib/feature-flags';
+import {
+  hasR2Config,
+  isDirectFileUploadEnabled,
+  isS3VideoUploadsEnabled,
+} from '@/lib/feature-flags';
 import { canDownloadProjectMedia } from '@/lib/project-download';
 import {
   parseProjectContentSort,
@@ -187,6 +191,7 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
     const activeVersion = video.versions[0];
     return {
       id: video.id,
+      mediaType: video.mediaType,
       title: video.title,
       thumbnailUrl:
         activeVersion?.thumbnailUrl || 'https://via.placeholder.com/320x180?text=No+Thumbnail',
@@ -199,6 +204,7 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   });
 
   const directUploadsEnabled = isDirectFileUploadEnabled();
+  const imageUploadsEnabled = hasR2Config();
   const directUploadProvider = isS3VideoUploadsEnabled() ? 'r2' : 'bunny';
 
   const canEdit = access.canEdit;
@@ -248,6 +254,7 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
             currentPage={page}
             pageSize={pageSize}
             directUploadsEnabled={directUploadsEnabled}
+            imageUploadsEnabled={imageUploadsEnabled}
             directUploadProvider={directUploadProvider}
           />
         </div>
@@ -285,6 +292,7 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
         currentPage={page}
         pageSize={pageSize}
         directUploadsEnabled={directUploadsEnabled}
+        imageUploadsEnabled={imageUploadsEnabled}
         directUploadProvider={directUploadProvider}
       />
     </div>

@@ -458,6 +458,27 @@ describe('GET /api/upload/image/[filename]', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
 
+  it('serves a later comment image without an asset while enforcing video access', async () => {
+    const fixture = await seedMedia();
+    const first = uniqueFilename('png');
+    const second = uniqueFilename('webp');
+    await createComment({
+      versionId: fixture.version.id,
+      authorId: fixture.owner.id,
+      imageUrls: [`/api/upload/image/${first}`, `/api/upload/image/${second}`],
+    });
+    signedOut();
+    expect((await serve(second)).status).toBe(403);
+    signedInAs(await createUser());
+    expect((await serve(second)).status).toBe(403);
+    expect(r2Send).not.toHaveBeenCalled();
+    signedInAs(fixture.owner);
+    const response = await serve(second);
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe(STORED_BYTES);
+    expect(sentKey()).toBe(`images/${second}`);
+  });
+
   // The sandboxing headers are the reason a stored .png that is really an HTML
   // document cannot run in the app's origin.
   it('serves the image with nosniff and a sandboxing content security policy', async () => {

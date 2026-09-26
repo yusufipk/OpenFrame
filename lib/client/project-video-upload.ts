@@ -27,7 +27,7 @@ export type ProjectVideoUploadProgress = {
   isCancelled?: () => boolean;
 };
 
-export function isVideoFile(file: File): boolean {
+export function isVideoFile(file: Pick<File, 'name' | 'type'>): boolean {
   if (file.type.startsWith('video/')) return true;
   const ext = file.name.split('.').pop()?.toLowerCase();
   return !!ext && VIDEO_FILE_EXTENSIONS.includes(ext);

@@ -223,7 +223,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
       desiredImageUrls = parsedImageUrls.urls;
 
-      const existingUrls = comment.images.map((image) => image.url);
+      const existingUrls =
+        comment.images.length > 0
+          ? comment.images.map((image) => image.url)
+          : comment.imageUrl
+            ? [comment.imageUrl]
+            : [];
       const addedUrls = desiredImageUrls.filter((url) => !existingUrls.includes(url));
       removedImageUrls = existingUrls.filter((url) => !desiredImageUrls.includes(url));
 
@@ -315,6 +320,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
 
       if (wantsImageUpdate) {
+        await tx.$queryRaw`SELECT id FROM comments WHERE id = ${commentId} FOR UPDATE`;
         if (removedImageUrls.length > 0) {
           // Only the link is dropped. The file stays in R2 and in the assets pane,
           // which is where a detached upload is deleted from and where its storage
@@ -322,12 +328,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           await tx.commentImage.deleteMany({
             where: { commentId, url: { in: removedImageUrls } },
           });
+          await tx.attachmentComment.deleteMany({
+            where: {
+              sourceCommentId: commentId,
+              targetType: 'COMMENT_IMAGE',
+              sourceUrl: { in: removedImageUrls },
+            },
+          });
         }
 
         for (const [index, url] of desiredImageUrls.entries()) {
           const added = addedImages.find((image) => image.url === url);
           if (!added) {
-            await tx.commentImage.update({ where: { url }, data: { position: index } });
+            if (comment.images.some((image) => image.url === url)) {
+              await tx.commentImage.update({ where: { url }, data: { position: index } });
+            } else {
+              await tx.commentImage.create({ data: { commentId, url, position: index } });
+            }
             continue;
           }
 

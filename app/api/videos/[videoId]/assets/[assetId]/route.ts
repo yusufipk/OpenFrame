@@ -7,6 +7,7 @@ import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { canDeleteAssetForViewer, getVideoAssetAccessContext } from '@/lib/video-assets';
+import { lockAttachmentCommentVideo } from '@/lib/attachment-comments';
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ videoId: string; assetId: string }> };
@@ -26,6 +27,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       where: { id: assetId, videoId },
       select: {
         id: true,
+        kind: true,
         provider: true,
         sourceUrl: true,
         providerVideoId: true,
@@ -45,12 +47,77 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     let shouldDeleteVideoObject = false;
     let shouldDeleteVideoThumbnail = false;
     await db.$transaction(async (tx) => {
+      await lockAttachmentCommentVideo(tx, videoId);
+      await tx.$queryRaw`SELECT id FROM video_assets WHERE id = ${asset.id} FOR UPDATE`;
+
+      const survivingAsset = asset.sourceUrl
+        ? await tx.videoAsset.findFirst({
+            where: {
+              id: { not: asset.id },
+              videoId,
+              kind: asset.kind,
+              sourceUrl: asset.sourceUrl,
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            select: { id: true },
+          })
+        : null;
+      if (survivingAsset) {
+        await tx.attachmentComment.updateMany({
+          where: { assetId: asset.id },
+          data: { assetId: survivingAsset.id },
+        });
+      } else if (asset.kind === 'IMAGE' && asset.sourceUrl) {
+        const source = await tx.comment.findFirst({
+          where: {
+            version: { videoParentId: videoId },
+            OR: [
+              { images: { some: { url: asset.sourceUrl } } },
+              { imageUrl: asset.sourceUrl, images: { none: {} } },
+            ],
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true },
+        });
+        if (source) {
+          await tx.attachmentComment.updateMany({
+            where: { assetId: asset.id },
+            data: {
+              targetType: 'COMMENT_IMAGE',
+              assetId: null,
+              sourceCommentId: source.id,
+              sourceUrl: asset.sourceUrl,
+            },
+          });
+        }
+      } else if (asset.kind === 'AUDIO' && asset.sourceUrl) {
+        const source = await tx.comment.findFirst({
+          where: { version: { videoParentId: videoId }, voiceUrl: asset.sourceUrl },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true },
+        });
+        if (source) {
+          await tx.attachmentComment.updateMany({
+            where: { assetId: asset.id },
+            data: {
+              targetType: 'COMMENT_AUDIO',
+              assetId: null,
+              sourceCommentId: source.id,
+              sourceUrl: null,
+            },
+          });
+        }
+      }
       await tx.videoAsset.delete({ where: { id: asset.id } });
 
       if (asset.provider === VideoAssetProvider.R2_IMAGE) {
         const [assetReferenceCount, commentReferenceCount] = await Promise.all([
           tx.videoAsset.count({ where: { sourceUrl: asset.sourceUrl } }),
-          tx.commentImage.count({ where: { url: asset.sourceUrl } }),
+          tx.comment.count({
+            where: {
+              OR: [{ imageUrl: asset.sourceUrl }, { images: { some: { url: asset.sourceUrl! } } }],
+            },
+          }),
         ]);
         shouldDeleteImageObject = assetReferenceCount === 0 && commentReferenceCount === 0;
       }

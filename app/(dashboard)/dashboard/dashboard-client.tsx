@@ -23,6 +23,7 @@ interface DashboardClientProps {
   canCreateProjects: boolean;
   canUploadVideos: boolean;
   directUploadsEnabled: boolean;
+  imageUploadsEnabled?: boolean;
   directUploadProvider: DirectUploadProvider;
 }
 
@@ -33,12 +34,15 @@ export function DashboardClient({
   canCreateProjects,
   canUploadVideos,
   directUploadsEnabled,
+  imageUploadsEnabled = false,
   directUploadProvider,
 }: DashboardClientProps) {
   return (
     <div className="px-6 lg:px-8 py-8 w-full">
       <VideoDragDropUploader
-        canUpload={canUploadVideos && directUploadsEnabled}
+        canUpload={canUploadVideos && (directUploadsEnabled || imageUploadsEnabled)}
+        directUploadsEnabled={directUploadsEnabled}
+        imageUploadsEnabled={imageUploadsEnabled}
         directUploadProvider={directUploadProvider}
       />
       <ProjectFilter

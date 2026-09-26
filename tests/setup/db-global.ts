@@ -51,6 +51,10 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, 'prisma', 'migrations');
  * else is a plain table/column/enum addition that db push derives on its own.
  */
 const REVIEWED_MIGRATIONS = [
+  '20260926140000_attachment_comment_timestamps', // replayed: finite timestamp range check
+  '20260926130000_attachment_comment_annotations', // replayed: annotation-only comment check
+  '20260926120000_attachment_comments', // replayed: target and content checks
+  '20260925120000_add_video_media_type', // replayed: image object key uniqueness
   '20260915120000_project_folders', // replayed: folder tree trigger
   '20260226110000_rate_limit_extras', // replayed: cleanup_rate_limits(), UNLOGGED
   '20260227000000_add_audio_asset_kind_and_provider',
@@ -78,6 +82,7 @@ const REVIEWED_MIGRATIONS = [
 /** Objects POST_PUSH_SQL must have produced. Verified after it runs. */
 const REQUIRED_FUNCTIONS = ['cleanup_rate_limits', 'validate_project_folder_tree'];
 const REQUIRED_INDEXES = [
+  'video_versions_r2_image_key_unique',
   'video_versions_r2_videoid_unique',
   'video_versions_r2_originalurl_unique',
   'video_versions_r2_thumbnail_unique',
@@ -85,6 +90,17 @@ const REQUIRED_INDEXES = [
 ];
 
 const POST_PUSH_SQL = `
+ALTER TABLE "attachment_comments" DROP CONSTRAINT IF EXISTS "attachment_comments_exactly_one_target_check";
+ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_exactly_one_target_check" CHECK (
+  ("targetType" = 'ASSET' AND "assetId" IS NOT NULL AND "sourceCommentId" IS NULL AND "sourceUrl" IS NULL)
+  OR ("targetType" = 'COMMENT_IMAGE' AND "assetId" IS NULL AND "sourceCommentId" IS NOT NULL AND "sourceUrl" IS NOT NULL)
+  OR ("targetType" = 'COMMENT_AUDIO' AND "assetId" IS NULL AND "sourceCommentId" IS NOT NULL AND "sourceUrl" IS NULL)
+);
+ALTER TABLE "attachment_comments" DROP CONSTRAINT IF EXISTS "attachment_comments_nonempty_content_check";
+ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_nonempty_content_check" CHECK (length("content") <= 10000 AND (length(btrim("content")) > 0 OR ("annotationData" IS NOT NULL AND "annotationData" <> '[]')));
+ALTER TABLE "attachment_comments" DROP CONSTRAINT IF EXISTS "attachment_comments_timestamp_range_check";
+ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_timestamp_range_check" CHECK ("timestamp" >= 0 AND "timestamp" <= 86400);
+
 DROP TRIGGER IF EXISTS project_folder_tree_guard ON project_folders;
 
 ${fs.readFileSync(path.join(MIGRATIONS_DIR, '20260915120000_project_folders', 'migration.sql'), 'utf8').split('-- Custom invariants, also installed by the test database bootstrap.')[1]}
@@ -127,6 +143,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "video_versions_r2_thumbnail_unique"
 ON "video_versions" ("thumbnailUrl")
 WHERE "providerId" = 'r2' AND "thumbnailUrl" LIKE '/api/upload/image/%';
 
+CREATE UNIQUE INDEX IF NOT EXISTS "video_versions_r2_image_key_unique"
+ON "video_versions" ("videoId")
+WHERE "providerId" = 'r2-image';
 CREATE UNIQUE INDEX IF NOT EXISTS "live_review_active_video_unique"
 ON "live_review_sessions" ("videoId") WHERE "status" = 'active';
 `;

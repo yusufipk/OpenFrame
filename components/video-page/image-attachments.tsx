@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Trash2 } from 'lucide-react';
+import { MessageSquare, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useObjectUrls } from '@/components/video-page/hooks/use-object-urls';
@@ -70,7 +70,9 @@ export const ImageAttachmentStrip = memo(function ImageAttachmentStrip({
 
 interface CommentImageGalleryProps {
   images: CommentImage[];
-  onOpen: (url: string) => void;
+  onOpen: (image: CommentImage) => void;
+  commentId: string;
+  attachmentCommentCounts: Record<string, number>;
   compact?: boolean;
   className?: string;
 }
@@ -79,6 +81,8 @@ interface CommentImageGalleryProps {
 export const CommentImageGallery = memo(function CommentImageGallery({
   images,
   onOpen,
+  commentId,
+  attachmentCommentCounts,
   compact = false,
   className,
 }: CommentImageGalleryProps) {
@@ -86,34 +90,47 @@ export const CommentImageGallery = memo(function CommentImageGallery({
 
   if (images.length === 1) {
     return (
-      <div
+      <button
+        type="button"
         className={cn(
-          'flex cursor-pointer items-center justify-center overflow-hidden rounded-md bg-muted transition-opacity hover:opacity-90',
+          'relative flex w-full cursor-pointer items-center justify-center overflow-hidden rounded-md bg-muted transition-opacity hover:opacity-90',
           compact ? 'max-h-40' : 'max-h-60',
           className
         )}
-        onClick={() => onOpen(images[0].url)}
+        onClick={() => onOpen(images[0])}
+        aria-label="Open image preview"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={images[0].url}
           alt="Attachment"
-          className={cn('w-auto object-contain', compact ? 'max-h-40' : 'max-h-60')}
+          className={cn('max-w-full object-contain', compact ? 'max-h-40' : 'max-h-60')}
         />
-      </div>
+        {(attachmentCommentCounts[`comment-image:${commentId}:${images[0].url}`] || 0) > 0 && (
+          <span
+            className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-background/90 px-1.5 py-0.5 text-xs text-foreground"
+            aria-label={`${attachmentCommentCounts[`comment-image:${commentId}:${images[0].url}`]} comments on image attachment`}
+          >
+            <MessageSquare className="h-3 w-3" />
+            {attachmentCommentCounts[`comment-image:${commentId}:${images[0].url}`]}
+          </span>
+        )}
+      </button>
     );
   }
 
   return (
     <div className={cn('grid grid-cols-2 gap-1.5', className)}>
       {images.map((image, index) => (
-        <div
+        <button
+          type="button"
           key={image.id}
           className={cn(
-            'cursor-pointer overflow-hidden rounded-md bg-muted transition-opacity hover:opacity-90',
+            'relative min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted transition-opacity hover:opacity-90',
             compact ? 'h-20' : 'h-24'
           )}
-          onClick={() => onOpen(image.url)}
+          onClick={() => onOpen(image)}
+          aria-label={`Open image preview ${index + 1}`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -121,7 +138,16 @@ export const CommentImageGallery = memo(function CommentImageGallery({
             alt={`Attachment ${index + 1}`}
             className="h-full w-full object-cover"
           />
-        </div>
+          {(attachmentCommentCounts[`comment-image:${commentId}:${image.url}`] || 0) > 0 && (
+            <span
+              className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-background/90 px-1.5 py-0.5 text-xs text-foreground"
+              aria-label={`${attachmentCommentCounts[`comment-image:${commentId}:${image.url}`]} comments on image attachment`}
+            >
+              <MessageSquare className="h-3 w-3" />
+              {attachmentCommentCounts[`comment-image:${commentId}:${image.url}`]}
+            </span>
+          )}
+        </button>
       ))}
     </div>
   );

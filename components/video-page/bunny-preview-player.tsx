@@ -4,6 +4,7 @@
 import {
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -11,21 +12,18 @@ import {
   useState,
 } from 'react';
 import Hls, { type Level } from 'hls.js';
-import { ChevronDown, Loader2, Pause, Play, Volume2, VolumeX } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Loader2, Pause, Play } from 'lucide-react';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  enterPreviewFullscreen,
+  PreviewPlayerControls,
+} from '@/components/video-page/preview-player-controls';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
-import { cn } from '@/lib/utils';
-import {
-  NATIVE_SPEED_OPTIONS,
-  SILENT_ABOVE_SPEED,
-} from '@/components/video-page/hooks/video-player-utils';
 import type { BunnyPlaybackState, BunnyQualityOption } from '@/components/video-page/types';
+
+import {
+  AttachmentVideoAnnotationContext,
+  AttachmentVideoFrame,
+} from '@/components/video-page/attachment-video-frame';
 
 interface BunnyPreviewPlayerProps {
   providerVideoId: string | null;
@@ -37,14 +35,6 @@ export interface BunnyPreviewPlayerHandle {
   togglePlayPause: () => void;
   seekBy: (seconds: number) => void;
   toggleMute: () => void;
-}
-
-function formatTime(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return '0:00';
-  const total = Math.floor(value);
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function formatBunnyQualityLabel(
@@ -62,7 +52,9 @@ function formatBunnyQualityLabel(
 
 export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPreviewPlayerProps>(
   function BunnyPreviewPlayer({ providerVideoId, isProcessing, onReadyToPlay }, ref) {
+    const annotation = useContext(AttachmentVideoAnnotationContext);
     const videoRef = useRef<HTMLVideoElement | null>(null);
+    const containerRef = useRef<HTMLDivElement | null>(null);
     const hlsRef = useRef<Hls | null>(null);
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingHlsQualityRef = useRef<number | null>(null);
@@ -461,12 +453,10 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
       };
     }, [notifyReadyToPlay, originalUrl, playlistUrl, bunnySourcePreference, providerVideoId]);
 
-    const seekTo = (event: React.MouseEvent<HTMLDivElement>) => {
+    const seekTo = (seconds: number) => {
       const video = videoRef.current;
       if (!video || !duration) return;
-      const rect = event.currentTarget.getBoundingClientRect();
-      const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-      video.currentTime = ratio * duration;
+      video.currentTime = Math.min(duration, Math.max(0, seconds));
       setCurrentTime(video.currentTime);
     };
 
@@ -569,9 +559,12 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
     }, [qualityOptions, selectedQualityLevel]);
 
     return (
-      <div className="w-full h-full rounded-md border overflow-hidden bg-black flex flex-col">
-        <div
-          className="relative flex-1 min-h-0 flex items-center justify-center bg-black"
+      <div
+        ref={containerRef}
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black"
+      >
+        <AttachmentVideoFrame
+          className="group relative flex min-h-0 flex-1 cursor-pointer items-center justify-center bg-black"
           onClick={togglePlayPause}
         >
           <video
@@ -580,6 +573,20 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
             playsInline
             preload="metadata"
           />
+
+          {isReady && !annotation?.isAnnotating && !annotation?.viewingAnnotation && (
+            <div
+              className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60">
+                {isPlaying ? (
+                  <Pause className="h-8 w-8 text-white" />
+                ) : (
+                  <Play className="ml-1 h-8 w-8 text-white" />
+                )}
+              </div>
+            </div>
+          )}
 
           {showProcessingOverlay && (
             <div className="absolute inset-0 bg-black/65 flex items-center justify-center">
@@ -597,107 +604,30 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
               </p>
             </div>
           )}
-        </div>
+        </AttachmentVideoFrame>
 
-        <div className="shrink-0 border-t border-white/10 bg-black/70 px-2 py-1.5">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-white hover:text-white"
-              disabled={!isReady}
-              onClick={togglePlayPause}
-            >
-              {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-white hover:text-white"
-              disabled={!isReady}
-              onClick={toggleMute}
-            >
-              {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-            </Button>
-            <span className="text-[11px] text-white/80 tabular-nums ml-1">
-              {formatTime(currentTime)} / {formatTime(duration)}
-            </span>
-
-            <div className="ml-auto flex items-center gap-1">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[11px] text-white hover:text-white"
-                    disabled={!isReady}
-                  >
-                    {playbackSpeed}x
-                    <ChevronDown className="h-3 w-3 ml-1" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {NATIVE_SPEED_OPTIONS.map((speed) => (
-                    <DropdownMenuItem key={speed} onClick={() => handleSpeedChange(speed)}>
-                      {speed}x {speed === playbackSpeed ? '(Current)' : ''}
-                      {speed > SILENT_ABOVE_SPEED && (
-                        <span className="ml-auto pl-2 text-[10px] text-muted-foreground">
-                          no audio
-                        </span>
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[11px] text-white hover:text-white"
-                    disabled={!isReady}
-                  >
-                    {selectedQualityLabel}
-                    <ChevronDown className="h-3 w-3 ml-1" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handleQualityChange(-1)}>
-                    Auto {selectedQualityLevel === -1 ? '(Current)' : ''}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleQualityChange(-2)}>
-                    Original {selectedQualityLevel === -2 ? '(Current)' : ''}
-                  </DropdownMenuItem>
-                  {qualityOptions.map((option) => (
-                    <DropdownMenuItem
-                      key={option.level}
-                      onClick={() => handleQualityChange(option.level)}
-                    >
-                      {option.label} {option.level === selectedQualityLevel ? '(Current)' : ''}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-          <div
-            className={cn(
-              'relative h-6 rounded bg-white/10 select-none',
-              isReady ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'
-            )}
-            onClick={seekTo}
-          >
-            <div
-              className="absolute left-0 top-0 h-full rounded bg-cyan-500/40 pointer-events-none"
-              style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
-            />
-            <div
-              className="absolute top-0 h-full w-1 rounded bg-cyan-400 pointer-events-none"
-              style={{ left: `calc(${duration > 0 ? (currentTime / duration) * 100 : 0}% - 2px)` }}
-            />
-          </div>
-        </div>
+        <PreviewPlayerControls
+          isPlaying={isPlaying}
+          isMuted={isMuted}
+          currentTime={currentTime}
+          duration={duration}
+          playbackSpeed={playbackSpeed}
+          onPlayPause={togglePlayPause}
+          onSkip={seekBy}
+          onMute={toggleMute}
+          onSeek={seekTo}
+          onSpeedChange={handleSpeedChange}
+          selectedQualityLabel={selectedQualityLabel}
+          selectedQualityLevel={selectedQualityLevel}
+          qualityOptions={qualityOptions}
+          onQualityChange={handleQualityChange}
+          onFullscreen={
+            annotation?.isAnnotating
+              ? undefined
+              : () => enterPreviewFullscreen(containerRef.current, videoRef.current)
+          }
+          disabled={!isReady || annotation?.isAnnotating}
+        />
       </div>
     );
   }

@@ -19,6 +19,7 @@ import {
   CheckSquare,
   Check,
   FolderInput,
+  ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -58,6 +59,7 @@ import {
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { MoveVideosDialog } from '@/components/move-videos-dialog';
 import { cn } from '@/lib/utils';
+import { isImageFile, uploadProjectImage } from '@/lib/client/project-image-upload';
 
 interface VideoCardProps {
   video: {
@@ -68,9 +70,11 @@ interface VideoCardProps {
     commentCount: number;
     duration: string;
     lastUpdated: string;
+    mediaType?: 'VIDEO' | 'IMAGE';
   };
   projectId: string;
   canManage: boolean;
+  imageUploadsEnabled?: boolean;
   canSelect?: boolean;
   selectionMode?: boolean;
   selected?: boolean;
@@ -83,6 +87,7 @@ export function VideoCard({
   video,
   projectId,
   canManage,
+  imageUploadsEnabled = false,
   canSelect = false,
   selectionMode = false,
   selected = false,
@@ -108,6 +113,7 @@ export function VideoCard({
   const [versionSource, setVersionSource] = useState<VideoSource | null>(null);
   const [versionUrlError, setVersionUrlError] = useState('');
   const [isCreatingVersion, setIsCreatingVersion] = useState(false);
+  const [versionFile, setVersionFile] = useState<File | null>(null);
 
   // Delete dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -173,6 +179,27 @@ export function VideoCard({
   };
 
   const handleCreateVersion = async () => {
+    if (video.mediaType === 'IMAGE') {
+      if (!imageUploadsEnabled) return;
+      if (!versionFile || !isImageFile(versionFile)) return;
+      setIsCreatingVersion(true);
+      setVersionUrlError('');
+      try {
+        await uploadProjectImage(projectId, versionFile, {
+          targetVideoId: video.id,
+          versionLabel: versionLabel.trim(),
+        });
+        setShowVersionDialog(false);
+        setVersionFile(null);
+        setVersionLabel('');
+        router.refresh();
+      } catch (error) {
+        setVersionUrlError(error instanceof Error ? error.message : 'Failed to upload image');
+      } finally {
+        setIsCreatingVersion(false);
+      }
+      return;
+    }
     if (!versionSource) return;
     setIsCreatingVersion(true);
     try {
@@ -270,7 +297,7 @@ export function VideoCard({
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/80">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
                   <span className="text-xs text-muted-foreground font-medium">
-                    Processing thumbnail...
+                    {video.mediaType === 'IMAGE' ? 'Loading image...' : 'Processing thumbnail...'}
                   </span>
                 </div>
               ) : resolvedThumbnailUrl ? (
@@ -301,10 +328,12 @@ export function VideoCard({
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/80">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
                     <span className="text-xs text-muted-foreground font-medium">
-                      Processing thumbnail...
+                      {video.mediaType === 'IMAGE' ? 'Loading image...' : 'Processing thumbnail...'}
                     </span>
                     <span className="text-[11px] text-muted-foreground/90">
-                      Video may already be playable
+                      {video.mediaType === 'IMAGE'
+                        ? 'Image may still be available'
+                        : 'Video may already be playable'}
                     </span>
                   </div>
                 ) : resolvedThumbnailUrl ? (
@@ -329,7 +358,11 @@ export function VideoCard({
                 )}
                 {!imgError && (
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <Play className="h-12 w-12 text-white" fill="white" />
+                    {video.mediaType === 'IMAGE' ? (
+                      <ImageIcon className="h-12 w-12 text-white" />
+                    ) : (
+                      <Play className="h-12 w-12 text-white" fill="white" />
+                    )}
                   </div>
                 )}
               </div>
@@ -346,7 +379,11 @@ export function VideoCard({
                       <Badge variant="secondary" className="text-xs">
                         v{video.currentVersion}
                       </Badge>
-                      <span className="text-xs">{video.duration}</span>
+                      {video.mediaType === 'IMAGE' ? (
+                        <span className="text-xs">Image</span>
+                      ) : (
+                        <span className="text-xs">{video.duration}</span>
+                      )}
                     </span>
                     <span className="flex items-center gap-1">
                       <MessageSquare className="h-3.5 w-3.5" />
@@ -366,7 +403,11 @@ export function VideoCard({
                       <Badge variant="secondary" className="text-xs">
                         v{video.currentVersion}
                       </Badge>
-                      <span className="text-xs">{video.duration}</span>
+                      {video.mediaType === 'IMAGE' ? (
+                        <span className="text-xs">Image</span>
+                      ) : (
+                        <span className="text-xs">{video.duration}</span>
+                      )}
                     </span>
                     <span className="flex items-center gap-1">
                       <MessageSquare className="h-3.5 w-3.5" />
@@ -465,8 +506,8 @@ export function VideoCard({
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Video</DialogTitle>
-            <DialogDescription>Update the video title and description.</DialogDescription>
+            <DialogTitle>Edit {video.mediaType === 'IMAGE' ? 'Image' : 'Video'}</DialogTitle>
+            <DialogDescription>Update the title and description.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="space-y-2">
@@ -515,24 +556,42 @@ export function VideoCard({
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="space-y-2">
-              <Label>Video URL</Label>
-              <div className="relative">
-                <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Label>{video.mediaType === 'IMAGE' ? 'Image File' : 'Video URL'}</Label>
+              {video.mediaType === 'IMAGE' ? (
                 <Input
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={versionUrl}
-                  onChange={(e) => handleVersionUrlChange(e.target.value)}
-                  className="pl-10"
-                  disabled={isCreatingVersion}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={isCreatingVersion || !imageUploadsEnabled}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    if (file && !isImageFile(file)) {
+                      setVersionUrlError('Choose a PNG, JPEG, or WebP image');
+                      setVersionFile(null);
+                    } else {
+                      setVersionFile(file);
+                      setVersionUrlError('');
+                    }
+                  }}
                 />
-              </div>
+              ) : (
+                <div className="relative">
+                  <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="https://youtube.com/watch?v=..."
+                    value={versionUrl}
+                    onChange={(e) => handleVersionUrlChange(e.target.value)}
+                    className="pl-10"
+                    disabled={isCreatingVersion}
+                  />
+                </div>
+              )}
               {versionUrlError && (
                 <p className="text-sm text-destructive flex items-center gap-1">
                   <AlertCircle className="h-4 w-4" />
                   {versionUrlError}
                 </p>
               )}
-              {versionSource && (
+              {video.mediaType !== 'IMAGE' && versionSource && (
                 <p className="text-sm text-green-600 flex items-center gap-1">
                   <CheckCircle2 className="h-4 w-4" />
                   {versionSource.providerId.charAt(0).toUpperCase() +
@@ -552,7 +611,11 @@ export function VideoCard({
             </div>
             <Button
               onClick={handleCreateVersion}
-              disabled={!versionSource || isCreatingVersion}
+              disabled={
+                (video.mediaType === 'IMAGE'
+                  ? !versionFile || !imageUploadsEnabled
+                  : !versionSource) || isCreatingVersion
+              }
               className="w-full"
             >
               {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -568,8 +631,8 @@ export function VideoCard({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete &quot;{video.title}&quot;?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this video, all its versions, and all comments. This
-              action cannot be undone.
+              This will permanently delete this {video.mediaType === 'IMAGE' ? 'image' : 'video'},
+              all its versions, and all comments. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

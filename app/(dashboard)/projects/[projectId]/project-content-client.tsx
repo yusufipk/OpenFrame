@@ -72,6 +72,7 @@ import {
 
 interface SerializedVideo {
   id: string;
+  mediaType: 'VIDEO' | 'IMAGE';
   title: string;
   thumbnailUrl: string;
   currentVersion: number;
@@ -105,6 +106,7 @@ interface ProjectContentClientProps {
   currentPage: number;
   pageSize: number;
   directUploadsEnabled: boolean;
+  imageUploadsEnabled?: boolean;
   directUploadProvider: DirectUploadProvider;
 }
 
@@ -124,6 +126,7 @@ export function ProjectContentClient({
   currentPage,
   pageSize,
   directUploadsEnabled,
+  imageUploadsEnabled = false,
   directUploadProvider,
 }: ProjectContentClientProps) {
   const router = useRouter();
@@ -305,7 +308,7 @@ export function ProjectContentClient({
 
       if (!response.ok) {
         const message =
-          typeof body?.error === 'string' ? body.error : 'Failed to delete selected videos';
+          typeof body?.error === 'string' ? body.error : 'Failed to delete selected files';
         toast.error(message);
         return;
       }
@@ -316,7 +319,7 @@ export function ProjectContentClient({
       setSelectionMode(false);
       setShowDeleteSelectedDialog(false);
       toast.success(
-        typeof body?.data?.message === 'string' ? body.data.message : 'Selected videos deleted'
+        typeof body?.data?.message === 'string' ? body.data.message : 'Selected files deleted'
       );
 
       // The current page may now be out of range (e.g. we deleted every video
@@ -330,7 +333,7 @@ export function ProjectContentClient({
         router.refresh();
       }
     } catch {
-      toast.error('Failed to delete selected videos');
+      toast.error('Failed to delete selected files');
     } finally {
       setIsDeletingSelected(false);
     }
@@ -353,7 +356,9 @@ export function ProjectContentClient({
         folderId={folderId}
         fixedProjectId={projectId}
         fixedProjectName={project.name}
-        canUpload={canEdit && !all && directUploadsEnabled}
+        canUpload={canEdit && !all && (directUploadsEnabled || imageUploadsEnabled)}
+        directUploadsEnabled={directUploadsEnabled}
+        imageUploadsEnabled={imageUploadsEnabled}
         directUploadProvider={directUploadProvider}
       />
 
@@ -423,7 +428,7 @@ export function ProjectContentClient({
                     ) : (
                       <Download className="h-4 w-4 mr-2" />
                     )}
-                    Download accessible videos
+                    Download accessible files
                     <ChevronDown className="h-4 w-4 ml-1" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -510,7 +515,7 @@ export function ProjectContentClient({
                     href={`/projects/${projectId}/videos/new${folderId ? `?folderId=${folderId}` : ''}`}
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Video
+                    Add File
                   </Link>
                 </Button>
               </div>
@@ -613,7 +618,7 @@ export function ProjectContentClient({
                 disabled={selectedCount === 0 || isDeletingSelected}
               >
                 <FolderInput className="h-4 w-4 mr-2" />
-                Move videos
+                Move files
               </Button>
             )}
             {canEdit && (
@@ -659,7 +664,7 @@ export function ProjectContentClient({
                 id="project-videos-heading"
                 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground"
               >
-                Videos
+                Files
               </h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {localVideos.map((video) => (
@@ -668,6 +673,7 @@ export function ProjectContentClient({
                     video={video}
                     projectId={projectId}
                     canManage={canEdit}
+                    imageUploadsEnabled={imageUploadsEnabled}
                     canSelect={canSelectVideos}
                     selectionMode={selectionMode}
                     selected={selectedVideoIds.includes(video.id)}
@@ -685,13 +691,13 @@ export function ProjectContentClient({
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Play className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">
-              {all ? 'No videos yet' : 'This folder is empty'}
+              {all ? 'No files yet' : 'This folder is empty'}
             </h3>
             <p className="text-muted-foreground text-center mb-4">
               {all
-                ? 'Videos you can access will appear here.'
+                ? 'Files you can access will appear here.'
                 : canEdit
-                  ? 'Add a video or folder to get started.'
+                  ? 'Add a file or folder to get started.'
                   : 'No content has been added here yet.'}
             </p>
           </CardContent>
@@ -735,7 +741,7 @@ export function ProjectContentClient({
               Delete {selectedCount} video{selectedCount === 1 ? '' : 's'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the selected videos, all of their versions, comments, and
+              This will permanently delete the selected files, all of their versions, comments, and
               stored media from Bunny and Cloudflare R2. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

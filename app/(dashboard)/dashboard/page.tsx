@@ -9,7 +9,11 @@ import {
 } from '@/lib/route-access';
 import { DashboardClient } from './dashboard-client';
 import { buildBillingAccessWhereInput } from '@/lib/billing';
-import { isDirectFileUploadEnabled, isS3VideoUploadsEnabled } from '@/lib/feature-flags';
+import {
+  hasR2Config,
+  isDirectFileUploadEnabled,
+  isS3VideoUploadsEnabled,
+} from '@/lib/feature-flags';
 
 export default async function DashboardPage({
   searchParams,
@@ -160,6 +164,7 @@ export default async function DashboardPage({
         canCreateProjects={canCreateProjects}
         canUploadVideos={canUploadVideos}
         directUploadsEnabled={isDirectFileUploadEnabled()}
+        imageUploadsEnabled={hasR2Config()}
         directUploadProvider={isS3VideoUploadsEnabled() ? 'r2' : 'bunny'}
       />
     </>

@@ -33,6 +33,7 @@ import { withWebmDuration } from '@/lib/webm-duration';
 import { ApiRequestError, apiRequestError, toastApiError } from '@/lib/client/api-error';
 
 interface UseCommentActionsParams extends CommentActionsConfig {
+  isImage?: boolean;
   setVideo: Dispatch<SetStateAction<VideoData | null>>;
   activeVersionId: string | null;
   activeVersion: (Version & { comments: Comment[] }) | undefined;
@@ -70,6 +71,7 @@ function getAudioUploadFilename(blob: Blob): string {
 
 export function useCommentActions({
   videoId,
+  isImage = false,
   setVideo,
   activeVersionId,
   activeVersion,
@@ -301,14 +303,16 @@ export function useCommentActions({
         return;
 
       const tempId = `temp-${Date.now()}`;
-      const commentTimestamp = commentRangeStart ?? capturedAnnotation?.timestamp ?? currentTime;
+      const commentTimestamp = isImage
+        ? 0
+        : (commentRangeStart ?? capturedAnnotation?.timestamp ?? currentTime);
       const serializedAnnotation = effectiveStrokes ? JSON.stringify(effectiveStrokes) : null;
       const hasImages = imageFiles.length > 0;
       const optimisticComment: Comment = {
         id: tempId,
         content: voiceData || hasImages ? commentText.trim() || null : commentText,
         timestamp: commentTimestamp,
-        timestampEnd: commentRangeEnd,
+        timestampEnd: isImage ? null : commentRangeEnd,
         voiceUrl: voiceData?.url ?? null,
         voiceDuration: voiceData?.duration ?? null,
         images: imageFiles.map((file, index) => ({
@@ -362,7 +366,7 @@ export function useCommentActions({
           body: JSON.stringify({
             content: voiceData || hasImages ? commentText.trim() || null : commentText,
             timestamp: commentTimestamp,
-            ...(commentRangeEnd !== null && { timestampEnd: commentRangeEnd }),
+            ...(!isImage && commentRangeEnd !== null && { timestampEnd: commentRangeEnd }),
             ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
             ...(uploadedImageUrls.length > 0 && { imageUrls: uploadedImageUrls }),
             ...(isGuest && normalizedGuestName && { guestName: normalizedGuestName }),
@@ -440,6 +444,7 @@ export function useCommentActions({
       commentText,
       commentRangeEnd,
       commentRangeStart,
+      isImage,
       currentTime,
       activeVersion,
       activeVersionId,
@@ -733,12 +738,12 @@ export function useCommentActions({
 
       const hasReplyImages = replyImageFiles.length > 0;
       const tempId = `temp-reply-${Date.now()}`;
-      const replyTimestamp = replyRangeStart ?? currentTime;
+      const replyTimestamp = isImage ? 0 : (replyRangeStart ?? currentTime);
       const optimisticReply: CommentReply = {
         id: tempId,
         content: voiceData || hasReplyImages ? replyText.trim() || null : replyText,
         timestamp: replyTimestamp,
-        timestampEnd: replyRangeEnd,
+        timestampEnd: isImage ? null : replyRangeEnd,
         voiceUrl: voiceData?.url ?? null,
         voiceDuration: voiceData?.duration ?? null,
         images: replyImageFiles.map((file, index) => ({
@@ -798,7 +803,7 @@ export function useCommentActions({
             content:
               voiceData || submittedImageUrls.length > 0 ? replyText.trim() || null : replyText,
             timestamp: replyTimestamp,
-            ...(replyRangeEnd !== null && { timestampEnd: replyRangeEnd }),
+            ...(!isImage && replyRangeEnd !== null && { timestampEnd: replyRangeEnd }),
             parentId,
             ...(voiceData && { voiceUrl: voiceData.url, voiceDuration: voiceData.duration }),
             ...(submittedImageUrls.length > 0 && { imageUrls: submittedImageUrls }),
@@ -888,6 +893,7 @@ export function useCommentActions({
       replyText,
       replyRangeEnd,
       replyRangeStart,
+      isImage,
       activeVersion,
       activeVersionId,
       currentTime,

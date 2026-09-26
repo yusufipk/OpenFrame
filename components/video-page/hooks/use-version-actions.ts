@@ -13,6 +13,7 @@ import type { VersionActionsConfig, VideoData } from '@/components/video-page/ty
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { cleanupPendingR2VideoUpload, uploadVideoToR2 } from '@/lib/client/r2-video-upload';
 import { apiRequestError, toastApiError } from '@/lib/client/api-error';
+import { isImageFile, uploadProjectImage } from '@/lib/client/project-image-upload';
 
 /** What a failed version upload has to undo, depending on which provider it started on. */
 type PendingVersionCleanup =
@@ -20,6 +21,8 @@ type PendingVersionCleanup =
   | { bunnyVideoId: string; uploadToken: string };
 
 interface UseVersionActionsParams extends VersionActionsConfig {
+  mediaType?: 'VIDEO' | 'IMAGE';
+  imageUploadsEnabled?: boolean;
   setVideo: Dispatch<SetStateAction<VideoData | null>>;
   activeVersionId: string | null;
   setActiveVersionId: Dispatch<SetStateAction<string | null>>;
@@ -30,6 +33,8 @@ export function useVersionActions({
   videoId,
   directUploadsEnabled = false,
   directUploadProvider = 'bunny',
+  mediaType = 'VIDEO',
+  imageUploadsEnabled = false,
   setVideo,
   activeVersionId,
   setActiveVersionId,
@@ -184,6 +189,23 @@ export function useVersionActions({
     let pendingCleanup: PendingVersionCleanup | null = null;
 
     try {
+      if (mediaType === 'IMAGE') {
+        if (!imageUploadsEnabled) throw new Error('Image uploads are unavailable on this host');
+        if (!newVersionFile || !isImageFile(newVersionFile)) {
+          throw new Error('Choose a PNG, JPEG, or WebP image.');
+        }
+        setNewVersionUploadStatus('Uploading image...');
+        await uploadProjectImage(projectId, newVersionFile, {
+          targetVideoId: videoId,
+          versionLabel: newVersionLabel.trim(),
+          onProgress: (progress) => {
+            setNewVersionUploadProgress(progress);
+            setNewVersionUploadStatus(`Uploading image... ${progress}%`);
+          },
+        });
+        window.location.reload();
+        return;
+      }
       let finalVideoUrl = '';
       let finalProviderId = '';
       let finalProviderVideoId = '';

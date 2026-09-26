@@ -243,6 +243,7 @@ export function useVideoPlayer({
   }, [activeVersionId, bunnyViewportRef]);
 
   useEffect(() => {
+    if (activeProviderId !== 'youtube') return;
     if (isApiLoaded) return;
 
     if (window.YT) {
@@ -265,7 +266,7 @@ export function useVideoPlayer({
     window.onYouTubeIframeAPIReady = () => {
       setIsApiLoaded(true);
     };
-  }, [isApiLoaded]);
+  }, [activeProviderId, isApiLoaded]);
 
   useEffect(() => {
     if (!canInitializePlayer) return;
@@ -1167,6 +1168,7 @@ export function useVideoPlayer({
   );
 
   useEffect(() => {
+    if (activeProviderId === 'r2-image') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.querySelector('[data-slot="dialog-content"]')) {
         return;
@@ -1241,6 +1243,7 @@ export function useVideoPlayer({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    activeProviderId,
     isPlaying,
     currentTime,
     duration,

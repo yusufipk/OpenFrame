@@ -44,6 +44,7 @@ import type { ImageAttachTarget } from '@/components/video-page/hooks/use-commen
 import { MAX_COMMENT_IMAGES } from '@/lib/comment-images';
 import type {
   Comment,
+  CommentImage,
   CommentReply,
   CommentTag,
   Version,
@@ -51,6 +52,7 @@ import type {
 } from '@/components/video-page/types';
 
 interface CommentsPaneProps {
+  isImage?: boolean;
   isMobileCommentsOpen: boolean;
   setIsMobileCommentsOpen: (open: boolean) => void;
   isFullscreenMode: boolean;
@@ -103,7 +105,9 @@ interface CommentsPaneProps {
   voicePlaybackRate: number;
   toggleVoiceSpeed: () => void;
   formatTime: (seconds: number) => string;
-  setPreviewImage: (url: string | null) => void;
+  onOpenCommentImage: (commentId: string, image: CommentImage) => void;
+  onOpenCommentAudio: (commentId: string, url: string) => void;
+  attachmentCommentCounts: Record<string, number>;
   replyingTo: string | null;
   setReplyingTo: (id: string | null) => void;
   replyText: string;
@@ -154,6 +158,7 @@ function voiceNoteFileName(
 }
 
 export const CommentsPane = memo(function CommentsPane({
+  isImage = false,
   isMobileCommentsOpen,
   setIsMobileCommentsOpen,
   isFullscreenMode,
@@ -200,7 +205,9 @@ export const CommentsPane = memo(function CommentsPane({
   voicePlaybackRate,
   toggleVoiceSpeed,
   formatTime,
-  setPreviewImage,
+  onOpenCommentImage,
+  onOpenCommentAudio,
+  attachmentCommentCounts,
   replyingTo,
   setReplyingTo,
   replyText,
@@ -443,21 +450,31 @@ export const CommentsPane = memo(function CommentsPane({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() =>
-                            handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
-                              commentId: comment.id,
-                              pauseAfterSeek: true,
-                              timestampEnd: comment.timestampEnd,
-                            })
-                          }
-                          className="flex items-center gap-1 text-xs text-primary hover:underline px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
-                          title="Jump to this timestamp"
-                        >
-                          <Clock className="h-3 w-3" />
-                          {formatCommentRange(comment.timestamp, comment.timestampEnd)}
-                          <ArrowUpRight className="h-3 w-3" />
-                        </button>
+                        {!isImage && (
+                          <button
+                            onClick={() =>
+                              handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                                commentId: comment.id,
+                                pauseAfterSeek: true,
+                                timestampEnd: comment.timestampEnd,
+                              })
+                            }
+                            className="flex items-center gap-1 text-xs text-primary hover:underline px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                            title="Jump to this timestamp"
+                          >
+                            <Clock className="h-3 w-3" />
+                            {formatCommentRange(comment.timestamp, comment.timestampEnd)}
+                            <ArrowUpRight className="h-3 w-3" />
+                          </button>
+                        )}
+                        {isImage && comment.annotationData && (
+                          <button
+                            onClick={() => handleSeekToTimestamp(0, comment.annotationData)}
+                            className="rounded bg-violet-500/15 px-2 py-1 text-xs text-violet-400 hover:bg-violet-500/25"
+                          >
+                            View annotation
+                          </button>
+                        )}
                         {canResolveComments && (
                           <Button
                             variant="ghost"
@@ -659,14 +676,16 @@ export const CommentsPane = memo(function CommentsPane({
                         )}
                         <CommentImageGallery
                           images={comment.images}
-                          onOpen={setPreviewImage}
+                          commentId={comment.id}
+                          attachmentCommentCounts={attachmentCommentCounts}
+                          onOpen={(image) => onOpenCommentImage(comment.id, image)}
                           className="mb-2"
                         />
                       </div>
                     )}
 
                     {comment.voiceUrl && (
-                      <div className="flex items-center gap-2 p-2 bg-muted rounded mb-2">
+                      <div className="flex flex-wrap items-center gap-2 rounded bg-muted p-2 mb-2">
                         <Button
                           size="icon"
                           variant="ghost"
@@ -681,7 +700,28 @@ export const CommentsPane = memo(function CommentsPane({
                             <Play className="h-4 w-4" />
                           )}
                         </Button>
-                        <div className="flex-1 h-2 bg-primary/20 rounded-full overflow-hidden">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="order-1 shrink-0"
+                          aria-label="Open voice preview"
+                          onClick={() => onOpenCommentAudio(comment.id, comment.voiceUrl!)}
+                        >
+                          Open preview
+                        </Button>
+                        {(attachmentCommentCounts[`comment-audio:${comment.id}`] || 0) > 0 && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="order-1 h-7 shrink-0 px-2 text-xs"
+                            aria-label={`${attachmentCommentCounts[`comment-audio:${comment.id}`]} comments on voice note`}
+                            onClick={() => onOpenCommentAudio(comment.id, comment.voiceUrl!)}
+                          >
+                            <MessageSquare className="mr-1 h-3 w-3" />
+                            {attachmentCommentCounts[`comment-audio:${comment.id}`]}
+                          </Button>
+                        )}
+                        <div className="h-2 min-w-[70px] flex-1 overflow-hidden rounded-full bg-primary/20">
                           <div
                             className="h-full bg-primary rounded-full"
                             style={{
@@ -769,20 +809,26 @@ export const CommentsPane = memo(function CommentsPane({
                                     </AvatarFallback>
                                   </Avatar>
                                   <span className="font-medium text-xs">{replyAuthor}</span>
-                                  <button
-                                    onClick={() =>
-                                      handleSeekToTimestamp(reply.timestamp, reply.annotationData, {
-                                        commentId: reply.id,
-                                        pauseAfterSeek: true,
-                                        timestampEnd: reply.timestampEnd,
-                                      })
-                                    }
-                                    className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/20"
-                                    title="Jump to this reply"
-                                  >
-                                    <Clock className="h-2.5 w-2.5" />
-                                    {formatCommentRange(reply.timestamp, reply.timestampEnd)}
-                                  </button>
+                                  {!isImage && (
+                                    <button
+                                      onClick={() =>
+                                        handleSeekToTimestamp(
+                                          reply.timestamp,
+                                          reply.annotationData,
+                                          {
+                                            commentId: reply.id,
+                                            pauseAfterSeek: true,
+                                            timestampEnd: reply.timestampEnd,
+                                          }
+                                        )
+                                      }
+                                      className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/20"
+                                      title="Jump to this reply"
+                                    >
+                                      <Clock className="h-2.5 w-2.5" />
+                                      {formatCommentRange(reply.timestamp, reply.timestampEnd)}
+                                    </button>
+                                  )}
                                   <span className="text-xs text-muted-foreground">
                                     {new Date(reply.createdAt).toLocaleDateString()}
                                   </span>
@@ -906,14 +952,16 @@ export const CommentsPane = memo(function CommentsPane({
                                   )}
                                   <CommentImageGallery
                                     images={reply.images}
-                                    onOpen={setPreviewImage}
+                                    commentId={reply.id}
+                                    attachmentCommentCounts={attachmentCommentCounts}
+                                    onOpen={(image) => onOpenCommentImage(reply.id, image)}
                                     compact
                                     className="mt-2"
                                   />
                                 </div>
                               )}
                               {reply.voiceUrl && (
-                                <div className="flex items-center gap-2 p-1.5 bg-muted rounded mt-1">
+                                <div className="mt-1 flex flex-wrap items-center gap-2 rounded bg-muted p-1.5">
                                   <Button
                                     size="icon"
                                     variant="ghost"
@@ -928,7 +976,29 @@ export const CommentsPane = memo(function CommentsPane({
                                       <Play className="h-3 w-3" />
                                     )}
                                   </Button>
-                                  <div className="flex-1 h-1.5 bg-primary/20 rounded-full overflow-hidden">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="order-1 h-7 shrink-0 px-2 text-xs"
+                                    aria-label="Open voice preview"
+                                    onClick={() => onOpenCommentAudio(reply.id, reply.voiceUrl!)}
+                                  >
+                                    Open preview
+                                  </Button>
+                                  {(attachmentCommentCounts[`comment-audio:${reply.id}`] || 0) >
+                                    0 && (
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      className="order-1 h-7 shrink-0 px-2 text-xs"
+                                      aria-label={`${attachmentCommentCounts[`comment-audio:${reply.id}`]} comments on voice note`}
+                                      onClick={() => onOpenCommentAudio(reply.id, reply.voiceUrl!)}
+                                    >
+                                      <MessageSquare className="mr-1 h-3 w-3" />
+                                      {attachmentCommentCounts[`comment-audio:${reply.id}`]}
+                                    </Button>
+                                  )}
+                                  <div className="h-1.5 min-w-[70px] flex-1 overflow-hidden rounded-full bg-primary/20">
                                     <div
                                       className="h-full bg-primary rounded-full"
                                       style={{
@@ -1073,31 +1143,33 @@ export const CommentsPane = memo(function CommentsPane({
                               rows={1}
                               className="resize-none text-sm"
                             />
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Button
-                                size="sm"
-                                variant={replyRangeStart !== null ? 'default' : 'outline'}
-                                className="h-7 text-xs"
-                                onClick={toggleReplyRangeSelection}
-                              >
-                                {replyRangeButtonLabel}
-                              </Button>
-                              {replyRangeLabel && (
-                                <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
-                                  {replyRangeLabel}
-                                </span>
-                              )}
-                              {replyRangeStart !== null && (
+                            {!isImage && (
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <Button
                                   size="sm"
-                                  variant="ghost"
+                                  variant={replyRangeStart !== null ? 'default' : 'outline'}
                                   className="h-7 text-xs"
-                                  onClick={clearReplyRangeSelection}
+                                  onClick={toggleReplyRangeSelection}
                                 >
-                                  Clear
+                                  {replyRangeButtonLabel}
                                 </Button>
-                              )}
-                            </div>
+                                {replyRangeLabel && (
+                                  <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
+                                    {replyRangeLabel}
+                                  </span>
+                                )}
+                                {replyRangeStart !== null && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={clearReplyRangeSelection}
+                                  >
+                                    Clear
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                             <div className="flex gap-1 mt-2">
                               <Button
                                 size="sm"
@@ -1177,31 +1249,33 @@ export const CommentsPane = memo(function CommentsPane({
                                 onChange={(e) => handleImageSelect(e, 'reply')}
                               />
                             </div>
-                            <div className="mt-2 flex items-center gap-2 flex-wrap">
-                              <Button
-                                size="sm"
-                                variant={replyRangeStart !== null ? 'default' : 'outline'}
-                                className="h-7 text-xs"
-                                onClick={toggleReplyRangeSelection}
-                              >
-                                {replyRangeButtonLabel}
-                              </Button>
-                              {replyRangeLabel && (
-                                <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
-                                  {replyRangeLabel}
-                                </span>
-                              )}
-                              {replyRangeStart !== null && (
+                            {!isImage && (
+                              <div className="mt-2 flex items-center gap-2 flex-wrap">
                                 <Button
                                   size="sm"
-                                  variant="ghost"
+                                  variant={replyRangeStart !== null ? 'default' : 'outline'}
                                   className="h-7 text-xs"
-                                  onClick={clearReplyRangeSelection}
+                                  onClick={toggleReplyRangeSelection}
                                 >
-                                  Clear
+                                  {replyRangeButtonLabel}
                                 </Button>
-                              )}
-                            </div>
+                                {replyRangeLabel && (
+                                  <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
+                                    {replyRangeLabel}
+                                  </span>
+                                )}
+                                {replyRangeStart !== null && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={clearReplyRangeSelection}
+                                  >
+                                    Clear
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                             <div className="flex gap-1 mt-1">
                               <Button
                                 size="sm"

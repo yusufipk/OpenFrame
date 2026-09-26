@@ -46,6 +46,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           select: {
             id: true,
             title: true,
+            mediaType: true,
             project: {
               select: {
                 id: true,
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         parentId: null,
         ...(includeResolved ? {} : { isResolved: false }),
       },
-      orderBy: { timestamp: 'asc' },
+      orderBy: [{ timestamp: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
         parentId: true,
@@ -129,6 +130,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const fileBaseName = buildExportFileBaseName(version.video.title, version.versionNumber);
     const versionMeta = {
       videoTitle: version.video.title,
+      mediaType: version.video.mediaType,
       versionNumber: version.versionNumber,
       versionLabel: version.versionLabel,
     };

@@ -170,10 +170,15 @@ export function flattenCommentsForExport(comments: ExportComment[]): ExportComme
 
 export function buildCommentsCsv(
   rows: ExportCommentRow[],
-  meta: { videoTitle: string; versionNumber: number; versionLabel: string | null }
+  meta: {
+    videoTitle: string;
+    versionNumber: number;
+    versionLabel: string | null;
+    mediaType?: 'VIDEO' | 'IMAGE';
+  }
 ): string {
   const header = [
-    'video_title',
+    meta.mediaType === 'IMAGE' ? 'image_title' : 'video_title',
     'version_number',
     'version_label',
     'comment_id',
@@ -206,9 +211,9 @@ export function buildCommentsCsv(
         row.level,
         row.authorName,
         row.authorType,
-        row.timestamp.toFixed(3),
-        formatTimestamp(row.timestamp),
-        row.timestampEnd === null ? '' : row.timestampEnd.toFixed(3),
+        meta.mediaType === 'IMAGE' ? '' : row.timestamp.toFixed(3),
+        meta.mediaType === 'IMAGE' ? '' : formatTimestamp(row.timestamp),
+        meta.mediaType === 'IMAGE' || row.timestampEnd === null ? '' : row.timestampEnd.toFixed(3),
         row.isResolved,
         row.tag,
         row.content,
@@ -228,7 +233,12 @@ export function buildCommentsCsv(
 
 export function buildCommentsPdf(
   rows: ExportCommentRow[],
-  meta: { videoTitle: string; versionNumber: number; versionLabel: string | null }
+  meta: {
+    videoTitle: string;
+    versionNumber: number;
+    versionLabel: string | null;
+    mediaType?: 'VIDEO' | 'IMAGE';
+  }
 ): Buffer {
   const lines: string[] = [];
   const versionTitle = meta.versionLabel
@@ -236,7 +246,7 @@ export function buildCommentsPdf(
     : `v${meta.versionNumber}`;
 
   lines.push(`OpenFrame Comments Export`);
-  lines.push(`Video: ${meta.videoTitle}`);
+  lines.push(`${meta.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${meta.videoTitle}`);
   lines.push(`Version: ${versionTitle}`);
   lines.push(`Generated At: ${new Date().toISOString()}`);
   lines.push(`Total Entries: ${rows.length}`);
@@ -244,7 +254,7 @@ export function buildCommentsPdf(
 
   rows.forEach((row, index) => {
     const prefix = row.level === 1 ? '  Reply' : 'Comment';
-    const base = `${index + 1}. ${prefix} ${formatTimestamp(row.timestamp)} by ${row.authorName}`;
+    const base = `${index + 1}. ${prefix}${meta.mediaType === 'IMAGE' ? '' : ` ${formatTimestamp(row.timestamp)}`} by ${row.authorName}`;
     const details = [
       `resolved=${row.isResolved ? 'yes' : 'no'}`,
       `voice=${row.hasVoiceNote ? 'yes' : 'no'}`,

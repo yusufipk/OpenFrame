@@ -29,9 +29,13 @@ import {
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { isTrialStorageError } from '@/lib/client/api-error';
 import {
+  isImageFile,
+  isUploadableMediaFile,
+  uploadProjectImage,
+} from '@/lib/client/project-image-upload';
+import {
   cleanupPendingProjectUpload,
   getDefaultTitleFromFile,
-  isVideoFile,
   uploadProjectVideo,
   type ActiveTusUpload,
   type PendingProjectUploadCleanup,
@@ -42,11 +46,13 @@ export default function NewVideoPageClient({
   projectId,
   folderId,
   directUploadsEnabled,
+  imageUploadsEnabled,
   directUploadProvider,
 }: {
   projectId: string;
   folderId: string | null;
   directUploadsEnabled: boolean;
+  imageUploadsEnabled: boolean;
   directUploadProvider: DirectUploadProvider;
 }) {
   const router = useRouter();
@@ -66,6 +72,7 @@ export default function NewVideoPageClient({
   const [currentUploadIndex, setCurrentUploadIndex] = useState(0);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const activeTusUploadRef = useRef<ActiveTusUpload | null>(null);
+  const activeImageUploadRef = useRef<AbortController | null>(null);
   const pendingUploadRef = useRef<PendingProjectUploadCleanup | null>(null);
   const cancelRequestedRef = useRef(false);
   const fileDragDepthRef = useRef(0);
@@ -92,11 +99,13 @@ export default function NewVideoPageClient({
   const isUploadingFile = isLoading && uploadMode === 'file';
   const isMultiFileUpload = selectedFiles.length > 1;
   const leaveWarningMessage =
-    'A video upload is in progress. Leaving this page will interrupt it. Do you want to leave?';
+    'A file upload is in progress. Leaving this page will interrupt it. Do you want to leave?';
 
   const abortAndCleanupPendingUpload = useCallback(
     (keepalive = false) => {
       cancelRequestedRef.current = true;
+      activeImageUploadRef.current?.abort();
+      activeImageUploadRef.current = null;
 
       if (activeTusUploadRef.current) {
         try {
@@ -201,7 +210,11 @@ export default function NewVideoPageClient({
       let invalidCount = 0;
 
       for (const file of incoming) {
-        if (!isVideoFile(file)) {
+        if (
+          !isUploadableMediaFile(file) ||
+          (!imageUploadsEnabled && isImageFile(file)) ||
+          (!directUploadsEnabled && !isImageFile(file))
+        ) {
           invalidCount += 1;
           continue;
         }
@@ -209,14 +222,12 @@ export default function NewVideoPageClient({
       }
 
       if (validFiles.length === 0) {
-        setSubmitError('Please select valid video files.');
+        setSubmitError('Choose video files or PNG, JPEG, and WebP images.');
         return;
       }
 
       if (invalidCount > 0) {
-        setSubmitError(
-          `${invalidCount} file${invalidCount === 1 ? '' : 's'} skipped (not a video).`
-        );
+        setSubmitError(`${invalidCount} unsupported file${invalidCount === 1 ? '' : 's'} skipped.`);
       } else {
         setSubmitError('');
       }
@@ -242,7 +253,7 @@ export default function NewVideoPageClient({
         }));
       }
     },
-    [formData.title, setSubmitError]
+    [directUploadsEnabled, formData.title, imageUploadsEnabled, setSubmitError]
   );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -312,6 +323,27 @@ export default function NewVideoPageClient({
     const title = formData.title.trim() || getDefaultTitleFromFile(file);
     const description = formData.description.trim() || null;
 
+    if (isImageFile(file)) {
+      const controller = new AbortController();
+      activeImageUploadRef.current = controller;
+      setUploadStatus('Uploading image...');
+      try {
+        await uploadProjectImage(projectId, file, {
+          folderId,
+          title,
+          description,
+          signal: controller.signal,
+          onProgress: (progress) => {
+            setUploadProgress(progress);
+            setUploadStatus(`Uploading image... ${progress}%`);
+          },
+        });
+      } finally {
+        activeImageUploadRef.current = null;
+      }
+      return;
+    }
+
     await uploadProjectVideo(projectId, file, {
       folderId,
       provider: directUploadProvider,
@@ -350,27 +382,40 @@ export default function NewVideoPageClient({
       setUploadStatus(`Uploading ${index + 1} of ${files.length}: ${file.name}`);
 
       try {
-        await uploadProjectVideo(projectId, file, {
-          folderId,
-          provider: directUploadProvider,
-          bunnyCdnHostname,
-          onProgress: (progress) => {
-            setUploadProgress(progress);
-            setUploadStatus(
-              `Uploading ${index + 1} of ${files.length}: ${file.name} (${progress}%)`
-            );
-          },
-          onStatus: (status) => {
-            setUploadStatus(`Uploading ${index + 1} of ${files.length}: ${status}`);
-          },
-          onTusUploadReady: (upload) => {
-            activeTusUploadRef.current = upload;
-          },
-          onPendingUpload: (pending) => {
-            pendingUploadRef.current = pending;
-          },
-          isCancelled: () => cancelRequestedRef.current,
-        });
+        if (isImageFile(file)) {
+          const controller = new AbortController();
+          activeImageUploadRef.current = controller;
+          try {
+            await uploadProjectImage(projectId, file, {
+              folderId,
+              signal: controller.signal,
+              onProgress: setUploadProgress,
+            });
+          } finally {
+            activeImageUploadRef.current = null;
+          }
+        } else
+          await uploadProjectVideo(projectId, file, {
+            folderId,
+            provider: directUploadProvider,
+            bunnyCdnHostname,
+            onProgress: (progress) => {
+              setUploadProgress(progress);
+              setUploadStatus(
+                `Uploading ${index + 1} of ${files.length}: ${file.name} (${progress}%)`
+              );
+            },
+            onStatus: (status) => {
+              setUploadStatus(`Uploading ${index + 1} of ${files.length}: ${status}`);
+            },
+            onTusUploadReady: (upload) => {
+              activeTusUploadRef.current = upload;
+            },
+            onPendingUpload: (pending) => {
+              pendingUploadRef.current = pending;
+            },
+            isCancelled: () => cancelRequestedRef.current,
+          });
 
         pendingUploadRef.current = null;
         activeTusUploadRef.current = null;
@@ -447,12 +492,12 @@ export default function NewVideoPageClient({
         return;
       }
 
-      if (!directUploadsEnabled) {
+      if (!directUploadsEnabled && selectedFiles.some((file) => !isImageFile(file))) {
         throw new Error('Direct uploads are disabled by this host');
       }
 
       if (selectedFiles.length === 0) {
-        setSubmitError('Please select at least one video file to upload');
+        setSubmitError('Please select at least one file to upload');
         setIsLoading(false);
         return;
       }
@@ -505,11 +550,12 @@ export default function NewVideoPageClient({
 
       <Card>
         <CardHeader>
-          <CardTitle>Add Video</CardTitle>
+          <CardTitle>Add File</CardTitle>
           <CardDescription>
-            {directUploadsEnabled
-              ? 'Paste a video link or upload one or more files directly to add them to your project.'
-              : 'Paste a video link to add it to your project. Direct uploads are disabled on this host.'}
+            Paste a video link
+            {directUploadsEnabled || imageUploadsEnabled
+              ? ' or upload files to your project.'
+              : ' to add it to your project.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -519,12 +565,12 @@ export default function NewVideoPageClient({
             className="mb-6"
           >
             <TabsList
-              className={`grid w-full ${directUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}
+              className={`grid w-full ${directUploadsEnabled || imageUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}
             >
               <TabsTrigger value="url" disabled={isLoading}>
                 Paste URL
               </TabsTrigger>
-              {directUploadsEnabled ? (
+              {directUploadsEnabled || imageUploadsEnabled ? (
                 <TabsTrigger value="file" disabled={isLoading}>
                   Direct Upload
                 </TabsTrigger>
@@ -568,7 +614,7 @@ export default function NewVideoPageClient({
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="file">Video Files</Label>
+                <Label htmlFor="file">Files</Label>
                 <div className="flex items-center justify-center w-full">
                   <label
                     htmlFor="file"
@@ -592,7 +638,11 @@ export default function NewVideoPageClient({
                             <span className="font-semibold">Click to upload</span> or drag and drop
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Multiple videos supported · MP4, WebM, MOV, and more
+                            {imageUploadsEnabled
+                              ? 'PNG, JPEG, WebP (up to 20 MiB and 20 megapixels)'
+                              : ''}
+                            {imageUploadsEnabled && directUploadsEnabled ? '; ' : ''}
+                            {directUploadsEnabled ? 'MP4, WebM, MOV, and more' : ''}
                           </p>
                         </>
                       ) : selectedFiles.length === 1 ? (
@@ -609,7 +659,7 @@ export default function NewVideoPageClient({
                         <>
                           <FileVideo className="w-10 h-10 mb-3 text-primary" />
                           <p className="mb-2 text-sm text-foreground font-medium">
-                            {selectedFiles.length} videos selected
+                            {selectedFiles.length} files selected
                           </p>
                           <p className="text-xs text-muted-foreground">
                             Click or drop to add more files
@@ -621,7 +671,12 @@ export default function NewVideoPageClient({
                       ref={fileInputRef}
                       id="file"
                       type="file"
-                      accept="video/*"
+                      accept={[
+                        directUploadsEnabled ? 'video/*' : '',
+                        imageUploadsEnabled ? 'image/png,image/jpeg,image/webp' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(',')}
                       multiple
                       className="hidden"
                       onChange={handleFileChange}
@@ -688,7 +743,7 @@ export default function NewVideoPageClient({
                         ? 'Fetching title...'
                         : uploadMode === 'file' && isMultiFileUpload
                           ? 'Not used for multi-file uploads'
-                          : 'Video title (will auto-fill from video if empty)'
+                          : 'File title (will auto-fill from filename if empty)'
                     }
                     value={formData.title}
                     onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
@@ -700,7 +755,7 @@ export default function NewVideoPageClient({
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Leave empty to use the original video title
+                      Leave empty to use the original title
                     </p>
                   )}
                 </div>
@@ -709,7 +764,7 @@ export default function NewVideoPageClient({
                   <Label htmlFor="description">Description (optional)</Label>
                   <Textarea
                     id="description"
-                    placeholder="Add context about this video..."
+                    placeholder="Add context about this file..."
                     value={formData.description}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, description: e.target.value }))
@@ -776,8 +831,10 @@ export default function NewVideoPageClient({
               >
                 {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {uploadMode === 'file' && selectedFiles.length > 1
-                  ? `Upload ${selectedFiles.length} Videos`
-                  : 'Add Video'}
+                  ? `Upload ${selectedFiles.length} Files`
+                  : uploadMode === 'file' && selectedFiles[0] && isImageFile(selectedFiles[0])
+                    ? 'Upload File'
+                    : 'Add Video'}
               </Button>
               <Button
                 type="button"

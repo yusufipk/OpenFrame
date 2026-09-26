@@ -111,7 +111,7 @@ export function MoveVideosDialog({
     };
   }, [selectedId, open]);
   const count = videoIds.length;
-  const noun = count === 1 ? 'video' : 'videos';
+  const noun = count === 1 ? 'file' : 'files';
 
   const handleMove = async () => {
     if (!selectedId || isMoving) return;
@@ -129,19 +129,19 @@ export function MoveVideosDialog({
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
-        toast.error(typeof body?.error === 'string' ? body.error : 'Failed to move videos');
+        toast.error(typeof body?.error === 'string' ? body.error : 'Failed to move files');
         return;
       }
       if (body?.data?.needsConfirmation) {
         setConfirmation(body.data);
         return;
       }
-      toast.success(typeof body?.data?.message === 'string' ? body.data.message : 'Videos moved');
+      toast.success(typeof body?.data?.message === 'string' ? body.data.message : 'Files moved');
       onOpenChange(false);
       onMoved?.(videoIds);
       router.refresh();
     } catch {
-      toast.error('Failed to move videos');
+      toast.error('Failed to move files');
     } finally {
       setIsMoving(false);
     }
@@ -152,7 +152,7 @@ export function MoveVideosDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            Move {count === 1 ? 'video' : `${count} videos`} to another project
+            Move {count === 1 ? 'file' : `${count} files`} to another project
           </DialogTitle>
           <DialogDescription>
             Choose a destination project in this workspace. Versions, comments and assets move with

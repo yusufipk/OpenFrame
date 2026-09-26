@@ -105,7 +105,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
 // NOTIFICATION EVENT TYPES
 // ============================================
 
-export type NotificationEvent =
+export type NotificationEvent = (
   | { type: 'new_video'; projectName: string; videoTitle: string; addedBy: string; url: string }
   | {
       type: 'new_version';
@@ -121,7 +121,7 @@ export type NotificationEvent =
       videoTitle: string;
       commentAuthor: string;
       commentText: string;
-      timestamp: string;
+      timestamp: string | null;
       url: string;
     }
   | {
@@ -131,7 +131,7 @@ export type NotificationEvent =
       replyAuthor: string;
       replyText: string;
       parentAuthor: string;
-      timestamp: string;
+      timestamp: string | null;
       url: string;
     }
   | {
@@ -169,7 +169,8 @@ export type NotificationEvent =
       rejectedBy: string;
       note?: string;
       url: string;
-    };
+    }
+) & { mediaType?: 'VIDEO' | 'IMAGE' };
 
 /** Structured Telegram message with text body + button label/URL */
 interface TelegramMessage {
@@ -190,7 +191,7 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `🎬 New Video Added\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
           `▸ Added by: ${event.addedBy}\n` +
           `▸ ${now}`,
         buttonLabel: 'View Video',
@@ -201,7 +202,7 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `🎬 New Version Added\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
           `▸ Version: ${event.versionLabel}\n` +
           `▸ Added by: ${event.addedBy}\n` +
           `▸ ${now}`,
@@ -213,8 +214,8 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `💬 New Comment\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
-          `▸ By: ${event.commentAuthor} at ${event.timestamp}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
+          `▸ By: ${event.commentAuthor}${event.timestamp ? ` at ${event.timestamp}` : ''}\n` +
           `▸ ${now}\n\n` +
           `"${truncate(event.commentText, 200)}"`,
         buttonLabel: 'View Comment',
@@ -225,7 +226,7 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `↩️ New Reply\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
           `▸ ${event.replyAuthor} replied to ${event.parentAuthor}\n` +
           `▸ ${now}\n\n` +
           `"${truncate(event.replyText, 200)}"`,
@@ -237,7 +238,7 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `✅ Approval Requested\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
           `▸ Version: ${event.versionLabel}\n` +
           `▸ Requested by: ${event.requestedBy}\n` +
           `▸ ${now}` +
@@ -250,7 +251,7 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `✅ Approval Update\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
           `▸ Version: ${event.versionLabel}\n` +
           `▸ ${event.actorName} ${event.action}\n` +
           `▸ ${now}` +
@@ -263,7 +264,7 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `✅ Approval Completed\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
           `▸ Version: ${event.versionLabel}\n` +
           `▸ Approved by: ${event.approvedByCount}\n` +
           `▸ ${now}`,
@@ -275,7 +276,7 @@ function formatTelegramMessage(event: NotificationEvent, timezone: string): Tele
         text:
           `⛔ Approval Rejected\n\n` +
           `▸ Project: ${event.projectName}\n` +
-          `▸ Video: ${event.videoTitle}\n` +
+          `▸ ${event.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${event.videoTitle}\n` +
           `▸ Version: ${event.versionLabel}\n` +
           `▸ Rejected by: ${event.rejectedBy}\n` +
           `▸ ${now}` +
@@ -316,7 +317,7 @@ function formatEmail(
                     <tr><td style="padding:20px;">
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:20px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('Added by', event.addedBy)}
                         ${emailRow('When', now)}
                       </table>
@@ -332,7 +333,7 @@ function formatEmail(
                     <tr><td style="padding:20px;">
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:20px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('Version', event.versionLabel)}
                         ${emailRow('Added by', event.addedBy)}
                         ${emailRow('When', now)}
@@ -349,9 +350,9 @@ function formatEmail(
                     <tr><td style="padding:20px;">
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('From', event.commentAuthor)}
-                        ${emailRow('At', event.timestamp)}
+                        ${event.timestamp ? emailRow('At', event.timestamp) : ''}
                         ${emailRow('When', now)}
                       </table>
                       <div style="border-left:2px solid #7aa7ff;padding:10px 14px;margin:0 0 20px;background-color:#2f2f2f;color:#c6c6cc;font-size:13px;line-height:1.6;">
@@ -369,7 +370,7 @@ function formatEmail(
                     <tr><td style="padding:20px;">
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('From', rawEmailHtml(`<span style="color:${EMAIL_COLORS.text};font-weight:500;">${escapeHtml(event.replyAuthor)}</span> <span style="color:${EMAIL_COLORS.textDim};">&#8594;</span> ${escapeHtml(event.parentAuthor)}`))}
                         ${emailRow('When', now)}
                       </table>
@@ -389,7 +390,7 @@ function formatEmail(
                       ${emailHighlight(`A new approval request is waiting for your response.`)}
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('Version', event.versionLabel)}
                         ${emailRow('Requested by', event.requestedBy)}
                         ${emailRow('When', now)}
@@ -408,7 +409,7 @@ function formatEmail(
                       ${emailHighlight(`${event.actorName} ${event.action} this request.`)}
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('Version', event.versionLabel)}
                         ${emailRow('Action', `${event.actorName} ${event.action}`)}
                         ${emailRow('When', now)}
@@ -427,7 +428,7 @@ function formatEmail(
                       ${emailHighlight(`All approvers accepted this request.`)}
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:20px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('Version', event.versionLabel)}
                         ${emailRow('Approvals', String(event.approvedByCount))}
                         ${emailRow('When', now)}
@@ -445,7 +446,7 @@ function formatEmail(
                       ${emailHighlight(`${event.rejectedBy} rejected this request.`)}
                       <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;">
                         ${emailRow('Project', event.projectName, true)}
-                        ${emailRow('Video', event.videoTitle, true)}
+                        ${emailRow(event.mediaType === 'IMAGE' ? 'Image' : 'Video', event.videoTitle, true)}
                         ${emailRow('Version', event.versionLabel)}
                         ${emailRow('Rejected by', event.rejectedBy)}
                         ${emailRow('When', now)}

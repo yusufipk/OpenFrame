@@ -630,6 +630,40 @@ describe('buildProjectDownloadManifest direct download host allowlist', () => {
 });
 
 describe('buildProjectDownloadManifest provider routing', () => {
+  it('includes an image review with its original image extension', () => {
+    const manifest = buildProjectDownloadManifest('Project', [
+      video({
+        title: 'Cover',
+        versions: [
+          version({
+            providerId: 'r2-image',
+            originalUrl: '/api/upload/image/aaaaaaaa-1111-2222-3333-444444444444.webp',
+            sizeBytes: BigInt(2048),
+          }),
+        ],
+      }),
+    ]);
+
+    expect(manifest.files).toEqual([
+      {
+        fileName: '01-Cover-v1.webp',
+        url: '/api/upload/image/aaaaaaaa-1111-2222-3333-444444444444.webp',
+        sizeBytes: 2048,
+      },
+    ]);
+  });
+
+  it.each([
+    '/api/upload/image/clip.png',
+    '/api/upload/image/aaaaaaaa-1111-2222-3333-444444444444.png/../../other',
+    '/api/upload/image/aaaaaaaa-1111-2222-3333-444444444444.gif',
+  ])('drops an image review with an unsupported path or format: %s', (originalUrl) => {
+    const manifest = buildProjectDownloadManifest('Project', [
+      video({ versions: [version({ providerId: 'r2-image', originalUrl })] }),
+    ]);
+    expect(manifest.files).toEqual([]);
+  });
+
   it('sends a bunny version to the original-source download route', () => {
     const manifest = buildProjectDownloadManifest('Project', [
       video({ versions: [version({ id: 'ver-9', providerId: 'bunny', videoId: 'guid-9' })] }),

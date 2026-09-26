@@ -36,6 +36,7 @@ import type { VideoSource } from '@/lib/video-providers';
 
 interface VideoPageHeaderProps {
   mode: 'dashboard' | 'watch';
+  mediaType?: 'VIDEO' | 'IMAGE';
   backHref: string;
   title: string;
   projectName: string;
@@ -60,6 +61,7 @@ interface VideoPageHeaderProps {
   projectId?: string;
   videoId: string;
   directUploadsEnabled: boolean;
+  imageUploadsEnabled?: boolean;
   showVersionDialog: boolean;
   setShowVersionDialog: (open: boolean) => void;
   newVersionMode: 'url' | 'file';
@@ -86,6 +88,7 @@ interface VideoPageHeaderProps {
 
 export const VideoPageHeader = memo(function VideoPageHeader({
   mode,
+  mediaType = 'VIDEO',
   backHref,
   title,
   projectName,
@@ -110,6 +113,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   projectId,
   videoId,
   directUploadsEnabled,
+  imageUploadsEnabled = false,
   showVersionDialog,
   setShowVersionDialog,
   newVersionMode,
@@ -138,14 +142,14 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   return (
     <div
       className={cn(
-        'shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50 gap-3',
+        'shrink-0 flex flex-wrap items-center justify-between min-h-12 px-4 py-2 sm:h-12 sm:py-0 sm:flex-nowrap border-b bg-background/50 gap-3',
         isFullscreenMode
           ? 'absolute top-0 left-0 right-0 z-50 transition-opacity duration-300'
           : '',
         isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
       )}
     >
-      <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="flex min-w-fit flex-1 items-center gap-3 sm:min-w-0">
         <Link
           href={backHref}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
@@ -161,7 +165,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:shrink-0 sm:flex-nowrap">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -258,7 +262,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               ) : null}
             </Button>
 
-            {versions.length >= 2 && (
+            {mediaType !== 'IMAGE' && versions.length >= 2 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -276,6 +280,8 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                   open={showVersionDialog}
                   onOpenChange={setShowVersionDialog}
                   directUploadsEnabled={directUploadsEnabled}
+                  imageUploadsEnabled={imageUploadsEnabled}
+                  mediaType={mediaType}
                   newVersionMode={newVersionMode}
                   onNewVersionModeChange={setNewVersionMode}
                   newVersionUrl={newVersionUrl}
@@ -308,13 +314,13 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                       <DropdownMenuItem asChild>
                         <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
                           <Share2 className="h-4 w-4 mr-2" />
-                          Share Video
+                          {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
                         </Link>
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem disabled>
                         <Share2 className="h-4 w-4 mr-2" />
-                        Share Video
+                        {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem

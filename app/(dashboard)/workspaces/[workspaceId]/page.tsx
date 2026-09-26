@@ -18,7 +18,11 @@ import { Badge } from '@/components/ui/badge';
 import { auth, checkWorkspaceAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { VideoDragDropUploader } from '@/components/video-drag-drop-uploader';
-import { isDirectFileUploadEnabled, isS3VideoUploadsEnabled } from '@/lib/feature-flags';
+import {
+  hasR2Config,
+  isDirectFileUploadEnabled,
+  isS3VideoUploadsEnabled,
+} from '@/lib/feature-flags';
 
 function VisibilityIcon({ visibility }: { visibility: string }) {
   switch (visibility) {
@@ -112,7 +116,11 @@ export default async function WorkspacePage({ params, searchParams }: WorkspaceP
     <div className="px-6 lg:px-8 py-8 w-full">
       <VideoDragDropUploader
         workspaceId={workspaceId}
-        canUpload={isAdmin && workspace._count.projects > 0 && isDirectFileUploadEnabled()}
+        canUpload={
+          isAdmin && workspace._count.projects > 0 && (isDirectFileUploadEnabled() || hasR2Config())
+        }
+        directUploadsEnabled={isDirectFileUploadEnabled()}
+        imageUploadsEnabled={hasR2Config()}
         directUploadProvider={isS3VideoUploadsEnabled() ? 'r2' : 'bunny'}
       />
       {/* Back & Header */}

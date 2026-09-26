@@ -1,6 +1,7 @@
 'use client';
 
 import { forwardRef, useCallback, useImperativeHandle, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, Undo2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,11 +24,12 @@ interface AnnotationCanvasProps {
   onConfirm?: (strokes: AnnotationStroke[]) => void;
   onCancel?: () => void;
   onDismiss?: () => void;
+  toolbarContainer?: HTMLElement | null;
 }
 
 export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCanvasProps>(
   function AnnotationCanvas(
-    { mode, strokes: initialStrokes, onConfirm, onCancel, onDismiss },
+    { mode, strokes: initialStrokes, onConfirm, onCancel, onDismiss, toolbarContainer },
     ref
   ) {
     const [strokes, setStrokes] = useState<AnnotationStroke[]>(initialStrokes || []);
@@ -80,6 +82,56 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
       );
     }
 
+    const toolbar = (
+      <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]">
+        <AnnotationSettings
+          color={color}
+          width={width}
+          onColorChange={setColor}
+          onWidthChange={setWidth}
+        />
+        <div className="hidden sm:block w-px h-6 bg-border mx-1" />
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setStrokes((previous) => previous.slice(0, -1))}
+            disabled={strokes.length === 0}
+            title="Undo"
+            aria-label="Undo"
+          >
+            <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+            onClick={() => setStrokes([])}
+            disabled={strokes.length === 0}
+            title="Clear all"
+            aria-label="Clear all"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="hidden sm:block w-px h-6 bg-border mx-1" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onCancel}
+          title="Close annotation tool"
+          aria-label="Close annotation tool"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+
     return (
       <div className="absolute inset-0 z-[60]" onClick={(event) => event.stopPropagation()}>
         <AnnotationSurface
@@ -95,53 +147,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
           onStrokeCancel={cancelStroke}
           className="w-full h-full touch-none cursor-crosshair"
         />
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]">
-          <AnnotationSettings
-            color={color}
-            width={width}
-            onColorChange={setColor}
-            onWidthChange={setWidth}
-          />
-          <div className="hidden sm:block w-px h-6 bg-border mx-1" />
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setStrokes((previous) => previous.slice(0, -1))}
-              disabled={strokes.length === 0}
-              title="Undo"
-              aria-label="Undo"
-            >
-              <Undo2 className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-destructive hover:bg-destructive/10"
-              onClick={() => setStrokes([])}
-              disabled={strokes.length === 0}
-              title="Clear all"
-              aria-label="Clear all"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="hidden sm:block w-px h-6 bg-border mx-1" />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onCancel}
-            title="Close annotation tool"
-            aria-label="Close annotation tool"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        {toolbarContainer === undefined
+          ? toolbar
+          : toolbarContainer
+            ? createPortal(toolbar, toolbarContainer)
+            : null}
       </div>
     );
   }

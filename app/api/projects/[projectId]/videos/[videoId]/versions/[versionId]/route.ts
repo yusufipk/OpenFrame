@@ -159,7 +159,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const versionMediaUrls = [
       ...subtitles.map((subtitle) => subtitle.sourceUrl),
-      ...(result.version.providerId === 'r2'
+      ...(['r2', 'r2-image'].includes(result.version.providerId)
         ? [result.version.originalUrl, result.version.thumbnailUrl]
         : []),
     ].filter((url): url is string => Boolean(url));

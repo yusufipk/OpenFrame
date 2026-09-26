@@ -84,6 +84,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (!access.canEdit) {
       return apiErrors.forbidden('Access denied');
     }
+    if (video.mediaType === 'IMAGE') {
+      return apiErrors.badRequest('Use the image upload endpoint for image versions');
+    }
 
     const body = await request.json();
     const {
@@ -115,6 +118,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       typeof providerId === 'string' && providerId.trim()
         ? providerId.trim().toLowerCase()
         : 'youtube';
+
+    if (normalizedProviderIdEarly === 'r2-image') {
+      return apiErrors.badRequest('Use the image upload endpoint for image versions');
+    }
 
     if (normalizedProviderIdEarly === 'r2') {
       if (!videoUrl.startsWith('/api/upload/video/')) {

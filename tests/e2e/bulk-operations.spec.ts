@@ -125,12 +125,10 @@ test('selected videos are moved into another project in the same workspace', asy
   await page.getByRole('checkbox', { name: `Select ${moving}` }).click();
   await expect(page.getByText('1 selected')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Move videos' }).click();
+  await page.getByRole('button', { name: 'Move files' }).click();
 
   const dialog = page.getByRole('dialog');
-  await expect(
-    dialog.getByRole('heading', { name: 'Move video to another project' })
-  ).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Move file to another project' })).toBeVisible();
 
   // The destination list is fetched when the dialog opens; the combobox does
   // not exist until it arrives.

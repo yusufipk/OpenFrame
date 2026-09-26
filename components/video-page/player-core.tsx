@@ -408,7 +408,7 @@ export const PlayerCore = memo(function PlayerCore({
           isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
         )}
       >
-        <div className="flex items-center gap-1 mb-2">
+        <div className="flex flex-wrap items-center gap-1 mb-2 sm:flex-nowrap">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePlayPause}>
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
           </Button>
@@ -437,11 +437,11 @@ export const PlayerCore = memo(function PlayerCore({
             {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </Button>
 
-          <span className="text-xs text-muted-foreground ml-1 tabular-nums">
+          <span className="ml-1 whitespace-nowrap text-xs text-muted-foreground tabular-nums">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
 
-          <div className="ml-auto flex items-center">
+          <div className="ml-auto flex w-full min-w-0 flex-wrap items-center justify-end sm:w-auto sm:flex-nowrap">
             <Button
               variant={isFrameMode ? 'default' : 'ghost'}
               size="sm"

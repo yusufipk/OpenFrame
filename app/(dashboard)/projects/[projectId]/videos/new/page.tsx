@@ -1,7 +1,11 @@
 import { auth } from '@/lib/auth';
 import { checkFolderAccess } from '@/lib/content-access';
 import { redirect } from 'next/navigation';
-import { isDirectFileUploadEnabled, isS3VideoUploadsEnabled } from '@/lib/feature-flags';
+import {
+  hasR2Config,
+  isDirectFileUploadEnabled,
+  isS3VideoUploadsEnabled,
+} from '@/lib/feature-flags';
 import NewVideoPageClient from './new-video-page-client';
 
 interface NewVideoPageProps {
@@ -23,6 +27,7 @@ export default async function NewVideoPage({ params, searchParams }: NewVideoPag
       folderId={folderId}
       projectId={projectId}
       directUploadsEnabled={isDirectFileUploadEnabled()}
+      imageUploadsEnabled={hasR2Config()}
       directUploadProvider={isS3VideoUploadsEnabled() ? 'r2' : 'bunny'}
     />
   );

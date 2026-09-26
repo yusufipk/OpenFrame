@@ -18,6 +18,7 @@ import { MentionTextarea } from '@/components/video-page/mention-textarea';
 import type { CommentTag, VideoAsset } from '@/components/video-page/types';
 
 interface CommentComposerProps {
+  isImage?: boolean;
   liveReviewActive?: boolean;
   liveDrawingControls?: ReactNode;
   isRecording: boolean;
@@ -63,6 +64,7 @@ interface CommentComposerProps {
 }
 
 export const CommentComposer = memo(function CommentComposer({
+  isImage = false,
   isRecording,
   recordingTime,
   stopRecording,
@@ -186,21 +188,23 @@ export const CommentComposer = memo(function CommentComposer({
             className="resize-none text-sm"
           />
           <div className="flex items-center gap-1 flex-wrap">
-            <Button
-              size="sm"
-              variant={hasCommentRange ? 'default' : 'outline'}
-              className="h-7 text-xs"
-              onClick={toggleCommentRangeSelection}
-            >
-              {rangeButtonLabel}
-            </Button>
+            {!isImage && (
+              <Button
+                size="sm"
+                variant={hasCommentRange ? 'default' : 'outline'}
+                className="h-7 text-xs"
+                onClick={toggleCommentRangeSelection}
+              >
+                {rangeButtonLabel}
+              </Button>
+            )}
             {liveDrawingControls}
-            {commentRangeLabel && (
+            {!isImage && commentRangeLabel && (
               <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
                 {commentRangeLabel}
               </span>
             )}
-            {hasCommentRange && (
+            {!isImage && hasCommentRange && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -249,21 +253,23 @@ export const CommentComposer = memo(function CommentComposer({
           )}
           <ImageAttachmentStrip files={imageFiles} onRemoveFile={removeImageFile} />
           <div className="mb-2 flex items-center gap-1 flex-wrap">
-            <Button
-              size="sm"
-              variant={hasCommentRange ? 'default' : 'outline'}
-              className="h-7 text-xs"
-              onClick={toggleCommentRangeSelection}
-            >
-              {rangeButtonLabel}
-            </Button>
+            {!isImage && (
+              <Button
+                size="sm"
+                variant={hasCommentRange ? 'default' : 'outline'}
+                className="h-7 text-xs"
+                onClick={toggleCommentRangeSelection}
+              >
+                {rangeButtonLabel}
+              </Button>
+            )}
             {liveDrawingControls}
-            {commentRangeLabel && (
+            {!isImage && commentRangeLabel && (
               <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
                 {commentRangeLabel}
               </span>
             )}
-            {hasCommentRange && (
+            {!isImage && hasCommentRange && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -337,7 +343,9 @@ export const CommentComposer = memo(function CommentComposer({
                   title={
                     annotationStrokes
                       ? 'Annotation added ✓ (click to redraw)'
-                      : 'Draw annotation on video'
+                      : isImage
+                        ? 'Draw annotation on image'
+                        : 'Draw annotation on video'
                   }
                 >
                   <Pencil className="h-4 w-4" />

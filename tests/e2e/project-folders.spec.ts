@@ -171,7 +171,7 @@ test('groups compact folders above videos below the project header', async ({
   expect(videoCard).not.toBeNull();
   expect(videoCard!.y).toBeGreaterThan(folderCard!.y + folderCard!.height);
   await expect(contents.getByRole('heading', { name: 'Folders', exact: true })).toBeVisible();
-  await expect(contents.getByRole('heading', { name: 'Videos', exact: true })).toBeVisible();
+  await expect(contents.getByRole('heading', { name: 'Files', exact: true })).toBeVisible();
   expect(folderCard!.height).toBeLessThan(110);
   const membersResponse = page.waitForResponse((response) => {
     if (
@@ -198,7 +198,7 @@ test('groups compact folders above videos below the project header', async ({
   const addFolder = await page
     .getByRole('button', { name: 'Add Folder', exact: true })
     .boundingBox();
-  const addVideo = await page.getByRole('link', { name: 'Add Video', exact: true }).boundingBox();
+  const addVideo = await page.getByRole('link', { name: 'Add File', exact: true }).boundingBox();
   expect(addFolder).not.toBeNull();
   expect(addVideo).not.toBeNull();
   expect(Math.abs(addFolder!.y - addVideo!.y)).toBeLessThan(2);

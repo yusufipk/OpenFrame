@@ -203,6 +203,12 @@ function versionDownloadUrl(version: VersionRow): string | null {
     const fileName = extractVideoFileNameFromProxyUrl(version.originalUrl);
     if (fileName) return `/api/upload/video/${fileName}`;
   }
+  if (version.providerId === 'r2-image') {
+    const fileName = extractImageFileNameFromProxyUrl(version.originalUrl);
+    if (fileName && /\.(?:jpe?g|png|webp)$/i.test(fileName)) {
+      return `/api/upload/image/${fileName}`;
+    }
+  }
   if (version.providerId === 'direct') {
     return getSafeDirectDownloadUrl(version.originalUrl);
   }
