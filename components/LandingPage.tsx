@@ -87,7 +87,7 @@ const selfHostedFeatures = [
 const faq = [
   {
     q: 'How does live review work?',
-    a: 'Start a live review on an uploaded video and invite your client through a share link with commenting enabled. Up to 10 participants can watch in sync, draw on the frame, and save their drawings as timestamped comments. Save drawings before moving on: unsaved drawings clear when playback moves or the session ends. Live review does not include voice or video calls and is not available for YouTube imports.',
+    a: 'Start a live review on an uploaded video and invite your client through a share link with commenting enabled. Up to 10 participants can watch in sync, draw on the frame, and save their drawings as timestamped comments. Live review does not include voice or video calls and is not available for YouTube imports.',
   },
   {
     q: 'Do clients need an account?',
@@ -429,7 +429,6 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                     loop
                     muted
                     playsInline
-                    controls
                     preload="none"
                     className="absolute inset-0 h-full w-full object-contain"
                   />
