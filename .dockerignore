@@ -12,7 +12,7 @@ dist
 testsprite_tests
 tests
 vitest.config.ts
-playwright.config.ts
+playwright*.config.ts
 playwright-report
 test-results
 tsconfig.tsbuildinfo
