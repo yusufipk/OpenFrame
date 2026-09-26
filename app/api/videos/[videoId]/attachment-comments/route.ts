@@ -374,7 +374,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           where: { id: canonicalTarget.id },
           select: { kind: true },
         });
-        if (asset?.kind !== 'IMAGE') return { status: 'invalidAnnotationTarget' } as const;
+        if (asset?.kind !== 'IMAGE' && asset?.kind !== 'VIDEO') {
+          return { status: 'invalidAnnotationTarget' } as const;
+        }
+        if (asset.kind === 'VIDEO' && timestamp === null) {
+          return { status: 'missingAnnotationTimestamp' } as const;
+        }
       }
       const comment = await tx.attachmentComment.create({
         data: {
@@ -413,7 +418,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (result.status === 'invalidTimestampTarget')
       return apiErrors.badRequest('Timestamps require an audio or video attachment');
     if (result.status === 'invalidAnnotationTarget')
-      return apiErrors.badRequest('Annotations require an image attachment');
+      return apiErrors.badRequest('Annotations require an image or video attachment');
+    if (result.status === 'missingAnnotationTimestamp')
+      return apiErrors.badRequest('Video annotations require a timestamp');
     const response = successResponse(
       {
         comment: serializeComment(

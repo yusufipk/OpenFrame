@@ -61,11 +61,16 @@ async function postWithAnnotation(
   videoId: string,
   target: Target,
   annotationData: unknown,
-  content = ''
+  content = '',
+  timestamp?: unknown
 ) {
-  return callRoute(POST, apiRequest(url(videoId), { body: { target, content, annotationData } }), {
-    videoId,
-  });
+  return callRoute(
+    POST,
+    apiRequest(url(videoId), {
+      body: { target, content, annotationData, ...(timestamp !== undefined ? { timestamp } : {}) },
+    }),
+    { videoId }
+  );
 }
 
 async function postWithTimestamp(videoId: string, target: Target, timestamp: unknown) {
@@ -444,7 +449,73 @@ describe('video attachment comments API', () => {
     expect(await db.attachmentComment.count()).toBe(0);
   });
 
-  it('refuses drawings on audio and video attachments without adding rows', async () => {
+  it('persists a video drawing on frame zero and returns it through POST and GET', async () => {
+    const { owner, video } = await seedVersion({ visibility: 'PRIVATE' });
+    const asset = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'VIDEO',
+      provider: 'BUNNY',
+    });
+    const target: Target = { type: 'asset', id: asset.id };
+    signedInAs(owner);
+
+    const response = await postWithAnnotation(video.id, target, DRAWING, '', 0);
+    expect(response.status).toBe(201);
+    const created = (await readData<{ comment: ListedComment }>(response)).comment;
+    expect(created).toMatchObject({
+      content: '',
+      timestamp: 0,
+      annotationData: JSON.stringify(DRAWING),
+    });
+    expect(
+      await db.attachmentComment.findUniqueOrThrow({ where: { id: created.id } })
+    ).toMatchObject({
+      assetId: asset.id,
+      timestamp: 0,
+      annotationData: JSON.stringify(DRAWING),
+    });
+    const listed = await readData<{ comments: ListedComment[] }>(await list(video.id, target));
+    expect(listed.comments).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        timestamp: 0,
+        annotationData: JSON.stringify(DRAWING),
+      }),
+    ]);
+  });
+
+  it.each([
+    ['missing', undefined, ''],
+    ['missing even with text', undefined, 'Frame note'],
+    ['null', null, ''],
+    ['negative', -1, ''],
+    ['string', '12', ''],
+  ])('rejects a video drawing with a %s timestamp', async (_label, timestamp, content) => {
+    const { owner, video } = await seedVersion({ visibility: 'PRIVATE' });
+    const asset = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'VIDEO',
+      provider: 'BUNNY',
+    });
+    signedInAs(owner);
+
+    expect(
+      (
+        await postWithAnnotation(
+          video.id,
+          { type: 'asset', id: asset.id },
+          DRAWING,
+          content,
+          timestamp
+        )
+      ).status
+    ).toBe(400);
+    expect(await db.attachmentComment.count()).toBe(0);
+  });
+
+  it('refuses drawings on audio attachments even with a timestamp', async () => {
     const { owner, video, version } = await seedVersion({ visibility: 'PRIVATE' });
     const audio = await createVideoAsset({
       videoId: video.id,
@@ -452,12 +523,6 @@ describe('video attachment comments API', () => {
       kind: 'AUDIO',
       provider: 'R2_AUDIO',
       sourceUrl: AUDIO_A,
-    });
-    const videoAsset = await createVideoAsset({
-      videoId: video.id,
-      billedUserId: owner.id,
-      kind: 'VIDEO',
-      provider: 'BUNNY',
     });
     const source = await createComment({
       versionId: version.id,
@@ -468,10 +533,9 @@ describe('video attachment comments API', () => {
 
     for (const target of [
       { type: 'asset' as const, id: audio.id },
-      { type: 'asset' as const, id: videoAsset.id },
       { type: 'comment-audio' as const, id: source.id },
     ]) {
-      expect((await postWithAnnotation(video.id, target, DRAWING)).status).toBe(400);
+      expect((await postWithAnnotation(video.id, target, DRAWING, '', 3.5)).status).toBe(400);
     }
     expect(await db.attachmentComment.count()).toBe(0);
   });
@@ -492,6 +556,59 @@ describe('video attachment comments API', () => {
       content: 'Keep this',
       annotationData: null,
     });
+  });
+
+  it('allows a COMMENT share guest to draw on a video frame but refuses a VIEW share guest', async () => {
+    const { project, video, owner } = await seedVersion({ visibility: 'PRIVATE' });
+    const asset = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'VIDEO',
+      provider: 'BUNNY',
+    });
+    const target: Target = { type: 'asset', id: asset.id };
+    const commentLink = await createShareLink({
+      projectId: project.id,
+      videoId: video.id,
+      permission: 'COMMENT',
+      allowGuests: true,
+    });
+    const viewLink = await createShareLink({
+      projectId: project.id,
+      videoId: video.id,
+      permission: 'VIEW',
+      allowGuests: true,
+    });
+    signedOut();
+    const body = {
+      target,
+      content: '',
+      annotationData: DRAWING,
+      timestamp: 9.5,
+      guestName: 'Reviewer',
+    };
+
+    const allowed = await callRoute(
+      POST,
+      apiRequest(url(video.id), { body, cookies: shareCookie(video.id, commentLink.token) }),
+      { videoId: video.id }
+    );
+    expect(allowed.status).toBe(201);
+    expect(await db.attachmentComment.findFirstOrThrow()).toMatchObject({
+      assetId: asset.id,
+      authorId: null,
+      guestName: 'Reviewer',
+      timestamp: 9.5,
+      annotationData: JSON.stringify(DRAWING),
+    });
+
+    const denied = await callRoute(
+      POST,
+      apiRequest(url(video.id), { body, cookies: shareCookie(video.id, viewLink.token) }),
+      { videoId: video.id }
+    );
+    expect(denied.status).toBe(403);
+    expect(await db.attachmentComment.count()).toBe(1);
   });
 
   it('lets a COMMENT share guest write with a name and a VIEW share guest only read', async () => {

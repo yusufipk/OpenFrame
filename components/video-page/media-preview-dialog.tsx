@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AnnotationCanvasHandle, AnnotationStroke } from '@/components/annotation-canvas';
 import { AttachmentImagePreview } from '@/components/video-page/attachment-image-preview';
+import { AttachmentVideoAnnotationContext } from '@/components/video-page/attachment-video-frame';
 import { NativePreviewPlayer } from '@/components/video-page/native-preview-player';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -114,6 +115,7 @@ function MediaPreviewBody({
 }: Omit<MediaPreviewDialogProps, 'open' | 'onClose' | 'headerActions' | 'canDownload'>) {
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const mediaRef = useRef<HTMLDivElement>(null);
+  const [nativeFrameReady, setNativeFrameReady] = useState(false);
   const [nativeTime, setNativeTime] = useState<number | null>(null);
   const nativeMedia = () => mediaRef.current?.querySelector<HTMLMediaElement>('audio,video');
   const getTime = () => {
@@ -146,72 +148,137 @@ function MediaPreviewBody({
   const [viewingAnnotation, setViewingAnnotation] = useState<{
     id: string;
     strokes: AnnotationStroke[];
+    timestamp?: number | null;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const drawingTime = useRef<number | null>(null);
+  const onPlaybackChange = () => {
+    const time = getTime();
+    if (isAnnotating && drawingTime.current !== null) {
+      pause();
+      if (time !== null && Math.abs(time - drawingTime.current) > 0.01) seekTo(drawingTime.current);
+      return;
+    }
+    setNativeTime(time);
+    if (
+      viewingAnnotation?.timestamp != null &&
+      time !== null &&
+      Math.abs(time - viewingAnnotation.timestamp) > 0.1
+    )
+      setViewingAnnotation(null);
+  };
+  useEffect(() => {
+    if (kind !== 'VIDEO' || !playback || playback.currentTime === null) return;
+    if (
+      isAnnotating &&
+      drawingTime.current !== null &&
+      Math.abs(playback.currentTime - drawingTime.current) > 0.1
+    ) {
+      playback.pause();
+      playback.seekTo(drawingTime.current);
+    }
+  }, [kind, playback, isAnnotating]);
+  const displayedAnnotation =
+    playback &&
+    viewingAnnotation?.timestamp != null &&
+    playback.currentTime !== null &&
+    Math.abs(playback.currentTime - viewingAnnotation.timestamp) > 0.1
+      ? null
+      : viewingAnnotation;
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
-      <div
-        className="flex h-[42%] min-h-[180px] min-w-0 flex-none items-center justify-center overflow-hidden bg-black md:h-auto md:min-h-0 md:flex-1"
-        inert={submitting}
-        ref={mediaRef}
-        onLoadedMetadataCapture={() => setNativeTime(getTime())}
-        onTimeUpdateCapture={() => setNativeTime(getTime())}
-        onSeekedCapture={() => setNativeTime(getTime())}
-        onEmptiedCapture={() => setNativeTime(null)}
-      >
-        {children ??
-          (kind === 'IMAGE' && src ? (
-            <div className="h-full w-full p-3 md:p-4">
-              <AttachmentImagePreview
-                src={src}
-                title={title}
-                isAnnotating={isAnnotating}
-                canvasRef={canvasRef}
-                viewingAnnotation={viewingAnnotation}
-                onCancel={() => setIsAnnotating(false)}
-                onDismiss={() => setViewingAnnotation(null)}
-              />
-            </div>
-          ) : (kind === 'AUDIO' || kind === 'VIDEO') && src ? (
-            <NativePreviewPlayer src={src} title={title} kind={kind} />
-          ) : (
-            <p className="text-sm text-white/70">Preview is unavailable.</p>
-          ))}
+    <AttachmentVideoAnnotationContext.Provider
+      value={{
+        isAnnotating,
+        setCanvas: (handle) => {
+          canvasRef.current = handle;
+        },
+        viewingAnnotation: displayedAnnotation,
+        onCancel: () => setIsAnnotating(false),
+        onDismiss: () => setViewingAnnotation(null),
+      }}
+    >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+        <div
+          className="flex h-[42%] min-h-[180px] min-w-0 flex-none items-center justify-center overflow-hidden bg-black md:h-auto md:min-h-0 md:flex-1"
+          inert={submitting}
+          ref={mediaRef}
+          onLoadedMetadataCapture={() => {
+            setNativeTime(getTime());
+            const video = mediaRef.current?.querySelector('video');
+            setNativeFrameReady(!!video?.videoWidth && !!video.videoHeight);
+          }}
+          onLoadedDataCapture={() => {
+            const video = mediaRef.current?.querySelector('video');
+            setNativeFrameReady(!!video?.videoWidth && !!video.videoHeight);
+          }}
+          onTimeUpdateCapture={onPlaybackChange}
+          onPlayCapture={onPlaybackChange}
+          onSeekedCapture={onPlaybackChange}
+          onEmptiedCapture={() => {
+            setNativeTime(null);
+            setNativeFrameReady(false);
+          }}
+        >
+          {children ??
+            (kind === 'IMAGE' && src ? (
+              <div className="h-full w-full p-3 md:p-4">
+                <AttachmentImagePreview
+                  src={src}
+                  title={title}
+                  isAnnotating={isAnnotating}
+                  canvasRef={canvasRef}
+                  viewingAnnotation={viewingAnnotation}
+                  onCancel={() => setIsAnnotating(false)}
+                  onDismiss={() => setViewingAnnotation(null)}
+                />
+              </div>
+            ) : (kind === 'AUDIO' || kind === 'VIDEO') && src ? (
+              <NativePreviewPlayer src={src} title={title} kind={kind} />
+            ) : (
+              <p className="text-sm text-white/70">Preview is unavailable.</p>
+            ))}
+        </div>
+        {target && (
+          <AttachmentCommentsPanel
+            key={attachmentCommentTargetKey(target)}
+            videoId={videoId}
+            target={target}
+            guestName={guestName}
+            onCommentsChanged={onCommentsChanged}
+            timedMedia={kind === 'AUDIO' || kind === 'VIDEO'}
+            playbackTime={playback ? playback.currentTime : nativeTime}
+            getPlaybackTime={getTime}
+            onPausePlayback={pause}
+            onSeekTimestamp={seekTo}
+            canAnnotate={(kind === 'IMAGE' && !!src) || kind === 'VIDEO'}
+            annotationReady={
+              kind !== 'VIDEO' || (playback ? playback.currentTime !== null : nativeFrameReady)
+            }
+            isAnnotating={isAnnotating}
+            onStartAnnotation={(timestamp) => {
+              drawingTime.current = timestamp ?? null;
+              pause();
+              setViewingAnnotation(null);
+              setIsAnnotating(true);
+            }}
+            getAnnotationStrokes={() => canvasRef.current?.getStrokes() ?? []}
+            onAnnotationSaved={() => {
+              setIsAnnotating(false);
+              setViewingAnnotation(null);
+            }}
+            onViewAnnotation={(id, strokes, timestamp) => {
+              setIsAnnotating(false);
+              if (timestamp != null) seekTo(timestamp);
+              setViewingAnnotation({ id, strokes, timestamp });
+            }}
+            viewingAnnotationId={displayedAnnotation?.id}
+            onCommentDeleted={(id) => {
+              if (viewingAnnotation?.id === id) setViewingAnnotation(null);
+            }}
+            onSubmittingChange={setSubmitting}
+          />
+        )}
       </div>
-      {target && (
-        <AttachmentCommentsPanel
-          key={attachmentCommentTargetKey(target)}
-          videoId={videoId}
-          target={target}
-          guestName={guestName}
-          onCommentsChanged={onCommentsChanged}
-          timedMedia={kind === 'AUDIO' || kind === 'VIDEO'}
-          playbackTime={playback ? playback.currentTime : nativeTime}
-          getPlaybackTime={getTime}
-          onPausePlayback={pause}
-          onSeekTimestamp={seekTo}
-          canAnnotate={kind === 'IMAGE' && !!src}
-          isAnnotating={isAnnotating}
-          onStartAnnotation={() => {
-            setViewingAnnotation(null);
-            setIsAnnotating(true);
-          }}
-          getAnnotationStrokes={() => canvasRef.current?.getStrokes() ?? []}
-          onAnnotationSaved={() => {
-            setIsAnnotating(false);
-            setViewingAnnotation(null);
-          }}
-          onViewAnnotation={(id, strokes) => {
-            setIsAnnotating(false);
-            setViewingAnnotation({ id, strokes });
-          }}
-          viewingAnnotationId={viewingAnnotation?.id}
-          onCommentDeleted={(id) => {
-            if (viewingAnnotation?.id === id) setViewingAnnotation(null);
-          }}
-          onSubmittingChange={setSubmitting}
-        />
-      )}
-    </div>
+    </AttachmentVideoAnnotationContext.Provider>
   );
 }

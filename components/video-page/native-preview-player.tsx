@@ -1,11 +1,16 @@
 'use client';
 
-import { useRef, useState, type RefObject } from 'react';
+import { useContext, useRef, useState, type RefObject } from 'react';
 import { AlertCircle, Loader2, Play, Pause, Volume2 } from 'lucide-react';
 import {
   enterPreviewFullscreen,
   PreviewPlayerControls,
 } from '@/components/video-page/preview-player-controls';
+
+import {
+  AttachmentVideoAnnotationContext,
+  AttachmentVideoFrame,
+} from '@/components/video-page/attachment-video-frame';
 
 interface NativePreviewPlayerProps {
   src: string;
@@ -14,6 +19,7 @@ interface NativePreviewPlayerProps {
 }
 
 export function NativePreviewPlayer({ src, title, kind }: NativePreviewPlayerProps) {
+  const annotation = useContext(AttachmentVideoAnnotationContext);
   const mediaRef = useRef<HTMLMediaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
@@ -63,7 +69,7 @@ export function NativePreviewPlayer({ src, title, kind }: NativePreviewPlayerPro
       ref={containerRef}
       className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black"
     >
-      <div
+      <AttachmentVideoFrame
         className="group relative flex min-h-0 flex-1 items-center justify-center bg-black"
         onClick={kind === 'VIDEO' ? togglePlayPause : undefined}
       >
@@ -106,19 +112,23 @@ export function NativePreviewPlayer({ src, title, kind }: NativePreviewPlayerPro
             />
           </>
         )}
-        {kind === 'VIDEO' && isReady && !hasError && (
-          <div
-            className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}
-          >
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60">
-              {isPlaying ? (
-                <Pause className="h-8 w-8 text-white" />
-              ) : (
-                <Play className="ml-1 h-8 w-8 text-white" />
-              )}
+        {kind === 'VIDEO' &&
+          isReady &&
+          !hasError &&
+          !annotation?.isAnnotating &&
+          !annotation?.viewingAnnotation && (
+            <div
+              className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60">
+                {isPlaying ? (
+                  <Pause className="h-8 w-8 text-white" />
+                ) : (
+                  <Play className="ml-1 h-8 w-8 text-white" />
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {hasError ? (
           <div
             role="alert"
@@ -136,7 +146,7 @@ export function NativePreviewPlayer({ src, title, kind }: NativePreviewPlayerPro
             Loading preview...
           </div>
         ) : null}
-      </div>
+      </AttachmentVideoFrame>
       <PreviewPlayerControls
         isPlaying={isPlaying}
         isMuted={isMuted}
@@ -149,7 +159,7 @@ export function NativePreviewPlayer({ src, title, kind }: NativePreviewPlayerPro
         onSeek={seekTo}
         onSpeedChange={changeSpeed}
         onFullscreen={
-          kind === 'VIDEO'
+          kind === 'VIDEO' && !annotation?.isAnnotating
             ? () =>
                 enterPreviewFullscreen(
                   containerRef.current,
@@ -157,7 +167,7 @@ export function NativePreviewPlayer({ src, title, kind }: NativePreviewPlayerPro
                 )
             : undefined
         }
-        disabled={!isReady || hasError}
+        disabled={!isReady || hasError || annotation?.isAnnotating}
       />
     </div>
   );

@@ -4,6 +4,7 @@
 import {
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -18,6 +19,11 @@ import {
 } from '@/components/video-page/preview-player-controls';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import type { BunnyPlaybackState, BunnyQualityOption } from '@/components/video-page/types';
+
+import {
+  AttachmentVideoAnnotationContext,
+  AttachmentVideoFrame,
+} from '@/components/video-page/attachment-video-frame';
 
 interface BunnyPreviewPlayerProps {
   providerVideoId: string | null;
@@ -46,6 +52,7 @@ function formatBunnyQualityLabel(
 
 export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPreviewPlayerProps>(
   function BunnyPreviewPlayer({ providerVideoId, isProcessing, onReadyToPlay }, ref) {
+    const annotation = useContext(AttachmentVideoAnnotationContext);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const hlsRef = useRef<Hls | null>(null);
@@ -556,7 +563,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         ref={containerRef}
         className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black"
       >
-        <div
+        <AttachmentVideoFrame
           className="group relative flex min-h-0 flex-1 cursor-pointer items-center justify-center bg-black"
           onClick={togglePlayPause}
         >
@@ -567,7 +574,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
             preload="metadata"
           />
 
-          {isReady && (
+          {isReady && !annotation?.isAnnotating && !annotation?.viewingAnnotation && (
             <div
               className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}
             >
@@ -597,7 +604,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
               </p>
             </div>
           )}
-        </div>
+        </AttachmentVideoFrame>
 
         <PreviewPlayerControls
           isPlaying={isPlaying}
@@ -614,8 +621,12 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
           selectedQualityLevel={selectedQualityLevel}
           qualityOptions={qualityOptions}
           onQualityChange={handleQualityChange}
-          onFullscreen={() => enterPreviewFullscreen(containerRef.current, videoRef.current)}
-          disabled={!isReady}
+          onFullscreen={
+            annotation?.isAnnotating
+              ? undefined
+              : () => enterPreviewFullscreen(containerRef.current, videoRef.current)
+          }
+          disabled={!isReady || annotation?.isAnnotating}
         />
       </div>
     );

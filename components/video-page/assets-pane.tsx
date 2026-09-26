@@ -28,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { AttachmentVideoFrame } from '@/components/video-page/attachment-video-frame';
 import { MediaPreviewDialog } from '@/components/video-page/media-preview-dialog';
 import {
   BunnyPreviewPlayer,
@@ -1650,7 +1651,10 @@ export const AssetsPane = memo(function AssetsPane({
       >
         {selectedAsset?.kind === 'VIDEO' ? (
           selectedAsset.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
-            <div className="h-full w-full overflow-hidden rounded-md bg-black">
+            <AttachmentVideoFrame
+              embedded
+              className="relative flex h-full w-full items-center justify-center overflow-hidden bg-black"
+            >
               <iframe
                 ref={youtubeIframeRef}
                 onLoad={subscribeYouTube}
@@ -1661,7 +1665,7 @@ export const AssetsPane = memo(function AssetsPane({
                 referrerPolicy="strict-origin-when-cross-origin"
                 allowFullScreen
               />
-            </div>
+            </AttachmentVideoFrame>
           ) : selectedAsset.provider === 'R2_VIDEO' && selectedAsset.sourceUrl ? undefined : (
             <BunnyPreviewPlayer
               ref={bunnyPreviewPlayerRef}

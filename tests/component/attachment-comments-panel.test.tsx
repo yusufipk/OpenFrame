@@ -183,4 +183,46 @@ describe('AttachmentCommentsPanel', () => {
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0].timestamp).toBe(0);
   });
+  it('pins a drawing to its frame and releases an empty draft when drawing is cancelled', async () => {
+    let currentTime = 4;
+    const bodies: Array<{ timestamp: number }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          bodies.push(JSON.parse(String(init.body)));
+          return json({ data: { comment } }, 201);
+        }
+        return json({ data: { comments: [], total: 0, hasMore: false, canComment: true } });
+      })
+    );
+    const start = vi.fn();
+    const props = {
+      videoId: 'video-1',
+      target: { type: 'asset' as const, id: 'video-asset' },
+      onCommentsChanged: vi.fn(),
+      timedMedia: true,
+      canAnnotate: true,
+      getPlaybackTime: () => currentTime,
+      onStartAnnotation: start,
+    };
+    const { rerender } = render(
+      <AttachmentCommentsPanel {...props} playbackTime={currentTime} annotationReady={false} />
+    );
+    expect(await screen.findByRole('button', { name: 'Annotate frame' })).toBeDisabled();
+    rerender(<AttachmentCommentsPanel {...props} playbackTime={currentTime} annotationReady />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Annotate frame' }));
+    expect(start).toHaveBeenCalledWith(4);
+    rerender(<AttachmentCommentsPanel {...props} playbackTime={currentTime} isAnnotating />);
+    expect(screen.getByRole('button', { name: 'Remove timestamp' })).toBeDisabled();
+    currentTime = 12;
+    rerender(
+      <AttachmentCommentsPanel {...props} playbackTime={currentTime} isAnnotating={false} />
+    );
+    expect(screen.getByRole('button', { name: 'Remove timestamp' })).toHaveTextContent('At 0:12');
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'A different frame' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post comment' }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].timestamp).toBe(12);
+  });
 });

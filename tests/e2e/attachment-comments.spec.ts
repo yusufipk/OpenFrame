@@ -92,11 +92,15 @@ async function postFileComment(page: Page, content: string) {
   expect(await db.attachmentComment.count({ where: { content } })).toBe(1);
 }
 
-async function drawImageAnnotation(page: Page) {
+async function drawImageAnnotation(page: Page, kind: 'image' | 'frame' = 'image') {
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Annotate image', exact: true }).click();
+  await dialog.getByRole('button', { name: `Annotate ${kind}`, exact: true }).click();
   const canvas = dialog.locator('svg[aria-label="Annotation canvas"]');
   await expect(canvas).toBeVisible();
+  const initialBounds = (await canvas.boundingBox())!;
+  await canvas.hover({
+    position: { x: initialBounds.width * 0.25, y: initialBounds.height * 0.7 },
+  });
   const bounds = (await canvas.boundingBox())!;
   await page.mouse.move(bounds.x + bounds.width * 0.25, bounds.y + bounds.height * 0.7);
   await page.mouse.down();
@@ -125,6 +129,38 @@ async function viewImageAnnotation(page: Page, expectedPath: string) {
   for (const key of ['x', 'y', 'width', 'height'] as const) {
     expect(canvasBounds[key]).toBeCloseTo(imageBounds[key], 0);
   }
+}
+
+async function expectVideoDrawing(page: Page, expectedPath: string) {
+  const dialog = page.getByRole('dialog');
+  await expect
+    .poll(async () => {
+      const box = (await dialog.boundingBox())!;
+      return box.x >= 0 && box.x + box.width <= page.viewportSize()!.width;
+    })
+    .toBe(true);
+  const canvas = dialog.locator('svg[aria-label="Annotation canvas"]');
+  await expect(canvas.locator('path')).toHaveAttribute('d', expectedPath);
+  await expect
+    .poll(async () => {
+      const bounds = (await canvas.boundingBox())!;
+      const frame = await dialog.locator('video').evaluate((video: HTMLVideoElement) => {
+        const box = video.getBoundingClientRect();
+        const scale = Math.min(box.width / video.videoWidth, box.height / video.videoHeight);
+        const width = video.videoWidth * scale,
+          height = video.videoHeight * scale;
+        return {
+          x: box.x + (box.width - width) / 2,
+          y: box.y + (box.height - height) / 2,
+          width,
+          height,
+        };
+      });
+      return ['x', 'y', 'width', 'height'].every(
+        (key) => Math.abs(bounds[key as keyof typeof bounds] - frame[key as keyof typeof frame]) < 1
+      );
+    })
+    .toBe(true);
 }
 
 async function seekPreviewMedia(page: Page, kind: 'audio' | 'video', time: number) {
@@ -346,10 +382,49 @@ test('asset image, audio and video previews have independent persistent comments
     await expect(page.getByRole('dialog').locator('video')).toBeVisible();
     await exercisePreviewControls(page, 'video');
     await expect(page.getByRole('dialog').getByText(audioComment, { exact: true })).toHaveCount(0);
+    await seekPreviewMedia(page, 'video', 0);
+    const videoPreview = page.getByRole('dialog');
+    await videoPreview.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect
+      .poll(() => videoPreview.locator('video').evaluate((video: HTMLVideoElement) => video.paused))
+      .toBe(false);
+    await videoPreview.getByRole('button', { name: 'Annotate frame', exact: true }).click();
+    await expect
+      .poll(() => videoPreview.locator('video').evaluate((video: HTMLVideoElement) => video.paused))
+      .toBe(true);
+    await videoPreview.getByRole('button', { name: 'Close annotation tool', exact: true }).click();
     await seekPreviewMedia(page, 'video', 1.25);
+    const videoDrawing = await drawImageAnnotation(page, 'frame');
+    await expect(
+      page.getByRole('dialog').getByRole('button', { name: 'Remove timestamp' })
+    ).toBeDisabled();
+    await page
+      .getByRole('dialog')
+      .locator('video')
+      .evaluate((video: HTMLVideoElement) => {
+        video.currentTime = 1.75;
+      });
+    await expect
+      .poll(() =>
+        page
+          .getByRole('dialog')
+          .locator('video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime)
+      )
+      .toBeCloseTo(1.25, 2);
     await postFileComment(page, `Shorten this asset ${seeded.videoId}`);
+    const savedVideoDrawing = await db.attachmentComment.findFirstOrThrow({
+      where: { content: `Shorten this asset ${seeded.videoId}` },
+    });
+    expect(JSON.parse(savedVideoDrawing.annotationData!)).toHaveLength(1);
     await seekPreviewMedia(page, 'video', 0);
     await expectTimestamp(page, `Shorten this asset ${seeded.videoId}`, 'video', 1.25, '0:01');
+    await expectVideoDrawing(page, videoDrawing);
+    await page.screenshot({ path: 'test-results/video-attachment-drawing-desktop.png' });
+    await page.setViewportSize({ width: 402, height: 874 });
+    await expectVideoDrawing(page, videoDrawing);
+    await page.screenshot({ path: 'test-results/video-attachment-drawing-mobile.png' });
+    await page.setViewportSize({ width: 1440, height: 874 });
     await closePreview(page);
     expect(await db.comment.count({ where: { versionId: seeded.versionId } })).toBe(0);
     await page.reload();
@@ -369,6 +444,7 @@ test('asset image, audio and video previews have independent persistent comments
         name === 'Audio proof' ? 65.25 : 1.25,
         name === 'Audio proof' ? '1:05' : '0:01'
       );
+      if (kind === 'video') await expectVideoDrawing(page, videoDrawing);
       await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toHaveCount(
         0
       );
@@ -589,6 +665,7 @@ test('YouTube asset comments use trusted iframe time and seek on replay', async 
     );
   });
   const content = `YouTube timing ${seeded.videoId}`;
+  const youtubeDrawing = await drawImageAnnotation(page, 'frame');
   await postFileComment(page, content);
   expect((await db.attachmentComment.findFirstOrThrow({ where: { content } })).timestamp).toBe(
     42.5
@@ -603,5 +680,8 @@ test('YouTube asset comments use trusted iframe time and seek on replay', async 
   });
   await page.getByRole('button', { name: 'Jump to 0:42', exact: true }).click();
   await expect(frame.locator('body')).toHaveAttribute('data-time', '42.5');
+  await expect(
+    page.getByRole('dialog').locator('svg[aria-label="Annotation canvas"] path')
+  ).toHaveAttribute('d', youtubeDrawing);
   expect(frames).toBe(2);
 });

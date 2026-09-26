@@ -47,11 +47,12 @@ interface AttachmentCommentsPanelProps {
   onPausePlayback?: () => void;
   onSeekTimestamp?: (seconds: number) => void;
   canAnnotate?: boolean;
+  annotationReady?: boolean;
   isAnnotating?: boolean;
-  onStartAnnotation?: () => void;
+  onStartAnnotation?: (timestamp?: number) => void;
   getAnnotationStrokes?: () => AnnotationStroke[];
   onAnnotationSaved?: () => void;
-  onViewAnnotation?: (id: string, strokes: AnnotationStroke[]) => void;
+  onViewAnnotation?: (id: string, strokes: AnnotationStroke[], timestamp?: number | null) => void;
   viewingAnnotationId?: string;
   onCommentDeleted?: (id: string) => void;
   onSubmittingChange?: (value: boolean) => void;
@@ -78,6 +79,7 @@ export function AttachmentCommentsPanel({
   onPausePlayback,
   onSeekTimestamp,
   canAnnotate = false,
+  annotationReady = true,
   isAnnotating = false,
   onStartAnnotation,
   getAnnotationStrokes,
@@ -98,10 +100,13 @@ export function AttachmentCommentsPanel({
   const [draft, setDraft] = useState('');
   const [includeTime, setIncludeTime] = useState(true);
   const [draftTime, setDraftTime] = useState<number | undefined>(undefined);
-  const captureTime = () => {
+  const [draftTimeFromDrawing, setDraftTimeFromDrawing] = useState(false);
+  const pinnedTime = !isAnnotating && !draft.trim() && draftTimeFromDrawing ? undefined : draftTime;
+  const captureTime = (fromDrawing = false) => {
     const time = getPlaybackTime?.() ?? null;
     if (time !== null) {
       setDraftTime(time);
+      setDraftTimeFromDrawing(fromDrawing);
       onPausePlayback?.();
     }
     return time;
@@ -168,10 +173,14 @@ export function AttachmentCommentsPanel({
     if (!canComment || mutationRef.current) return;
     const annotationData = canAnnotate && isAnnotating ? (getAnnotationStrokes?.() ?? []) : [];
     if (!content && annotationData.length === 0) {
-      setError('Write a comment or draw on the image before posting.');
+      setError('Write a comment or add a drawing before posting.');
       return;
     }
-    const timestamp = timedMedia && includeTime ? (draftTime ?? captureTime()) : null;
+    const timestamp = timedMedia && includeTime ? (pinnedTime ?? captureTime()) : null;
+    if (timedMedia && annotationData.length && timestamp === null) {
+      setError('A video drawing needs a playback timestamp.');
+      return;
+    }
     if (timedMedia && includeTime && timestamp === null) {
       setError('Wait for playback to load, or remove the timestamp to post a general comment.');
       return;
@@ -231,6 +240,16 @@ export function AttachmentCommentsPanel({
     }
   };
 
+  const viewAnnotation = (comment: AttachmentComment) => {
+    try {
+      const strokes = validateAnnotationStrokes(JSON.parse(comment.annotationData!));
+      if (strokes?.length) onViewAnnotation?.(comment.id, strokes, comment.timestamp);
+      else setError('This annotation could not be displayed.');
+    } catch {
+      setError('This annotation could not be displayed.');
+    }
+  };
+
   return (
     <aside
       className="flex min-h-0 flex-1 flex-col border-t bg-background md:w-[340px] md:flex-none md:border-l md:border-t-0"
@@ -269,8 +288,13 @@ export function AttachmentCommentsPanel({
                       type="button"
                       className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs tabular-nums text-primary transition-colors hover:bg-primary/20 hover:underline disabled:pointer-events-none disabled:opacity-50"
                       aria-label={`Jump to ${formatTime(comment.timestamp)}`}
-                      disabled={playbackTime === null || !onSeekTimestamp}
-                      onClick={() => onSeekTimestamp?.(comment.timestamp!)}
+                      disabled={
+                        playbackTime === null || !onSeekTimestamp || isAnnotating || submitting
+                      }
+                      onClick={() => {
+                        if (canAnnotate && comment.annotationData) viewAnnotation(comment);
+                        else onSeekTimestamp?.(comment.timestamp!);
+                      }}
                     >
                       <Clock className="h-3 w-3" />
                       {formatTime(comment.timestamp)}
@@ -282,20 +306,12 @@ export function AttachmentCommentsPanel({
                       type="button"
                       className="rounded bg-violet-500/15 px-2 py-1 text-xs text-violet-400 hover:bg-violet-500/25 aria-pressed:bg-violet-500/25 disabled:pointer-events-none disabled:opacity-50"
                       aria-pressed={viewingAnnotationId === comment.id}
-                      disabled={isAnnotating || submitting}
-                      onClick={() => {
-                        try {
-                          const strokes = validateAnnotationStrokes(
-                            JSON.parse(comment.annotationData!)
-                          );
-                          if (strokes?.length) onViewAnnotation?.(comment.id, strokes);
-                          else setError('This annotation could not be displayed.');
-                        } catch {
-                          setError('This annotation could not be displayed.');
-                        }
-                      }}
+                      disabled={isAnnotating || submitting || (timedMedia && playbackTime === null)}
+                      aria-label="View annotation"
+                      title="View annotation"
+                      onClick={() => viewAnnotation(comment)}
                     >
-                      View annotation
+                      {timedMedia ? <Pencil className="h-3.5 w-3.5" /> : 'View annotation'}
                     </button>
                   )}
                   {comment.canDelete && (
@@ -381,7 +397,7 @@ export function AttachmentCommentsPanel({
               className="gap-1 tabular-nums"
               aria-label={includeTime ? 'Remove timestamp' : 'Attach timestamp'}
               aria-pressed={includeTime}
-              disabled={submitting}
+              disabled={submitting || isAnnotating}
               onClick={() => {
                 if (!includeTime) captureTime();
                 else setDraftTime(undefined);
@@ -390,8 +406,8 @@ export function AttachmentCommentsPanel({
             >
               <Clock className="h-3.5 w-3.5" />
               {includeTime
-                ? (draftTime ?? playbackTime) !== null
-                  ? `At ${formatTime((draftTime ?? playbackTime)!)}`
+                ? (pinnedTime ?? playbackTime) !== null
+                  ? `At ${formatTime((pinnedTime ?? playbackTime)!)}`
                   : 'Waiting for playback'
                 : 'General comment'}
             </Button>
@@ -402,11 +418,30 @@ export function AttachmentCommentsPanel({
               variant={isAnnotating ? 'secondary' : 'outline'}
               size="sm"
               className="gap-1"
-              disabled={submitting || isAnnotating}
-              onClick={onStartAnnotation}
+              disabled={
+                submitting ||
+                isAnnotating ||
+                !annotationReady ||
+                (timedMedia && playbackTime === null)
+              }
+              title={!annotationReady ? 'Waiting for a video frame' : undefined}
+              onClick={() => {
+                if (timedMedia) {
+                  const time = captureTime(true);
+                  if (time === null) return;
+                  setIncludeTime(true);
+                  onStartAnnotation?.(time);
+                } else onStartAnnotation?.();
+              }}
             >
               <Pencil className="h-3.5 w-3.5" />
-              {isAnnotating ? 'Drawing on image' : 'Annotate image'}
+              {timedMedia
+                ? isAnnotating
+                  ? 'Drawing on frame'
+                  : 'Annotate frame'
+                : isAnnotating
+                  ? 'Drawing on image'
+                  : 'Annotate image'}
             </Button>
           )}
           <Textarea
@@ -415,7 +450,7 @@ export function AttachmentCommentsPanel({
             placeholder="Comment on this file"
             value={draft}
             onChange={(event) => {
-              if (timedMedia && includeTime && draftTime === undefined) captureTime();
+              if (timedMedia && includeTime && pinnedTime === undefined) captureTime();
               setDraft(event.target.value);
             }}
             maxLength={10000}
