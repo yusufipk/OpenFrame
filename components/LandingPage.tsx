@@ -70,6 +70,7 @@ const steps = [
 
 const hostedFeatures = [
   'Unlimited collaborators and clients',
+  'Live review sessions, up to 10 participants',
   'Comments, voice notes, annotations',
   'Version compare, history, approvals',
   'Permissioned share links, PDF and CSV export',
@@ -84,6 +85,10 @@ const selfHostedFeatures = [
 ];
 
 const faq = [
+  {
+    q: 'How does live review work?',
+    a: 'Start a live review on an uploaded video and invite your client through a share link with commenting enabled. Up to 10 participants can watch in sync, draw on the frame, and save their drawings as timestamped comments. Save drawings before moving on: unsaved drawings clear when playback moves or the session ends. Live review does not include voice or video calls and is not available for YouTube imports.',
+  },
   {
     q: 'Do clients need an account?',
     a: 'No. They can review in the browser with a share link.',
@@ -323,8 +328,8 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 data-hero-copy
                 className="max-w-[660px] text-base leading-relaxed text-muted-foreground md:text-lg"
               >
-                Timestamped comments, voice notes and annotations on one timeline. Clients review in
-                the browser, no account.
+                Review together live, or leave timestamped comments, voice notes and drawings.
+                Clients join in the browser, no account needed.
               </p>
 
               <div data-hero-copy className="flex flex-col items-center gap-3.5">
@@ -402,6 +407,37 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
 
         {/* 3) FEATURES */}
         <section id="features" className="scroll-mt-20">
+          {/* Live review */}
+          <div className="border-b border-border px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+            <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 lg:grid-cols-[340px_minmax(0,1fr)] lg:gap-14">
+              <div className="flex flex-col gap-4">
+                <p className={labelClass}>Live review</p>
+                <SectionTitle>Watch together. Point it out.</SectionTitle>
+                <p className="text-base leading-relaxed text-muted-foreground">
+                  Play, pause and seek in sync with your client. Draw directly on the frame and save
+                  the feedback as a timestamped comment.
+                </p>
+              </div>
+              <div className="min-w-0 border border-border bg-card">
+                <MockToolbar left="Live review" right="Watch, draw, save" />
+                <div className="relative aspect-video w-full overflow-hidden bg-black">
+                  <video
+                    src="/landing/live-review.mp4"
+                    poster="/landing/live-review-poster.webp"
+                    aria-label="Two OpenFrame participants watching in sync and drawing on the same frame"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    controls
+                    preload="none"
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Version compare */}
           <div className="border-b border-border px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
             <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 lg:grid-cols-[340px_minmax(0,1fr)] lg:gap-14">
