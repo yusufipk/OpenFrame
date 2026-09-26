@@ -21,6 +21,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run check
+      - name: Check production build context
+        run: docker build --file tests/build/dockerignore.Dockerfile .
 
   test:
     runs-on: ubuntu-latest
