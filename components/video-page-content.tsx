@@ -5,6 +5,14 @@ import Hls from 'hls.js';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
+import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
+import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
+import {
+  LiveReviewCanvas,
+  type LiveReviewCanvasHandle,
+} from '@/components/video-page/live-review-canvas';
+import type { LiveStroke } from '@/lib/live-review/protocol';
+import { versionCommentsPath } from '@/lib/client/version-comments';
 import { PlayerCore } from '@/components/video-page/player-core';
 import { VideoPageHeader } from '@/components/video-page/video-page-header';
 import { ImagePreviewDialog } from '@/components/video-page/image-preview-dialog';
@@ -216,14 +224,6 @@ export function VideoPageContent({
     setActiveVersionId,
   });
 
-  // Memoize version selection handler to prevent recreating on each render
-  const handleVersionSelect = useCallback(
-    (versionId: string) => {
-      setActiveVersionId(versionId);
-    },
-    [setActiveVersionId]
-  );
-
   // Memoize toggle show resolved handler
   const handleToggleShowResolved = useCallback(() => {
     setShowResolved((prev) => !prev);
@@ -296,6 +296,53 @@ export function VideoPageContent({
     videoRef,
     supportsSubtitles,
   });
+  const [liveDrawingControls, setLiveDrawingControls] = useState<HTMLDivElement | null>(null);
+  const liveDrawingRef = useRef<LiveReviewCanvasHandle>(null);
+  const getLiveAnnotation = useCallback(() => liveDrawingRef.current?.getAnnotation() ?? null, []);
+  const refreshLiveComments = useCallback(() => {
+    if (activeVersionId) void fetchVersionComments(activeVersionId, false);
+  }, [activeVersionId, fetchVersionComments]);
+  const liveReview = useLiveReview({
+    videoId,
+    versionId: activeVersionId,
+    providerId: activeProviderId,
+    guestName: normalizedGuestName,
+    videoRef,
+    onCommentsChanged: refreshLiveComments,
+    onVersionSelect: setActiveVersionId,
+    enabled: !!video && canInitializePlayer,
+  });
+  const handleVersionSelect = useCallback(
+    (versionId: string) => {
+      if (!liveReview.isJoined) setActiveVersionId(versionId);
+    },
+    [liveReview.isJoined, setActiveVersionId]
+  );
+  const saveLiveDrawing = useCallback(
+    async (strokes: LiveStroke[], timestamp: number) => {
+      const versionId = liveReview.snapshot?.versionId;
+      if (!versionId || !liveReview.canDraw)
+        throw new Error('Join the paused room to save a drawing.');
+      const response = await fetch(versionCommentsPath(versionId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timestamp,
+          annotationData: strokes.map(({ points, color, width }) => ({ points, color, width })),
+          ...(isGuest ? { guestName: normalizedGuestName } : {}),
+        }),
+      });
+      if (!response.ok) throw new Error('The drawing could not be saved. Please try again.');
+      await fetchVersionComments(versionId, false);
+    },
+    [
+      liveReview.snapshot?.versionId,
+      liveReview.canDraw,
+      isGuest,
+      normalizedGuestName,
+      fetchVersionComments,
+    ]
+  );
   const activeVersionDuration = activeVersion?.duration;
   const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
   const embedUrl = useMemo(() => {
@@ -351,7 +398,7 @@ export function VideoPageContent({
     handleVideoMouseMove,
     handleVideoMouseLeave,
     handlePlayPause,
-    handleSeekToTimestamp,
+    handleSeekToTimestamp: handleLocalSeekToTimestamp,
     handleMuteToggle,
     handleFrameModeToggle,
     handleSkip,
@@ -380,7 +427,25 @@ export function VideoPageContent({
     speedOptions,
     scheduleWatchProgressSaveRef,
     setViewingAnnotation,
+    playbackLocked: liveReview.playbackLocked,
   });
+
+  const { isJoined: isLiveReviewJoined, selectComment: selectLiveComment } = liveReview;
+  const handleSeekToTimestamp = useCallback(
+    (
+      timestamp: number,
+      annotation?: string | null,
+      options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null; commentId?: string }
+    ) => {
+      if (isLiveReviewJoined && options?.commentId) {
+        setViewingAnnotation(null);
+        selectLiveComment(options.commentId, options.pauseAfterSeek);
+        return;
+      }
+      handleLocalSeekToTimestamp(timestamp, annotation, options);
+    },
+    [handleLocalSeekToTimestamp, isLiveReviewJoined, selectLiveComment]
+  );
 
   const { youtubeCaptionTracks, activeYoutubeCaptionLanguage, selectYoutubeCaptionLanguage } =
     useYoutubeCaptions({
@@ -418,6 +483,7 @@ export function VideoPageContent({
     isReady,
     currentTime,
     videoDuration,
+    playbackLocked: liveReview.isJoined,
   });
 
   useEffect(() => {
@@ -558,6 +624,7 @@ export function VideoPageContent({
     setIsAnnotating,
     setViewingAnnotation,
     annotationCanvasRef,
+    getAnnotationForComment: liveReview.isJoined ? getLiveAnnotation : undefined,
     editAnnotationCanvasRef,
     fetchVersionComments,
     fetchAssets,
@@ -768,7 +835,12 @@ export function VideoPageContent({
   return (
     <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
-        <div className={cn('flex-1 w-full flex flex-col min-h-0', isFullscreenMode && 'relative')}>
+        <div
+          className={cn(
+            'flex-1 w-full min-w-0 flex flex-col min-h-0',
+            isFullscreenMode && 'relative'
+          )}
+        >
           <VideoPageHeader
             mode={mode}
             backHref={backHref}
@@ -781,6 +853,18 @@ export function VideoPageContent({
             activeVersion={activeVersion}
             activeVersionId={activeVersionId}
             onVersionSelect={headerActions.onVersionSelect}
+            versionSelectionLocked={liveReview.isJoined}
+            liveReviewControl={
+              <LiveReviewEntryControl
+                discovery={liveReview.discovery}
+                provider={activeProviderId}
+                isJoined={liveReview.isJoined}
+                busy={isCreatingVersion || liveReview.connectionStatus === 'connecting'}
+                error={liveReview.error}
+                onStart={liveReview.start}
+                onJoin={liveReview.join}
+              />
+            }
             onDeleteCurrentVersionClick={headerActions.onDeleteCurrentVersionClick}
             showDeleteVersionDialog={showDeleteVersionDialog}
             setShowDeleteVersionDialog={setShowDeleteVersionDialog}
@@ -817,7 +901,45 @@ export function VideoPageContent({
             onOpenApprovalsPanel={handleOpenApprovalsPanel}
           />
 
+          <LiveReviewBar
+            discovery={liveReview.discovery}
+            provider={activeProviderId}
+            snapshot={liveReview.snapshot}
+            participantId={liveReview.participantId}
+            connection={liveReview.connectionStatus}
+            isJoined={liveReview.isJoined}
+            busy={isCreatingVersion || liveReview.connectionStatus === 'connecting'}
+            autoplayBlocked={liveReview.autoplayBlocked}
+            error={liveReview.error}
+            onStart={liveReview.start}
+            onJoin={liveReview.join}
+            onLeave={liveReview.leave}
+            onTransfer={liveReview.transfer}
+            onEnd={liveReview.end}
+            onRetryPlayback={liveReview.retryPlayback}
+          />
           <PlayerCore
+            liveOverlay={
+              liveReview.isJoined && liveReview.snapshot ? (
+                <LiveReviewCanvas
+                  ref={liveDrawingRef}
+                  controlsContainer={liveDrawingControls}
+                  rejectedStroke={liveReview.rejectedStroke}
+                  strokes={liveReview.snapshot.strokes}
+                  previewStrokes={liveReview.snapshot.annotation?.strokes}
+                  canvasEpoch={liveReview.snapshot.canvasEpoch}
+                  participantId={liveReview.participantId}
+                  canDraw={liveReview.canDraw}
+                  isPaused={!liveReview.snapshot.playback.playing}
+                  isManager={liveReview.isManager && liveReview.connectionStatus === 'connected'}
+                  videoRef={videoRef}
+                  onStroke={liveReview.sendStroke}
+                  onUndo={liveReview.undo}
+                  onClear={liveReview.clear}
+                  onSave={saveLiveDrawing}
+                />
+              ) : null
+            }
             activeVersionId={activeVersionId}
             activeProviderId={activeVersion?.providerId}
             embedUrl={embedUrl}
@@ -840,18 +962,18 @@ export function VideoPageContent({
             bunnyPortraitFrameWidth={bunnyPortraitFrameWidth}
             showBunnyProcessingOverlay={showBunnyProcessingOverlay}
             showBunnyErrorOverlay={showBunnyErrorOverlay}
-            showResumePrompt={showResumePrompt}
+            showResumePrompt={showResumePrompt && !liveReview.isJoined}
             savedProgress={savedProgress}
             formatTime={formatTime}
             handleResumeFromSaved={handleResumeFromSavedWithSync}
             handleDismissResume={handleDismissResume}
-            isAnnotating={isAnnotating}
+            isAnnotating={isAnnotating && !liveReview.isJoined}
             annotationCanvasRef={annotationCanvasRef}
             setAnnotationStrokes={setAnnotationStrokes}
             setIsAnnotating={setIsAnnotating}
             setViewingAnnotation={setViewingAnnotation}
             viewingAnnotation={viewingAnnotation}
-            isEditingAnnotation={isEditingAnnotation}
+            isEditingAnnotation={isEditingAnnotation && !liveReview.isJoined}
             editAnnotationCanvasRef={editAnnotationCanvasRef}
             editAnnotationInitialStrokes={editAnnotationInitialStrokes}
             setEditAnnotationData={setEditAnnotationData}
@@ -992,6 +1114,12 @@ export function VideoPageContent({
           }
           composer={
             <CommentComposer
+              liveReviewActive={liveReview.isJoined}
+              liveDrawingControls={
+                liveReview.isJoined ? (
+                  <div ref={setLiveDrawingControls} aria-label="Live drawing controls" />
+                ) : null
+              }
               isRecording={isRecording}
               recordingTime={recordingTime}
               stopRecording={stopRecording}

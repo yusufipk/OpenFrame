@@ -13,6 +13,7 @@
 // being clickable. Verifying a seek needs a decodable media file behind a real
 // object-storage version, which is video-upload.spec.ts's territory.
 import { test, expect } from './fixtures';
+import { db } from '@/lib/db';
 
 test('a comment is posted and rendered with its author and timecode', async ({
   page,
@@ -61,8 +62,10 @@ test('an annotation drawn on the video is stored with the comment', async ({
   await expect(page.getByPlaceholder('Add a comment...')).toBeVisible();
 
   await page.getByTitle('Draw annotation on video').click();
+  await page.getByRole('button', { name: 'Green', exact: true }).click();
+  await page.getByRole('button', { name: 'Increase stroke width' }).click();
 
-  const canvas = page.locator('canvas');
+  const canvas = page.getByLabel('Annotation canvas', { exact: true });
   await expect(canvas).toBeVisible();
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
@@ -70,7 +73,7 @@ test('an annotation drawn on the video is stored with the comment', async ({
 
   // A stroke is only committed with at least two points, so there has to be a
   // move between the press and the release, and it has to stay inside the box
-  // (leaving the canvas commits the stroke early).
+  // Pointer capture keeps the drawing active until release.
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 8 });
@@ -85,10 +88,26 @@ test('an annotation drawn on the video is stored with the comment', async ({
 
   await expect(page.getByText(body)).toBeVisible();
   await expect(page.getByText('Annotated')).toBeVisible();
+  const saved = await db.comment.findFirstOrThrow({
+    where: { versionId: seeded.versionId, content: body },
+  });
+  expect(JSON.parse(saved.annotationData!)).toEqual([
+    expect.objectContaining({ color: '#34C759', width: 4 }),
+  ]);
 
   await page.reload();
   await expect(page.getByText(body)).toBeVisible();
   await expect(page.getByText('Annotated')).toBeVisible();
+  await page.getByTitle('Jump to this timestamp').click();
+  const savedSurface = page.getByLabel('Annotation canvas', { exact: true });
+  await expect(savedSurface).toBeVisible();
+  const savedPath = savedSurface.locator('path');
+  await expect(savedPath).toHaveCount(1);
+  await expect(savedPath).toHaveAttribute('stroke', '#34C759');
+  const firstPoint = (await savedPath.getAttribute('d'))!.split(' ').slice(1, 3).map(Number);
+  expect(Math.abs(firstPoint[0] - 300)).toBeLessThan(3);
+  expect(Math.abs(firstPoint[1] - 300)).toBeLessThan(3);
+  await page.screenshot({ path: 'test-results/saved-annotation-svg.png' });
 });
 
 test('a comment can be replied to and resolved', async ({ page, seed, seededUser }) => {

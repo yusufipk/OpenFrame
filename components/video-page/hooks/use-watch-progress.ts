@@ -8,6 +8,8 @@ interface UseWatchProgressParams extends WatchProgressConfig {
   isReady: boolean;
   currentTime: number;
   videoDuration: number;
+  playbackLocked?: boolean;
+  isJoined?: boolean;
 }
 
 export function useWatchProgress({
@@ -19,7 +21,10 @@ export function useWatchProgress({
   isReady,
   currentTime,
   videoDuration,
+  playbackLocked = false,
+  isJoined = false,
 }: UseWatchProgressParams) {
+  const resumeLocked = playbackLocked || isJoined;
   const [savedProgress, setSavedProgress] = useState<number | null>(null);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [progressFetchKey, setProgressFetchKey] = useState(0);
@@ -154,7 +159,7 @@ export function useWatchProgress({
           const progress = response.data?.progress || 0;
           const percentage = response.data?.percentage || 0;
 
-          if (showPrompt && percentage > 5 && percentage < 95) {
+          if (showPrompt && !resumeLocked && percentage > 5 && percentage < 95) {
             setSavedProgress(progress);
             setShowResumePrompt(true);
           }
@@ -163,7 +168,7 @@ export function useWatchProgress({
         console.error('Error loading watch progress:', err);
       }
     },
-    [isAuthenticated, activeVersionId, videoId]
+    [isAuthenticated, activeVersionId, resumeLocked, videoId]
   );
 
   useEffect(() => {
@@ -268,6 +273,7 @@ export function useWatchProgress({
   ]);
 
   const handleResumeFromSaved = useCallback(() => {
+    if (resumeLocked) return null;
     if (savedProgress !== null && playerRef.current) {
       if (playerRef.current.seekTo) {
         playerRef.current.seekTo(savedProgress, true);
@@ -277,7 +283,7 @@ export function useWatchProgress({
       return savedProgress;
     }
     return null;
-  }, [savedProgress, playerRef]);
+  }, [savedProgress, resumeLocked, playerRef]);
 
   const handleDismissResume = useCallback(() => {
     setShowResumePrompt(false);
@@ -286,7 +292,7 @@ export function useWatchProgress({
 
   return {
     savedProgress,
-    showResumePrompt,
+    showResumePrompt: !resumeLocked && showResumePrompt,
     scheduleWatchProgressSave,
     loadWatchProgress,
     handleResumeFromSaved,

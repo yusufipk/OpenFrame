@@ -57,6 +57,8 @@ model User {
   acquisition               UserAcquisition?
   analyticsEvents           AnalyticsEvent[]
   subscriptionCancellations SubscriptionCancellation[]
+  managedLiveReviews LiveReviewSession[]
+  liveReviewParticipants LiveReviewParticipant[]
 
   @@map("users")
 }
@@ -416,6 +418,7 @@ model Video {
   versions    VideoVersion[]
   assets      VideoAsset[]
   shareLinks  ShareLink[]
+  liveReviews LiveReviewSession[]
   
   @@index([projectId])
   @@map("videos")
@@ -452,6 +455,7 @@ model VideoVersion {
   watchProgress   WatchProgress[]
   approvalRequests ApprovalRequest[]
   subtitles       VideoSubtitle[]
+  liveReviews     LiveReviewSession[]
   
   @@unique([videoParentId, versionNumber])
   @@index([videoParentId])
@@ -649,6 +653,68 @@ model ShareLink {
   @@index([token])
   @@index([token, expiresAt])
   @@map("share_links")
+}
+
+model LiveReviewSession {
+  id            String   @id @default(cuid())
+  videoId       String
+  video         Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  versionId     String
+  version       VideoVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  managerUserId String
+  manager       User @relation(fields: [managerUserId], references: [id], onDelete: Cascade)
+  status        String @default("active")
+  presenterId   String?
+  controlEpoch  Int @default(0)
+  revision      Int @default(0)
+  position      Float @default(0)
+  playing       Boolean @default(false)
+  rate          Float @default(1)
+  playbackAt    DateTime @default(now())
+  lastActiveAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  endedAt       DateTime?
+  participants  LiveReviewParticipant[]
+  tickets       LiveReviewTicket[]
+
+  @@index([videoId, status])
+  @@index([lastActiveAt])
+  @@map("live_review_sessions")
+}
+
+model LiveReviewParticipant {
+  id              String @id @default(cuid())
+  sessionId       String
+  session         LiveReviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestIdentityId String?
+  shareToken      String?
+  name            String
+  isManager       Boolean @default(false)
+  canComment      Boolean @default(false)
+  lastSeenAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  tickets         LiveReviewTicket[]
+
+  @@index([sessionId, lastSeenAt])
+  @@index([userId])
+  @@map("live_review_participants")
+}
+
+model LiveReviewTicket {
+  id            String @id @default(cuid())
+  tokenHash     String @unique
+  sessionId     String
+  session       LiveReviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   LiveReviewParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("live_review_tickets")
 }
 
 model UserFeedback {

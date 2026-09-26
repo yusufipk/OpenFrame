@@ -125,19 +125,63 @@ export async function checkVideoAccess(
       canManageProject: access.canEdit,
       video,
     };
-  const [visible, editable] = await Promise.all([
-    client.video.count({ where: { id: videoId, AND: visibleVideoWhere(userId) } }),
-    userId
-      ? client.video.count({ where: { id: videoId, AND: visibleVideoWhere(userId, true) } })
-      : 0,
-  ]);
+  let hasAccess = false;
+  let canEdit = false;
+  if (access.ownerBillingActive) {
+    const videoMember = userId
+      ? await client.videoMember.findUnique({
+          where: { videoId_userId: { videoId, userId } },
+          select: { role: true },
+        })
+      : null;
+    hasAccess = !!videoMember;
+    canEdit = videoMember?.role === 'ADMIN';
+
+    if (video.accessMode === 'INHERIT' && !canEdit) {
+      if (!video.folderId) {
+        hasAccess ||= access.hasAccess;
+      } else {
+        let folderId: string | null = video.folderId;
+        for (let depth = 0; folderId && depth < MAX_FOLDER_DEPTH; depth++) {
+          const folder: {
+            parentId: string | null;
+            accessMode: ContentMode;
+            members: Array<{ role: ContentRole }>;
+          } | null = await client.projectFolder.findUnique({
+            where: { id: folderId },
+            select: {
+              parentId: true,
+              accessMode: true,
+              members: {
+                where: { userId: userId ?? '' },
+                select: { role: true },
+              },
+            },
+          });
+          if (!folder) break;
+          const folderRole = userId ? folder.members[0]?.role : undefined;
+          hasAccess ||= !!folderRole;
+          if (folderRole === 'ADMIN') {
+            canEdit = true;
+            break;
+          }
+          if (folder.accessMode === 'RESTRICTED') break;
+          if (!folder.parentId) {
+            hasAccess ||= access.hasAccess;
+            break;
+          }
+          folderId = folder.parentId;
+        }
+      }
+    }
+  }
   return {
     ...access,
     hasProjectAccess: access.hasAccess,
     canManageProject: access.canEdit,
-    hasAccess: visible > 0,
-    canEdit: editable > 0,
-    canDelete: editable > 0,
+    hasAccess,
+    canEdit,
+    canDelete: canEdit,
     video,
   };
 }

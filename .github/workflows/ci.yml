@@ -226,6 +226,8 @@ jobs:
       # rate_limits table so a retry does not inherit a spent window.
       - name: End-to-end tests
         run: bun run test:e2e
+      - name: Live review end-to-end tests
+        run: bun run test:e2e:live-review
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v4

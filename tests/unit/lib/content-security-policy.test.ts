@@ -9,6 +9,8 @@ const MANAGED_ENV = [
   'R2_PUBLIC_BASE_URL',
   'R2_ACCOUNT_ID',
   'R2_BUCKET_NAME',
+  'OPENFRAME_ENABLE_LIVE_REVIEW',
+  'LIVE_REVIEW_PUBLIC_URL',
 ];
 
 function directives(): Record<string, string[]> {
@@ -34,6 +36,16 @@ afterEach(() => {
 });
 
 describe('buildContentSecurityPolicy', () => {
+  it('allows only the configured live WebSocket origin when enabled', () => {
+    vi.stubEnv('LIVE_REVIEW_PUBLIC_URL', 'wss://review.example.com/socket');
+    expect(directives()['connect-src']).not.toContain('wss://review.example.com');
+    vi.stubEnv('OPENFRAME_ENABLE_LIVE_REVIEW', 'true');
+    expect(directives()['connect-src']).toContain('wss://review.example.com');
+    expect(directives()['connect-src']).not.toContain('wss:');
+    vi.stubEnv('LIVE_REVIEW_PUBLIC_URL', 'https://review.example.com');
+    expect(directives()['connect-src']).not.toContain('https://review.example.com');
+  });
+
   it('locks down the directives that never depend on configuration', () => {
     const csp = directives();
 

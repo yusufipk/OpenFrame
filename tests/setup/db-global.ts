@@ -72,6 +72,7 @@ const REVIEWED_MIGRATIONS = [
   '20260820120000_add_comment_images',
   '20260822120000_add_video_subtitles',
   '20260908120000_add_subscription_cancellations',
+  '20260925120000_live_review', // replayed: active-room partial unique index
 ];
 
 /** Objects POST_PUSH_SQL must have produced. Verified after it runs. */
@@ -80,6 +81,7 @@ const REQUIRED_INDEXES = [
   'video_versions_r2_videoid_unique',
   'video_versions_r2_originalurl_unique',
   'video_versions_r2_thumbnail_unique',
+  'live_review_active_video_unique',
 ];
 
 const POST_PUSH_SQL = `
@@ -124,6 +126,9 @@ WHERE "providerId" = 'r2' AND "originalUrl" LIKE '/api/upload/video/%';
 CREATE UNIQUE INDEX IF NOT EXISTS "video_versions_r2_thumbnail_unique"
 ON "video_versions" ("thumbnailUrl")
 WHERE "providerId" = 'r2' AND "thumbnailUrl" LIKE '/api/upload/image/%';
+
+CREATE UNIQUE INDEX IF NOT EXISTS "live_review_active_video_unique"
+ON "live_review_sessions" ("videoId") WHERE "status" = 'active';
 `;
 
 function assertMigrationsReviewed(): void {
