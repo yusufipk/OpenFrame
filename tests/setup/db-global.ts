@@ -51,6 +51,7 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, 'prisma', 'migrations');
  * else is a plain table/column/enum addition that db push derives on its own.
  */
 const REVIEWED_MIGRATIONS = [
+  '20260926130000_attachment_comment_annotations', // replayed: annotation-only comment check
   '20260926120000_attachment_comments', // replayed: target and content checks
   '20260925120000_add_video_media_type', // replayed: image object key uniqueness
   '20260915120000_project_folders', // replayed: folder tree trigger
@@ -95,7 +96,7 @@ ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_exactly_on
   OR ("targetType" = 'COMMENT_AUDIO' AND "assetId" IS NULL AND "sourceCommentId" IS NOT NULL AND "sourceUrl" IS NULL)
 );
 ALTER TABLE "attachment_comments" DROP CONSTRAINT IF EXISTS "attachment_comments_nonempty_content_check";
-ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_nonempty_content_check" CHECK (length(btrim("content")) > 0 AND length("content") <= 10000);
+ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_nonempty_content_check" CHECK (length("content") <= 10000 AND (length(btrim("content")) > 0 OR ("annotationData" IS NOT NULL AND "annotationData" <> '[]')));
 
 DROP TRIGGER IF EXISTS project_folder_tree_guard ON project_folders;
 

@@ -30,6 +30,7 @@ type Target =
 type ListedComment = {
   id: string;
   content: string;
+  annotationData: string | null;
   guestName: string | null;
   author: { id: string; name: string | null; image: string | null } | null;
   canDelete: boolean;
@@ -54,6 +55,28 @@ async function post(videoId: string, target: Target, content: string, guestName?
     { videoId }
   );
 }
+
+async function postWithAnnotation(
+  videoId: string,
+  target: Target,
+  annotationData: unknown,
+  content = ''
+) {
+  return callRoute(POST, apiRequest(url(videoId), { body: { target, content, annotationData } }), {
+    videoId,
+  });
+}
+
+const DRAWING = [
+  {
+    points: [
+      { x: 0.25, y: 0.5 },
+      { x: 0.75, y: 0.6 },
+    ],
+    color: '#FF3B30',
+    width: 4,
+  },
+];
 
 async function list(videoId: string, target: Target, extra: Record<string, string | number> = {}) {
   return callRoute(
@@ -131,6 +154,7 @@ describe('video attachment comments API', () => {
     const created = await readData<{ comment: ListedComment }>(second);
     expect(created.comment).toMatchObject({
       content: 'Second',
+      annotationData: null,
       author: { id: owner.id },
       canDelete: true,
     });
@@ -157,6 +181,141 @@ describe('video attachment comments API', () => {
     expect((await remove(video.id, created.comment.id)).status).toBe(200);
     expect(await db.attachmentComment.findUnique({ where: { id: created.comment.id } })).toBeNull();
     expect(await db.attachmentComment.count({ where: { assetId: target.id } })).toBe(1);
+  });
+
+  it('persists an annotation-only image comment and returns canonical strokes in POST and GET', async () => {
+    const { owner, video, target } = await assetScenario();
+    signedInAs(owner);
+    const response = await postWithAnnotation(video.id, target, [
+      {
+        ...DRAWING[0],
+        tool: 'pen',
+        points: [
+          { x: 0.25, y: 0.5, pressure: 1 },
+          { x: 0.75, y: 0.6, pressure: 0.5 },
+        ],
+      },
+    ]);
+
+    expect(response.status).toBe(201);
+    const created = (await readData<{ comment: ListedComment }>(response)).comment;
+    expect(created).toMatchObject({ content: '', annotationData: JSON.stringify(DRAWING) });
+    const row = await db.attachmentComment.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row).toMatchObject({
+      content: '',
+      assetId: target.id,
+      annotationData: JSON.stringify(DRAWING),
+    });
+    const listed = await readData<{ comments: ListedComment[] }>(await list(video.id, target));
+    expect(listed.comments).toEqual([
+      expect.objectContaining({ id: created.id, annotationData: JSON.stringify(DRAWING) }),
+    ]);
+  });
+
+  it('normalizes an empty drawing with text to a plain comment', async () => {
+    const { owner, video, target } = await assetScenario();
+    signedInAs(owner);
+    const response = await postWithAnnotation(video.id, target, [], 'Text without a drawing');
+    expect(response.status).toBe(201);
+    const created = (await readData<{ comment: ListedComment }>(response)).comment;
+    expect(created.annotationData).toBeNull();
+    expect(
+      await db.attachmentComment.findUniqueOrThrow({ where: { id: created.id } })
+    ).toMatchObject({ content: 'Text without a drawing', annotationData: null });
+    const listed = await readData<{ comments: ListedComment[] }>(await list(video.id, target));
+    expect(listed.comments[0].annotationData).toBeNull();
+  });
+
+  it('accepts a drawing on a legacy comment image', async () => {
+    const { owner, video, version } = await seedVersion({ visibility: 'PRIVATE' });
+    const source = await createComment({ versionId: version.id, authorId: owner.id });
+    await db.comment.update({ where: { id: source.id }, data: { imageUrl: IMAGE_C } });
+    const target: Target = { type: 'comment-image', id: source.id, url: IMAGE_C };
+    signedInAs(owner);
+
+    const response = await postWithAnnotation(video.id, target, DRAWING);
+    expect(response.status).toBe(201);
+    expect(await db.attachmentComment.findFirstOrThrow()).toMatchObject({
+      targetType: 'COMMENT_IMAGE',
+      sourceCommentId: source.id,
+      annotationData: JSON.stringify(DRAWING),
+    });
+    const listed = await readData<{ comments: ListedComment[] }>(await list(video.id, target));
+    expect(listed.comments[0].annotationData).toBe(JSON.stringify(DRAWING));
+  });
+
+  it.each([
+    ['string', '[]'],
+    ['invalid stroke', [{ ...DRAWING[0], width: 21 }]],
+    ['too many strokes', Array.from({ length: 501 }, () => DRAWING[0])],
+    ['empty array', []],
+    ['no drawn points', [{ ...DRAWING[0], points: [] }]],
+    ['one undrawn point', [{ ...DRAWING[0], points: [{ x: 0.2, y: 0.3 }] }]],
+  ])('rejects an annotation-only comment with %s', async (_label, annotationData) => {
+    const { owner, video, target } = await assetScenario();
+    signedInAs(owner);
+
+    expect((await postWithAnnotation(video.id, target, annotationData)).status).toBe(400);
+    expect(await db.attachmentComment.count()).toBe(0);
+  });
+
+  it('rejects empty text and an empty drawing together', async () => {
+    const { owner, video, target } = await assetScenario();
+    signedInAs(owner);
+
+    expect((await post(video.id, target, '  ')).status).toBe(400);
+    expect((await postWithAnnotation(video.id, target, [], '  ')).status).toBe(400);
+    expect(await db.attachmentComment.count()).toBe(0);
+  });
+
+  it('refuses drawings on audio and video attachments without adding rows', async () => {
+    const { owner, video, version } = await seedVersion({ visibility: 'PRIVATE' });
+    const audio = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'AUDIO',
+      provider: 'R2_AUDIO',
+      sourceUrl: AUDIO_A,
+    });
+    const videoAsset = await createVideoAsset({
+      videoId: video.id,
+      billedUserId: owner.id,
+      kind: 'VIDEO',
+      provider: 'BUNNY',
+    });
+    const source = await createComment({
+      versionId: version.id,
+      authorId: owner.id,
+      voiceUrl: AUDIO_A,
+    });
+    signedInAs(owner);
+
+    for (const target of [
+      { type: 'asset' as const, id: audio.id },
+      { type: 'asset' as const, id: videoAsset.id },
+      { type: 'comment-audio' as const, id: source.id },
+    ]) {
+      expect((await postWithAnnotation(video.id, target, DRAWING)).status).toBe(400);
+    }
+    expect(await db.attachmentComment.count()).toBe(0);
+  });
+
+  it('refuses annotation writes without permission and preserves the existing comment', async () => {
+    const { owner, video, target } = await assetScenario();
+    signedInAs(owner);
+    const initial = await post(video.id, target, 'Keep this');
+    expect(initial.status).toBe(201);
+    const row = await db.attachmentComment.findFirstOrThrow();
+
+    signedOut();
+    expect((await postWithAnnotation(video.id, target, DRAWING)).status).toBe(403);
+    signedInAs(await createUser());
+    expect((await postWithAnnotation(video.id, target, DRAWING)).status).toBe(403);
+    expect(await db.attachmentComment.count()).toBe(1);
+    expect(await db.attachmentComment.findUnique({ where: { id: row.id } })).toMatchObject({
+      content: 'Keep this',
+      annotationData: null,
+    });
   });
 
   it('lets a COMMENT share guest write with a name and a VIEW share guest only read', async () => {

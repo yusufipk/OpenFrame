@@ -1,6 +1,8 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import type { AnnotationCanvasHandle, AnnotationStroke } from '@/components/annotation-canvas';
+import { AttachmentImagePreview } from '@/components/video-page/attachment-image-preview';
 import { Volume2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -70,40 +72,107 @@ export function MediaPreviewDialog({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className="flex h-[42%] min-h-[180px] min-w-0 flex-none items-center justify-center overflow-hidden bg-black/90 p-3 md:h-auto md:min-h-0 md:flex-1 md:p-4">
-            {children ??
-              (kind === 'IMAGE' && src ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt={title} className="max-h-full max-w-full object-contain" />
-              ) : kind === 'AUDIO' && src ? (
-                <div className="flex w-full max-w-xl flex-col items-center gap-8 rounded-xl bg-background/10 px-6 py-10 text-white">
-                  <Volume2 className="h-12 w-12" />
-                  <p className="max-w-full truncate text-center text-sm">{title}</p>
-                  <audio
-                    controls
-                    controlsList={canDownload ? undefined : 'nodownload'}
-                    preload="metadata"
-                    src={src}
-                    className="w-full"
-                    aria-label={title}
-                  />
-                </div>
-              ) : (
-                <p className="text-sm text-white/70">Preview is unavailable.</p>
-              ))}
-          </div>
-          {target && (
-            <AttachmentCommentsPanel
-              key={attachmentCommentTargetKey(target)}
-              videoId={videoId}
-              target={target}
-              guestName={guestName}
-              onCommentsChanged={onCommentsChanged}
-            />
-          )}
-        </div>
+        {open && (
+          <MediaPreviewBody
+            key={`${target ? attachmentCommentTargetKey(target) : ''}:${src ?? ''}`}
+            title={title}
+            kind={kind}
+            src={src}
+            videoId={videoId}
+            target={target}
+            guestName={guestName}
+            onCommentsChanged={onCommentsChanged}
+            canDownload={canDownload}
+          >
+            {children}
+          </MediaPreviewBody>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function MediaPreviewBody({
+  title,
+  kind,
+  src,
+  children,
+  videoId,
+  target,
+  guestName,
+  onCommentsChanged,
+  canDownload,
+}: Omit<MediaPreviewDialogProps, 'open' | 'onClose' | 'headerActions'>) {
+  const canvasRef = useRef<AnnotationCanvasHandle>(null);
+  const [isAnnotating, setIsAnnotating] = useState(false);
+  const [viewingAnnotation, setViewingAnnotation] = useState<{
+    id: string;
+    strokes: AnnotationStroke[];
+  } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div
+        className="flex h-[42%] min-h-[180px] min-w-0 flex-none items-center justify-center overflow-hidden bg-black/90 p-3 md:h-auto md:min-h-0 md:flex-1 md:p-4"
+        inert={submitting}
+      >
+        {children ??
+          (kind === 'IMAGE' && src ? (
+            <AttachmentImagePreview
+              src={src}
+              title={title}
+              isAnnotating={isAnnotating}
+              canvasRef={canvasRef}
+              viewingAnnotation={viewingAnnotation}
+              onCancel={() => setIsAnnotating(false)}
+              onDismiss={() => setViewingAnnotation(null)}
+            />
+          ) : kind === 'AUDIO' && src ? (
+            <div className="flex w-full max-w-xl flex-col items-center gap-8 rounded-xl bg-background/10 px-6 py-10 text-white">
+              <Volume2 className="h-12 w-12" />
+              <p className="max-w-full truncate text-center text-sm">{title}</p>
+              <audio
+                controls
+                controlsList={canDownload ? undefined : 'nodownload'}
+                preload="metadata"
+                src={src}
+                className="w-full"
+                aria-label={title}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-white/70">Preview is unavailable.</p>
+          ))}
+      </div>
+      {target && (
+        <AttachmentCommentsPanel
+          key={attachmentCommentTargetKey(target)}
+          videoId={videoId}
+          target={target}
+          guestName={guestName}
+          onCommentsChanged={onCommentsChanged}
+          canAnnotate={kind === 'IMAGE' && !!src}
+          isAnnotating={isAnnotating}
+          onStartAnnotation={() => {
+            setViewingAnnotation(null);
+            setIsAnnotating(true);
+          }}
+          getAnnotationStrokes={() => canvasRef.current?.getStrokes() ?? []}
+          onAnnotationSaved={() => {
+            setIsAnnotating(false);
+            setViewingAnnotation(null);
+          }}
+          onViewAnnotation={(id, strokes) => {
+            setIsAnnotating(false);
+            setViewingAnnotation({ id, strokes });
+          }}
+          viewingAnnotationId={viewingAnnotation?.id}
+          onCommentDeleted={(id) => {
+            if (viewingAnnotation?.id === id) setViewingAnnotation(null);
+          }}
+          onSubmittingChange={setSubmitting}
+        />
+      )}
+    </div>
   );
 }

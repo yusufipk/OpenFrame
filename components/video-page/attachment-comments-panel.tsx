@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Pencil, Trash2 } from 'lucide-react';
+import type { AnnotationStroke } from '@/components/annotation-canvas';
+import { validateAnnotationStrokes } from '@/lib/validation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import type { AttachmentCommentTarget } from '@/lib/attachment-comment-target';
@@ -9,6 +11,7 @@ import type { AttachmentCommentTarget } from '@/lib/attachment-comment-target';
 interface AttachmentComment {
   id: string;
   content: string;
+  annotationData: string | null;
   createdAt: string;
   author: { id: string; name: string | null; image: string | null } | null;
   guestName: string | null;
@@ -30,6 +33,15 @@ interface AttachmentCommentsPanelProps {
   target: AttachmentCommentTarget;
   guestName?: string | null;
   onCommentsChanged: () => void;
+  canAnnotate?: boolean;
+  isAnnotating?: boolean;
+  onStartAnnotation?: () => void;
+  getAnnotationStrokes?: () => AnnotationStroke[];
+  onAnnotationSaved?: () => void;
+  onViewAnnotation?: (id: string, strokes: AnnotationStroke[]) => void;
+  viewingAnnotationId?: string;
+  onCommentDeleted?: (id: string) => void;
+  onSubmittingChange?: (value: boolean) => void;
 }
 
 const PAGE_SIZE = 30;
@@ -39,6 +51,15 @@ export function AttachmentCommentsPanel({
   target,
   guestName,
   onCommentsChanged,
+  canAnnotate = false,
+  isAnnotating = false,
+  onStartAnnotation,
+  getAnnotationStrokes,
+  onAnnotationSaved,
+  onViewAnnotation,
+  viewingAnnotationId,
+  onCommentDeleted,
+  onSubmittingChange,
 }: AttachmentCommentsPanelProps) {
   const [comments, setComments] = useState<AttachmentComment[]>([]);
   const [canComment, setCanComment] = useState(false);
@@ -108,19 +129,31 @@ export function AttachmentCommentsPanel({
 
   const post = async () => {
     const content = draft.trim();
-    if (!content || !canComment || mutationRef.current) return;
+    if (!canComment || mutationRef.current) return;
+    const annotationData = canAnnotate && isAnnotating ? (getAnnotationStrokes?.() ?? []) : [];
+    if (!content && annotationData.length === 0) {
+      setError('Write a comment or draw on the image before posting.');
+      return;
+    }
     mutationRef.current = true;
     setSubmitting(true);
+    onSubmittingChange?.(true);
     setError(null);
     try {
       const response = await fetch(`/api/videos/${videoId}/attachment-comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target, content, ...(guestName ? { guestName } : {}) }),
+        body: JSON.stringify({
+          target,
+          content,
+          ...(annotationData.length ? { annotationData } : {}),
+          ...(guestName ? { guestName } : {}),
+        }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Comment could not be posted.');
       setDraft('');
+      onAnnotationSaved?.();
       await load();
       onCommentsChanged();
     } catch (cause) {
@@ -128,6 +161,7 @@ export function AttachmentCommentsPanel({
     } finally {
       mutationRef.current = false;
       setSubmitting(false);
+      onSubmittingChange?.(false);
     }
   };
 
@@ -142,6 +176,7 @@ export function AttachmentCommentsPanel({
       });
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || 'Comment could not be deleted.');
+      onCommentDeleted?.(commentId);
       await load();
       onCommentsChanged();
     } catch (cause) {
@@ -190,7 +225,30 @@ export function AttachmentCommentsPanel({
                 </Button>
               )}
             </div>
-            <p className="whitespace-pre-wrap break-words text-sm">{comment.content}</p>
+            {comment.content && (
+              <p className="whitespace-pre-wrap break-words text-sm">{comment.content}</p>
+            )}
+            {canAnnotate && comment.annotationData && (
+              <Button
+                type="button"
+                variant={viewingAnnotationId === comment.id ? 'secondary' : 'outline'}
+                size="sm"
+                className="mt-2 gap-1"
+                aria-pressed={viewingAnnotationId === comment.id}
+                disabled={isAnnotating || submitting}
+                onClick={() => {
+                  try {
+                    const strokes = validateAnnotationStrokes(JSON.parse(comment.annotationData!));
+                    if (strokes?.length) onViewAnnotation?.(comment.id, strokes);
+                    else setError('This annotation could not be displayed.');
+                  } catch {
+                    setError('This annotation could not be displayed.');
+                  }
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" /> View annotation
+              </Button>
+            )}
             <time className="mt-2 block text-xs text-muted-foreground" dateTime={comment.createdAt}>
               {new Date(comment.createdAt).toLocaleString()}
             </time>
@@ -224,7 +282,21 @@ export function AttachmentCommentsPanel({
             void post();
           }}
         >
+          {canAnnotate && (
+            <Button
+              type="button"
+              variant={isAnnotating ? 'secondary' : 'outline'}
+              size="sm"
+              className="gap-1"
+              disabled={submitting || isAnnotating}
+              onClick={onStartAnnotation}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {isAnnotating ? 'Drawing on image' : 'Annotate image'}
+            </Button>
+          )}
           <Textarea
+            disabled={submitting}
             aria-label="Comment on this file"
             placeholder="Comment on this file"
             value={draft}
@@ -232,7 +304,7 @@ export function AttachmentCommentsPanel({
             maxLength={10000}
             rows={3}
           />
-          <Button type="submit" size="sm" disabled={submitting || !draft.trim()}>
+          <Button type="submit" size="sm" disabled={submitting || (!draft.trim() && !isAnnotating)}>
             {submitting ? 'Posting...' : 'Post comment'}
           </Button>
         </form>

@@ -623,6 +623,7 @@ model AttachmentComment {
   sourceComment  Comment? @relation(fields: [sourceCommentId], references: [id], onDelete: Cascade)
   sourceUrl      String?
   content        String @db.Text
+  annotationData String? @db.Text
   authorId       String?
   author         User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
   guestName      String?

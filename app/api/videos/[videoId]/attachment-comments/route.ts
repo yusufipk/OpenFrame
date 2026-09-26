@@ -23,6 +23,7 @@ import { logError } from '@/lib/logger';
 import { rateLimit } from '@/lib/rate-limit';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { validateShareLinkAccess } from '@/lib/share-links';
+import { validateAnnotationStrokes } from '@/lib/validation';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -75,6 +76,7 @@ function serializeComment(
   comment: {
     id: string;
     content: string;
+    annotationData: string | null;
     createdAt: Date;
     authorId: string | null;
     author: { id: string; name: string | null; image: string | null } | null;
@@ -89,6 +91,7 @@ function serializeComment(
   return {
     id: comment.id,
     content: comment.content,
+    annotationData: comment.annotationData,
     createdAt: comment.createdAt,
     author: comment.author,
     guestName: comment.guestName,
@@ -236,6 +239,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         select: {
           id: true,
           content: true,
+          annotationData: true,
           createdAt: true,
           authorId: true,
           guestName: true,
@@ -292,8 +296,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const target = parseAttachmentCommentTarget(body.target);
     const content = typeof body.content === 'string' ? body.content.trim() : '';
     if (!target) return apiErrors.badRequest('Invalid attachment target');
-    if (!content || typeof body.content !== 'string' || body.content.length > 10000)
-      return apiErrors.badRequest('Comment content must be 1 to 10,000 characters');
+    if (typeof body.content !== 'string' || body.content.length > 10000)
+      return apiErrors.badRequest('Comment content must be 0 to 10,000 characters');
+    let annotationData: string | null = null;
+    if (body.annotationData !== undefined && body.annotationData !== null) {
+      if (!Array.isArray(body.annotationData)) {
+        return apiErrors.badRequest('annotationData must be an array of valid stroke objects');
+      }
+      const strokes = validateAnnotationStrokes(body.annotationData);
+      if (strokes === null || strokes.some((stroke) => stroke.points.length < 2)) {
+        return apiErrors.badRequest('annotationData must be an array of valid stroke objects');
+      }
+      annotationData = strokes.length ? JSON.stringify(strokes) : null;
+      if (!content && !annotationData) {
+        return apiErrors.badRequest('Comment content or drawing is required');
+      }
+    } else if (!content) {
+      return apiErrors.badRequest('Comment content or drawing is required');
+    }
     const guestName = typeof body.guestName === 'string' ? body.guestName.trim() : '';
     if (!userId && (!guestName || guestName.length > 100))
       return apiErrors.badRequest('Guest name must be 1 to 100 characters');
@@ -323,6 +343,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
       const canonicalTarget = await resolveAttachmentCommentTarget(tx, videoId, target);
       if (!canonicalTarget) return { status: 'notfound' } as const;
+      if (annotationData && canonicalTarget.type !== 'comment-image') {
+        if (canonicalTarget.type !== 'asset') return { status: 'invalidAnnotationTarget' } as const;
+        const asset = await tx.videoAsset.findUnique({
+          where: { id: canonicalTarget.id },
+          select: { kind: true },
+        });
+        if (asset?.kind !== 'IMAGE') return { status: 'invalidAnnotationTarget' } as const;
+      }
       const comment = await tx.attachmentComment.create({
         data: {
           targetType:
@@ -335,6 +363,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           sourceCommentId: canonicalTarget.type === 'asset' ? null : canonicalTarget.id,
           sourceUrl: canonicalTarget.type === 'comment-image' ? canonicalTarget.url : null,
           content,
+          annotationData,
           authorId: userId ?? null,
           guestName: userId ? null : guestName,
           guestIdentityId: userId ? null : (guestIdentity?.identityId ?? null),
@@ -342,6 +371,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         select: {
           id: true,
           content: true,
+          annotationData: true,
           createdAt: true,
           authorId: true,
           guestName: true,
@@ -353,6 +383,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     if (result.status === 'forbidden') return apiErrors.forbidden('Access denied');
     if (result.status === 'notfound') return apiErrors.notFound('Attachment');
+    if (result.status === 'invalidAnnotationTarget')
+      return apiErrors.badRequest('Annotations require an image attachment');
     const response = successResponse(
       {
         comment: serializeComment(

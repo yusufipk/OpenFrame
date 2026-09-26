@@ -92,6 +92,41 @@ async function postFileComment(page: Page, content: string) {
   expect(await db.attachmentComment.count({ where: { content } })).toBe(1);
 }
 
+async function drawImageAnnotation(page: Page) {
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Annotate image', exact: true }).click();
+  const canvas = dialog.locator('svg[aria-label="Annotation canvas"]');
+  await expect(canvas).toBeVisible();
+  const bounds = (await canvas.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width * 0.25, bounds.y + bounds.height * 0.7);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.65, bounds.y + bounds.height * 0.75, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await expect(canvas.locator('path')).toHaveCount(1);
+  return (await canvas.locator('path').getAttribute('d'))!;
+}
+
+async function viewImageAnnotation(page: Page, expectedPath: string) {
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'View annotation', exact: true }).click();
+  const canvas = dialog.locator('svg[aria-label="Annotation canvas"]');
+  await expect(canvas.locator('path')).toHaveCount(1);
+  await expect(canvas.locator('path')).toHaveAttribute('d', expectedPath);
+  await expect
+    .poll(async () => {
+      const bounds = (await dialog.boundingBox())!;
+      return bounds.x >= 0 && bounds.x + bounds.width <= page.viewportSize()!.width;
+    })
+    .toBe(true);
+  const imageBounds = (await dialog.locator('img').boundingBox())!;
+  const canvasBounds = (await canvas.boundingBox())!;
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    expect(canvasBounds[key]).toBeCloseTo(imageBounds[key], 0);
+  }
+}
+
 async function closePreview(page: Page) {
   await page
     .getByRole('dialog')
@@ -176,7 +211,16 @@ test('asset image, audio and video previews have independent persistent comments
     await page.getByRole('button', { name: 'View image', exact: true }).click();
     await expect(page.getByRole('dialog').locator('img')).toHaveJSProperty('naturalWidth', 640);
     const imageComment = `Crop the screenshot ${seeded.videoId}`;
+    const imageDrawing = await drawImageAnnotation(page);
     await postFileComment(page, imageComment);
+    const savedDrawing = await db.attachmentComment.findFirstOrThrow({
+      where: { content: imageComment },
+    });
+    expect(JSON.parse(savedDrawing.annotationData!)).toHaveLength(1);
+    await viewImageAnnotation(page, imageDrawing);
+    await page.setViewportSize({ width: 402, height: 874 });
+    await viewImageAnnotation(page, imageDrawing);
+    await page.setViewportSize({ width: 1440, height: 874 });
     await closePreview(page);
     await expect(
       page.getByRole('button', { name: '1 comments on Screenshot proof', exact: true })
@@ -291,6 +335,7 @@ test('comment images and voice previews isolate discussions and allow guest feed
     await expect(images).toHaveCount(3);
     await images.nth(0).click();
     const first = `First reference only ${seeded.videoId}`;
+    const referenceDrawing = await drawImageAnnotation(page);
     await postFileComment(page, first);
     await closePreview(page);
     await images.nth(1).click();
@@ -316,6 +361,7 @@ test('comment images and voice previews isolate discussions and allow guest feed
     await page.reload();
     await images.nth(0).click();
     await expect(page.getByRole('dialog').getByText(first, { exact: true })).toBeVisible();
+    await viewImageAnnotation(page, referenceDrawing);
     await closePreview(page);
     await images.nth(2).click();
     await expect(
@@ -347,6 +393,7 @@ test('comment images and voice previews isolate discussions and allow guest feed
         .nth(1)
         .click();
       const guestContent = `Guest on second reference ${seeded.videoId}`;
+      const guestDrawing = await drawImageAnnotation(guest);
       await postFileComment(guest, guestContent);
       const guestRow = await db.attachmentComment.findFirstOrThrow({
         where: { content: guestContent },
@@ -362,6 +409,7 @@ test('comment images and voice previews isolate discussions and allow guest feed
       await expect(
         guest.getByRole('dialog').getByText(guestContent, { exact: true })
       ).toBeVisible();
+      await viewImageAnnotation(guest, guestDrawing);
       await expect(guest.getByRole('dialog').getByText(first, { exact: true })).toHaveCount(0);
     } finally {
       await guestContext.close();
