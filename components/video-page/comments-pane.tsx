@@ -44,6 +44,7 @@ import type { ImageAttachTarget } from '@/components/video-page/hooks/use-commen
 import { MAX_COMMENT_IMAGES } from '@/lib/comment-images';
 import type {
   Comment,
+  CommentImage,
   CommentReply,
   CommentTag,
   Version,
@@ -104,7 +105,9 @@ interface CommentsPaneProps {
   voicePlaybackRate: number;
   toggleVoiceSpeed: () => void;
   formatTime: (seconds: number) => string;
-  setPreviewImage: (url: string | null) => void;
+  onOpenCommentImage: (commentId: string, image: CommentImage) => void;
+  onOpenCommentAudio: (commentId: string, url: string) => void;
+  attachmentCommentCounts: Record<string, number>;
   replyingTo: string | null;
   setReplyingTo: (id: string | null) => void;
   replyText: string;
@@ -202,7 +205,9 @@ export const CommentsPane = memo(function CommentsPane({
   voicePlaybackRate,
   toggleVoiceSpeed,
   formatTime,
-  setPreviewImage,
+  onOpenCommentImage,
+  onOpenCommentAudio,
+  attachmentCommentCounts,
   replyingTo,
   setReplyingTo,
   replyText,
@@ -671,14 +676,16 @@ export const CommentsPane = memo(function CommentsPane({
                         )}
                         <CommentImageGallery
                           images={comment.images}
-                          onOpen={setPreviewImage}
+                          commentId={comment.id}
+                          attachmentCommentCounts={attachmentCommentCounts}
+                          onOpen={(image) => onOpenCommentImage(comment.id, image)}
                           className="mb-2"
                         />
                       </div>
                     )}
 
                     {comment.voiceUrl && (
-                      <div className="flex items-center gap-2 p-2 bg-muted rounded mb-2">
+                      <div className="flex flex-wrap items-center gap-2 rounded bg-muted p-2 mb-2">
                         <Button
                           size="icon"
                           variant="ghost"
@@ -693,7 +700,28 @@ export const CommentsPane = memo(function CommentsPane({
                             <Play className="h-4 w-4" />
                           )}
                         </Button>
-                        <div className="flex-1 h-2 bg-primary/20 rounded-full overflow-hidden">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="order-1 shrink-0"
+                          aria-label="Open voice preview"
+                          onClick={() => onOpenCommentAudio(comment.id, comment.voiceUrl!)}
+                        >
+                          Open preview
+                        </Button>
+                        {(attachmentCommentCounts[`comment-audio:${comment.id}`] || 0) > 0 && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="order-1 h-7 shrink-0 px-2 text-xs"
+                            aria-label={`${attachmentCommentCounts[`comment-audio:${comment.id}`]} comments on voice note`}
+                            onClick={() => onOpenCommentAudio(comment.id, comment.voiceUrl!)}
+                          >
+                            <MessageSquare className="mr-1 h-3 w-3" />
+                            {attachmentCommentCounts[`comment-audio:${comment.id}`]}
+                          </Button>
+                        )}
+                        <div className="h-2 min-w-[70px] flex-1 overflow-hidden rounded-full bg-primary/20">
                           <div
                             className="h-full bg-primary rounded-full"
                             style={{
@@ -924,14 +952,16 @@ export const CommentsPane = memo(function CommentsPane({
                                   )}
                                   <CommentImageGallery
                                     images={reply.images}
-                                    onOpen={setPreviewImage}
+                                    commentId={reply.id}
+                                    attachmentCommentCounts={attachmentCommentCounts}
+                                    onOpen={(image) => onOpenCommentImage(reply.id, image)}
                                     compact
                                     className="mt-2"
                                   />
                                 </div>
                               )}
                               {reply.voiceUrl && (
-                                <div className="flex items-center gap-2 p-1.5 bg-muted rounded mt-1">
+                                <div className="mt-1 flex flex-wrap items-center gap-2 rounded bg-muted p-1.5">
                                   <Button
                                     size="icon"
                                     variant="ghost"
@@ -946,7 +976,29 @@ export const CommentsPane = memo(function CommentsPane({
                                       <Play className="h-3 w-3" />
                                     )}
                                   </Button>
-                                  <div className="flex-1 h-1.5 bg-primary/20 rounded-full overflow-hidden">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="order-1 h-7 shrink-0 px-2 text-xs"
+                                    aria-label="Open voice preview"
+                                    onClick={() => onOpenCommentAudio(reply.id, reply.voiceUrl!)}
+                                  >
+                                    Open preview
+                                  </Button>
+                                  {(attachmentCommentCounts[`comment-audio:${reply.id}`] || 0) >
+                                    0 && (
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      className="order-1 h-7 shrink-0 px-2 text-xs"
+                                      aria-label={`${attachmentCommentCounts[`comment-audio:${reply.id}`]} comments on voice note`}
+                                      onClick={() => onOpenCommentAudio(reply.id, reply.voiceUrl!)}
+                                    >
+                                      <MessageSquare className="mr-1 h-3 w-3" />
+                                      {attachmentCommentCounts[`comment-audio:${reply.id}`]}
+                                    </Button>
+                                  )}
+                                  <div className="h-1.5 min-w-[70px] flex-1 overflow-hidden rounded-full bg-primary/20">
                                     <div
                                       className="h-full bg-primary rounded-full"
                                       style={{

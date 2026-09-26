@@ -1,0 +1,327 @@
+import '../helpers/env';
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import type { Page } from '@playwright/test';
+import sharp from 'sharp';
+import { db } from '@/lib/db';
+import { createComment } from '../factories';
+import { REPO_ROOT } from '../helpers/env';
+import { test, expect } from './fixtures';
+
+// These tests use real object storage and API writes. Preview discussions must
+// survive reloads without becoming comments on the parent video or another file.
+test.setTimeout(120_000);
+
+async function uploadedMedia() {
+  const client = new S3Client({
+    endpoint: process.env.R2_ENDPOINT ?? 'http://minio-test:9000',
+    region: 'auto',
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID ?? 'openframe',
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? 'openframe-test-secret',
+    },
+  });
+  const bucket = process.env.R2_BUCKET_NAME ?? 'openframe-test';
+  const png = await sharp({
+    create: { width: 640, height: 360, channels: 3, background: '#356a82' },
+  })
+    .png()
+    .toBuffer();
+  const wav = Buffer.alloc(44 + 16000);
+  wav.write('RIFF');
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24);
+  wav.writeUInt32LE(16000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write('data', 36);
+  wav.writeUInt32LE(16000, 40);
+  const mp4 = await readFile(path.join(REPO_ROOT, 'tests/fixtures/sample.mp4'));
+  const entries = [
+    { key: `images/${randomUUID()}.png`, body: png, type: 'image/png', route: 'image' },
+    {
+      key: `images/${randomUUID()}.webp`,
+      body: await sharp(png).webp().toBuffer(),
+      type: 'image/webp',
+      route: 'image',
+    },
+    { key: `voice/${randomUUID()}.wav`, body: wav, type: 'audio/wav', route: 'audio' },
+    { key: `videos/${randomUUID()}.mp4`, body: mp4, type: 'video/mp4', route: 'video' },
+    { key: `voice/${randomUUID()}.wav`, body: wav, type: 'audio/wav', route: 'audio' },
+    { key: `images/${randomUUID()}.png`, body: png, type: 'image/png', route: 'image' },
+  ];
+  const cleanup = async () => {
+    await Promise.allSettled(
+      entries.map(({ key }) => client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })))
+    );
+    client.destroy();
+  };
+  const uploaded = await Promise.allSettled(
+    entries.map(({ key, body, type }) =>
+      client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: type }))
+    )
+  );
+  if (uploaded.some((result) => result.status === 'rejected')) {
+    await cleanup();
+    throw new Error('Could not upload attachment preview fixtures');
+  }
+  return {
+    urls: entries.map((entry) => `/api/upload/${entry.route}/${entry.key.split('/')[1]}`),
+    videoKey: entries[3].key,
+    cleanup,
+  };
+}
+
+async function postFileComment(page: Page, content: string) {
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('textbox', { name: 'Comment on this file' }).fill(content);
+  const saved = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/attachment-comments')
+  );
+  await dialog.getByRole('button', { name: 'Post comment', exact: true }).click();
+  expect((await saved).status()).toBe(201);
+  await expect(dialog.getByText(content, { exact: true })).toBeVisible();
+  expect(await db.attachmentComment.count({ where: { content } })).toBe(1);
+}
+
+async function closePreview(page: Page) {
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Close preview', exact: true })
+    .click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+test('asset image, audio and video previews have independent persistent comments and counts', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.version(seededUser);
+  const media = await uploadedMedia();
+  try {
+    await db.videoVersion.update({
+      where: { id: seeded.versionId },
+      data: { providerId: 'r2', videoId: media.videoKey, originalUrl: media.urls[3], duration: 2 },
+    });
+    await db.videoAsset.createMany({
+      data: [
+        {
+          videoId: seeded.videoId,
+          kind: 'IMAGE',
+          provider: 'R2_IMAGE',
+          displayName: 'Screenshot proof',
+          sourceUrl: media.urls[0],
+          billedUserId: seededUser.id,
+          uploadedByUserId: seededUser.id,
+        },
+        {
+          videoId: seeded.videoId,
+          kind: 'AUDIO',
+          provider: 'R2_AUDIO',
+          displayName: 'Audio proof',
+          sourceUrl: media.urls[2],
+          billedUserId: seededUser.id,
+          uploadedByUserId: seededUser.id,
+        },
+        {
+          videoId: seeded.videoId,
+          kind: 'VIDEO',
+          provider: 'R2_VIDEO',
+          displayName: 'Video proof',
+          sourceUrl: media.urls[3],
+          billedUserId: seededUser.id,
+          uploadedByUserId: seededUser.id,
+        },
+      ],
+    });
+    await page.goto(`/projects/${seeded.project.id}/videos/${seeded.videoId}`);
+    await page.getByRole('button', { name: /^Assets/ }).click();
+    await page.getByRole('button', { name: 'View image', exact: true }).click();
+    await expect(page.getByRole('dialog').locator('img')).toHaveJSProperty('naturalWidth', 640);
+    const imageComment = `Crop the screenshot ${seeded.videoId}`;
+    await postFileComment(page, imageComment);
+    await closePreview(page);
+    await expect(
+      page.getByRole('button', { name: '1 comments on Screenshot proof', exact: true })
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Play recording', exact: true }).click();
+    await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('dialog').locator('audio')).toBeVisible();
+    const audioComment = `Reduce the background noise ${seeded.videoId}`;
+    await postFileComment(page, audioComment);
+    await closePreview(page);
+    await page.getByRole('button', { name: 'Play video', exact: true }).click();
+    await expect(page.getByRole('dialog').locator('video')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText(audioComment, { exact: true })).toHaveCount(0);
+    await postFileComment(page, `Shorten this asset ${seeded.videoId}`);
+    await closePreview(page);
+    expect(await db.comment.count({ where: { versionId: seeded.versionId } })).toBe(0);
+    await page.reload();
+    await page.getByRole('button', { name: /^Assets/ }).click();
+    for (const [name, content] of [
+      ['Audio proof', audioComment],
+      ['Video proof', `Shorten this asset ${seeded.videoId}`],
+    ]) {
+      await page.getByRole('button', { name: `1 comments on ${name}`, exact: true }).click();
+      await expect(page.getByRole('dialog').getByText(content, { exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toHaveCount(
+        0
+      );
+      await closePreview(page);
+    }
+    await page.getByRole('button', { name: '1 comments on Screenshot proof', exact: true }).click();
+    await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toBeVisible();
+    const deleted = page.waitForResponse(
+      (r) => r.request().method() === 'DELETE' && r.url().includes('/attachment-comments/')
+    );
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Delete comment', exact: true })
+      .click();
+    expect((await deleted).ok()).toBe(true);
+    expect(await db.attachmentComment.count({ where: { content: imageComment } })).toBe(0);
+    await closePreview(page);
+    await expect(
+      page.getByRole('button', { name: '1 comments on Screenshot proof', exact: true })
+    ).toHaveCount(0);
+  } finally {
+    await media.cleanup();
+  }
+});
+
+test('comment images and voice previews isolate discussions and allow guest feedback through a share link', async ({
+  page,
+  browser,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.version(seededUser);
+  const media = await uploadedMedia();
+  try {
+    await db.videoVersion.update({
+      where: { id: seeded.versionId },
+      data: { providerId: 'r2', videoId: media.videoKey, originalUrl: media.urls[3], duration: 2 },
+    });
+    // Uploaded images are registered as assets before being attached to comments.
+    await db.videoAsset.createMany({
+      data: [0, 1, 5].map((index) => ({
+        videoId: seeded.videoId,
+        kind: 'IMAGE' as const,
+        provider: 'R2_IMAGE' as const,
+        displayName: `Reference ${index}`,
+        sourceUrl: media.urls[index],
+        billedUserId: seededUser.id,
+        uploadedByUserId: seededUser.id,
+      })),
+    });
+    const parent = await createComment({
+      versionId: seeded.versionId,
+      authorId: seededUser.id,
+      content: 'Compare these references',
+      imageUrls: media.urls.slice(0, 2),
+      voiceUrl: media.urls[2],
+      timestamp: 0,
+    });
+    await createComment({
+      versionId: seeded.versionId,
+      authorId: seededUser.id,
+      parentId: parent.id,
+      content: 'Reply references',
+      imageUrls: [media.urls[5]],
+      voiceUrl: media.urls[4],
+      timestamp: 0,
+    });
+    await page.goto(`/projects/${seeded.project.id}/videos/${seeded.videoId}`);
+    const images = page.getByRole('button', { name: /^Open image preview(?: \d+)?$/ });
+    await expect(images).toHaveCount(3);
+    await images.nth(0).click();
+    const first = `First reference only ${seeded.videoId}`;
+    await postFileComment(page, first);
+    await closePreview(page);
+    await images.nth(1).click();
+    await expect(page.getByRole('dialog').getByText(first, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('dialog').locator('img')).toHaveJSProperty('naturalWidth', 640);
+    const downloaded = page.waitForEvent('download');
+    await page.getByRole('dialog').getByRole('button', { name: 'Download', exact: true }).click();
+    expect((await downloaded).suggestedFilename()).toBe(media.urls[1].split('/').pop());
+    await closePreview(page);
+    await page.getByRole('button', { name: 'Open voice preview', exact: true }).nth(0).click();
+    await postFileComment(page, `Voice reference ${seeded.videoId}`);
+    await closePreview(page);
+    await images.nth(2).click();
+    await expect(page.getByRole('dialog').getByText(first, { exact: true })).toHaveCount(0);
+    await postFileComment(page, `Reply image reference ${seeded.videoId}`);
+    await closePreview(page);
+    await page.getByRole('button', { name: 'Open voice preview', exact: true }).nth(1).click();
+    await expect(
+      page.getByRole('dialog').getByText(`Voice reference ${seeded.videoId}`, { exact: true })
+    ).toHaveCount(0);
+    await postFileComment(page, `Reply voice reference ${seeded.videoId}`);
+    await closePreview(page);
+    await page.reload();
+    await images.nth(0).click();
+    await expect(page.getByRole('dialog').getByText(first, { exact: true })).toBeVisible();
+    await closePreview(page);
+    await images.nth(2).click();
+    await expect(
+      page.getByRole('dialog').getByText(`Reply image reference ${seeded.videoId}`, { exact: true })
+    ).toBeVisible();
+    await expect(page.getByRole('dialog').getByText(first, { exact: true })).toHaveCount(0);
+    await closePreview(page);
+    await page.getByRole('button', { name: 'Open voice preview', exact: true }).nth(1).click();
+    await expect(
+      page.getByRole('dialog').getByText(`Reply voice reference ${seeded.videoId}`, { exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('dialog').getByText(`Voice reference ${seeded.videoId}`, { exact: true })
+    ).toHaveCount(0);
+    await closePreview(page);
+    const link = await seed.shareLink({ projectId: seeded.project.id, videoId: seeded.videoId });
+    await db.shareLink.update({
+      where: { id: link.id },
+      data: { permission: 'COMMENT', allowGuests: true },
+    });
+    const guestContext = await browser.newContext({ storageState: undefined });
+    try {
+      const guest = await guestContext.newPage();
+      await guest.goto(new URL(`/s/${link.token}`, page.url()).toString());
+      await guest.getByPlaceholder('Your name').fill('Attachment guest');
+      await guest.getByRole('button', { name: 'Continue', exact: true }).click();
+      await guest
+        .getByRole('button', { name: /^Open image preview(?: \d+)?$/ })
+        .nth(1)
+        .click();
+      const guestContent = `Guest on second reference ${seeded.videoId}`;
+      await postFileComment(guest, guestContent);
+      const guestRow = await db.attachmentComment.findFirstOrThrow({
+        where: { content: guestContent },
+      });
+      expect(guestRow.authorId).toBeNull();
+      expect(guestRow.guestName).toBe('Attachment guest');
+      await closePreview(guest);
+      await guest.reload();
+      await guest
+        .getByRole('button', { name: /^Open image preview(?: \d+)?$/ })
+        .nth(1)
+        .click();
+      await expect(
+        guest.getByRole('dialog').getByText(guestContent, { exact: true })
+      ).toBeVisible();
+      await expect(guest.getByRole('dialog').getByText(first, { exact: true })).toHaveCount(0);
+    } finally {
+      await guestContext.close();
+    }
+    expect(await db.comment.count({ where: { versionId: seeded.versionId } })).toBe(2);
+  } finally {
+    await media.cleanup();
+  }
+});

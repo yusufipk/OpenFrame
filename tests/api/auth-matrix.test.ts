@@ -96,6 +96,8 @@ import * as versionCommentsRoute from '@/app/api/versions/[versionId]/comments/r
 import * as versionDownloadRoute from '@/app/api/versions/[versionId]/download/route';
 import * as assetDownloadRoute from '@/app/api/videos/[videoId]/assets/[assetId]/download/route';
 import * as assetRoute from '@/app/api/videos/[videoId]/assets/[assetId]/route';
+import * as attachmentCommentsRoute from '@/app/api/videos/[videoId]/attachment-comments/route';
+import * as attachmentCommentRoute from '@/app/api/videos/[videoId]/attachment-comments/[attachmentCommentId]/route';
 import * as assetsBunnyInitRoute from '@/app/api/videos/[videoId]/assets/bunny-init/route';
 import * as assetsR2InitRoute from '@/app/api/videos/[videoId]/assets/r2-init/route';
 import * as assetsRoute from '@/app/api/videos/[videoId]/assets/route';
@@ -154,7 +156,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 72;
+const EXPECTED_ROUTE_MODULE_COUNT = 74;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -227,6 +229,7 @@ interface Fixtures {
   versionId: string;
   commentId: string;
   assetId: string;
+  attachmentCommentId: string;
   subtitleId: string;
   approvalRequestId: string;
   feedbackId: string;
@@ -282,6 +285,14 @@ async function seedFixtures(): Promise<Fixtures> {
     billedUserId: owner.id,
     sourceUrl: `/api/upload/image/${IMAGE_FILENAME}`,
   });
+  const attachmentComment = await db.attachmentComment.create({
+    data: {
+      targetType: 'ASSET',
+      assetId: asset.id,
+      content: 'Matrix attachment comment',
+      authorId: owner.id,
+    },
+  });
   // A second asset so /api/upload/audio/[filename] resolves to a real row too.
   await createVideoAsset({
     videoId: video.id,
@@ -335,6 +346,7 @@ async function seedFixtures(): Promise<Fixtures> {
     versionId: version.id,
     commentId: comment.id,
     assetId: asset.id,
+    attachmentCommentId: attachmentComment.id,
     subtitleId: subtitle.id,
     approvalRequestId: approvalRequest.id,
     feedbackId: feedback.id,
@@ -690,6 +702,24 @@ const ROUTE_CASES: readonly RouteCase[] = [
     module: versionDownloadRoute,
     url: (f) => `/api/versions/${f.versionId}/download`,
     params: (f) => ({ versionId: f.versionId }),
+  },
+  {
+    file: 'videos/[videoId]/attachment-comments/route.ts',
+    module: attachmentCommentsRoute,
+    url: (f) =>
+      `/api/videos/${f.videoId}/attachment-comments?targetType=asset&targetId=${f.assetId}`,
+    params: (f) => ({ videoId: f.videoId }),
+    body: {
+      target: { type: 'asset', id: 'placeholder' },
+      content: 'Anonymous attempt',
+      guestName: 'Anon',
+    },
+  },
+  {
+    file: 'videos/[videoId]/attachment-comments/[attachmentCommentId]/route.ts',
+    module: attachmentCommentRoute,
+    url: (f) => `/api/videos/${f.videoId}/attachment-comments/${f.attachmentCommentId}`,
+    params: (f) => ({ videoId: f.videoId, attachmentCommentId: f.attachmentCommentId }),
   },
   {
     file: 'videos/[videoId]/assets/[assetId]/download/route.ts',

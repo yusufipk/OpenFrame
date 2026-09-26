@@ -22,14 +22,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ImagePreviewDialog } from '@/components/video-page/image-preview-dialog';
+import { MediaPreviewDialog } from '@/components/video-page/media-preview-dialog';
 import {
   BunnyPreviewPlayer,
   type BunnyPreviewPlayerHandle,
@@ -112,6 +111,9 @@ interface AssetsPaneProps {
   highlightedAssetId: string | null;
   onHighlightedAssetHandled: () => void;
   directUploadProvider?: DirectUploadProvider;
+  attachmentCommentCounts: Record<string, number>;
+  onAttachmentCommentsChanged: () => void;
+  guestName?: string | null;
 }
 
 export const AssetsPane = memo(function AssetsPane({
@@ -133,6 +135,9 @@ export const AssetsPane = memo(function AssetsPane({
   highlightedAssetId,
   onHighlightedAssetHandled,
   directUploadProvider = 'bunny',
+  attachmentCommentCounts,
+  onAttachmentCommentsChanged,
+  guestName,
 }: AssetsPaneProps) {
   const [uploadTab, setUploadTab] = useState<'image' | 'youtube' | 'bunny' | 'voice'>('image');
   const [imageTitle, setImageTitle] = useState('');
@@ -154,8 +159,6 @@ export const AssetsPane = memo(function AssetsPane({
   const [bunnyThumbnailLoadErrorByAssetId, setBunnyThumbnailLoadErrorByAssetId] = useState<
     Record<string, boolean>
   >({});
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [previewImageTitle, setPreviewImageTitle] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<VideoAsset | null>(null);
   const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
   const [focusedAssetId, setFocusedAssetId] = useState<string | null>(null);
@@ -1107,19 +1110,8 @@ export const AssetsPane = memo(function AssetsPane({
   };
 
   const handleOpenAsset = (asset: VideoAsset) => {
-    if (asset.kind === 'IMAGE') {
-      if (!asset.sourceUrl) {
-        toast.error('Preview is unavailable for this asset');
-        return;
-      }
-      setPreviewImage(asset.sourceUrl);
-      setPreviewImageTitle(asset.displayName);
-      return;
-    }
-    if (asset.kind === 'AUDIO') {
-      setSelectedAsset(asset);
-      return;
-    }
+    stopVoice();
+    onAttachmentCommentsChanged();
     if (asset.provider === 'BUNNY' && !bunnyReadyByAssetId[asset.id]) {
       setBunnyProcessingByAssetId((prev) =>
         prev[asset.id] ? prev : { ...prev, [asset.id]: true }
@@ -1550,217 +1542,104 @@ export const AssetsPane = memo(function AssetsPane({
         onDeleteAsset={(assetId) => void deleteAsset(assetId)}
         onLoadMoreAssets={() => void loadMoreAssets()}
         renderAssetPreview={renderAssetPreview}
+        attachmentCommentCounts={attachmentCommentCounts}
       />
 
-      <ImagePreviewDialog
-        previewImage={previewImage}
-        title={previewImageTitle}
-        downloadFileName={previewImageTitle}
-        canDownload={canDownloadAssets}
+      <MediaPreviewDialog
+        open={!!selectedAsset}
         onClose={() => {
-          setPreviewImage(null);
-          setPreviewImageTitle(null);
+          stopVoice();
+          setSelectedAsset(null);
         }}
-      />
-
-      <Dialog
-        open={selectedAsset?.kind === 'AUDIO'}
-        onOpenChange={(open) => {
-          if (!open) {
-            stopVoice();
-            setSelectedAsset(null);
-          }
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogTitle>{selectedAsset?.displayName || 'Voice Recording'}</DialogTitle>
-          {selectedAsset?.sourceUrl ? (
-            <div className="flex items-center gap-2 p-2 bg-muted rounded">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 shrink-0"
-                onClick={() =>
-                  selectedAsset.sourceUrl && playVoice(selectedAsset.id, selectedAsset.sourceUrl)
-                }
+        title={selectedAsset?.displayName || 'Asset preview'}
+        kind={selectedAsset?.kind || 'IMAGE'}
+        src={selectedAsset?.sourceUrl}
+        videoId={videoId}
+        target={selectedAsset ? { type: 'asset', id: selectedAsset.id } : null}
+        guestName={guestName}
+        onCommentsChanged={onAttachmentCommentsChanged}
+        canDownload={canDownloadAssets}
+        headerActions={
+          selectedAsset?.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
+            <Button asChild variant="outline" size="sm">
+              <a
+                href={`https://www.youtube.com/watch?v=${selectedAsset.providerVideoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
               >
-                {playingVoiceId === selectedAsset?.id ? (
-                  <Pause className="h-4 w-4" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-              </Button>
-              <div className="flex-1 h-2 bg-primary/20 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full"
-                  style={{
-                    width: playingVoiceId === selectedAsset?.id ? `${voiceProgress}%` : '0%',
-                  }}
-                />
-              </div>
-              <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                {playingVoiceId === selectedAsset?.id ? formatTime(voiceCurrentTime) : '00:00'}
-              </span>
-              {playingVoiceId === selectedAsset?.id && (
-                <button
-                  onClick={toggleVoiceSpeed}
-                  className="text-[10px] font-bold px-1 py-0.5 rounded bg-muted hover:bg-muted-foreground/20 tabular-nums shrink-0"
-                >
-                  {voicePlaybackRate}x
-                </button>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Audio preview unavailable.</p>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={selectedAsset?.kind === 'VIDEO'}
-        onOpenChange={(open) => !open && setSelectedAsset(null)}
-      >
-        <DialogContent
-          showCloseButton={false}
-          className="max-w-none sm:max-w-none w-screen h-screen max-h-screen p-0 overflow-hidden bg-black/90 border-none shadow-none rounded-none flex items-center justify-center"
-          onClick={() => setSelectedAsset(null)}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              setSelectedAsset(null);
-            }
-          }}
-        >
-          <DialogTitle className="sr-only">
-            {selectedAsset?.displayName || 'Video Preview'}
-          </DialogTitle>
-
-          <div
-            className="w-[min(96vw,1500px)] h-[min(94vh,1000px)] border border-border/60 bg-black/80 shadow-2xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="shrink-0 flex items-center gap-2 border-b border-border/60 bg-background/85 px-2 py-1.5 backdrop-blur-sm">
-              <p
-                className="flex-1 min-w-0 text-sm text-foreground truncate"
-                title={selectedAsset?.displayName || undefined}
-              >
-                {selectedAsset?.displayName || 'Video Preview'}
-              </p>
-              {selectedAsset?.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
-                <Button asChild variant="outline" size="sm" className="h-8 shrink-0">
-                  <a
-                    href={`https://www.youtube.com/watch?v=${selectedAsset.providerVideoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open on YouTube
-                  </a>
-                </Button>
-              ) : selectedAsset?.provider === 'R2_VIDEO' && canDownloadAssets ? (
+                Open on YouTube
+              </a>
+            </Button>
+          ) : selectedAsset && canDownloadAssets && selectedAsset.provider === 'BUNNY' ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  title="Download video"
-                  aria-label="Download video"
-                  disabled={activeDownloadAssetId === selectedAsset.id}
-                  onClick={() => void downloadAsset(selectedAsset)}
+                  size="sm"
+                  disabled={activeDownloadAssetId === selectedAsset.id || isSelectedBunnyProcessing}
                 >
-                  {activeDownloadAssetId === selectedAsset.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
                 </Button>
-              ) : null}
-              {selectedAsset?.provider === 'BUNNY' && canDownloadAssets ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      title="Download Bunny video"
-                      aria-label="Download Bunny video"
-                      disabled={
-                        activeDownloadAssetId === selectedAsset.id || isSelectedBunnyProcessing
-                      }
-                    >
-                      {activeDownloadAssetId === selectedAsset.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => void downloadAsset(selectedAsset, 'original')}>
-                      <Download className="h-3 w-3 mr-2" />
-                      Original
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => void downloadAsset(selectedAsset, 'compressed')}
-                    >
-                      <Download className="h-3 w-3 mr-2" />
-                      Compressed
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => setSelectedAsset(null)}
-              >
-                <span className="sr-only">Close</span>
-                <X className="h-4 w-4" />
-              </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => void downloadAsset(selectedAsset, 'original')}>
+                  Original
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void downloadAsset(selectedAsset, 'compressed')}>
+                  Compressed
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : selectedAsset && canDownloadAssets && selectedAsset.sourceUrl ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={activeDownloadAssetId === selectedAsset.id}
+              onClick={() => void downloadAsset(selectedAsset)}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download
+            </Button>
+          ) : null
+        }
+      >
+        {selectedAsset?.kind === 'VIDEO' ? (
+          selectedAsset.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
+            <div className="h-full w-full overflow-hidden rounded-md bg-black">
+              <iframe
+                ref={youtubeIframeRef}
+                className="h-full w-full"
+                src={`https://www.youtube.com/embed/${selectedAsset.providerVideoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1${typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''}`}
+                title={selectedAsset.displayName}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allowFullScreen
+              />
             </div>
-
-            <div className="flex-1 min-h-0 w-full p-2 sm:p-4">
-              {selectedAsset ? (
-                selectedAsset.provider === 'YOUTUBE' && selectedAsset.providerVideoId ? (
-                  <div className="w-full h-full rounded-md border overflow-hidden bg-black">
-                    <iframe
-                      ref={youtubeIframeRef}
-                      className="w-full h-full"
-                      src={`https://www.youtube.com/embed/${selectedAsset.providerVideoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1${typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''}`}
-                      title={selectedAsset.displayName}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      allowFullScreen
-                    />
-                  </div>
-                ) : selectedAsset.provider === 'R2_VIDEO' && selectedAsset.sourceUrl ? (
-                  <video
-                    className="w-full h-full rounded-md border bg-black object-contain"
-                    src={selectedAsset.sourceUrl}
-                    controls
-                    playsInline
-                    preload="metadata"
-                  />
-                ) : (
-                  <BunnyPreviewPlayer
-                    ref={bunnyPreviewPlayerRef}
-                    providerVideoId={selectedAsset.providerVideoId}
-                    isProcessing={isSelectedBunnyProcessing}
-                    onReadyToPlay={() => {
-                      if (!selectedBunnyAssetId) return;
-                      setBunnyReadyByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: true }));
-                      setBunnyProcessingByAssetId((prev) => ({
-                        ...prev,
-                        [selectedBunnyAssetId]: false,
-                      }));
-                    }}
-                  />
-                )
-              ) : null}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          ) : selectedAsset.provider === 'R2_VIDEO' && selectedAsset.sourceUrl ? (
+            <video
+              className="h-full w-full rounded-md bg-black object-contain"
+              src={selectedAsset.sourceUrl}
+              controls
+              controlsList={canDownloadAssets ? undefined : 'nodownload'}
+              playsInline
+              preload="metadata"
+            />
+          ) : (
+            <BunnyPreviewPlayer
+              ref={bunnyPreviewPlayerRef}
+              providerVideoId={selectedAsset.providerVideoId}
+              isProcessing={isSelectedBunnyProcessing}
+              onReadyToPlay={() => {
+                if (!selectedBunnyAssetId) return;
+                setBunnyReadyByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: true }));
+                setBunnyProcessingByAssetId((prev) => ({ ...prev, [selectedBunnyAssetId]: false }));
+              }}
+            />
+          )
+        ) : undefined}
+      </MediaPreviewDialog>
     </div>
   );
 });

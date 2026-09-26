@@ -51,6 +51,7 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, 'prisma', 'migrations');
  * else is a plain table/column/enum addition that db push derives on its own.
  */
 const REVIEWED_MIGRATIONS = [
+  '20260926120000_attachment_comments', // replayed: target and content checks
   '20260925120000_add_video_media_type', // replayed: image object key uniqueness
   '20260915120000_project_folders', // replayed: folder tree trigger
   '20260226110000_rate_limit_extras', // replayed: cleanup_rate_limits(), UNLOGGED
@@ -87,6 +88,15 @@ const REQUIRED_INDEXES = [
 ];
 
 const POST_PUSH_SQL = `
+ALTER TABLE "attachment_comments" DROP CONSTRAINT IF EXISTS "attachment_comments_exactly_one_target_check";
+ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_exactly_one_target_check" CHECK (
+  ("targetType" = 'ASSET' AND "assetId" IS NOT NULL AND "sourceCommentId" IS NULL AND "sourceUrl" IS NULL)
+  OR ("targetType" = 'COMMENT_IMAGE' AND "assetId" IS NULL AND "sourceCommentId" IS NOT NULL AND "sourceUrl" IS NOT NULL)
+  OR ("targetType" = 'COMMENT_AUDIO' AND "assetId" IS NULL AND "sourceCommentId" IS NOT NULL AND "sourceUrl" IS NULL)
+);
+ALTER TABLE "attachment_comments" DROP CONSTRAINT IF EXISTS "attachment_comments_nonempty_content_check";
+ALTER TABLE "attachment_comments" ADD CONSTRAINT "attachment_comments_nonempty_content_check" CHECK (length(btrim("content")) > 0 AND length("content") <= 10000);
+
 DROP TRIGGER IF EXISTS project_folder_tree_guard ON project_folders;
 
 ${fs.readFileSync(path.join(MIGRATIONS_DIR, '20260915120000_project_folders', 'migration.sql'), 'utf8').split('-- Custom invariants, also installed by the test database bootstrap.')[1]}

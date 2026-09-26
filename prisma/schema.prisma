@@ -40,6 +40,7 @@ model User {
   workspaceMemberships WorkspaceMember[]
   projects           Project[]
   comments           Comment[]
+  attachmentComments AttachmentComment[]
   uploadedVideoAssets VideoAsset[] @relation("VideoAssetUploadedBy")
   billedVideoAssets   VideoAsset[] @relation("VideoAssetBilledTo")
   uploadedVideoSubtitles VideoSubtitle[] @relation("VideoSubtitleUploadedBy")
@@ -487,6 +488,7 @@ model VideoAsset {
   billedUserId             String
   billedUser               User               @relation("VideoAssetBilledTo", fields: [billedUserId], references: [id], onDelete: Cascade)
   sizeBytes                BigInt             @default(0) @map("size_bytes")
+  attachmentComments       AttachmentComment[]
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
 
@@ -544,6 +546,7 @@ model Comment {
   // backwards compatibility; `images` is the full, ordered list.
   imageUrl      String?     // URL to uploaded image file
   images        CommentImage[]
+  attachmentComments AttachmentComment[]
   
   // Annotation drawing data (JSON string of strokes)
   annotationData String?    @db.Text
@@ -603,6 +606,32 @@ model CommentImage {
 
   @@index([commentId, position])
   @@map("comment_images")
+}
+
+enum AttachmentCommentTargetType {
+  ASSET
+  COMMENT_IMAGE
+  COMMENT_AUDIO
+}
+
+model AttachmentComment {
+  id             String @id @default(cuid())
+  targetType     AttachmentCommentTargetType
+  assetId        String?
+  asset          VideoAsset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  sourceCommentId String?
+  sourceComment  Comment? @relation(fields: [sourceCommentId], references: [id], onDelete: Cascade)
+  sourceUrl      String?
+  content        String @db.Text
+  authorId       String?
+  author         User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  guestName      String?
+  guestIdentityId String?
+  createdAt      DateTime @default(now())
+
+  @@index([assetId, createdAt, id])
+  @@index([sourceCommentId, targetType, sourceUrl, createdAt, id], map: "attachment_comments_source_target_idx")
+  @@map("attachment_comments")
 }
 
 model CommentTag {

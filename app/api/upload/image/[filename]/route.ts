@@ -51,7 +51,7 @@ export async function GET(
     } as const;
     const [comments, videoAssets, videoVersions, session] = await Promise.all([
       db.comment.findMany({
-        where: { imageUrl },
+        where: { OR: [{ imageUrl }, { images: { some: { url: imageUrl } } }] },
         take: 2,
         select: {
           version: {

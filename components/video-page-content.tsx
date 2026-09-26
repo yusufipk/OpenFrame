@@ -16,7 +16,8 @@ import { versionCommentsPath } from '@/lib/client/version-comments';
 import { PlayerCore } from '@/components/video-page/player-core';
 import { ImageReviewPlayer } from '@/components/video-page/image-review-player';
 import { VideoPageHeader } from '@/components/video-page/video-page-header';
-import { ImagePreviewDialog } from '@/components/video-page/image-preview-dialog';
+import { MediaPreviewDialog } from '@/components/video-page/media-preview-dialog';
+import { useAttachmentCommentCounts } from '@/components/video-page/hooks/use-attachment-comment-counts';
 import { CompareVersionsDialog } from '@/components/video-page/compare-versions-dialog';
 import { VideoPageLoading } from '@/components/video-page/video-page-loading';
 import { VideoPageError } from '@/components/video-page/video-page-error';
@@ -51,6 +52,11 @@ import { useSubtitles } from '@/components/video-page/hooks/use-subtitles';
 import { useYoutubeCaptions } from '@/components/video-page/hooks/use-youtube-captions';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { getSpeedOptionsForProvider } from '@/components/video-page/hooks/video-player-utils';
+import type { AttachmentCommentTarget } from '@/lib/attachment-comment-target';
+import type { CommentImage } from '@/components/video-page/types';
+import { Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 function formatTime(seconds: number): string {
   const totalSeconds = Math.floor(seconds);
@@ -117,12 +123,19 @@ export function VideoPageContent({
     voicePlaybackRate,
     downloadingVoiceIds,
     playVoice,
+    stopVoice,
     toggleVoiceSpeed,
     downloadVoice,
   } = useCommentMedia();
   const [showResolved, setShowResolved] = useState(false);
   const [activeSidePane, setActiveSidePane] = useState<'comments' | 'assets'>('comments');
   const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<{
+    kind: 'IMAGE' | 'AUDIO';
+    src: string;
+    title: string;
+    target: AttachmentCommentTarget;
+  } | null>(null);
 
   const editAnnotationCanvasRef = useRef<AnnotationCanvasHandle>(null);
 
@@ -175,6 +188,51 @@ export function VideoPageContent({
   const isImage =
     video?.mediaType === 'IMAGE' ||
     video?.versions?.some((version) => version.providerId === 'r2-image');
+  const { counts: attachmentCommentCounts, refresh: refreshAttachmentCommentCounts } =
+    useAttachmentCommentCounts(videoId, activeVersionId);
+  const openCommentImage = useCallback(
+    (commentId: string, image: CommentImage) => {
+      stopVoice();
+      setAttachmentPreview({
+        kind: 'IMAGE',
+        src: image.url,
+        title: 'Image attachment',
+        target: { type: 'comment-image', id: commentId, url: image.url },
+      });
+      void refreshAttachmentCommentCounts();
+    },
+    [stopVoice, refreshAttachmentCommentCounts]
+  );
+  const openCommentAudio = useCallback(
+    (commentId: string, url: string) => {
+      stopVoice();
+      setAttachmentPreview({
+        kind: 'AUDIO',
+        src: url,
+        title: 'Voice note',
+        target: { type: 'comment-audio', id: commentId },
+      });
+      void refreshAttachmentCommentCounts();
+    },
+    [stopVoice, refreshAttachmentCommentCounts]
+  );
+  const downloadAttachmentImage = useCallback(async (src: string) => {
+    try {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error('Download unavailable');
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download =
+        new URL(src, window.location.origin).pathname.split('/').pop() || 'attachment.png';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      toast.error('Failed to download image');
+    }
+  }, []);
 
   const {
     assets,
@@ -571,8 +629,6 @@ export function VideoPageContent({
     handleEditComment,
     handleDeleteComment,
     handleResolveComment,
-    previewImage,
-    setPreviewImage,
   } = useCommentActions({
     videoId,
     isImage,
@@ -1116,7 +1172,9 @@ export function VideoPageContent({
           voicePlaybackRate={voicePlaybackRate}
           toggleVoiceSpeed={toggleVoiceSpeed}
           formatTime={formatTime}
-          setPreviewImage={setPreviewImage}
+          onOpenCommentImage={openCommentImage}
+          onOpenCommentAudio={openCommentAudio}
+          attachmentCommentCounts={attachmentCommentCounts}
           replyingTo={replyingTo}
           setReplyingTo={setReplyingTo}
           replyText={replyText}
@@ -1166,6 +1224,9 @@ export function VideoPageContent({
               highlightedAssetId={highlightedAssetId}
               onHighlightedAssetHandled={() => setHighlightedAssetId(null)}
               directUploadProvider={directUploadProvider}
+              attachmentCommentCounts={attachmentCommentCounts}
+              onAttachmentCommentsChanged={() => void refreshAttachmentCommentCounts()}
+              guestName={isGuest ? normalizedGuestName : null}
             />
           }
           composer={
@@ -1222,7 +1283,34 @@ export function VideoPageContent({
         />
       </div>
 
-      <ImagePreviewDialog previewImage={previewImage} onClose={() => setPreviewImage(null)} />
+      <MediaPreviewDialog
+        open={!!attachmentPreview}
+        onClose={() => setAttachmentPreview(null)}
+        title={attachmentPreview?.title || 'Attachment preview'}
+        kind={attachmentPreview?.kind || 'IMAGE'}
+        src={attachmentPreview?.src}
+        videoId={videoId}
+        target={attachmentPreview?.target || null}
+        guestName={isGuest ? normalizedGuestName : null}
+        onCommentsChanged={() => void refreshAttachmentCommentCounts()}
+        canDownload={canDownloadAssets}
+        headerActions={
+          attachmentPreview && canDownloadAssets ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (attachmentPreview.kind === 'AUDIO')
+                  downloadVoice(attachmentPreview.target.id, attachmentPreview.src, 'voice-note');
+                else void downloadAttachmentImage(attachmentPreview.src);
+              }}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download
+            </Button>
+          ) : null
+        }
+      />
 
       {!isImage && (
         <CompareVersionsDialog
