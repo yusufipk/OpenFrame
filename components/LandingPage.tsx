@@ -419,7 +419,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 </p>
               </div>
               <div className="min-w-0 border border-border bg-card">
-                <MockToolbar left="Live review" right="Watch, draw, save" />
+                <MockToolbar left="Live review" />
                 <div className="relative aspect-video w-full overflow-hidden bg-black">
                   <video
                     src="/landing/live-review.mp4"
