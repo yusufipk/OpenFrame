@@ -187,7 +187,7 @@ export const AssetListSection = memo(function AssetListSection({
                 {asset.uploadedByUser?.name || asset.uploadedByGuestName || 'Unknown'} •{' '}
                 {new Date(asset.createdAt).toLocaleDateString()}
               </p>
-              <div className="pt-1 flex items-center gap-1">
+              <div className="pt-1 flex flex-wrap items-center gap-1">
                 <Button
                   size="icon"
                   variant="outline"

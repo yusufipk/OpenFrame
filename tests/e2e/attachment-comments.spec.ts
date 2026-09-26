@@ -143,7 +143,35 @@ test('asset image, audio and video previews have independent persistent comments
         },
       ],
     });
+    let liveDiscoveryRequests = 0;
+    await page.route(`**/api/videos/${seeded.videoId}/live-review`, async (route) => {
+      liveDiscoveryRequests += 1;
+      await route.fulfill({
+        json: { data: { enabled: true, available: true, canStart: true, session: null } },
+      });
+    });
     await page.goto(`/projects/${seeded.project.id}/videos/${seeded.videoId}`);
+    for (const width of [320, 402, 768, 1440]) {
+      await page.setViewportSize({ width, height: 874 });
+      for (const control of [
+        page.getByRole('link', { name: 'Back', exact: true }),
+        page.getByRole('button', { name: 'Start Live Review', exact: true }),
+        page.getByTitle('Toggle frame step mode', { exact: true }),
+        page.getByTitle('Fullscreen (F)', { exact: true }),
+      ]) {
+        await expect(control).toBeVisible();
+        const bounds = await control.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      }
+      const videoBounds = await page.locator('video').boundingBox();
+      expect(videoBounds).not.toBeNull();
+      expect(videoBounds!.width).toBeGreaterThan(0);
+      expect(videoBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(videoBounds!.x + videoBounds!.width).toBeLessThanOrEqual(width);
+    }
+    expect(liveDiscoveryRequests).toBeGreaterThan(0);
     await page.getByRole('button', { name: /^Assets/ }).click();
     await page.getByRole('button', { name: 'View image', exact: true }).click();
     await expect(page.getByRole('dialog').locator('img')).toHaveJSProperty('naturalWidth', 640);
@@ -153,6 +181,24 @@ test('asset image, audio and video previews have independent persistent comments
     await expect(
       page.getByRole('button', { name: '1 comments on Screenshot proof', exact: true })
     ).toBeVisible();
+    const imageCard = page.locator('[id^="asset-card-"]').filter({ hasText: 'Screenshot proof' });
+    // Stress the same thumbnail/actions layout used by narrow review sidebars.
+    await imageCard.evaluate((element) => {
+      element.style.width = '280px';
+    });
+    await expect(imageCard.getByRole('button')).toHaveCount(5);
+    expect(
+      await imageCard.evaluate((element) => {
+        const card = element.getBoundingClientRect();
+        return [...element.querySelectorAll('button')].every((button) => {
+          const bounds = button.getBoundingClientRect();
+          return bounds.left >= card.left && bounds.right <= card.right;
+        });
+      })
+    ).toBe(true);
+    await imageCard.evaluate((element) => {
+      element.style.removeProperty('width');
+    });
     await page.getByRole('button', { name: 'Play recording', exact: true }).click();
     await expect(page.getByRole('dialog').getByText(imageComment, { exact: true })).toHaveCount(0);
     await expect(page.getByRole('dialog').locator('audio')).toBeVisible();
