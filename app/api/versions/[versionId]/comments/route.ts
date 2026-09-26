@@ -1,4 +1,5 @@
 import { checkVideoAccess } from '@/lib/content-access';
+import { notifyLiveReviewComments } from '@/lib/live-review/notify';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { auth, projectAccessInclude } from '@/lib/auth';
@@ -586,6 +587,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       Object.entries(comment).filter(([key]) => key !== 'guestIdentityId')
     );
 
+    await notifyLiveReviewComments(versionId);
     const response = successResponse(
       {
         ...commentData,

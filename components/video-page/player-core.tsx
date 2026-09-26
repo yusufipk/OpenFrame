@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type RefObject } from 'react';
+import { memo, type ReactNode, type RefObject } from 'react';
 import {
   AlertCircle,
   Clock,
@@ -41,6 +41,7 @@ import type {
 } from '@/components/video-page/types';
 
 interface PlayerCoreProps {
+  liveOverlay?: ReactNode;
   activeVersionId: string | null;
   activeProviderId: string | undefined;
   embedUrl: string;
@@ -121,7 +122,7 @@ interface PlayerCoreProps {
   handleSeekToTimestamp: (
     timestamp: number,
     annotation?: string | null,
-    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
+    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null; commentId?: string }
   ) => void;
   commentMarkers: CommentMarker[];
 }
@@ -197,6 +198,7 @@ export const PlayerCore = memo(function PlayerCore({
   handleTimelineMouseMove,
   handleSeekToTimestamp,
   commentMarkers,
+  liveOverlay,
 }: PlayerCoreProps) {
   return (
     <>
@@ -303,6 +305,7 @@ export const PlayerCore = memo(function PlayerCore({
             </div>
           )}
 
+          {liveOverlay}
           {showBunnyErrorOverlay && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/65">
               <div className="max-w-sm rounded-md border bg-background/95 px-4 py-3 text-center shadow-lg">
@@ -614,9 +617,11 @@ export const PlayerCore = memo(function PlayerCore({
               return (
                 <button
                   key={comment.id}
+                  onMouseDown={(event) => event.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                      commentId: comment.id,
                       pauseAfterSeek: true,
                       timestampEnd: comment.timestampEnd,
                     });
@@ -647,9 +652,11 @@ export const PlayerCore = memo(function PlayerCore({
             return (
               <button
                 key={comment.id}
+                onMouseDown={(event) => event.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                    commentId: comment.id,
                     pauseAfterSeek: comment.timestampEnd !== null,
                     timestampEnd: comment.timestampEnd,
                   });

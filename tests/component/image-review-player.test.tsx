@@ -78,7 +78,7 @@ describe('ImageReviewPlayer', () => {
     rerender(<ImageReviewPlayer {...props} isAnnotating />);
     const drawClose = screen.getByTitle('Close annotation tool');
     expect(stage.style.transform).toContain('scale(2)');
-    expect(stage.querySelector('canvas')).toBeInTheDocument();
+    expect(stage.querySelector('svg[aria-label="Annotation canvas"]')).toBeInTheDocument();
     expect(toolbarLayer).toContainElement(drawClose);
     expect(stage).not.toContainElement(drawClose);
     expect(viewport).toContainElement(drawClose);

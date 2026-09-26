@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type RefObject } from 'react';
+import { memo, type ReactNode, type RefObject } from 'react';
 import Link from 'next/link';
 import { Image as ImageIcon, Loader2, Mic, Pause, Pencil, Play, Send, Tag, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,8 @@ import type { CommentTag, VideoAsset } from '@/components/video-page/types';
 
 interface CommentComposerProps {
   isImage?: boolean;
+  liveReviewActive?: boolean;
+  liveDrawingControls?: ReactNode;
   isRecording: boolean;
   recordingTime: number;
   stopRecording: () => void;
@@ -103,6 +105,8 @@ export const CommentComposer = memo(function CommentComposer({
   projectId,
   pauseVideoForAnnotation,
   assets,
+  liveReviewActive = false,
+  liveDrawingControls,
 }: CommentComposerProps) {
   const rangeButtonLabel =
     commentRangeStart === null || commentRangeEnd !== null ? 'Set In' : 'Set Out';
@@ -116,6 +120,7 @@ export const CommentComposer = memo(function CommentComposer({
 
   return (
     <div className="shrink-0 p-4 border-t bg-background">
+      {isRecording && liveDrawingControls}
       {isRecording ? (
         <div className="flex items-center gap-3 p-3 bg-destructive/10 border border-destructive/30 rounded-lg">
           <div className="h-3 w-3 rounded-full bg-destructive animate-pulse" />
@@ -182,7 +187,7 @@ export const CommentComposer = memo(function CommentComposer({
             rows={1}
             className="resize-none text-sm"
           />
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 flex-wrap">
             {!isImage && (
               <Button
                 size="sm"
@@ -193,6 +198,7 @@ export const CommentComposer = memo(function CommentComposer({
                 {rangeButtonLabel}
               </Button>
             )}
+            {liveDrawingControls}
             {!isImage && commentRangeLabel && (
               <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
                 {commentRangeLabel}
@@ -246,7 +252,7 @@ export const CommentComposer = memo(function CommentComposer({
             </div>
           )}
           <ImageAttachmentStrip files={imageFiles} onRemoveFile={removeImageFile} />
-          <div className="mb-2 flex items-center gap-2 flex-wrap">
+          <div className="mb-2 flex items-center gap-1 flex-wrap">
             {!isImage && (
               <Button
                 size="sm"
@@ -257,6 +263,7 @@ export const CommentComposer = memo(function CommentComposer({
                 {rangeButtonLabel}
               </Button>
             )}
+            {liveDrawingControls}
             {!isImage && commentRangeLabel && (
               <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground tabular-nums">
                 {commentRangeLabel}
@@ -323,25 +330,27 @@ export const CommentComposer = memo(function CommentComposer({
               >
                 <ImageIcon className="h-4 w-4" />
               </Button>
-              <Button
-                size="icon"
-                variant={annotationStrokes ? 'default' : 'outline'}
-                className={annotationStrokes ? 'bg-violet-500 hover:bg-violet-600' : ''}
-                onClick={() => {
-                  if (isAnnotating) return;
-                  pauseVideoForAnnotation();
-                  setIsAnnotating(true);
-                }}
-                title={
-                  annotationStrokes
-                    ? 'Annotation added ✓ (click to redraw)'
-                    : isImage
-                      ? 'Draw annotation on image'
-                      : 'Draw annotation on video'
-                }
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
+              {!liveReviewActive && (
+                <Button
+                  size="icon"
+                  variant={annotationStrokes ? 'default' : 'outline'}
+                  className={annotationStrokes ? 'bg-violet-500 hover:bg-violet-600' : ''}
+                  onClick={() => {
+                    if (isAnnotating) return;
+                    pauseVideoForAnnotation();
+                    setIsAnnotating(true);
+                  }}
+                  title={
+                    annotationStrokes
+                      ? 'Annotation added ✓ (click to redraw)'
+                      : isImage
+                        ? 'Draw annotation on image'
+                        : 'Draw annotation on video'
+                  }
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
               <input
                 type="file"
                 accept="image/*"

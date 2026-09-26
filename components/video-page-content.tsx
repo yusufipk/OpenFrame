@@ -5,6 +5,14 @@ import Hls from 'hls.js';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
+import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
+import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
+import {
+  LiveReviewCanvas,
+  type LiveReviewCanvasHandle,
+} from '@/components/video-page/live-review-canvas';
+import type { LiveStroke } from '@/lib/live-review/protocol';
+import { versionCommentsPath } from '@/lib/client/version-comments';
 import { PlayerCore } from '@/components/video-page/player-core';
 import { ImageReviewPlayer } from '@/components/video-page/image-review-player';
 import { VideoPageHeader } from '@/components/video-page/video-page-header';
@@ -262,6 +270,47 @@ export function VideoPageContent({
     videoRef,
     supportsSubtitles,
   });
+  const [liveDrawingControls, setLiveDrawingControls] = useState<HTMLDivElement | null>(null);
+  const liveDrawingRef = useRef<LiveReviewCanvasHandle>(null);
+  const getLiveAnnotation = useCallback(() => liveDrawingRef.current?.getAnnotation() ?? null, []);
+  const refreshLiveComments = useCallback(() => {
+    if (activeVersionId) void fetchVersionComments(activeVersionId, false);
+  }, [activeVersionId, fetchVersionComments]);
+  const liveReview = useLiveReview({
+    videoId,
+    versionId: activeVersionId,
+    providerId: activeProviderId,
+    guestName: normalizedGuestName,
+    videoRef,
+    onCommentsChanged: refreshLiveComments,
+    onVersionSelect: setActiveVersionId,
+    enabled: !!video && canInitializePlayer && !isImage,
+  });
+  const saveLiveDrawing = useCallback(
+    async (strokes: LiveStroke[], timestamp: number) => {
+      const versionId = liveReview.snapshot?.versionId;
+      if (!versionId || !liveReview.canDraw)
+        throw new Error('Join the paused room to save a drawing.');
+      const response = await fetch(versionCommentsPath(versionId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timestamp,
+          annotationData: strokes.map(({ points, color, width }) => ({ points, color, width })),
+          ...(isGuest ? { guestName: normalizedGuestName } : {}),
+        }),
+      });
+      if (!response.ok) throw new Error('The drawing could not be saved. Please try again.');
+      await fetchVersionComments(versionId, false);
+    },
+    [
+      liveReview.snapshot?.versionId,
+      liveReview.canDraw,
+      isGuest,
+      normalizedGuestName,
+      fetchVersionComments,
+    ]
+  );
   const activeVersionDuration = activeVersion?.duration;
   const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
   const embedUrl = useMemo(() => {
@@ -317,7 +366,7 @@ export function VideoPageContent({
     handleVideoMouseMove,
     handleVideoMouseLeave,
     handlePlayPause,
-    handleSeekToTimestamp,
+    handleSeekToTimestamp: handleLocalSeekToTimestamp,
     handleMuteToggle,
     handleFrameModeToggle,
     handleSkip,
@@ -346,7 +395,25 @@ export function VideoPageContent({
     speedOptions,
     scheduleWatchProgressSaveRef,
     setViewingAnnotation,
+    playbackLocked: liveReview.playbackLocked,
   });
+
+  const { isJoined: isLiveReviewJoined, selectComment: selectLiveComment } = liveReview;
+  const handleSeekToTimestamp = useCallback(
+    (
+      timestamp: number,
+      annotation?: string | null,
+      options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null; commentId?: string }
+    ) => {
+      if (isLiveReviewJoined && options?.commentId) {
+        setViewingAnnotation(null);
+        selectLiveComment(options.commentId, options.pauseAfterSeek);
+        return;
+      }
+      handleLocalSeekToTimestamp(timestamp, annotation, options);
+    },
+    [handleLocalSeekToTimestamp, isLiveReviewJoined, selectLiveComment]
+  );
 
   const { youtubeCaptionTracks, activeYoutubeCaptionLanguage, selectYoutubeCaptionLanguage } =
     useYoutubeCaptions({
@@ -384,6 +451,7 @@ export function VideoPageContent({
     isReady,
     currentTime,
     videoDuration,
+    playbackLocked: liveReview.isJoined,
   });
 
   useEffect(() => {
@@ -525,6 +593,7 @@ export function VideoPageContent({
     setIsAnnotating,
     setViewingAnnotation,
     annotationCanvasRef,
+    getAnnotationForComment: liveReview.isJoined ? getLiveAnnotation : undefined,
     editAnnotationCanvasRef,
     fetchVersionComments,
     fetchAssets,
@@ -579,8 +648,10 @@ export function VideoPageContent({
   });
 
   const handleVersionSelect = useCallback(
-    (versionId: string) => setReviewVersionId(versionId),
-    [setReviewVersionId]
+    (versionId: string) => {
+      if (!liveReview.isJoined) setReviewVersionId(versionId);
+    },
+    [liveReview.isJoined, setReviewVersionId]
   );
 
   const commentMarkers = useMemo<CommentMarker[]>(() => {
@@ -807,6 +878,18 @@ export function VideoPageContent({
             activeVersion={activeVersion}
             activeVersionId={activeVersionId}
             onVersionSelect={headerActions.onVersionSelect}
+            versionSelectionLocked={liveReview.isJoined}
+            liveReviewControl={
+              <LiveReviewEntryControl
+                discovery={liveReview.discovery}
+                provider={activeProviderId}
+                isJoined={liveReview.isJoined}
+                busy={isCreatingVersion || liveReview.connectionStatus === 'connecting'}
+                error={liveReview.error}
+                onStart={liveReview.start}
+                onJoin={liveReview.join}
+              />
+            }
             onDeleteCurrentVersionClick={headerActions.onDeleteCurrentVersionClick}
             showDeleteVersionDialog={showDeleteVersionDialog}
             setShowDeleteVersionDialog={setShowDeleteVersionDialog}
@@ -868,78 +951,120 @@ export function VideoPageContent({
               setIsEditingAnnotation={setIsEditingAnnotation}
             />
           ) : (
-            <PlayerCore
-              activeVersionId={activeVersionId}
-              activeProviderId={activeVersion?.providerId}
-              embedUrl={embedUrl}
-              videoRef={videoRef}
-              iframeRef={iframeRef}
-              bunnyViewportRef={bunnyViewportRef}
-              timelineRef={timelineRef}
-              progressRef={progressRef}
-              playheadRef={playheadRef}
-              scrubReadoutRef={scrubReadoutRef}
-              videoContainerRef={videoContainerRef}
-              showScrubReadout={showScrubReadout}
-              isFullscreenMode={isFullscreenMode}
-              cursorIdle={cursorIdle}
-              isPlaying={isPlaying}
-              handlePlayPause={handlePlayPause}
-              handleVideoMouseMove={handleVideoMouseMove}
-              handleVideoMouseLeave={handleVideoMouseLeave}
-              isBunnyPortraitSource={isBunnyPortraitSource}
-              bunnyPortraitFrameWidth={bunnyPortraitFrameWidth}
-              showBunnyProcessingOverlay={showBunnyProcessingOverlay}
-              showBunnyErrorOverlay={showBunnyErrorOverlay}
-              showResumePrompt={showResumePrompt}
-              savedProgress={savedProgress}
-              formatTime={formatTime}
-              handleResumeFromSaved={handleResumeFromSavedWithSync}
-              handleDismissResume={handleDismissResume}
-              isAnnotating={isAnnotating}
-              annotationCanvasRef={annotationCanvasRef}
-              setAnnotationStrokes={setAnnotationStrokes}
-              setIsAnnotating={setIsAnnotating}
-              setViewingAnnotation={setViewingAnnotation}
-              viewingAnnotation={viewingAnnotation}
-              isEditingAnnotation={isEditingAnnotation}
-              editAnnotationCanvasRef={editAnnotationCanvasRef}
-              editAnnotationInitialStrokes={editAnnotationInitialStrokes}
-              setEditAnnotationData={setEditAnnotationData}
-              setIsEditingAnnotation={setIsEditingAnnotation}
-              currentTime={currentTime}
-              duration={duration}
-              isFrameMode={isFrameMode}
-              frameStepLabel={frameStepLabel}
-              handleSkip={handleSkip}
-              handleFrameModeToggle={handleFrameModeToggle}
-              handleMuteToggle={handleMuteToggle}
-              isMuted={isMuted}
-              selectedQualityLabel={selectedQualityLabel}
-              selectedQualityLevel={selectedQualityLevel}
-              qualityOptions={qualityOptions}
-              handleQualityChange={handleQualityChange}
-              subtitles={subtitles}
-              subtitleTracks={subtitleTracks}
-              subtitleTrackKey={subtitleTrackKey}
-              activeSubtitleLanguage={activeCaptionLanguage}
-              onSelectSubtitleLanguage={selectCaptionLanguage}
-              canManageSubtitles={canManageSubtitles}
-              onUploadSubtitle={uploadSubtitle}
-              onDeleteSubtitle={deleteSubtitle}
-              isUploadingSubtitle={isUploadingSubtitle}
-              playbackSpeed={playbackSpeed}
-              speedOptions={speedOptions}
-              handleSpeedChange={handleSpeedChange}
-              toggleFullscreen={toggleFullscreen}
-              showComments={showComments}
-              setShowComments={setShowComments}
-              setIsMobileCommentsOpen={setIsMobileCommentsOpen}
-              handleTimelineMouseDown={handleTimelineMouseDown}
-              handleTimelineMouseMove={handleTimelineMouseMove}
-              handleSeekToTimestamp={handleSeekToTimestamp}
-              commentMarkers={commentMarkers}
-            />
+            <>
+              <LiveReviewBar
+                discovery={liveReview.discovery}
+                provider={activeProviderId}
+                snapshot={liveReview.snapshot}
+                participantId={liveReview.participantId}
+                connection={liveReview.connectionStatus}
+                isJoined={liveReview.isJoined}
+                busy={isCreatingVersion || liveReview.connectionStatus === 'connecting'}
+                autoplayBlocked={liveReview.autoplayBlocked}
+                error={liveReview.error}
+                onStart={liveReview.start}
+                onJoin={liveReview.join}
+                onLeave={liveReview.leave}
+                onTransfer={liveReview.transfer}
+                onEnd={liveReview.end}
+                onRetryPlayback={liveReview.retryPlayback}
+              />
+              <PlayerCore
+                liveOverlay={
+                  liveReview.isJoined && liveReview.snapshot ? (
+                    <LiveReviewCanvas
+                      ref={liveDrawingRef}
+                      controlsContainer={liveDrawingControls}
+                      rejectedStroke={liveReview.rejectedStroke}
+                      strokes={liveReview.snapshot.strokes}
+                      previewStrokes={liveReview.snapshot.annotation?.strokes}
+                      canvasEpoch={liveReview.snapshot.canvasEpoch}
+                      participantId={liveReview.participantId}
+                      canDraw={liveReview.canDraw}
+                      isPaused={!liveReview.snapshot.playback.playing}
+                      isManager={
+                        liveReview.isManager && liveReview.connectionStatus === 'connected'
+                      }
+                      videoRef={videoRef}
+                      onStroke={liveReview.sendStroke}
+                      onUndo={liveReview.undo}
+                      onClear={liveReview.clear}
+                      onSave={saveLiveDrawing}
+                    />
+                  ) : null
+                }
+                activeVersionId={activeVersionId}
+                activeProviderId={activeVersion?.providerId}
+                embedUrl={embedUrl}
+                videoRef={videoRef}
+                iframeRef={iframeRef}
+                bunnyViewportRef={bunnyViewportRef}
+                timelineRef={timelineRef}
+                progressRef={progressRef}
+                playheadRef={playheadRef}
+                scrubReadoutRef={scrubReadoutRef}
+                videoContainerRef={videoContainerRef}
+                showScrubReadout={showScrubReadout}
+                isFullscreenMode={isFullscreenMode}
+                cursorIdle={cursorIdle}
+                isPlaying={isPlaying}
+                handlePlayPause={handlePlayPause}
+                handleVideoMouseMove={handleVideoMouseMove}
+                handleVideoMouseLeave={handleVideoMouseLeave}
+                isBunnyPortraitSource={isBunnyPortraitSource}
+                bunnyPortraitFrameWidth={bunnyPortraitFrameWidth}
+                showBunnyProcessingOverlay={showBunnyProcessingOverlay}
+                showBunnyErrorOverlay={showBunnyErrorOverlay}
+                showResumePrompt={showResumePrompt && !liveReview.isJoined}
+                savedProgress={savedProgress}
+                formatTime={formatTime}
+                handleResumeFromSaved={handleResumeFromSavedWithSync}
+                handleDismissResume={handleDismissResume}
+                isAnnotating={isAnnotating && !liveReview.isJoined}
+                annotationCanvasRef={annotationCanvasRef}
+                setAnnotationStrokes={setAnnotationStrokes}
+                setIsAnnotating={setIsAnnotating}
+                setViewingAnnotation={setViewingAnnotation}
+                viewingAnnotation={viewingAnnotation}
+                isEditingAnnotation={isEditingAnnotation && !liveReview.isJoined}
+                editAnnotationCanvasRef={editAnnotationCanvasRef}
+                editAnnotationInitialStrokes={editAnnotationInitialStrokes}
+                setEditAnnotationData={setEditAnnotationData}
+                setIsEditingAnnotation={setIsEditingAnnotation}
+                currentTime={currentTime}
+                duration={duration}
+                isFrameMode={isFrameMode}
+                frameStepLabel={frameStepLabel}
+                handleSkip={handleSkip}
+                handleFrameModeToggle={handleFrameModeToggle}
+                handleMuteToggle={handleMuteToggle}
+                isMuted={isMuted}
+                selectedQualityLabel={selectedQualityLabel}
+                selectedQualityLevel={selectedQualityLevel}
+                qualityOptions={qualityOptions}
+                handleQualityChange={handleQualityChange}
+                subtitles={subtitles}
+                subtitleTracks={subtitleTracks}
+                subtitleTrackKey={subtitleTrackKey}
+                activeSubtitleLanguage={activeCaptionLanguage}
+                onSelectSubtitleLanguage={selectCaptionLanguage}
+                canManageSubtitles={canManageSubtitles}
+                onUploadSubtitle={uploadSubtitle}
+                onDeleteSubtitle={deleteSubtitle}
+                isUploadingSubtitle={isUploadingSubtitle}
+                playbackSpeed={playbackSpeed}
+                speedOptions={speedOptions}
+                handleSpeedChange={handleSpeedChange}
+                toggleFullscreen={toggleFullscreen}
+                showComments={showComments}
+                setShowComments={setShowComments}
+                setIsMobileCommentsOpen={setIsMobileCommentsOpen}
+                handleTimelineMouseDown={handleTimelineMouseDown}
+                handleTimelineMouseMove={handleTimelineMouseMove}
+                handleSeekToTimestamp={handleSeekToTimestamp}
+                commentMarkers={commentMarkers}
+              />
+            </>
           )}
         </div>
 
@@ -1046,6 +1171,12 @@ export function VideoPageContent({
           composer={
             <CommentComposer
               isImage={isImage}
+              liveReviewActive={liveReview.isJoined}
+              liveDrawingControls={
+                liveReview.isJoined ? (
+                  <div ref={setLiveDrawingControls} aria-label="Live drawing controls" />
+                ) : null
+              }
               isRecording={isRecording}
               recordingTime={recordingTime}
               stopRecording={stopRecording}

@@ -1,4 +1,6 @@
 import * as foldersRoute from '@/app/api/projects/[projectId]/folders/route';
+import * as liveReviewAccessRoute from '@/app/api/internal/live-review/access/route';
+import * as liveReviewRoute from '@/app/api/videos/[videoId]/live-review/route';
 // A sweep over every route module under app/api asserting that an
 // unauthenticated caller can never reach a 2xx.
 //
@@ -152,7 +154,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 70;
+const EXPECTED_ROUTE_MODULE_COUNT = 72;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -379,6 +381,12 @@ function uploadForm(field: 'image' | 'audio', fixtures: Fixtures): FormData {
 }
 
 const ROUTE_CASES: readonly RouteCase[] = [
+  {
+    file: 'internal/live-review/access/route.ts',
+    module: liveReviewAccessRoute,
+    url: () => '/api/internal/live-review/access',
+    body: { participantId: 'unauthorized' },
+  },
   {
     file: 'admin/feedback/[feedbackId]/route.ts',
     module: adminFeedbackRoute,
@@ -745,6 +753,14 @@ const ROUTE_CASES: readonly RouteCase[] = [
       form.append('subtitle', new File(['WEBVTT'], 'anon.vtt', { type: 'text/vtt' }));
       return form;
     },
+  },
+  {
+    file: 'videos/[videoId]/live-review/route.ts',
+    module: liveReviewRoute,
+    url: (f) => `/api/videos/${f.videoId}/live-review`,
+    params: (f) => ({ videoId: f.videoId }),
+    body: { action: 'join', versionId: 'fixture' },
+    headers: { origin: 'http://localhost:3000' },
   },
   {
     file: 'watch/[videoId]/progress/route.ts',

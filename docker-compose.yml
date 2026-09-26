@@ -18,6 +18,34 @@ services:
       - '3000:3000'
     restart: unless-stopped
 
+  live-review:
+    profiles: ['live-review']
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['bun', 'run', 'start:live-review']
+    env_file:
+      - .env.docker
+    environment:
+      LIVE_REVIEW_APP_URL: http://app:3000
+      LIVE_REVIEW_PORT: '3101'
+    depends_on:
+      - app
+    ports:
+      - '127.0.0.1:3101:3101'
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "fetch('http://127.0.0.1:3101/health', {headers: {'X-Live-Review-Secret': process.env.LIVE_REVIEW_SECRET}}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   postgres:
     image: postgres:16-alpine
     env_file:

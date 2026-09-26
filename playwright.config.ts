@@ -183,7 +183,7 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: '**/dashboard-mobile.spec.ts',
+      testIgnore: ['**/dashboard-mobile.spec.ts', '**/live-review*.spec.ts'],
     },
     {
       // One mobile project, for one spec. Section 6 asks for a mobile smoke

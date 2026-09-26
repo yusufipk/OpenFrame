@@ -1,4 +1,5 @@
 import { checkVideoAccess } from '@/lib/content-access';
+import { notifyLiveReviewComments } from '@/lib/live-review/notify';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
@@ -374,6 +375,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const updatedCommentData = Object.fromEntries(
       Object.entries(updatedComment).filter(([key]) => key !== 'guestIdentityId')
     );
+    await notifyLiveReviewComments(comment.versionId);
     const response = successResponse({
       ...updatedCommentData,
       canEdit: canEditOwnContent,
@@ -543,6 +545,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
     });
 
+    await notifyLiveReviewComments(comment.versionId);
     const response = successResponse({ message: 'Comment deleted' });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {

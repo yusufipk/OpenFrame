@@ -71,7 +71,7 @@ interface CommentsPaneProps {
   handleSeekToTimestamp: (
     timestamp: number,
     annotation?: string | null,
-    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null }
+    options?: { pauseAfterSeek?: boolean; timestampEnd?: number | null; commentId?: string }
   ) => void;
   currentUserId: string | null;
   projectOwnerId: string;
@@ -326,6 +326,7 @@ export const CommentsPane = memo(function CommentsPane({
               variant="ghost"
               size="icon"
               className="h-8 w-8 lg:hidden shrink-0"
+              aria-label="Close comments panel"
               onClick={() => setIsMobileCommentsOpen(false)}
             >
               <X className="h-4 w-4" />
@@ -448,6 +449,7 @@ export const CommentsPane = memo(function CommentsPane({
                           <button
                             onClick={() =>
                               handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
+                                commentId: comment.id,
                                 pauseAfterSeek: true,
                                 timestampEnd: comment.timestampEnd,
                               })
@@ -786,6 +788,7 @@ export const CommentsPane = memo(function CommentsPane({
                                           reply.timestamp,
                                           reply.annotationData,
                                           {
+                                            commentId: reply.id,
                                             pauseAfterSeek: true,
                                             timestampEnd: reply.timestampEnd,
                                           }

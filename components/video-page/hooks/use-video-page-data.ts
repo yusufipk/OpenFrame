@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Comment, CommentTag, Version, VideoData } from '@/components/video-page/types';
+import { versionCommentsPath } from '@/lib/client/version-comments';
 
 interface UseVideoPageDataParams {
   mode: 'dashboard' | 'watch';
@@ -42,7 +43,7 @@ export function useVideoPageData({ mode, videoId, propProjectId }: UseVideoPageD
     // Fetch pages until we have all comments
     while (true) {
       const res = await fetch(
-        `/api/versions/${versionId}/comments?includeResolved=true&limit=${LIMIT}&offset=${offset}`,
+        `${versionCommentsPath(versionId)}?includeResolved=true&limit=${LIMIT}&offset=${offset}`,
         { cache: 'no-store', headers: offset === 0 ? headers : {} }
       );
 

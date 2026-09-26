@@ -34,7 +34,10 @@ test('an independent image supports annotations, versions and guest review', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     page.viewportSize()!.width
   );
-  await expect(viewport.getByRole('img')).toHaveJSProperty('naturalWidth', 1200);
+  await expect(viewport.getByRole('img', { name: title, exact: true })).toHaveJSProperty(
+    'naturalWidth',
+    1200
+  );
   await expect(page.locator('video')).toHaveCount(0);
   const video = await db.video.findFirstOrThrow({
     where: { projectId: project.id, title },
@@ -48,12 +51,12 @@ test('an independent image supports annotations, versions and guest review', asy
   await expect(page.getByTitle('Close annotation tool')).toBeInViewport();
   await page.getByTitle('Close annotation tool').click();
   await page.getByTitle('Draw annotation on image').click();
-  const canvas = viewport.locator('canvas');
-  await expect(canvas).toBeVisible();
-  const box = await canvas.boundingBox();
+  const annotationSurface = viewport.locator('svg[aria-label="Annotation canvas"]');
+  await expect(annotationSurface).toBeVisible();
+  const box = await annotationSurface.boundingBox();
   expect(box).not.toBeNull();
   if (!box) throw new Error('Annotation canvas has no bounds');
-  const imageBounds = await viewport.getByRole('img').boundingBox();
+  const imageBounds = await viewport.getByRole('img', { name: title, exact: true }).boundingBox();
   expect(imageBounds).not.toBeNull();
   expect(box.x).toBeCloseTo(imageBounds!.x, 1);
   expect(box.y).toBeCloseTo(imageBounds!.y, 1);
@@ -80,7 +83,7 @@ test('an independent image supports annotations, versions and guest review', asy
   await page.reload();
   await expect(page.getByText(comment, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'View annotation', exact: true }).click();
-  await expect(viewport.locator('canvas')).toBeVisible();
+  await expect(annotationSurface).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('image-review.png'), fullPage: true });
 
   await page.getByRole('button', { name: 'New Version', exact: true }).click();
@@ -90,9 +93,12 @@ test('an independent image supports annotations, versions and guest review', asy
   await dialog.getByRole('button', { name: 'Add Version 2' }).click();
   await expect(page.getByText('v2', { exact: true })).toBeVisible();
   await expect(page.getByText(comment, { exact: true })).toHaveCount(0);
-  await expect(viewport.locator('canvas')).toHaveCount(0);
+  await expect(annotationSurface).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Compare', exact: true })).toHaveCount(0);
-  await expect(viewport.getByRole('img')).toHaveJSProperty('naturalWidth', 1200);
+  await expect(viewport.getByRole('img', { name: title, exact: true })).toHaveJSProperty(
+    'naturalWidth',
+    1200
+  );
   await page.getByRole('button', { name: /v2.*Matte fabric/ }).click();
   await page.getByRole('menuitem', { name: /v1.*Version 1/ }).click();
   await expect(page.getByText(comment, { exact: true })).toBeVisible();
@@ -105,13 +111,12 @@ test('an independent image supports annotations, versions and guest review', asy
   const guestContext = await browser.newContext({ storageState: undefined });
   try {
     const guest = await guestContext.newPage();
-    await guest.goto(new URL(`/watch/${video.id}?shareToken=${link.token}`, page.url()).toString());
+    await guest.goto(new URL(`/s/${link.token}`, page.url()).toString());
     await guest.getByPlaceholder('Your name').fill('Image reviewer');
     await guest.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(guest.getByTestId('image-review-viewport').getByRole('img')).toHaveJSProperty(
-      'naturalWidth',
-      1200
-    );
+    await expect(
+      guest.getByTestId('image-review-viewport').getByRole('img', { name: title, exact: true })
+    ).toHaveJSProperty('naturalWidth', 1200);
     await guest.getByPlaceholder('Add a comment...').fill('The new fabric is approved');
     const guestSavedResponse = guest.waitForResponse(
       (response) =>
