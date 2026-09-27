@@ -16,6 +16,7 @@ import {
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { buildInvitationUrl } from '@/lib/invitations';
+import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
@@ -131,12 +132,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         return { members, invitations, accessMode };
       }
       if (action === 'invite') {
-        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-        if (
-          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-          email.length > 254 ||
-          !['ADMIN', 'COMMENTATOR'].includes(body.role)
-        )
+        const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
+        if (!isValidEmailAddress(email) || !['ADMIN', 'COMMENTATOR'].includes(body.role))
           throw new ContentError(400, 'Valid email and role required');
         const target = {
           projectId,
