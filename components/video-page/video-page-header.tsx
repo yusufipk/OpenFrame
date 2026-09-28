@@ -138,6 +138,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   onOpenApprovalsPanel,
 }: VideoPageHeaderProps) {
   const canManageVideo = canShareVideo || canRequestApproval;
+  const canCompare = mediaType !== 'IMAGE' && versions.length >= 2;
 
   return (
     <div
@@ -262,17 +263,14 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               ) : null}
             </Button>
 
-            {mediaType !== 'IMAGE' && versions.length >= 2 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onOpenCompare}
-                className="hidden sm:inline-flex"
-              >
-                <GitCompareArrows className="h-4 w-4 mr-1" />
-                Compare
+            {canShareVideo ? (
+              <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex">
+                <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
+                  <Share2 className="h-4 w-4 mr-1" />
+                  {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
+                </Link>
               </Button>
-            )}
+            ) : null}
 
             {canManageVideo ? (
               <div className="hidden">
@@ -301,35 +299,47 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               </div>
             ) : null}
 
-            {(canShareVideo || canRequestApproval) && (
-              <div>
+            {/* Phones get Share and Request Approval here; desktop gets Compare and Request Approval.
+                Hide the trigger at any breakpoint where the menu would be empty. */}
+            {(canManageVideo || canCompare) && (
+              <div
+                className={cn(
+                  !canManageVideo && 'hidden sm:block',
+                  !canCompare && !canRequestApproval && 'sm:hidden'
+                )}
+              >
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-7 px-0 self-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-7 px-0 self-center"
+                      aria-label="More actions"
+                    >
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {canCompare ? (
+                      <DropdownMenuItem onSelect={onOpenCompare} className="hidden sm:flex">
+                        <GitCompareArrows className="h-4 w-4 mr-2" />
+                        Compare
+                      </DropdownMenuItem>
+                    ) : null}
                     {canShareVideo ? (
-                      <DropdownMenuItem asChild>
+                      <DropdownMenuItem asChild className="sm:hidden">
                         <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
                           <Share2 className="h-4 w-4 mr-2" />
                           {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
                         </Link>
                       </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem disabled>
-                        <Share2 className="h-4 w-4 mr-2" />
-                        {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
+                    ) : null}
+                    {canRequestApproval ? (
+                      <DropdownMenuItem onSelect={onOpenApprovalRequest}>
+                        <ShieldCheck className="h-4 w-4 mr-2" />
+                        Request Approval
                       </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      onSelect={onOpenApprovalRequest}
-                      disabled={!canRequestApproval}
-                    >
-                      <ShieldCheck className="h-4 w-4 mr-2" />
-                      Request Approval
-                    </DropdownMenuItem>
+                    ) : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

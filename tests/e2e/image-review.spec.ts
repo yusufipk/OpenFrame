@@ -94,7 +94,11 @@ test('an independent image supports annotations, versions and guest review', asy
   await expect(page.getByText('v2', { exact: true })).toBeVisible();
   await expect(page.getByText(comment, { exact: true })).toHaveCount(0);
   await expect(annotationSurface).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Compare', exact: true })).toHaveCount(0);
+  // Images have no compare view, even with two versions.
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Request Approval' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Compare' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(viewport.getByRole('img', { name: title, exact: true })).toHaveJSProperty(
     'naturalWidth',
     1200

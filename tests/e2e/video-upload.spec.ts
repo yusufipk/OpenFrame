@@ -58,7 +58,11 @@ test('a video file is uploaded to object storage and a second version is added',
 
   // One version so far, so there is nothing to compare against yet.
   await expect(page.getByText('v1', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Compare' })).toHaveCount(0);
+  const moreActions = page.getByRole('button', { name: 'More actions' });
+  await moreActions.click();
+  await expect(page.getByRole('menuitem', { name: 'Request Approval' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Compare' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: 'New Version' }).click();
   const dialog = page.getByRole('dialog');
@@ -76,5 +80,6 @@ test('a video file is uploaded to object storage and a second version is added',
   // The new version becomes the active one, which is also what makes the
   // compare view reachable.
   await expect(page.getByText('v2', { exact: true })).toBeVisible({ timeout: 90_000 });
-  await expect(page.getByRole('button', { name: 'Compare' })).toBeVisible();
+  await moreActions.click();
+  await expect(page.getByRole('menuitem', { name: 'Compare' })).toBeVisible();
 });
