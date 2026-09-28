@@ -310,7 +310,12 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               >
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-7 px-0 self-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-7 px-0 self-center"
+                      aria-label="More actions"
+                    >
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
