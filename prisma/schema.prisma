@@ -32,6 +32,8 @@ model User {
   stripeCancelAt DateTime?
   billingAccessEndedAt DateTime?
   subscriptionStatus BillingSubscriptionStatus @default(FREE)
+  // When false, deleting a project asks for a plain confirmation instead of the typed name.
+  requireProjectDeleteNameConfirmation Boolean @default(true)
 
   // Relations
   accounts           Account[]

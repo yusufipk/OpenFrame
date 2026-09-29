@@ -83,6 +83,7 @@ import * as videoVersionRoute from '@/app/api/projects/[projectId]/videos/[video
 import * as projectsRoute from '@/app/api/projects/route';
 import * as searchRoute from '@/app/api/search/route';
 import * as settingsNotificationsRoute from '@/app/api/settings/notifications/route';
+import * as settingsPreferencesRoute from '@/app/api/settings/preferences/route';
 import * as settingsStorageRoute from '@/app/api/settings/storage/route';
 import * as uploadAudioFileRoute from '@/app/api/upload/audio/[filename]/route';
 import * as uploadAudioRoute from '@/app/api/upload/audio/route';
@@ -156,7 +157,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 74;
+const EXPECTED_ROUTE_MODULE_COUNT = 75;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -632,6 +633,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     module: settingsNotificationsRoute,
     url: () => '/api/settings/notifications',
     body: { emailEnabled: true },
+  },
+  {
+    file: 'settings/preferences/route.ts',
+    module: settingsPreferencesRoute,
+    url: () => '/api/settings/preferences',
+    headers: { origin: 'http://localhost:3000' },
+    body: { requireProjectDeleteNameConfirmation: false },
   },
   {
     file: 'settings/storage/route.ts',
