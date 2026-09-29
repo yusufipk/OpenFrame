@@ -16,6 +16,12 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    date: '2026-09-29',
+    title: 'Shapes in drawings',
+    description:
+      'When you draw on a comment, the toolbar now has a rectangle, an ellipse, a straight line and an arrow next to the pen. Drag across the frame to mark exactly the part you mean.',
+  },
+  {
     date: '2026-09-28',
     title: 'Share from the toolbar',
     description:
