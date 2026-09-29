@@ -2,7 +2,7 @@
 
 import { forwardRef, useCallback, useImperativeHandle, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Trash2, Undo2, X } from 'lucide-react';
+import { Circle, MoveUpRight, Pencil, Slash, Square, Trash2, Undo2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DEFAULT_ANNOTATION_COLOR,
@@ -10,9 +10,30 @@ import {
 } from '@/components/annotation/palette';
 import { AnnotationSettings } from '@/components/annotation/settings';
 import { AnnotationSurface } from '@/components/annotation/surface';
-import type { AnnotationPoint, AnnotationStroke } from '@/components/annotation/types';
+import { ANNOTATION_SHAPES } from '@/lib/validation';
+import type {
+  AnnotationPoint,
+  AnnotationShape,
+  AnnotationStroke,
+} from '@/components/annotation/types';
 
 export type { AnnotationStroke } from '@/components/annotation/types';
+
+type AnnotationTool = 'freehand' | AnnotationShape;
+
+// A Record keyed by the shape type, so a shape added to ANNOTATION_SHAPES fails to compile
+// until it has a button here.
+const SHAPE_TOOLS: Record<AnnotationShape, { label: string; icon: typeof Pencil }> = {
+  rectangle: { label: 'Rectangle', icon: Square },
+  ellipse: { label: 'Ellipse', icon: Circle },
+  line: { label: 'Line', icon: Slash },
+  arrow: { label: 'Arrow', icon: MoveUpRight },
+};
+
+const ANNOTATION_TOOLS: { tool: AnnotationTool; label: string; icon: typeof Pencil }[] = [
+  { tool: 'freehand', label: 'Freehand', icon: Pencil },
+  ...ANNOTATION_SHAPES.map((shape) => ({ tool: shape, ...SHAPE_TOOLS[shape] })),
+];
 
 export interface AnnotationCanvasHandle {
   getStrokes: () => AnnotationStroke[];
@@ -36,17 +57,17 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
     const [activeStroke, setActiveStroke] = useState<AnnotationStroke | null>(null);
     const [color, setColor] = useState<string>(DEFAULT_ANNOTATION_COLOR);
     const [width, setWidth] = useState(DEFAULT_ANNOTATION_WIDTH);
+    const [tool, setTool] = useState<AnnotationTool>('freehand');
     void onConfirm;
 
     useImperativeHandle(ref, () => ({ getStrokes: () => strokes }), [strokes]);
 
     const createStroke = useCallback(
-      (point: AnnotationPoint, strokeColor: string, strokeWidth: number): AnnotationStroke => ({
-        points: [point],
-        color: strokeColor,
-        width: strokeWidth,
-      }),
-      []
+      (point: AnnotationPoint, strokeColor: string, strokeWidth: number): AnnotationStroke =>
+        tool === 'freehand'
+          ? { points: [point], color: strokeColor, width: strokeWidth }
+          : { points: [point], color: strokeColor, width: strokeWidth, shape: tool },
+      [tool]
     );
 
     const finishStroke = useCallback((stroke: AnnotationStroke) => {
@@ -84,6 +105,24 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
 
     const toolbar = (
       <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]">
+        <div className="flex items-center gap-1" role="group" aria-label="Drawing tool">
+          {ANNOTATION_TOOLS.map(({ tool: option, label, icon: Icon }) => (
+            <Button
+              key={option}
+              type="button"
+              variant={tool === option ? 'secondary' : 'ghost'}
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setTool(option)}
+              title={label}
+              aria-label={label}
+              aria-pressed={tool === option}
+            >
+              <Icon className="h-4 w-4" />
+            </Button>
+          ))}
+        </div>
+        <div className="hidden sm:block w-px h-6 bg-border mx-1" />
         <AnnotationSettings
           color={color}
           width={width}

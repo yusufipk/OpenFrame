@@ -45,7 +45,12 @@ test('a comment is posted and rendered with its author and timecode', async ({
   await expect(timecode).toContainText('0:00');
   await timecode.click();
 
-  // Survives a reload, i.e. it was persisted and not only inserted optimistically.
+  // Survives a reload, i.e. it was persisted and not only inserted optimistically. Everything
+  // above passes on the optimistic copy, so wait for the row before reloading; otherwise a
+  // slow runner reloads while the POST is still in flight.
+  await expect
+    .poll(() => db.comment.count({ where: { versionId: seeded.versionId, content: body } }))
+    .toBe(1);
   await page.reload();
   await expect(page.getByText(body)).toBeVisible();
 });
@@ -88,6 +93,11 @@ test('an annotation drawn on the video is stored with the comment', async ({
 
   await expect(page.getByText(body)).toBeVisible();
   await expect(page.getByText('Annotated')).toBeVisible();
+  // The comment and its badge render optimistically before the POST lands, so wait for the
+  // row itself; reading it straight away raced the insert on a slow runner.
+  await expect
+    .poll(() => db.comment.count({ where: { versionId: seeded.versionId, content: body } }))
+    .toBe(1);
   const saved = await db.comment.findFirstOrThrow({
     where: { versionId: seeded.versionId, content: body },
   });
