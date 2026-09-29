@@ -11,6 +11,7 @@ import {
   Globe,
   CreditCard,
   HardDrive,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -127,18 +128,22 @@ function ToggleButton({
   onToggle,
   label,
   description,
+  disabled,
 }: {
   enabled: boolean;
   onToggle: () => void;
   label: string;
   description?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
+      disabled={disabled}
+      aria-pressed={enabled}
       className={cn(
-        'flex items-center justify-between w-full p-3 rounded-lg border transition-colors text-left',
+        'flex items-center justify-between w-full p-3 rounded-lg border transition-colors text-left disabled:opacity-60',
         enabled ? 'border-primary/50 bg-primary/5' : 'border-border hover:bg-accent/50'
       )}
     >
@@ -187,6 +192,10 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [storageLoading, setStorageLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [requireDeleteNameConfirmation, setRequireDeleteNameConfirmation] = useState(true);
+  const [savingPreference, setSavingPreference] = useState(false);
+  // Stays false if the preference could not be read, so the toggle never saves a guessed value.
+  const [preferenceLoaded, setPreferenceLoaded] = useState(false);
 
   // Form state for Telegram chat ID (separate from saved settings for editing)
   const [telegramChatId, setTelegramChatId] = useState('');
@@ -198,10 +207,11 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   useEffect(() => {
     async function fetchSettings() {
       try {
-        const [settingsRes, billingRes, storageRes] = await Promise.all([
+        const [settingsRes, billingRes, storageRes, preferencesRes] = await Promise.all([
           fetch('/api/settings/notifications'),
           fetch('/api/billing'),
           fetch('/api/settings/storage'),
+          fetch('/api/settings/preferences'),
         ]);
 
         if (settingsRes.ok) {
@@ -218,6 +228,12 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
         if (storageRes.ok) {
           const data = await storageRes.json();
           setStorageInfo(data.data);
+        }
+
+        if (preferencesRes.ok) {
+          const data = await preferencesRes.json();
+          setRequireDeleteNameConfirmation(data.data.requireProjectDeleteNameConfirmation);
+          setPreferenceLoaded(true);
         }
       } catch {
         console.error('Failed to fetch settings');
@@ -261,6 +277,32 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
       setSaving(false);
     }
   }, [settings, telegramChatId, showMessage]);
+
+  // Saved on toggle, apart from the notification form and its Save button.
+  const handleToggleDeleteNameConfirmation = useCallback(async () => {
+    const next = !requireDeleteNameConfirmation;
+    setSavingPreference(true);
+    setRequireDeleteNameConfirmation(next);
+    try {
+      const res = await fetch('/api/settings/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requireProjectDeleteNameConfirmation: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setRequireDeleteNameConfirmation(!next);
+        showMessage('error', data.error || 'Failed to save preference');
+        return;
+      }
+      showMessage('success', 'Preference saved');
+    } catch {
+      setRequireDeleteNameConfirmation(!next);
+      showMessage('error', 'Failed to save preference');
+    } finally {
+      setSavingPreference(false);
+    }
+  }, [requireDeleteNameConfirmation, showMessage]);
 
   const handleTest = useCallback(
     async (channel: 'telegram' | 'email') => {
@@ -422,7 +464,9 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground mt-1">
-          {billingOnly ? 'Manage your billing access' : 'Manage your notification preferences'}
+          {billingOnly
+            ? 'Manage your billing access'
+            : 'Manage your project and notification preferences'}
         </p>
       </div>
 
@@ -756,6 +800,26 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
 
       {!billingOnly && (
         <>
+          {/* Project deletion */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5" />
+                Project Deletion
+              </CardTitle>
+              <CardDescription>Saved as soon as you change it</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ToggleButton
+                enabled={requireDeleteNameConfirmation}
+                onToggle={handleToggleDeleteNameConfirmation}
+                disabled={savingPreference || !preferenceLoaded}
+                label="Type the project name to delete"
+                description="When off, deleting a project asks for a simple confirmation instead"
+              />
+            </CardContent>
+          </Card>
+
           {/* Event Subscriptions */}
           <Card className="mb-6">
             <CardHeader>
