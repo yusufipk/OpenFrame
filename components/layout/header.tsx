@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { WhatsNewButton } from '@/components/whats-new';
 import { cn } from '@/lib/utils';
 
 const KeyboardShortcutsModal = dynamic(
@@ -209,6 +210,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
               </Tooltip>
             </TooltipProvider>
           )}
+          {user && showAppNavigation && <WhatsNewButton />}
           {user && showAppNavigation && (
             <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
               <Link href="/feedback">
