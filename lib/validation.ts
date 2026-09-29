@@ -1,3 +1,5 @@
+import type { AnnotationStroke } from '@/components/annotation/types';
+
 /**
  * Validates that a URL uses only safe schemes (http/https)
  * Prevents javascript:, data:, and other potentially dangerous URI schemes
@@ -9,6 +11,15 @@ export function isValidHttpUrl(urlString: string): boolean {
   } catch {
     return false;
   }
+}
+
+// The single list of annotation shapes: the stroke type, the renderer and the toolbar all
+// derive from it, so a shape cannot be drawable in the UI and then refused on save.
+export const ANNOTATION_SHAPES = ['rectangle', 'ellipse', 'line', 'arrow'] as const;
+export type AnnotationShape = (typeof ANNOTATION_SHAPES)[number];
+
+export function isAnnotationShape(value: unknown): value is AnnotationShape {
+  return ANNOTATION_SHAPES.some((shape) => shape === value);
 }
 
 // Matches exactly 6-digit hex colours produced by the annotation canvas (e.g. #FF3B30)
@@ -27,19 +38,17 @@ const MAX_STROKE_WIDTH = 20;
  *
  * Returns null when the input is absent or structurally invalid.
  */
-export function validateAnnotationStrokes(
-  data: unknown
-): { points: { x: number; y: number }[]; color: string; width: number }[] | null {
+export function validateAnnotationStrokes(data: unknown): AnnotationStroke[] | null {
   if (data === null || data === undefined) return null;
   if (!Array.isArray(data)) return null;
   if (data.length > MAX_STROKES) return null;
 
-  const result: { points: { x: number; y: number }[]; color: string; width: number }[] = [];
+  const result: AnnotationStroke[] = [];
 
   for (const stroke of data) {
     if (stroke === null || typeof stroke !== 'object' || Array.isArray(stroke)) return null;
 
-    const { points, color, width } = stroke as Record<string, unknown>;
+    const { points, color, width, shape } = stroke as Record<string, unknown>;
 
     if (!Array.isArray(points)) return null;
     if (points.length > MAX_POINTS_PER_STROKE) return null;
@@ -66,7 +75,18 @@ export function validateAnnotationStrokes(
       return null;
     }
 
-    result.push({ points: safePoints, color, width });
+    // A missing shape is a freehand stroke. A shape stroke is two distinct points, a start and
+    // an end, so any other count is malformed and a zero-length shape would save as an
+    // annotation that draws nothing. The key is only written back when present, which keeps
+    // freehand records byte-for-byte what they were before shapes existed.
+    if (shape === undefined) {
+      result.push({ points: safePoints, color, width });
+      continue;
+    }
+    if (!isAnnotationShape(shape) || safePoints.length !== 2) return null;
+    const [start, end] = safePoints;
+    if (start.x === end.x && start.y === end.y) return null;
+    result.push({ points: safePoints, color, width, shape });
   }
 
   return result;
