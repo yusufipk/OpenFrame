@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
+import { brandAssetFilename } from '@/lib/project-branding';
 import { REPO_ROOT } from '../helpers/env';
 import { apiRequest, callRoute, readData, type RouteHandler } from '../helpers/request';
 import { signedInAs, signedOut } from '../helpers/session';
@@ -66,6 +67,8 @@ import * as projectDownloadRoute from '@/app/api/projects/[projectId]/download/r
 import * as projectInvitationRoute from '@/app/api/projects/[projectId]/members/invitations/[invitationId]/route';
 import * as projectMemberRoute from '@/app/api/projects/[projectId]/members/[memberId]/route';
 import * as projectMembersRoute from '@/app/api/projects/[projectId]/members/route';
+import * as projectBrandingRoute from '@/app/api/projects/[projectId]/branding/route';
+import * as projectBrandingFileRoute from '@/app/api/projects/[projectId]/branding/[filename]/route';
 import * as projectRoute from '@/app/api/projects/[projectId]/route';
 import * as projectTagsRoute from '@/app/api/projects/[projectId]/tags/route';
 import * as projectTagRoute from '@/app/api/projects/[projectId]/tags/[tagId]/route';
@@ -157,7 +160,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 75;
+const EXPECTED_ROUTE_MODULE_COUNT = 77;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -260,6 +263,15 @@ async function seedFixtures(): Promise<Fixtures> {
     visibility: 'PRIVATE',
     allowDownloads: true,
   });
+  // A real banner, so /api/projects/[projectId]/branding/[filename] gets past its
+  // "is this the project's current file" check and refuses from the access check.
+  await db.project.update({
+    where: { id: project.id },
+    data: { brandBannerKey: `branding/${IMAGE_FILENAME}` },
+  });
+  // If this key drifted from the shape the route accepts, the route would refuse it as
+  // "not the current file" before the access check, and the entry would pass regardless.
+  expect(brandAssetFilename(`branding/${IMAGE_FILENAME}`)).toBe(IMAGE_FILENAME);
   const projectMember = await addProjectMember({
     projectId: project.id,
     userId: collaborator.id,
@@ -522,6 +534,26 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: (f) => `/api/projects/${f.projectId}`,
     params: (f) => ({ projectId: f.projectId }),
     body: { name: 'renamed by an anonymous caller' },
+  },
+  {
+    file: 'projects/[projectId]/branding/route.ts',
+    module: projectBrandingRoute,
+    url: (f) => `/api/projects/${f.projectId}/branding`,
+    params: (f) => ({ projectId: f.projectId }),
+    rawBody: () => {
+      const form = new FormData();
+      form.append('kind', 'banner');
+      form.append('image', new File([new Uint8Array([1, 2, 3, 4])], 'anon.png'));
+      return form;
+    },
+    // Like upload/image, the route rejects a missing Content-Length first.
+    headers: { 'content-length': '2048' },
+  },
+  {
+    file: 'projects/[projectId]/branding/[filename]/route.ts',
+    module: projectBrandingFileRoute,
+    url: (f) => `/api/projects/${f.projectId}/branding/${IMAGE_FILENAME}`,
+    params: (f) => ({ projectId: f.projectId, filename: IMAGE_FILENAME }),
   },
   {
     file: 'projects/[projectId]/tags/route.ts',

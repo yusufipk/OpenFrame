@@ -16,6 +16,12 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    date: '2026-09-30',
+    title: 'Brand a project for your client',
+    description:
+      "Give a project your client's color, a banner and a logo in its settings. Everyone who opens the project or one of its videos sees it in their brand.",
+  },
+  {
     date: '2026-09-29',
     title: 'Delete projects without typing the name',
     description:
