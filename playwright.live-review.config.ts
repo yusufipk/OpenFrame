@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import main from './playwright.config';
+import { LIVE_REVIEW_EMPTY_ROOM_GRACE_MS } from './tests/helpers/live-review';
 
 const appServer = Array.isArray(main.webServer) ? main.webServer[0] : main.webServer;
 const appEnv = appServer?.env ?? {};
@@ -11,6 +12,7 @@ const liveEnv = {
   LIVE_REVIEW_PUBLIC_URL: 'ws://localhost:3101/ws',
   LIVE_REVIEW_INTERNAL_URL: 'http://localhost:3101',
   LIVE_REVIEW_ALLOWED_ORIGIN: baseURL,
+  LIVE_REVIEW_EMPTY_ROOM_GRACE_MS: String(LIVE_REVIEW_EMPTY_ROOM_GRACE_MS),
 };
 
 export default defineConfig({

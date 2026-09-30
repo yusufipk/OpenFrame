@@ -76,7 +76,17 @@ if (!Number.isInteger(port) || port < 1 || port > 65535)
 const rooms = new Map<string, Room>();
 const sockets = new Set<Socket>();
 const recentlyEndedRooms = new Map<string, number>();
-const EMPTY_ROOM_GRACE_MS = 20_000;
+// Overridable so the e2e suite can exercise the grace window without sleeping
+// through the production length of it.
+const EMPTY_ROOM_GRACE_MS = Number(process.env.LIVE_REVIEW_EMPTY_ROOM_GRACE_MS || 20_000);
+// Above 2^31-1 ms setTimeout fires almost at once, which would end every
+// empty room immediately instead of never.
+if (
+  !Number.isInteger(EMPTY_ROOM_GRACE_MS) ||
+  EMPTY_ROOM_GRACE_MS < 1_000 ||
+  EMPTY_ROOM_GRACE_MS > 2_147_483_647
+)
+  throw new Error('Invalid live review empty room grace');
 
 function sameSecret(value: string | null): boolean {
   if (!value) return false;
