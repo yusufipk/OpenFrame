@@ -17,6 +17,12 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-09-30',
+    title: 'API tokens for scripts and AI agents',
+    description:
+      'Create an API token in Settings, choose what it may do, and a render script or an AI agent like Claude Code can upload versions, work through comments, request approvals and more for you, no browser needed.',
+  },
+  {
+    date: '2026-09-30',
     title: 'Subtitle size and background',
     description:
       'Make subtitles smaller or larger and pick a translucent, solid or no background from the CC menu; your choice is kept for every video. Press C to turn subtitles on or off.',
