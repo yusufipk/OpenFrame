@@ -17,6 +17,12 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-09-29',
+    title: 'Subtitle size and background',
+    description:
+      'Make subtitles smaller or larger and pick a translucent, solid or no background from the CC menu; your choice is kept for every video. Press C to turn subtitles on or off.',
+  },
+  {
+    date: '2026-09-29',
     title: 'Delete projects without typing the name',
     description:
       'If you create and delete a lot of projects, you can now skip typing the project name before each delete: turn it off in Settings. You still confirm each delete with a click, and typing the name stays required until you turn it off.',
