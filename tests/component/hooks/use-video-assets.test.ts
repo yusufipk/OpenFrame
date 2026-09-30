@@ -2,15 +2,33 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook, type RenderHookResult } from '@testing-library/react';
 import { useVideoAssets } from '@/components/video-page/hooks/use-video-assets';
 import type { VideoAsset } from '@/components/video-page/types';
+import { unloadGuardCount } from '@/lib/client/unload-guard';
 
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
+const toastWarning = vi.fn();
+const toastLoading = vi.fn();
 
 vi.mock('sonner', () => ({
   toast: {
     error: (...args: unknown[]) => toastError(...args),
-    success: vi.fn(),
+    success: (...args: unknown[]) => toastSuccess(...args),
+    warning: (...args: unknown[]) => toastWarning(...args),
+    loading: (...args: unknown[]) => toastLoading(...args),
   },
 }));
+
+/**
+ * The options a toast was last called with for `message`. Sonner merges updates to one
+ * id, so a finished toast has to send `description` as undefined to clear the file name
+ * the progress toast left there; leaving the key out keeps it.
+ */
+function expectDescriptionCleared(spy: ReturnType<typeof vi.fn>, message: string) {
+  const call = spy.mock.calls.find(([sent]) => sent === message);
+  expect(call?.[1]).toMatchObject({ id: `download-all-assets-${VIDEO_ID}` });
+  expect(Object.keys(call?.[1] ?? {})).toContain('description');
+  expect((call?.[1] as { description?: unknown }).description).toBeUndefined();
+}
 
 type Params = Parameters<typeof useVideoAssets>[0];
 
@@ -91,6 +109,8 @@ function deferred<T>() {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let clicked: string[];
+/** The `download` attribute of each clicked anchor, in click order. */
+let clickedDownloadAttrs: (string | null)[];
 /** What the assets list endpoint answers with; reassign to change it mid-test. */
 let listed: ReturnType<typeof listResponse>;
 
@@ -136,6 +156,7 @@ function assetIds(harness: Harness): string[] {
 
 beforeEach(() => {
   clicked = [];
+  clickedDownloadAttrs = [];
   listed = listResponse({ assets: [makeAsset()] });
   fetchMock = vi.fn((url: string) => {
     if (typeof url === 'string' && url.startsWith(`/api/videos/${VIDEO_ID}/assets?`)) {
@@ -148,6 +169,7 @@ beforeEach(() => {
     this: HTMLAnchorElement
   ) {
     clicked.push(this.getAttribute('href') ?? '');
+    clickedDownloadAttrs.push(this.getAttribute('download'));
   });
 });
 
@@ -155,6 +177,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   toastError.mockReset();
+  toastSuccess.mockReset();
+  toastWarning.mockReset();
+  toastLoading.mockReset();
 });
 
 describe('useVideoAssets reading the list', () => {
@@ -760,6 +785,353 @@ describe('useVideoAssets downloading', () => {
 
     expect(toastError).toHaveBeenCalledWith('Failed to start download');
     expect(harness.result.current.activeDownloadAssetId).toBeNull();
+  });
+});
+
+describe('useVideoAssets downloading every asset', () => {
+  const pageUrl = (offset: number) => `/api/videos/${VIDEO_ID}/assets?limit=100&offset=${offset}`;
+  const downloadUrlOf = (id: string) => `/api/videos/${VIDEO_ID}/assets/${id}/download`;
+
+  beforeEach(() => {
+    // The run waits between files and for the rate-limit window; real time would make
+    // the pacing tests take minutes.
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Answers the bulk read by URL, and every other call with the given response. */
+  function routeFetch(
+    pages: Record<string, ReturnType<typeof listResponse>>,
+    other: (url: string) => unknown = () => jsonResponse(true, { data: {} })
+  ) {
+    fetchMock.mockImplementation((url: string) => {
+      if (url in pages) return Promise.resolve(pages[url]);
+      if (url.startsWith(`/api/videos/${VIDEO_ID}/assets?`)) return Promise.resolve(listed);
+      return Promise.resolve(other(url));
+    });
+  }
+
+  /** Starts a run and lets fake time pass until it settles. */
+  async function runDownloadAll(harness: Harness, advanceMs = 5 * 60 * 1000) {
+    await act(async () => {
+      const run = harness.result.current.downloadAllAssets();
+      await vi.advanceTimersByTimeAsync(advanceMs);
+      await run;
+    });
+  }
+
+  function images(count: number) {
+    return Array.from({ length: count }, (_, i) => makeAsset({ id: `img${i + 1}` }));
+  }
+
+  it('refuses a viewer who cannot download, without reading the list', async () => {
+    const harness = await renderAssets({ canDownloadAssets: false });
+    fetchMock.mockClear();
+
+    // No time passes, so the background poll cannot account for a fetch.
+    await runDownloadAll(harness, 0);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(clicked).toEqual([]);
+    expect(toastError).toHaveBeenCalledWith('Asset downloads require an authenticated account');
+  });
+
+  it('reads past the pages on screen and downloads every file, skipping YouTube', async () => {
+    const harness = await renderAssets();
+    routeFetch({
+      [pageUrl(0)]: listResponse({
+        assets: [makeAsset({ id: 'img1' }), makeAsset({ id: 'yt1', provider: 'YOUTUBE' })],
+        hasMore: true,
+        nextOffset: 100,
+      }),
+      [pageUrl(100)]: listResponse({
+        assets: [makeAsset({ id: 'aud1', provider: 'R2_AUDIO', kind: 'AUDIO' })],
+      }),
+    });
+
+    await runDownloadAll(harness);
+
+    expect(callsTo(pageUrl(100))).toHaveLength(1);
+    expect(clicked).toEqual([downloadUrlOf('img1'), downloadUrlOf('aud1')]);
+    // An empty download attribute keeps the tab in place if a route answers with an error.
+    expect(clickedDownloadAttrs).toEqual(['', '']);
+    expectDescriptionCleared(toastSuccess, 'Started 2 downloads');
+    expect(harness.result.current.isDownloadingAll).toBe(false);
+  });
+
+  it('downloads a row once when two pages both return it', async () => {
+    const harness = await renderAssets();
+    routeFetch({
+      [pageUrl(0)]: listResponse({
+        assets: [makeAsset({ id: 'img1' })],
+        hasMore: true,
+        nextOffset: 100,
+      }),
+      [pageUrl(100)]: listResponse({
+        assets: [makeAsset({ id: 'img1' }), makeAsset({ id: 'img2' })],
+      }),
+    });
+
+    await runDownloadAll(harness);
+
+    expect(clicked).toEqual([downloadUrlOf('img1'), downloadUrlOf('img2')]);
+  });
+
+  it('stops paging when the server names the offset it just served', async () => {
+    const harness = await renderAssets();
+    routeFetch({
+      [pageUrl(0)]: listResponse({
+        assets: [makeAsset({ id: 'img1' })],
+        hasMore: true,
+        nextOffset: 0,
+      }),
+    });
+
+    await runDownloadAll(harness);
+
+    expect(callsTo(pageUrl(0))).toHaveLength(1);
+    expect(clicked).toEqual([downloadUrlOf('img1')]);
+  });
+
+  it('stops paging when the server points back to an earlier page', async () => {
+    const harness = await renderAssets();
+    routeFetch({
+      [pageUrl(0)]: listResponse({
+        assets: [makeAsset({ id: 'img1' })],
+        hasMore: true,
+        nextOffset: 100,
+      }),
+      [pageUrl(100)]: listResponse({
+        assets: [makeAsset({ id: 'img2' })],
+        hasMore: true,
+        nextOffset: 0,
+      }),
+    });
+
+    await runDownloadAll(harness);
+
+    expect(callsTo(pageUrl(0))).toHaveLength(1);
+    expect(callsTo(pageUrl(100))).toHaveLength(1);
+    expect(clicked).toEqual([downloadUrlOf('img1'), downloadUrlOf('img2')]);
+  });
+
+  it('leaves a gap between two downloads so the browser keeps both', async () => {
+    const harness = await renderAssets();
+    routeFetch({ [pageUrl(0)]: listResponse({ assets: images(2) }) });
+
+    await act(async () => {
+      const run = harness.result.current.downloadAllAssets();
+      await vi.advanceTimersByTimeAsync(499);
+      expect(clicked).toEqual([downloadUrlOf('img1')]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(clicked).toEqual([downloadUrlOf('img1'), downloadUrlOf('img2')]);
+      await run;
+    });
+  });
+
+  it('holds the eleventh download until the rate-limit window has passed', async () => {
+    const harness = await renderAssets();
+    routeFetch({ [pageUrl(0)]: listResponse({ assets: images(11) }) });
+
+    await act(async () => {
+      const run = harness.result.current.downloadAllAssets();
+      // Ten downloads 500 ms apart go out by 4.5 s. The eleventh finishes its own gap at
+      // 5 s and then waits until 61 s after the first one: the server's 60 s window plus
+      // one second of margin.
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(clicked).toHaveLength(10);
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 11/11', {
+        id: `download-all-assets-${VIDEO_ID}`,
+        description: 'Waiting 56s for the download limit',
+      });
+      await vi.advanceTimersByTimeAsync(55_999);
+      expect(clicked).toHaveLength(10);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(clicked).toHaveLength(11);
+      // Once the wait is over the toast names the file again.
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 11/11', {
+        id: `download-all-assets-${VIDEO_ID}`,
+        description: 'Reference frame',
+      });
+      await run;
+    });
+  });
+
+  it('counts a Bunny prepare call against the same limit', async () => {
+    const harness = await renderAssets();
+    const bunnies = Array.from({ length: 6 }, (_, i) =>
+      makeAsset({ id: `bn${i + 1}`, provider: 'BUNNY' })
+    );
+    routeFetch({ [pageUrl(0)]: listResponse({ assets: bunnies }) });
+
+    await act(async () => {
+      const run = harness.result.current.downloadAllAssets();
+      // Five prepares and five downloads fill the budget by 2 s; the sixth prepare has to
+      // wait until 61 s after the first request, and its download follows 500 ms later.
+      await vi.advanceTimersByTimeAsync(60_999);
+      expect(callsTo(`${downloadUrlOf('bn6')}?prepare=1`)).toHaveLength(0);
+      expect(clicked).toHaveLength(5);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(callsTo(`${downloadUrlOf('bn6')}?prepare=1`)).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(499);
+      expect(clicked).toHaveLength(5);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(clicked).toHaveLength(6);
+      await run;
+    });
+  });
+
+  it('prepares a Bunny video and downloads it from the default source', async () => {
+    const harness = await renderAssets();
+    routeFetch({
+      [pageUrl(0)]: listResponse({ assets: [makeAsset({ id: 'bn1', provider: 'BUNNY' })] }),
+    });
+
+    await runDownloadAll(harness);
+
+    expect(callsTo(`${downloadUrlOf('bn1')}?prepare=1`)).toHaveLength(1);
+    expect(clicked).toEqual([downloadUrlOf('bn1')]);
+  });
+
+  it('skips a Bunny video that cannot be prepared and says how many were left out', async () => {
+    const harness = await renderAssets();
+    routeFetch(
+      {
+        [pageUrl(0)]: listResponse({
+          assets: [makeAsset({ id: 'bn1', provider: 'BUNNY' }), makeAsset({ id: 'img1' })],
+        }),
+      },
+      (url) =>
+        url === `${downloadUrlOf('bn1')}?prepare=1`
+          ? jsonResponse(false, { error: 'Download file not found' }, 404)
+          : jsonResponse(true, { data: {} })
+    );
+
+    await runDownloadAll(harness);
+
+    expect(clicked).toEqual([downloadUrlOf('img1')]);
+    expectDescriptionCleared(toastWarning, 'Started 1 of 2 downloads. 1 could not be prepared.');
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('skips a Bunny video whose prepare call fails on the network and keeps going', async () => {
+    const harness = await renderAssets();
+    fetchMock.mockImplementation((url: string) => {
+      if (url === pageUrl(0)) {
+        return Promise.resolve(
+          listResponse({
+            assets: [makeAsset({ id: 'bn1', provider: 'BUNNY' }), makeAsset({ id: 'img1' })],
+          })
+        );
+      }
+      if (url === `${downloadUrlOf('bn1')}?prepare=1`) return Promise.reject(new Error('offline'));
+      return Promise.resolve(listed);
+    });
+
+    await runDownloadAll(harness);
+
+    expect(clicked).toEqual([downloadUrlOf('img1')]);
+    expectDescriptionCleared(toastWarning, 'Started 1 of 2 downloads. 1 could not be prepared.');
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('reports an error, with no stale file name under it, when nothing could be prepared', async () => {
+    const harness = await renderAssets();
+    routeFetch(
+      { [pageUrl(0)]: listResponse({ assets: [makeAsset({ id: 'bn1', provider: 'BUNNY' })] }) },
+      () => jsonResponse(false, { error: 'Download file not found' }, 404)
+    );
+
+    await runDownloadAll(harness);
+
+    expect(clicked).toEqual([]);
+    expectDescriptionCleared(toastError, 'None of the assets could be prepared for download');
+  });
+
+  it('downloads nothing when the list read is refused', async () => {
+    const harness = await renderAssets();
+    routeFetch({
+      [pageUrl(0)]: listResponse({ ok: false, status: 403, error: 'Access denied' }),
+    });
+
+    await runDownloadAll(harness);
+
+    expect(clicked).toEqual([]);
+    expect(toastError).toHaveBeenCalledWith('Access denied');
+    expect(harness.result.current.isDownloadingAll).toBe(false);
+  });
+
+  it('recovers from a network failure and can be run again', async () => {
+    const harness = await renderAssets();
+    fetchMock.mockImplementation((url: string) =>
+      url === pageUrl(0) ? Promise.reject(new Error('offline')) : Promise.resolve(listed)
+    );
+
+    await runDownloadAll(harness);
+
+    expectDescriptionCleared(toastError, 'Failed to download assets');
+    expect(harness.result.current.isDownloadingAll).toBe(false);
+
+    routeFetch({ [pageUrl(0)]: listResponse({ assets: [makeAsset({ id: 'img1' })] }) });
+    await runDownloadAll(harness);
+    expect(clicked).toEqual([downloadUrlOf('img1')]);
+  });
+
+  it('says so when the only assets are YouTube links', async () => {
+    const harness = await renderAssets();
+    routeFetch({
+      [pageUrl(0)]: listResponse({ assets: [makeAsset({ id: 'yt1', provider: 'YOUTUBE' })] }),
+    });
+
+    await runDownloadAll(harness);
+
+    expect(clicked).toEqual([]);
+    expect(toastError).toHaveBeenCalledWith('No downloadable assets on this video');
+  });
+
+  it('marks the run busy and guards the tab while files are queued, then releases both', async () => {
+    const harness = await renderAssets();
+    routeFetch({ [pageUrl(0)]: listResponse({ assets: images(2) }) });
+    expect(unloadGuardCount()).toBe(0);
+
+    let run!: Promise<void>;
+    await act(async () => {
+      run = harness.result.current.downloadAllAssets();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    // The button reads this flag to disable itself and show the spinner.
+    expect(harness.result.current.isDownloadingAll).toBe(true);
+    expect(unloadGuardCount()).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await run;
+    });
+
+    expect(harness.result.current.isDownloadingAll).toBe(false);
+    expect(unloadGuardCount()).toBe(0);
+  });
+
+  it('ignores a second click while the first run is still going', async () => {
+    const harness = await renderAssets();
+    const firstPage = deferred<ReturnType<typeof listResponse>>();
+    fetchMock.mockImplementation((url: string) =>
+      url === pageUrl(0) ? firstPage.promise : Promise.resolve(listed)
+    );
+
+    await act(async () => {
+      const first = harness.result.current.downloadAllAssets();
+      const second = harness.result.current.downloadAllAssets();
+      firstPage.resolve(listResponse({ assets: [makeAsset({ id: 'img1' })] }));
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.all([first, second]);
+    });
+
+    expect(callsTo(pageUrl(0))).toHaveLength(1);
+    expect(clicked).toEqual([downloadUrlOf('img1')]);
   });
 });
 

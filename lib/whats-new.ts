@@ -23,6 +23,12 @@ export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   },
   {
     date: '2026-09-30',
+    title: 'Download all assets',
+    description:
+      'The Assets tab of a video has a Download all button that saves every image, video and voice note attached to it in one go.',
+  },
+  {
+    date: '2026-09-30',
     title: 'Subtitle size and background',
     description:
       'Make subtitles smaller or larger and pick a translucent, solid or no background from the CC menu; your choice is kept for every video. Press C to turn subtitles on or off.',
