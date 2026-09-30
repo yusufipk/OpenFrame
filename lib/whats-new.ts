@@ -17,6 +17,12 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-09-30',
+    title: 'Subtitle size and background',
+    description:
+      'Make subtitles smaller or larger and pick a translucent, solid or no background from the CC menu; your choice is kept for every video. Press C to turn subtitles on or off.',
+  },
+  {
+    date: '2026-09-30',
     title: 'Brand a project for your client',
     description:
       "Give a project your client's color, a banner and a logo in its settings. Everyone who opens the project or one of its videos sees it in their brand.",
@@ -26,12 +32,6 @@ export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
     title: 'Shapes in drawings',
     description:
       'When you draw on a comment, the toolbar now has a rectangle, an ellipse, a straight line and an arrow next to the pen. Drag across the frame to mark exactly the part you mean.',
-  },
-  {
-    date: '2026-09-29',
-    title: 'Subtitle size and background',
-    description:
-      'Make subtitles smaller or larger and pick a translucent, solid or no background from the CC menu; your choice is kept for every video. Press C to turn subtitles on or off.',
   },
   {
     date: '2026-09-29',
