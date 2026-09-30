@@ -421,6 +421,11 @@ describe('POST /api/versions/[versionId]/comments', () => {
     ['a double-encoded JSON string', JSON.stringify([VALID_STROKE])],
     ['an array of arrays', [[VALID_STROKE]]],
     ['an array containing null', [null]],
+    ['a stroke with an unknown shape', [{ ...VALID_STROKE, shape: 'triangle' }]],
+    [
+      'a rectangle with three points',
+      [{ ...VALID_STROKE, shape: 'rectangle', points: [...VALID_STROKE.points, { x: 1, y: 1 }] }],
+    ],
   ])('rejects annotationData given as %s', async (_label, annotationData) => {
     const scenario = await seedVersion();
     signedInAs(scenario.owner);
@@ -495,6 +500,99 @@ describe('POST /api/versions/[versionId]/comments', () => {
     expect(stored.annotationData).toBe(JSON.stringify([VALID_STROKE]));
     expect(stored.annotationData).not.toContain('extraneous');
     expect(stored.annotationData).not.toContain('script');
+  });
+
+  // The validator rebuilds each stroke field by field, so a field it does not know about is
+  // dropped without an error. A rectangle saved that way comes back as a freehand diagonal.
+  it('keeps the shape of rectangle, ellipse, line and arrow strokes when creating a comment', async () => {
+    const scenario = await seedVersion();
+    signedInAs(scenario.owner);
+    const drawing = [
+      {
+        points: [
+          { x: 0.1, y: 0.1 },
+          { x: 0.4, y: 0.3 },
+        ],
+        color: '#FF3B30',
+        width: 4,
+        shape: 'rectangle',
+      },
+      {
+        points: [
+          { x: 0.2, y: 0.6 },
+          { x: 0.3, y: 0.8 },
+        ],
+        color: '#AF52DE',
+        width: 6,
+        shape: 'ellipse',
+      },
+      {
+        points: [
+          { x: 0.5, y: 0.5 },
+          { x: 0.6, y: 0.9 },
+        ],
+        color: '#007AFF',
+        width: 2,
+        shape: 'line',
+      },
+      {
+        points: [
+          { x: 0.9, y: 0.1 },
+          { x: 0.7, y: 0.2 },
+        ],
+        color: '#FFCC00',
+        width: 3,
+        shape: 'arrow',
+      },
+      VALID_STROKE,
+    ];
+
+    const response = await callRoute(
+      createCommentRoute,
+      apiRequest(commentsUrl(scenario.version.id), {
+        body: { timestamp: 1, annotationData: drawing },
+      }),
+      { versionId: scenario.version.id }
+    );
+
+    expect(response.status).toBe(201);
+    const stored = await db.comment.findFirstOrThrow();
+    expect(stored.annotationData).toBe(JSON.stringify(drawing));
+  });
+
+  it('keeps a shape when an edit replaces the drawing', async () => {
+    const scenario = await seedVersion();
+    const comment = await createComment({
+      versionId: scenario.version.id,
+      authorId: scenario.owner.id,
+      annotationData: JSON.stringify([VALID_STROKE]),
+    });
+    signedInAs(scenario.owner);
+    const drawing = [
+      {
+        points: [
+          { x: 0.2, y: 0.2 },
+          { x: 0.8, y: 0.6 },
+        ],
+        color: '#34C759',
+        width: 5,
+        shape: 'rectangle',
+      },
+    ];
+
+    const response = await callRoute(
+      patchCommentRoute,
+      apiRequest(`/api/comments/${comment.id}`, {
+        method: 'PATCH',
+        body: { annotationData: drawing },
+      }),
+      { commentId: comment.id }
+    );
+
+    expect(response.status).toBe(200);
+    expect((await db.comment.findUniqueOrThrow({ where: { id: comment.id } })).annotationData).toBe(
+      JSON.stringify(drawing)
+    );
   });
 
   it('rejects a parentId from another version', async () => {
