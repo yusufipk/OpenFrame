@@ -53,12 +53,14 @@ const DOWNLOAD_ALL_PAGE_SIZE = 100;
 /** Browsers drop or block anchor downloads fired in the same tick; a gap keeps each one. */
 const DOWNLOAD_ALL_STAGGER_MS = 500;
 /**
- * Mirrors the 'asset-download' rate limit in lib/rate-limit.ts (10 per minute per IP),
- * which a Bunny prepare call counts against too. The extra second absorbs clock skew
- * between this tab and the server's window. Keep the two in step.
+ * Stays under the 'asset-download' rate limit in lib/rate-limit.ts (120 per minute per
+ * IP), which a Bunny prepare call counts against too. The server's window is fixed and
+ * opens at the first request in it, which this tab cannot see, so the budget leaves 20
+ * requests for single downloads and other tabs on the same IP, and the extra second
+ * absorbs clock skew. Keep the two in step.
  */
-const ASSET_DOWNLOAD_BUDGET = 10;
-const ASSET_DOWNLOAD_WINDOW_MS = 61_000;
+export const ASSET_DOWNLOAD_BUDGET = 100;
+export const ASSET_DOWNLOAD_WINDOW_MS = 61_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,9 +79,15 @@ function createRequestPacer(budget: number, windowMs: number) {
     const now = Date.now();
     while (sentAt.length > 0 && now - sentAt[0]! >= windowMs) sentAt.shift();
     if (sentAt.length >= budget) {
-      const waitMs = windowMs - (now - sentAt[0]!);
-      onWait(waitMs);
-      await sleep(waitMs);
+      // Report the remaining wait every second so a countdown can tick. The first step
+      // is the fractional part, which leaves every later report on a whole second.
+      let waitMs = windowMs - (now - sentAt[0]!);
+      while (waitMs > 0) {
+        onWait(waitMs);
+        const step = waitMs % 1000 || 1000;
+        await sleep(step);
+        waitMs -= step;
+      }
       sentAt.shift();
     }
     sentAt.push(Date.now());
