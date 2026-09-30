@@ -121,7 +121,18 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: [check]
+    # No `needs: [check]`. This job is the longest one, and waiting for `check`
+    # to finish first added its whole duration to every run. A type error now
+    # costs one wasted e2e run instead of every green run costing that wait.
+    #
+    # The two suites run as separate jobs because they cannot share one
+    # Playwright invocation (different web servers, and live review needs a
+    # single worker), and back to back they were the critical path of the run.
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [main, live-review]
+    name: e2e (${{ matrix.suite }})
     # Runs directly on the runner rather than in the Playwright container image.
     # Two reasons, both learned the hard way. MinIO cannot be a `services:` entry
     # (see the step that starts it below), and starting it as a step needs a
@@ -222,19 +233,40 @@ jobs:
       - name: Install the Playwright browser
         # Only chromium: playwright.config.ts runs a desktop Chromium project and
         # a Pixel 7 project, and the mobile one is Chromium too.
-        run: bunx playwright install --with-deps chromium
+        #
+        # Without --with-deps unless something is actually missing. The runner
+        # image ships Chrome and its shared libraries already, so the apt step
+        # mostly downloaded fonts, and at the mirror's speed that took over a
+        # minute. The ldd check keeps this honest if a future image drops a
+        # library: the deps are installed then, rather than the launch failing.
+        run: |
+          bunx playwright install chromium
+          binaries=$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \))
+          if [ -z "$binaries" ]; then
+            echo "No Chromium binary found to check, installing system deps"
+            bunx playwright install-deps chromium
+            exit 0
+          fi
+          missing=$(echo "$binaries" | xargs ldd | grep 'not found' || true)
+          if [ -n "$missing" ]; then
+            echo "Missing shared libraries, installing system deps:"
+            echo "$missing"
+            bunx playwright install-deps chromium
+          fi
       # No `bun run test:db:bootstrap` step: tests/e2e/global-setup.ts calls the
       # same setup function before the web server starts, and also clears the
       # rate_limits table so a retry does not inherit a spent window.
       - name: End-to-end tests
+        if: matrix.suite == 'main'
         run: bun run test:e2e
       - name: Live review end-to-end tests
+        if: matrix.suite == 'live-review'
         run: bun run test:e2e:live-review
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.suite }}
           path: playwright-report/
           if-no-files-found: ignore
           retention-days: 7

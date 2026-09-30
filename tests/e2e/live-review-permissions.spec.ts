@@ -6,6 +6,7 @@ import type {
   LiveServerMessage,
   LiveSnapshot,
 } from '@/lib/live-review/protocol';
+import { LIVE_REVIEW_EMPTY_ROOM_GRACE_MS as GRACE_MS } from '../helpers/live-review';
 import { test, expect } from './fixtures';
 
 type Probe = {
@@ -615,7 +616,8 @@ test('empty disconnect grace keeps a rejoining presenter and ends an abandoned r
   });
   try {
     await closeRoomSocket(page, 'owner');
-    await page.waitForTimeout(16_000);
+    // Rejoin well inside the grace window.
+    await page.waitForTimeout(GRACE_MS / 2);
     const rejoinedId = await connectRoomSocket(
       page,
       'rejoined',
@@ -642,7 +644,9 @@ test('empty disconnect grace keeps a rejoining presenter and ends an abandoned r
         page.evaluate(() => (window as ProbeWindow).liveReviewPermissionSockets?.rejoined.closeCode)
       )
       .toBe(1000);
-    await page.waitForTimeout(6_000);
+    // Outlive the deadline the first disconnect set: an occupied room has to
+    // survive it.
+    await page.waitForTimeout(GRACE_MS / 2 + 2_000);
     const stillActive = await db.liveReviewSession.findUniqueOrThrow({ where: { id: session.id } });
     expect(stillActive.status).toBe('active');
     expect(
@@ -676,7 +680,7 @@ test('empty disconnect grace keeps a rejoining presenter and ends an abandoned r
       async () =>
         (await db.liveReviewSession.findUniqueOrThrow({ where: { id: abandonedSession.id } }))
           .status,
-      { timeout: 27_000 }
+      { timeout: GRACE_MS + 7_000 }
     )
     .toBe('ended');
   const ended = await db.liveReviewSession.findUniqueOrThrow({

@@ -540,7 +540,7 @@ Explicitly **not** tested here: everything in `components/ui/` (upstream shadcn/
   jobs:
     check: # existing: lint + format + typecheck
     test: # unit + component + api, with a postgres:16-alpine service
-    e2e: # playwright, needs: [check], uploads the report on failure
+    e2e: # playwright, main and live-review suites in parallel, uploads the report on failure
   ```
       `test` runs `bun run test && bun run test:api` with `DATABASE_URL` pointing at the
       service container and `prisma migrate deploy` first. `e2e` uses
