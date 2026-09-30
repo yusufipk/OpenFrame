@@ -1,7 +1,11 @@
+import type { Viewport } from 'next';
 import { VideoPageContent } from '@/components/video-page-content';
 import { ShareLinkBootstrap } from '@/components/share-link-bootstrap';
 import { ShareLinkUnlock } from '@/components/share-link-unlock';
 import { isS3VideoUploadsEnabled } from '@/lib/feature-flags';
+import { REVIEW_PAGE_VIEWPORT } from '@/components/video-page/stacked-layout';
+
+export const viewport: Viewport = REVIEW_PAGE_VIEWPORT;
 
 interface WatchPageProps {
   params: Promise<{ videoId: string }>;

@@ -427,9 +427,7 @@ export function VideoPageContent({
     cursorIdle,
     isFullscreenMode,
     showComments,
-    isMobileCommentsOpen,
     setShowComments,
-    setIsMobileCommentsOpen,
     handleVideoMouseMove,
     handleVideoMouseLeave,
     handlePlayPause,
@@ -439,8 +437,8 @@ export function VideoPageContent({
     handleSkip,
     handleSpeedChange,
     handleQualityChange,
-    handleTimelineMouseDown,
-    handleTimelineMouseMove,
+    handleTimelinePointerDown,
+    handleTimelinePointerMove,
     toggleFullscreen,
   } = useVideoPlayer({
     activeVersion,
@@ -796,7 +794,7 @@ export function VideoPageContent({
     setVideo,
   });
 
-  const containerHeight = 'h-screen';
+  const containerHeight = 'h-dvh';
   const backHref =
     mode === 'dashboard'
       ? `/projects/${propProjectId}`
@@ -959,13 +957,20 @@ export function VideoPageContent({
 
   return (
     <div
-      className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}
+      className={cn(containerHeight, 'group/page flex flex-col bg-background overflow-hidden')}
       style={brandStyle(video.branding?.color)}
     >
-      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
+      {/* Stacked on a short phone, the player and a usable comments pane can need more
+          than the screen, so the page scrolls there instead of clipping the composer. */}
+      <div className="flex-1 flex flex-col wide:flex-row overflow-y-auto wide:overflow-hidden min-h-0">
         <div
           className={cn(
-            'flex-1 w-full min-w-0 flex flex-col min-h-0',
+            'w-full min-w-0 flex flex-col',
+            // Stacked under the player, the comments take the leftover height, so the
+            // player column only grows to fill the screen when they are hidden.
+            isFullscreenMode || !showComments
+              ? 'flex-1 min-h-0'
+              : 'shrink-0 wide:flex-1 wide:min-h-0',
             isFullscreenMode && 'relative'
           )}
         >
@@ -1042,7 +1047,6 @@ export function VideoPageContent({
               toggleFullscreen={toggleFullscreen}
               showComments={showComments}
               setShowComments={setShowComments}
-              setIsMobileCommentsOpen={setIsMobileCommentsOpen}
               isAnnotating={isAnnotating}
               annotationCanvasRef={annotationCanvasRef}
               setAnnotationStrokes={setAnnotationStrokes}
@@ -1165,9 +1169,8 @@ export function VideoPageContent({
                 toggleFullscreen={toggleFullscreen}
                 showComments={showComments}
                 setShowComments={setShowComments}
-                setIsMobileCommentsOpen={setIsMobileCommentsOpen}
-                handleTimelineMouseDown={handleTimelineMouseDown}
-                handleTimelineMouseMove={handleTimelineMouseMove}
+                handleTimelinePointerDown={handleTimelinePointerDown}
+                handleTimelinePointerMove={handleTimelinePointerMove}
                 handleSeekToTimestamp={handleSeekToTimestamp}
                 commentMarkers={commentMarkers}
               />
@@ -1177,9 +1180,6 @@ export function VideoPageContent({
 
         <CommentsPane
           isImage={isImage}
-          isMobileCommentsOpen={isMobileCommentsOpen}
-          setIsMobileCommentsOpen={setIsMobileCommentsOpen}
-          isFullscreenMode={isFullscreenMode}
           showComments={showComments}
           comments={comments}
           filteredComments={filteredComments}

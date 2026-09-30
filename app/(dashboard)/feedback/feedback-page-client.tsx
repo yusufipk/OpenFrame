@@ -192,7 +192,7 @@ export default function FeedbackPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] px-4 py-10">
+    <div className="min-h-[calc(100dvh-4rem)] px-4 py-10">
       <div className="mx-auto w-full max-w-3xl space-y-6">
         <Link
           href="/dashboard"

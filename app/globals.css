@@ -4,6 +4,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The review page puts the player beside the comments when there is width to
+   spare (desktop, or a phone held sideways) and stacks them otherwise. The two
+   queries are exact complements, so every element matches exactly one. */
+@custom-variant wide {
+  @media (width >= 64rem) {
+    @slot;
+  }
+  @media (orientation: landscape) and (height < 32rem) {
+    @slot;
+  }
+}
+@custom-variant narrow {
+  @media (width < 64rem) and (orientation: portrait) {
+    @slot;
+  }
+  @media (width < 64rem) and (height >= 32rem) {
+    @slot;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

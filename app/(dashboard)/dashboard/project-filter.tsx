@@ -119,7 +119,7 @@ export function ProjectFilter({
                 router.push(`${pathname}?${createQueryString('ws', val)}`);
               }}
             >
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue placeholder="All Workspaces" />
               </SelectTrigger>
               <SelectContent>

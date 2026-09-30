@@ -1215,7 +1215,7 @@ export const AssetsPane = memo(function AssetsPane({
               <p className="text-xs text-muted-foreground">
                 If set, this name will be used in @asset mentions.
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground pointer-coarse:hidden">
                 Tip: paste an image with Ctrl/Cmd+V, or drop multiple files onto this panel.
               </p>
               {pendingImageFiles.length > 0 ? (

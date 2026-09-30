@@ -119,7 +119,7 @@ export const CommentComposer = memo(function CommentComposer({
       : null;
 
   return (
-    <div className="shrink-0 p-4 border-t bg-background">
+    <div className="shrink-0 p-3 lg:p-4 border-t bg-background">
       {isRecording && liveDrawingControls}
       {isRecording ? (
         <div className="flex items-center gap-3 p-3 bg-destructive/10 border border-destructive/30 rounded-lg">
@@ -280,15 +280,17 @@ export const CommentComposer = memo(function CommentComposer({
               </Button>
             )}
           </div>
-          <div className="flex gap-2 items-stretch">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
             <div className="flex-1 min-w-0">
+              {/* On a phone, upright or sideways, the box starts at two lines and grows
+                  with the text. 16px there keeps iOS from zooming in on focus. */}
               <MentionTextarea
                 placeholder="Add a comment..."
                 value={commentText}
                 onChange={setCommentText}
                 assets={assets}
                 rows={6}
-                className="resize-none text-sm min-h-[180px] w-full"
+                className="resize-none text-base min-h-16 max-h-40 lg:text-sm lg:min-h-[180px] lg:max-h-none w-full"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                     handleAddComment();
@@ -297,7 +299,7 @@ export const CommentComposer = memo(function CommentComposer({
                 onPaste={handlePaste}
               />
             </div>
-            <div className="flex flex-col gap-1 self-end">
+            <div className="flex flex-row-reverse gap-1 self-end lg:flex-col">
               <Button
                 size="icon"
                 onClick={handleAddComment}
@@ -412,7 +414,7 @@ export const CommentComposer = memo(function CommentComposer({
               )}
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">Cmd+Enter to submit</p>
+          <p className="hidden text-xs text-muted-foreground mt-2 lg:block">Cmd+Enter to submit</p>
         </>
       )}
     </div>

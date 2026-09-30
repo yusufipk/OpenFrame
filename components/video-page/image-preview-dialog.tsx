@@ -29,7 +29,7 @@ export const ImagePreviewDialog = memo(function ImagePreviewDialog({
     <Dialog open={!!previewImage} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-none sm:max-w-none w-screen h-screen max-h-screen p-0 overflow-hidden bg-black/90 border-none shadow-none flex items-center justify-center rounded-none"
+        className="max-w-none sm:max-w-none w-screen h-dvh max-h-dvh p-0 overflow-hidden bg-black/90 border-none shadow-none flex items-center justify-center rounded-none"
         onClick={onClose}
         onKeyDown={(event) => {
           event.stopPropagation();
@@ -41,7 +41,7 @@ export const ImagePreviewDialog = memo(function ImagePreviewDialog({
       >
         <DialogTitle className="sr-only">{title || 'Image Preview'}</DialogTitle>
         <div
-          className="w-[min(96vw,1500px)] h-[min(94vh,1000px)] border border-border/60 bg-black/80 shadow-2xl flex flex-col overflow-hidden"
+          className="w-[min(96vw,1500px)] h-[min(94dvh,1000px)] border border-border/60 bg-black/80 shadow-2xl flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="shrink-0 flex items-center gap-2 border-b border-border/60 bg-background/85 px-2 py-1.5 backdrop-blur-sm">

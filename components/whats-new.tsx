@@ -103,7 +103,7 @@ export function WhatsNewButton() {
       </TooltipProvider>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="flex max-h-[80vh] flex-col gap-0 p-0 sm:max-w-md">
+        <DialogContent className="flex max-h-[80dvh] flex-col gap-0 p-0 sm:max-w-md">
           <DialogHeader className="border-b px-5 pt-5 pb-4">
             <DialogTitle className="flex items-center gap-2 text-base">
               <Sparkles className="h-4 w-4 text-primary" />

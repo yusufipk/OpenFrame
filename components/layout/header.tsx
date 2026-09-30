@@ -120,7 +120,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      'flex items-center gap-2 whitespace-nowrap px-3 py-3 text-sm font-medium rounded-md transition-colors',
                       pathname === item.href
                         ? 'bg-accent text-accent-foreground'
                         : 'hover:bg-accent hover:text-accent-foreground'
@@ -134,7 +134,7 @@ export function Header({ user, showAppNavigation = false }: HeaderProps) {
                 <Link
                   href="/admin"
                   className={cn(
-                    'flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                    'flex items-center gap-2 whitespace-nowrap px-3 py-3 text-sm font-medium rounded-md transition-colors',
                     pathname.startsWith('/admin')
                       ? 'bg-accent text-accent-foreground'
                       : 'hover:bg-accent hover:text-accent-foreground'

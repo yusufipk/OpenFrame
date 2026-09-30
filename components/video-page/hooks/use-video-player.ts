@@ -118,6 +118,7 @@ export function useVideoPlayer({
   const [isDragging, setIsDragging] = useState(false);
   const activeDragging = isDragging && !playbackLocked;
   const isDraggingRef = useRef(false);
+  const scrubPointerIdRef = useRef<number | null>(null);
   // Scrubbing: the playhead position is driven directly via DOM (rAF) to avoid
   // per-frame React re-renders. These refs feed that loop.
   const dragTimeRef = useRef(0);
@@ -144,7 +145,6 @@ export function useVideoPlayer({
   const bunnyFrameSampleRef = useRef<{ mediaTime: number; presentedFrames: number } | null>(null);
   const [isFullscreenMode, setIsFullscreenMode] = useState(false);
   const [showComments, setShowComments] = useState(true);
-  const [isMobileCommentsOpen, setIsMobileCommentsOpen] = useState(false);
   // Keyboard/button seeks have no drag to key the readout off, so flash it for a
   // moment instead — stepping frame by frame is exactly when the count matters.
   const [isSeekReadoutVisible, setIsSeekReadoutVisible] = useState(false);
@@ -899,6 +899,20 @@ export function useVideoPlayer({
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
+      // iPhone Safari has no element fullscreen, only the native player's own
+      // fullscreen on a <video>. It hides our overlays, but it is the only way
+      // there to fill the screen.
+      if (typeof document.documentElement.requestFullscreen !== 'function') {
+        const videoEl = videoRef.current as
+          | (HTMLVideoElement & { webkitEnterFullscreen?: () => void })
+          | null;
+        if (videoEl && typeof videoEl.webkitEnterFullscreen === 'function') {
+          videoEl.webkitEnterFullscreen();
+        } else {
+          toast.error('Fullscreen is not supported in this browser');
+        }
+        return;
+      }
       document.documentElement
         .requestFullscreen()
         .then(() => {
@@ -921,7 +935,7 @@ export function useVideoPlayer({
           toast.error('Unable to exit fullscreen mode');
         });
     }
-  }, []);
+  }, [videoRef]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -1336,10 +1350,15 @@ export function useVideoPlayer({
     return timeFromClientXWithin(clientX, dragRectRef.current, durationRef.current);
   }, []);
 
-  const handleTimelineMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleTimelinePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
       if (playbackLocked) return;
       if (!timelineRef.current) return;
+      // A secondary mouse button should not start a scrub; touch and pen report 0.
+      if (e.button !== 0) return;
+      // A second finger landing on the bar mid-drag must not restart the scrub.
+      if (isDraggingRef.current) return;
+      scrubPointerIdRef.current = e.pointerId;
       dismissAnnotation();
       // Cache the rect once for the whole drag; the rAF loop reads dragTimeRef.
       dragRectRef.current = timelineRef.current.getBoundingClientRect();
@@ -1366,10 +1385,10 @@ export function useVideoPlayer({
     ]
   );
 
-  const handleTimelineMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleTimelinePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
       if (playbackLocked) return;
-      if (!isDraggingRef.current) return;
+      if (!isDraggingRef.current || e.pointerId !== scrubPointerIdRef.current) return;
       const newTime = timeFromClientX(e.clientX);
       dragTimeRef.current = newTime;
       setCurrentTime(newTime);
@@ -1404,26 +1423,35 @@ export function useVideoPlayer({
     }
   }, [playbackLocked, playerRef, videoRef]);
 
-  const handleTimelineMouseUp = useCallback(() => {
+  const handleTimelinePointerUp = useCallback(() => {
     endScrub();
   }, [endScrub]);
 
-  // While dragging, track the cursor anywhere on the page (not just over the
+  // While dragging, track the pointer anywhere on the page (not just over the
   // timeline) so a fast or off-bar drag keeps scrubbing smoothly, and release
-  // anywhere to commit the seek.
+  // anywhere to commit the seek. Pointer events cover mouse, touch and pen alike;
+  // a cancelled touch (the browser taking over the gesture) commits like a release.
   useEffect(() => {
     if (!activeDragging) return;
-    const onMove = (e: MouseEvent) => {
-      if (playbackLocked) return;
+    // Only the pointer that started the scrub drives it: a second finger on the
+    // video must neither move the playhead nor end the drag.
+    const isScrubPointer = (e: PointerEvent) => e.pointerId === scrubPointerIdRef.current;
+    const onMove = (e: PointerEvent) => {
+      if (playbackLocked || !isScrubPointer(e)) return;
       const newTime = timeFromClientX(e.clientX);
       dragTimeRef.current = newTime;
       setCurrentTime(newTime);
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', endScrub);
+    const onEnd = (e: PointerEvent) => {
+      if (isScrubPointer(e)) endScrub();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', endScrub);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
     };
   }, [activeDragging, playbackLocked, timeFromClientX, endScrub]);
 
@@ -1451,9 +1479,7 @@ export function useVideoPlayer({
     cursorIdle,
     isFullscreenMode,
     showComments,
-    isMobileCommentsOpen,
     setShowComments,
-    setIsMobileCommentsOpen,
     handleVideoMouseMove,
     handleVideoMouseLeave,
     handlePlayPause,
@@ -1463,9 +1489,9 @@ export function useVideoPlayer({
     handleSkip,
     handleSpeedChange,
     handleQualityChange,
-    handleTimelineMouseDown,
-    handleTimelineMouseMove,
-    handleTimelineMouseUp,
+    handleTimelinePointerDown,
+    handleTimelinePointerMove,
+    handleTimelinePointerUp,
     toggleFullscreen,
   };
 }

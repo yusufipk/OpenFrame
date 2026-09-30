@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useVideoPlayer } from '@/components/video-page/hooks/use-video-player';
 import type { PlayerAdapter, Version } from '@/components/video-page/types';
@@ -196,8 +196,22 @@ function pressKey(
   return event;
 }
 
-function mouseEventAt(clientX: number) {
-  return { clientX } as React.MouseEvent<HTMLDivElement>;
+const PRIMARY_POINTER = 1;
+
+function pointerEventAt(clientX: number, button = 0) {
+  return { clientX, button, pointerId: PRIMARY_POINTER } as React.PointerEvent<HTMLDivElement>;
+}
+
+// jsdom has no PointerEvent constructor; a MouseEvent carries the same clientX,
+// the listener matches on the event type, and the pointer id is added by hand.
+function windowPointer(
+  type: 'pointermove' | 'pointerup' | 'pointercancel',
+  clientX = 0,
+  pointerId = PRIMARY_POINTER
+) {
+  const event = new MouseEvent(type, { clientX });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  window.dispatchEvent(event);
 }
 
 beforeEach(() => {
@@ -293,7 +307,7 @@ describe('useVideoPlayer seeking', () => {
     act(() => result.current.handlePlayPause());
     expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
     act(() => result.current.handleSeekToTimestamp(12, annotation, { pauseAfterSeek: true }));
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(50)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(50)));
     expect(params.setViewingAnnotation).toHaveBeenLastCalledWith(null);
   });
 
@@ -467,17 +481,17 @@ describe('useVideoPlayer frame stepping', () => {
 describe('useVideoPlayer scrubbing', () => {
   it('cancels a drag when playback control moves to another participant', () => {
     const { result, video, params, rerender } = renderPlayer();
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(10)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(10)));
     expect(result.current.isDragging).toBe(true);
     expect(video.currentTime).toBe(6);
 
     rerender({ ...params, playbackLocked: true });
     expect(result.current.isDragging).toBe(false);
     act(() => {
-      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 90 }));
+      windowPointer('pointermove', 90);
       video.currentTime = 2;
       video.fire('timeupdate');
-      window.dispatchEvent(new MouseEvent('mouseup'));
+      windowPointer('pointerup');
     });
     expect(result.current.currentTime).toBe(2);
     expect(video.currentTime).toBe(2);
@@ -487,7 +501,7 @@ describe('useVideoPlayer scrubbing', () => {
   it('seeks to the fraction of the duration the pointer landed on', () => {
     const { result, video } = renderPlayer();
 
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(TIMELINE_WIDTH / 2)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(TIMELINE_WIDTH / 2)));
 
     expect(result.current.isDragging).toBe(true);
     expect(result.current.currentTime).toBe(DURATION / 2);
@@ -498,30 +512,82 @@ describe('useVideoPlayer scrubbing', () => {
   it('clamps a drag dragged off either end of the timeline', () => {
     const { result } = renderPlayer();
 
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(-500)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(-500)));
     expect(result.current.currentTime).toBe(0);
 
-    act(() => result.current.handleTimelineMouseMove(mouseEventAt(5000)));
+    act(() => result.current.handleTimelinePointerMove(pointerEventAt(5000)));
     expect(result.current.currentTime).toBe(DURATION);
   });
 
   it('tracks the pointer even when it leaves the timeline', () => {
     const { result } = renderPlayer();
 
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(10)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(10)));
     act(() => {
-      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 75 }));
+      windowPointer('pointermove', 75);
     });
 
     expect(result.current.currentTime).toBe(45);
   });
 
+  it('ignores a secondary mouse button on the timeline', () => {
+    const { result, video } = renderPlayer();
+
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(50, 2)));
+
+    expect(result.current.isDragging).toBe(false);
+    expect(result.current.currentTime).toBe(0);
+    expect(video.currentTime).toBe(0);
+  });
+
+  it('commits a touch drag the browser cancels, at the last position it saw', () => {
+    const { result, video } = renderPlayer();
+
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(10)));
+    act(() => windowPointer('pointermove', 75));
+    act(() => windowPointer('pointercancel'));
+
+    expect(result.current.isDragging).toBe(false);
+    expect(video.currentTime).toBe(45);
+  });
+
+  it('ignores a second finger while one is scrubbing', () => {
+    const { result, video } = renderPlayer();
+
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(10)));
+    act(() => windowPointer('pointermove', 90, 2));
+    act(() => windowPointer('pointerup', 90, 2));
+
+    expect(result.current.isDragging).toBe(true);
+    expect(result.current.currentTime).toBe(6);
+
+    act(() => windowPointer('pointermove', 75));
+    act(() => windowPointer('pointerup'));
+
+    expect(result.current.isDragging).toBe(false);
+    expect(video.currentTime).toBe(45);
+  });
+
+  it('ignores a second finger moving across the timeline itself', () => {
+    const { result } = renderPlayer();
+
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(10)));
+    act(() =>
+      result.current.handleTimelinePointerMove({
+        clientX: 90,
+        pointerId: 2,
+      } as React.PointerEvent<HTMLDivElement>)
+    );
+
+    expect(result.current.currentTime).toBe(6);
+  });
+
   it('commits the final position to the video element on release', () => {
     const { result, video } = renderPlayer();
 
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(10)));
-    act(() => result.current.handleTimelineMouseMove(mouseEventAt(90)));
-    act(() => result.current.handleTimelineMouseUp());
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(10)));
+    act(() => result.current.handleTimelinePointerMove(pointerEventAt(90)));
+    act(() => result.current.handleTimelinePointerUp());
 
     expect(result.current.isDragging).toBe(false);
     expect(result.current.currentTime).toBe(54);
@@ -533,19 +599,19 @@ describe('useVideoPlayer scrubbing', () => {
     startPlayback(video);
     video.play.mockClear();
 
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(50)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(50)));
     expect(video.pause).toHaveBeenCalled();
     expect(video.play).not.toHaveBeenCalled();
 
-    act(() => result.current.handleTimelineMouseUp());
+    act(() => result.current.handleTimelinePointerUp());
     expect(video.play).toHaveBeenCalled();
   });
 
   it('leaves a paused video paused after a drag', () => {
     const { result, video } = renderPlayer();
 
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(50)));
-    act(() => result.current.handleTimelineMouseUp());
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(50)));
+    act(() => result.current.handleTimelinePointerUp());
 
     expect(video.play).not.toHaveBeenCalled();
   });
@@ -556,7 +622,7 @@ describe('useVideoPlayer scrubbing', () => {
     measureFrameRate(video, 25);
     stopPlayback(video);
 
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(TIMELINE_WIDTH / 2)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(TIMELINE_WIDTH / 2)));
 
     // Halfway through a 60s clip at 25fps is second 30, frame 750.
     expect(readout.textContent).toBe('30s · f750');
@@ -590,9 +656,9 @@ describe('useVideoPlayer cursor idling', () => {
     // first; the element then reports the pause the scrub asked for and the
     // resume on release.
     act(() => result.current.handleVideoMouseLeave());
-    act(() => result.current.handleTimelineMouseDown(mouseEventAt(50)));
+    act(() => result.current.handleTimelinePointerDown(pointerEventAt(50)));
     stopPlayback(video);
-    act(() => result.current.handleTimelineMouseUp());
+    act(() => result.current.handleTimelinePointerUp());
     startPlayback(video);
     act(() => vi.advanceTimersByTime(IDLE_DELAY_MS * 5));
     expect(result.current.cursorIdle).toBe(false);
@@ -831,5 +897,27 @@ describe('useVideoPlayer keyboard shortcuts', () => {
     expect(video.play).not.toHaveBeenCalled();
     expect(result.current.currentTime).toBe(20);
     expect(video.muted).toBe(false);
+  });
+});
+
+describe('useVideoPlayer fullscreen', () => {
+  it("falls back to the video's native fullscreen where the page cannot go fullscreen", () => {
+    // iPhone Safari has no Element.requestFullscreen. The test setup stubs one,
+    // so hide it on this element for the duration of the test.
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      value: undefined,
+      configurable: true,
+    });
+    onTestFinished(() => {
+      delete (document.documentElement as { requestFullscreen?: unknown }).requestFullscreen;
+    });
+    const { result, video } = renderPlayer();
+    const webkitEnterFullscreen = vi.fn();
+    Object.assign(video, { webkitEnterFullscreen });
+
+    act(() => result.current.toggleFullscreen());
+
+    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    expect(result.current.isFullscreenMode).toBe(false);
   });
 });

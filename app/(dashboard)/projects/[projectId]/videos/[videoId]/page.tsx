@@ -1,3 +1,4 @@
+import type { Viewport } from 'next';
 import { VideoPageContent } from '@/components/video-page-content';
 import { auth } from '@/lib/auth';
 import {
@@ -6,6 +7,9 @@ import {
   isS3VideoUploadsEnabled,
 } from '@/lib/feature-flags';
 import { requireVideoProjectAccessOrRedirect } from '@/lib/route-access';
+import { REVIEW_PAGE_VIEWPORT } from '@/components/video-page/stacked-layout';
+
+export const viewport: Viewport = REVIEW_PAGE_VIEWPORT;
 
 interface VideoPageProps {
   params: Promise<{ projectId: string; videoId: string }>;

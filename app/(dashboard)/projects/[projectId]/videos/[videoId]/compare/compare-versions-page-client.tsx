@@ -129,6 +129,7 @@ export default function CompareVersionsPageClient({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const scrubPointerIdRef = useRef<number | null>(null);
   const { cursorIdle, handleVideoMouseMove, handleVideoMouseLeave } = useCursorIdle(isPlaying);
   const timelineRef = useRef<HTMLDivElement>(null);
 
@@ -370,9 +371,15 @@ export default function CompareVersionsPageClient({
     setCurrentTime(time);
   }, []);
 
-  const handleTimelineMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (!timelineRef.current || durationRef.current <= 0) return;
+  // Pointer events with capture, so a drag works with a finger as well as a mouse
+  // and keeps tracking after it leaves the bar.
+  const handleTimelinePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!timelineRef.current || durationRef.current <= 0 || e.button !== 0) return;
+      // A second finger landing mid-drag must not restart or steal the scrub.
+      if (scrubPointerIdRef.current !== null) return;
+      scrubPointerIdRef.current = e.pointerId;
+      e.currentTarget.setPointerCapture(e.pointerId);
       setIsDragging(true);
       const rect = timelineRef.current.getBoundingClientRect();
       const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -384,9 +391,10 @@ export default function CompareVersionsPageClient({
     [handleSeek]
   );
 
-  const handleTimelineMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!isDragging || !timelineRef.current || durationRef.current <= 0) return;
+  const handleTimelinePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDragging || e.pointerId !== scrubPointerIdRef.current) return;
+      if (!timelineRef.current || durationRef.current <= 0) return;
       const rect = timelineRef.current.getBoundingClientRect();
       const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const time = fraction * durationRef.current;
@@ -403,11 +411,16 @@ export default function CompareVersionsPageClient({
     [isDragging]
   );
 
-  const handleTimelineMouseUp = useCallback(() => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    handleSeek(currentTimeRef.current);
-  }, [isDragging, handleSeek]);
+  const handleTimelinePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.pointerId !== scrubPointerIdRef.current) return;
+      scrubPointerIdRef.current = null;
+      if (!isDragging) return;
+      setIsDragging(false);
+      handleSeek(currentTimeRef.current);
+    },
+    [isDragging, handleSeek]
+  );
 
   // Keyboard shortcuts (matching video page)
   useEffect(() => {
@@ -522,7 +535,7 @@ export default function CompareVersionsPageClient({
 
   if (loading) {
     return (
-      <div className="h-screen flex flex-col bg-background overflow-hidden">
+      <div className="h-dvh flex flex-col bg-background overflow-hidden">
         <div className="shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50">
           <div className="flex items-center gap-3">
             <Skeleton className="h-4 w-24" />
@@ -552,7 +565,7 @@ export default function CompareVersionsPageClient({
 
   if (error || !video || video.versions.length < 2) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
+      <div className="h-dvh flex items-center justify-center bg-background">
         <div className="text-center">
           <p className="text-muted-foreground mb-4">
             {error || 'Need at least 2 versions to compare'}
@@ -566,11 +579,7 @@ export default function CompareVersionsPageClient({
   }
 
   return (
-    <div
-      className="h-screen flex flex-col bg-background overflow-hidden"
-      onMouseUp={handleTimelineMouseUp}
-      onMouseLeave={() => isDragging && handleTimelineMouseUp()}
-    >
+    <div className="h-dvh flex flex-col bg-background overflow-hidden">
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50">
         <div className="flex items-center gap-3">
@@ -591,7 +600,9 @@ export default function CompareVersionsPageClient({
       </div>
 
       {/* Video panels */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      {/* Side by side from md up; stacked and scrolling on a phone, where two
+          panels in a row would each be about 180px wide. */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden min-h-0">
         {panelVersionIds.map((versionId, index) => {
           const version = video.versions.find((v) => v.id === versionId);
           if (!version) return null;
@@ -602,7 +613,8 @@ export default function CompareVersionsPageClient({
           return (
             <div
               key={`${versionId}-${index}`}
-              className="flex-1 flex flex-col border-r last:border-r-0 min-w-0 overflow-hidden"
+              className="flex-1 flex flex-col border-b last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 min-w-0 min-h-72 md:min-h-0 overflow-hidden"
+              data-testid="compare-panel"
             >
               {/* Panel header */}
               <div className="shrink-0 flex items-center justify-between p-2 border-b bg-muted/30">
@@ -853,9 +865,11 @@ export default function CompareVersionsPageClient({
 
         <div
           ref={timelineRef}
-          className="relative h-8 bg-muted rounded cursor-pointer select-none"
-          onMouseDown={handleTimelineMouseDown}
-          onMouseMove={handleTimelineMouseMove}
+          className="relative h-8 bg-muted rounded cursor-pointer select-none touch-none"
+          onPointerDown={handleTimelinePointerDown}
+          onPointerMove={handleTimelinePointerMove}
+          onPointerUp={handleTimelinePointerUp}
+          onPointerCancel={handleTimelinePointerUp}
         >
           {/* Progress bar */}
           <div
@@ -876,6 +890,9 @@ export default function CompareVersionsPageClient({
             return (
               <button
                 key={comment.id}
+                // Otherwise the timeline captures the pointer and the click never
+                // reaches the marker, so the seek lands on the tap position.
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleSeek(comment.timestamp);

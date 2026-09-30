@@ -926,7 +926,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                   placeholder="123456789"
                   value={telegramChatId}
                   onChange={(e) => setTelegramChatId(e.target.value)}
-                  className="mt-1 font-mono text-sm"
+                  className="mt-1 font-mono"
                 />
               </div>
 

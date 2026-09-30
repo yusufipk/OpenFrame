@@ -12,7 +12,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   ]);
 
   return (
-    <div className="relative flex min-h-screen flex-col">
+    <div className="relative flex min-h-dvh flex-col">
       <Header user={session?.user ?? null} showAppNavigation={showAppNavigation} />
       {trialNotice ? <TrialBanner notice={trialNotice} /> : null}
       <main className="flex-1">{children}</main>

@@ -17,7 +17,7 @@ function PlayerPanelSkeleton() {
 
 export default function CompareLoading() {
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
+    <div className="h-dvh flex flex-col bg-background overflow-hidden">
       <div className="shrink-0 flex items-center justify-between h-12 px-4 border-b bg-background/50">
         <div className="flex items-center gap-3">
           <Skeleton className="h-4 w-24" />

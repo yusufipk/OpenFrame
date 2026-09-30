@@ -90,8 +90,8 @@ test('the timeline, the arrow keys and frame mode all move the video element', a
   const box = await timeline.boundingBox();
   if (!box) throw new Error('The scrub bar has no layout box.');
 
-  // Three quarters along a two second video is 1.5s. mousedown alone commits
-  // the seek (handleTimelineMouseDown), so a plain click is enough.
+  // Three quarters along a two second video is 1.5s. A click is a pointerdown
+  // and a pointerup, which is a whole scrub (handleTimelinePointerDown).
   await timeline.click({ position: { x: box.width * 0.75, y: box.height / 2 } });
   await expect.poll(() => currentTime(page)).toBeGreaterThan(1.2);
   await expect(page.getByText(`0:01 / 0:0${SAMPLE_DURATION_SECONDS}`)).toBeVisible();
