@@ -1,8 +1,9 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { notifyLiveReviewComments } from '@/lib/live-review/notify';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, projectAccessInclude } from '@/lib/auth';
+import { projectAccessInclude } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -39,9 +40,9 @@ function normalizeEtag(value: string): string {
 }
 
 // GET /api/versions/[versionId]/comments
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { versionId } = await params;
     const userId = session?.user?.id;
 
@@ -181,7 +182,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/versions/[versionId]/comments
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   let attachmentReservationId: string | null = null;
   // Carried out of the try so the catch below can scope the release to the
   // account the hold was opened against.
@@ -190,7 +191,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const limited = await rateLimit(request, 'comment');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { versionId } = await params;
     const userId = session?.user?.id;
 
@@ -610,3 +611,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to create comment');
   }
 }
+
+export const GET = withApiToken('comments:read', handleGet);
+export const POST = withApiToken('comments:write', handlePost);

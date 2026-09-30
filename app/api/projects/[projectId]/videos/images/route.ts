@@ -1,5 +1,5 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { checkUploadDestination } from '@/lib/content-access';
 import { contentId, ContentError } from '@/lib/content-mutations';
 import { db } from '@/lib/db';
@@ -23,11 +23,11 @@ function optionalText(value: FormDataEntryValue | null, maxLength: number): stri
   return value.trim() || null;
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'create-video');
     if (limited) return limited;
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
     const { projectId } = await params;
     if (!hasR2Config())
@@ -104,3 +104,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to upload image review');
   }
 }
+
+export const POST = withApiToken('upload', handlePost);

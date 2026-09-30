@@ -1,7 +1,7 @@
 import { checkVideoAccess, type ContentClient } from '@/lib/content-access';
 import type { NextRequest } from 'next/server';
 import type { VideoAsset } from '@prisma/client';
-import { auth } from '@/lib/auth';
+import { getSession } from '@/lib/api-tokens';
 import { db } from '@/lib/db';
 import { getGuestIdentityFromRequest } from '@/lib/guest-identity';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -141,7 +141,7 @@ export async function getVideoAssetAccessContext(
   requiredPermission: 'VIEW' | 'COMMENT' = 'VIEW',
   client: ContentClient = db
 ): Promise<VideoAssetAccessContext | null> {
-  const session = await auth();
+  const session = await getSession();
   const video = await client.video.findUnique({
     where: { id: videoId },
     select: {

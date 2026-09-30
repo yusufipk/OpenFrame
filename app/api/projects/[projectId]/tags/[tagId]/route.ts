@@ -1,6 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
@@ -8,12 +9,12 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ projectId: string; tagId: string }> };
 
 // PATCH /api/projects/[projectId]/tags/[tagId] - Update a tag
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, tagId } = await params;
 
     if (!session?.user?.id) {
@@ -78,12 +79,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/projects/[projectId]/tags/[tagId] - Delete a tag
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, tagId } = await params;
 
     if (!session?.user?.id) {
@@ -120,3 +121,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete tag');
   }
 }
+
+export const PATCH = withApiToken('comments:write', handlePatch);
+export const DELETE = withApiToken('comments:write', handleDelete);

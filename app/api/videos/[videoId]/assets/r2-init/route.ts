@@ -1,3 +1,4 @@
+import { withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { db } from '@/lib/db';
@@ -39,7 +40,7 @@ const VIDEO_RESERVATION_TTL_MS = 2 * 60 * 60 * 1000;
 const THUMBNAIL_RESERVE_BYTES = BigInt(512 * 1024);
 
 // POST /api/videos/[videoId]/assets/r2-init
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'asset-r2-init');
     if (limited) return limited;
@@ -174,7 +175,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/videos/[videoId]/assets/r2-init
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'asset-r2-init');
     if (limited) return limited;
@@ -282,3 +283,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to cleanup pending upload');
   }
 }
+
+export const POST = withApiToken('upload', handlePost);
+export const DELETE = withApiToken('upload', handleDelete);

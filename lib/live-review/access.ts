@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
+import { getSession } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { db } from '@/lib/db';
 import { ensureGuestIdentityFromRequest } from '@/lib/guest-identity';
@@ -23,7 +23,7 @@ export async function resolveLiveViewer(
   videoId: string,
   guestName?: string
 ): Promise<LiveViewer> {
-  const session = await auth();
+  const session = await getSession();
   const userId = session?.user?.id ?? null;
   const access = await checkVideoAccess(videoId, userId ?? undefined);
   const shareSession = getShareSessionFromRequest(request, videoId);

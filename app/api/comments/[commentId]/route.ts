@@ -1,8 +1,8 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { notifyLiveReviewComments } from '@/lib/live-review/notify';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { rateLimit } from '@/lib/rate-limit';
@@ -27,9 +27,9 @@ const CLEANUP_DELETE_CONCURRENCY = 5;
 type RouteParams = { params: Promise<{ commentId: string }> };
 
 // GET /api/comments/[commentId]
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { commentId } = await params;
 
     const comment = await db.comment.findUnique({
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/comments/[commentId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   // Carried out of the try so the catch below can scope the release to the
   // account the hold was opened against.
   let attachmentReservationId: string | null = null;
@@ -122,7 +122,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { commentId } = await params;
     const body = await request.json();
     const { content, isResolved, tagId, annotationData } = body;
@@ -427,12 +427,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/comments/[commentId]
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { commentId } = await params;
 
     const comment = await db.comment.findUnique({
@@ -570,3 +570,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete comment');
   }
 }
+
+export const GET = withApiToken('comments:read', handleGet);
+export const PATCH = withApiToken('comments:write', handlePatch);
+export const DELETE = withApiToken('comments:write', handleDelete);

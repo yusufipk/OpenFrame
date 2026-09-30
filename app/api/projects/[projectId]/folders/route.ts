@@ -1,7 +1,8 @@
+import { apiTokenScopeRefusal, getSession, withApiToken } from '@/lib/api-tokens';
+import type { ApiTokenScope } from '@/lib/api-token-scopes';
 import { NextRequest } from 'next/server';
 import { randomBytes } from 'crypto';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { checkFolderAccess, checkVideoAccess, visibleFolderWhere } from '@/lib/content-access';
 import {
@@ -30,9 +31,9 @@ function failure(error: unknown) {
   return apiErrors.internalError('Content operation failed');
 }
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
     const { projectId } = await params;
     const folders = await db.projectFolder.findMany({
@@ -61,11 +62,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+// One POST does every folder job, so an API token is checked against the job it
+// asked for: organising is `manage`, anything that decides who can see the
+// content is `share`, and removing a folder is `delete`. Moving is both, since
+// what moves takes on the access of where it lands.
+const FOLDER_ACTION_SCOPES: Record<string, readonly ApiTokenScope[]> = {
+  create: ['manage'],
+  rename: ['manage'],
+  move: ['manage', 'share'],
+  moveVideos: ['manage', 'share'],
+  members: ['share'],
+  invite: ['share'],
+  revokeMember: ['share'],
+  revokeInvitation: ['share'],
+  access: ['share'],
+  delete: ['delete'],
+};
+
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
     const userId = session.user.id;
     const { projectId } = await params;
@@ -73,6 +91,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const folderId = contentId(body.folderId);
     const videoId = contentId(body.videoId);
     const action = body.action;
+    // An action this map does not know is refused below anyway; asking for
+    // `manage` keeps a token from learning anything more than a browser would.
+    const requiredScopes = Object.prototype.hasOwnProperty.call(FOLDER_ACTION_SCOPES, action)
+      ? FOLDER_ACTION_SCOPES[action]
+      : (['manage'] as const);
+    for (const scope of requiredScopes) {
+      const scopeRefusal = apiTokenScopeRefusal(scope);
+      if (scopeRefusal) return scopeRefusal;
+    }
     if (action === 'moveVideos') {
       if (
         !Array.isArray(body.videoIds) ||
@@ -246,3 +273,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return failure(error);
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const POST = withApiToken(['manage', 'share', 'delete'], handlePost);

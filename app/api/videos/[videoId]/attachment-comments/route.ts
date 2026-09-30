@@ -1,6 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import type { Prisma } from '@prisma/client';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import {
   attachmentCommentTargetKey,
@@ -107,10 +107,10 @@ function serializeComment(
   };
 }
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { videoId } = await params;
-    const userId = (await auth())?.user?.id;
+    const userId = (await getSession())?.user?.id;
     const video = await db.video.findUnique({
       where: { id: videoId },
       select: { id: true, projectId: true },
@@ -268,12 +268,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'comment');
     if (limited) return limited;
     const { videoId } = await params;
-    const userId = (await auth())?.user?.id;
+    const userId = (await getSession())?.user?.id;
     const video = await db.video.findUnique({
       where: { id: videoId },
       select: { id: true, projectId: true },
@@ -440,3 +440,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to create attachment comment');
   }
 }
+
+export const GET = withApiToken('comments:read', handleGet);
+export const POST = withApiToken('comments:write', handlePost);

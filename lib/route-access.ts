@@ -1,6 +1,7 @@
 import { checkVideoAccess, visibleFolderWhere, visibleVideoWhere } from '@/lib/content-access';
 import { notFound, redirect } from 'next/navigation';
-import { auth, checkProjectAccess, checkWorkspaceAccess } from '@/lib/auth';
+import { checkProjectAccess, checkWorkspaceAccess } from '@/lib/auth';
+import { getSession } from '@/lib/api-tokens';
 import { buildBillingAccessWhereInput, hasBillingAccess } from '@/lib/billing';
 import { db } from '@/lib/db';
 
@@ -68,7 +69,7 @@ async function assertProjectAccessOrRedirect(
 }
 
 export async function requireAuthOrRedirect() {
-  const session = await auth();
+  const session = await getSession();
   if (!session?.user?.id) {
     redirectForMissingAuth();
   }
@@ -76,7 +77,7 @@ export async function requireAuthOrRedirect() {
 }
 
 export async function requireBillingAccessOrRedirect(options?: { userId?: string }) {
-  const resolvedUserId = options?.userId ?? (await auth())?.user?.id;
+  const resolvedUserId = options?.userId ?? (await getSession())?.user?.id;
 
   if (!resolvedUserId) {
     redirectForMissingAuth();
@@ -157,7 +158,7 @@ export async function requireWorkspaceAccessOrRedirect(options: {
   intent?: AccessIntent;
 }) {
   const { workspaceId, userId, intent = 'view' } = options;
-  const resolvedUserId = userId ?? (await auth())?.user?.id;
+  const resolvedUserId = userId ?? (await getSession())?.user?.id;
 
   if (!resolvedUserId) {
     redirectForMissingAuth();
@@ -205,7 +206,7 @@ export async function requireProjectAccessOrRedirect(options: {
   allowPublicView?: boolean;
 }) {
   const { projectId, userId, intent = 'view', allowPublicView = false } = options;
-  const resolvedUserId = userId ?? (await auth())?.user?.id;
+  const resolvedUserId = userId ?? (await getSession())?.user?.id;
 
   // Fail closed before resource lookup when the route is not public.
   if (!resolvedUserId && !allowPublicView) {
@@ -241,7 +242,7 @@ export async function requireVideoProjectAccessOrRedirect(options: {
   allowPublicView?: boolean;
 }) {
   const { projectId, videoId, userId, intent = 'view', allowPublicView = false } = options;
-  const resolvedUserId = userId ?? (await auth())?.user?.id;
+  const resolvedUserId = userId ?? (await getSession())?.user?.id;
 
   // Fail closed before resource lookup when the route is not public.
   if (!resolvedUserId && !allowPublicView) {

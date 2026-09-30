@@ -1,7 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { contentTransaction, ContentError } from '@/lib/content-mutations';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { db } from '@/lib/db';
 import { logCleanupWarnings } from '@/lib/cleanup-warnings';
@@ -14,12 +14,12 @@ type RouteParams = { params: Promise<{ projectId: string }> };
 const MAX_BULK_DELETE = 50;
 
 // POST /api/projects/[projectId]/videos/bulk-delete
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -119,3 +119,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete selected videos');
   }
 }
+
+export const POST = withApiToken('delete', handlePost);

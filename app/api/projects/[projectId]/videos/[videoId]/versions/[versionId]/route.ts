@@ -1,7 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
@@ -38,12 +38,12 @@ async function getVersionWithAccess(
 }
 
 // PATCH /api/projects/[projectId]/videos/[videoId]/versions/[versionId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, videoId, versionId } = await params;
 
     if (!session?.user?.id) {
@@ -95,12 +95,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/projects/[projectId]/videos/[videoId]/versions/[versionId]
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, videoId, versionId } = await params;
 
     if (!session?.user?.id) {
@@ -184,3 +184,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete version');
   }
 }
+
+export const PATCH = withApiToken('manage', handlePatch);
+export const DELETE = withApiToken('delete', handleDelete);

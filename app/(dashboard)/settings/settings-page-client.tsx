@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { CancelSubscriptionDialog } from '@/components/settings/cancel-subscription-dialog';
+import { ApiTokensCard } from '@/components/settings/api-tokens-card';
 import type { CancellationReason } from '@/lib/cancellation-reasons';
 
 /** Convert Stripe API units separately from the currency's display precision. */
@@ -797,6 +798,10 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
           </CardContent>
         </Card>
       )}
+
+      {/* Outside the billing-only gate: someone whose plan lapsed still has to be
+          able to revoke a token, which would work again the day they resubscribe. */}
+      <ApiTokensCard />
 
       {!billingOnly && (
         <>

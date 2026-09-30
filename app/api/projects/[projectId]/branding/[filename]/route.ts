@@ -1,5 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { checkFolderAccess, checkVideoAccess } from '@/lib/content-access';
 import { validateShareLinkAccess } from '@/lib/share-links';
@@ -59,7 +60,7 @@ async function canViewBranding(
 }
 
 // GET /api/projects/[projectId]/branding/[filename] - Serve the project's banner or logo
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { projectId, filename } = await params;
 
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           brandLogoKey: true,
         },
       }),
-      auth(),
+      getSession(),
     ]);
 
     // Only the project's current banner or logo is served here, never an arbitrary object.
@@ -108,3 +109,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to retrieve branding image');
   }
 }
+
+export const GET = withApiToken('read', handleGet);

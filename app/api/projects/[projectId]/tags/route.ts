@@ -1,7 +1,8 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -11,9 +12,9 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ projectId: string }> };
 
 // GET /api/projects/[projectId]/tags - Get all tags for a project
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
     const videoId = request.nextUrl.searchParams.get('videoId');
 
@@ -83,12 +84,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/projects/[projectId]/tags - Create a new tag
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -145,3 +146,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to create tag');
   }
 }
+
+export const GET = withApiToken('comments:read', handleGet);
+export const POST = withApiToken('comments:write', handlePost);

@@ -1,3 +1,4 @@
+import { withApiToken } from '@/lib/api-tokens';
 import crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -49,7 +50,7 @@ const BUNNY_RESERVATION_TTL_MS = 2 * 60 * 60 * 1000;
 const GUEST_BUNNY_RESERVATION_TTL_MS = 30 * 60 * 1000;
 
 // POST /api/videos/[videoId]/assets/bunny-init
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'asset-bunny-init');
     if (limited) return limited;
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/videos/[videoId]/assets/bunny-init
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'asset-bunny-init');
     if (limited) return limited;
@@ -273,3 +274,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to cleanup pending upload');
   }
 }
+
+export const POST = withApiToken('upload', handlePost);
+export const DELETE = withApiToken('upload', handleDelete);

@@ -1,7 +1,8 @@
+import { apiTokenScopeRefusal, getSession, withApiToken } from '@/lib/api-tokens';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { collectProjectMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
@@ -13,9 +14,9 @@ import { normalizeBrandColor, toProjectBranding, withoutBrandKeys } from '@/lib/
 type RouteParams = { params: Promise<{ projectId: string }> };
 
 // GET /api/projects/[projectId] - Get a single project
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
     const MAX_LIMIT = 100;
     const MAX_OFFSET = 10000;
@@ -98,12 +99,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/projects/[projectId] - Update a project
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -142,6 +143,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const VALID_VISIBILITY = ['PRIVATE', 'INVITE', 'PUBLIC'] as const;
+    // Who can see the project and whether they can download from it are sharing
+    // decisions, so an API token needs `share` for them on top of `manage`.
+    if (visibility !== undefined || allowDownloads !== undefined) {
+      const scopeRefusal = apiTokenScopeRefusal('share');
+      if (scopeRefusal) return scopeRefusal;
+    }
+
     if (visibility !== undefined && !VALID_VISIBILITY.includes(visibility)) {
       return apiErrors.badRequest('Invalid visibility value');
     }
@@ -183,12 +191,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/projects/[projectId] - Delete a project
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -265,3 +273,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete project');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const PATCH = withApiToken('manage', handlePatch);
+export const DELETE = withApiToken('delete', handleDelete);

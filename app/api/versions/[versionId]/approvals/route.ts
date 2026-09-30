@@ -1,7 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess, visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getApprovalCandidatesForProject } from '@/lib/approval-workflow';
 import { notifyUsers } from '@/lib/notifications';
@@ -16,9 +16,9 @@ function isSerializableConflict(error: unknown): boolean {
 }
 
 // GET /api/versions/[versionId]/approvals
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
 
     const { versionId } = await params;
@@ -66,12 +66,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/versions/[versionId]/approvals
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
 
     const { versionId } = await params;
@@ -203,3 +203,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to create approval request');
   }
 }
+
+export const GET = withApiToken('approvals', handleGet);
+export const POST = withApiToken('approvals', handlePost);

@@ -1,6 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { InvitationRole, ProjectMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import {
@@ -15,9 +16,9 @@ import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 type RouteParams = { params: Promise<{ projectId: string }> };
 
 // GET /api/projects/[projectId]/members - List members
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -90,12 +91,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/projects/[projectId]/members - Invite a member
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'invite-member');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -181,3 +182,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to invite member');
   }
 }
+
+export const GET = withApiToken('share', handleGet);
+export const POST = withApiToken('share', handlePost);

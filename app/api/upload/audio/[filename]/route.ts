@@ -1,6 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -25,7 +25,7 @@ function getContentType(filename: string): string {
   return CONTENT_TYPE_MAP[ext] || 'audio/webm';
 }
 
-export async function GET(
+async function handleGet(
   request: NextRequest,
   { params }: { params: Promise<{ filename: string }> }
 ) {
@@ -66,7 +66,7 @@ export async function GET(
         take: 2,
         select: { video: { select: videoSelect } },
       }),
-      auth(),
+      getSession(),
     ]);
 
     const uniqueVideos = new Map<string, (typeof videoAssets)[number]['video']>();
@@ -120,3 +120,5 @@ export async function GET(
     return apiErrors.internalError('Failed to retrieve audio');
   }
 }
+
+export const GET = withApiToken('read', handleGet);

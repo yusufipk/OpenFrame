@@ -1,3 +1,4 @@
+import { withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { VideoAssetProvider } from '@prisma/client';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -81,7 +82,7 @@ function imageContentTypeFromFileName(fileName: string): string {
 }
 
 // GET /api/videos/[videoId]/assets/[assetId]/download
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'asset-download');
     if (limited) return limited;
@@ -260,3 +261,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to download asset');
   }
 }
+
+export const GET = withApiToken('download', handleGet);

@@ -1,8 +1,8 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { visibleVideoWhere, checkFolderAccess } from '@/lib/content-access';
 import { contentId, contentTransaction, ContentError } from '@/lib/content-mutations';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { validateUrl, validateOptionalUrlOrAppPath } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
@@ -16,9 +16,9 @@ import { eventKey, recordEvent } from '@/lib/analytics/record';
 type RouteParams = { params: Promise<{ projectId: string }> };
 
 // GET /api/projects/[projectId]/videos - List all videos in a project
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     // Check project exists and user has access
@@ -70,12 +70,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/projects/[projectId]/videos - Add a new video to the project
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'create-video');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -341,3 +341,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to create video');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const POST = withApiToken('upload', handlePost);

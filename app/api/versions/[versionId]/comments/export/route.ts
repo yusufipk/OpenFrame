@@ -1,6 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import {
   buildCommentsCsv,
@@ -16,12 +16,12 @@ type RouteParams = { params: Promise<{ versionId: string }> };
 const MAX_EXPORT_COMMENTS = 5000;
 
 // GET /api/versions/[versionId]/comments/export?format=csv|pdf&includeResolved=true|false
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'comment-export');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) {
       return apiErrors.unauthorized('Authentication required for exports');
     }
@@ -164,3 +164,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to export comments');
   }
 }
+
+export const GET = withApiToken('comments:read', handleGet);

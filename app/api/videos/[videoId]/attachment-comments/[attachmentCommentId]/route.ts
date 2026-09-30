@@ -1,5 +1,5 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { checkVideoAccess } from '@/lib/content-access';
 import { db } from '@/lib/db';
@@ -31,12 +31,12 @@ function belongsToVideo(
   );
 }
 
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'comment');
     if (limited) return limited;
     const { videoId, attachmentCommentId } = await params;
-    const userId = (await auth())?.user?.id;
+    const userId = (await getSession())?.user?.id;
     const video = await db.video.findUnique({
       where: { id: videoId },
       select: { projectId: true },
@@ -126,3 +126,5 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete attachment comment');
   }
 }
+
+export const DELETE = withApiToken('comments:write', handleDelete);

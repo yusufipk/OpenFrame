@@ -1,7 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkUploadDestination } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { parseR2UploadToken, verifyR2UploadToken } from '@/lib/r2-upload-token';
@@ -49,12 +49,12 @@ function parseParts(raw: unknown): IncomingPart[] | null {
 }
 
 // POST /api/projects/[projectId]/videos/r2-complete
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -156,3 +156,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to complete upload');
   }
 }
+
+export const POST = withApiToken('upload', handlePost);

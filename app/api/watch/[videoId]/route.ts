@@ -1,7 +1,7 @@
+import { apiTokenLacksScope, getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
@@ -14,18 +14,20 @@ import { toProjectBranding } from '@/lib/project-branding';
 type RouteParams = { params: Promise<{ videoId: string }> };
 
 // GET /api/watch/[videoId] - Public watch endpoint (no projectId needed)
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     // Rate limit: 60 requests per minute per IP for public watch endpoint
     const limited = await rateLimit(request, 'watch', { windowMs: 60 * 1000, maxRequests: 60 });
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { videoId } = await params;
 
     // Parse query params
     const searchParams = request.nextUrl.searchParams;
-    const includeComments = searchParams.get('includeComments') === 'true';
+    // Comment content is `comments:read`; a token with only `read` gets the video without it.
+    const includeComments =
+      searchParams.get('includeComments') === 'true' && !apiTokenLacksScope('comments:read');
 
     const video = await db.video.findUnique({
       where: { id: videoId },
@@ -230,3 +232,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to fetch video');
   }
 }
+
+export const GET = withApiToken('read', handleGet);

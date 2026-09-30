@@ -62,7 +62,7 @@ OpenFrame is built for video teams that want one system for review, revision, ap
 - Videos can include related assets such as images, supplementary videos, and audio.
 - Notification settings support email and Telegram delivery.
 - Self-hosted setups can run with bundled S3-compatible storage or external object storage.
-- Optional integrations include Stripe billing, Bunny direct uploads, OAuth providers, SMTP, and Telegram notifications.
+- Optional integrations include Stripe billing, Bunny direct uploads, OAuth providers, SMTP, and Telegram notifications, and scoped [API tokens](docs/api.md) let scripts and AI agents work without a browser.
 
 ## Stack
 

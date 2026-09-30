@@ -1,6 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getApprovalCandidatesForProject } from '@/lib/approval-workflow';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -9,9 +10,9 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ projectId: string }> };
 
 // GET /api/projects/[projectId]/approval-candidates
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
 
     const { projectId } = await params;
@@ -44,3 +45,5 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to fetch approval candidates');
   }
 }
+
+export const GET = withApiToken('approvals', handleGet);

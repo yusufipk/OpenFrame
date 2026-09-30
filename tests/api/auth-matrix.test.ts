@@ -87,6 +87,8 @@ import * as videoVersionRoute from '@/app/api/projects/[projectId]/videos/[video
 import * as projectsRoute from '@/app/api/projects/route';
 import * as searchRoute from '@/app/api/search/route';
 import * as settingsNotificationsRoute from '@/app/api/settings/notifications/route';
+import * as settingsApiTokensRoute from '@/app/api/settings/api-tokens/route';
+import * as settingsApiTokenRoute from '@/app/api/settings/api-tokens/[tokenId]/route';
 import * as settingsPreferencesRoute from '@/app/api/settings/preferences/route';
 import * as settingsStorageRoute from '@/app/api/settings/storage/route';
 import * as uploadAudioFileRoute from '@/app/api/upload/audio/[filename]/route';
@@ -162,7 +164,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 79;
+const EXPECTED_ROUTE_MODULE_COUNT = 81;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -239,6 +241,7 @@ interface Fixtures {
   subtitleId: string;
   approvalRequestId: string;
   feedbackId: string;
+  apiTokenId: string;
 }
 
 async function seedFixtures(): Promise<Fixtures> {
@@ -348,6 +351,17 @@ async function seedFixtures(): Promise<Fixtures> {
     },
   });
 
+  // A real token, so the revoke route's refusal comes from its session check and
+  // not from an id that resolves to nothing.
+  const apiToken = await db.apiToken.create({
+    data: {
+      userId: owner.id,
+      name: 'Matrix fixture token',
+      tokenHash: 'matrix-fixture-token-hash',
+      prefix: 'of_pat_matrix',
+    },
+  });
+
   return {
     userId: owner.id,
     workspaceId: workspace.id,
@@ -365,6 +379,7 @@ async function seedFixtures(): Promise<Fixtures> {
     subtitleId: subtitle.id,
     approvalRequestId: approvalRequest.id,
     feedbackId: feedback.id,
+    apiTokenId: apiToken.id,
   };
 }
 
@@ -674,6 +689,20 @@ const ROUTE_CASES: readonly RouteCase[] = [
     module: settingsNotificationsRoute,
     url: () => '/api/settings/notifications',
     body: { emailEnabled: true },
+  },
+  {
+    file: 'settings/api-tokens/route.ts',
+    module: settingsApiTokensRoute,
+    url: () => '/api/settings/api-tokens',
+    headers: { origin: 'http://localhost:3000' },
+    body: { name: 'anon token' },
+  },
+  {
+    file: 'settings/api-tokens/[tokenId]/route.ts',
+    module: settingsApiTokenRoute,
+    url: (f) => `/api/settings/api-tokens/${f.apiTokenId}`,
+    params: (f) => ({ tokenId: f.apiTokenId }),
+    headers: { origin: 'http://localhost:3000' },
   },
   {
     file: 'settings/preferences/route.ts',
