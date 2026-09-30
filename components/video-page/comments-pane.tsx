@@ -284,7 +284,7 @@ export const CommentsPane = memo(function CommentsPane({
             <p className="text-sm font-medium text-primary">Drop images to attach</p>
           </div>
         )}
-        <div className="shrink-0 p-3 wide:p-4 border-b flex flex-wrap items-center gap-2 max-lg:group-has-[textarea:focus]/page:hidden">
+        <div className="shrink-0 p-3 wide:p-4 border-b flex flex-wrap items-center gap-2 cramped:group-has-[textarea:focus]/page:hidden">
           <div className="flex min-w-0 items-center justify-between gap-2">
             <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
               <Button

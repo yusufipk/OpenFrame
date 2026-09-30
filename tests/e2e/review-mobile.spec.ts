@@ -65,6 +65,41 @@ test('a guest on a phone sees the player and the comments on one screen', async 
   expect(toolbarBox.y).toBeGreaterThanOrEqual(frameBox.y + frameBox.height);
 });
 
+test('a landscape window narrower than a desktop keeps the comments beside the player', async ({
+  page,
+  seed,
+}) => {
+  const owner = await seed.user();
+  const seeded = await seed.version(owner, { title: `Half Window ${Date.now()}` });
+  const feedback = `Beside the player ${Date.now()}`;
+  await seed.comment({ versionId: seeded.versionId, authorId: owner.id, content: feedback });
+  const link = await seed.shareLink({ projectId: seeded.project.id, videoId: seeded.videoId });
+
+  // A half-width desktop window on a high-density screen: under the 64rem desktop
+  // breakpoint, but landscape. It once stacked the comments under a full-width player.
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.goto(`/s/${link.token}`);
+  await page.getByPlaceholder('Your name').fill('Window Reviewer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  const player = page.locator('iframe').first();
+  const comment = page.getByText(feedback);
+  await expect(comment).toBeInViewport();
+  const playerBox = await player.boundingBox();
+  const commentBox = await comment.boundingBox();
+  if (!playerBox || !commentBox) throw new Error('The player or the comment has no layout box.');
+  expect(commentBox.x).toBeGreaterThanOrEqual(playerBox.x + playerBox.width);
+
+  // The script's copy of the breakpoint agrees: the drawing toolbar floats over
+  // the player here instead of dropping under it as on a phone.
+  await page.getByRole('button', { name: 'Draw annotation on video' }).click();
+  const toolbar = page.getByRole('group', { name: 'Drawing tool' });
+  await expect(toolbar).toBeVisible();
+  const toolbarBox = await toolbar.boundingBox();
+  if (!toolbarBox) throw new Error('The drawing toolbar has no layout box.');
+  expect(toolbarBox.y).toBeLessThan(playerBox.y + playerBox.height);
+});
+
 signedInTest(
   'compare stacks the versions on a phone instead of squeezing them side by side',
   async ({ page, seed, seededUser }) => {
