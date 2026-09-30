@@ -24,4 +24,4 @@ export const REVIEW_PAGE_VIEWPORT = {
  * phone layout), for the few places that have to know the layout in script. Keep the
  * two in step.
  */
-export const STACKED_LAYOUT_QUERY = '(width < 64rem) and (orientation: portrait), (width < 40rem)';
+export const STACKED_LAYOUT_QUERY = '(width < 64rem) and (aspect-ratio < 4/3), (width < 40rem)';

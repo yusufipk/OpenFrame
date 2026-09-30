@@ -89,6 +89,15 @@ test('a landscape window narrower than a desktop keeps the comments beside the p
   const commentBox = await comment.boundingBox();
   if (!playerBox || !commentBox) throw new Error('The player or the comment has no layout box.');
   expect(commentBox.x).toBeGreaterThanOrEqual(playerBox.x + playerBox.width);
+
+  // The script's copy of the breakpoint agrees: the drawing toolbar floats over
+  // the player here instead of dropping under it as on a phone.
+  await page.getByRole('button', { name: 'Draw annotation on video' }).click();
+  const toolbar = page.getByRole('group', { name: 'Drawing tool' });
+  await expect(toolbar).toBeVisible();
+  const toolbarBox = await toolbar.boundingBox();
+  if (!toolbarBox) throw new Error('The drawing toolbar has no layout box.');
+  expect(toolbarBox.y).toBeLessThan(playerBox.y + playerBox.height);
 });
 
 signedInTest(
