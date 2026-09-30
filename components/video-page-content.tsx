@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect, useMemo, type SetStateAction 
 import Hls from 'hls.js';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { brandStyle } from '@/lib/project-branding';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
 import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
 import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
@@ -955,7 +956,10 @@ export function VideoPageContent({
   }
 
   return (
-    <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
+    <div
+      className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}
+      style={brandStyle(video.branding?.color)}
+    >
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
         <div
           className={cn(
@@ -969,6 +973,7 @@ export function VideoPageContent({
             backHref={backHref}
             title={video.title}
             projectName={video.project.name}
+            projectLogoUrl={video.branding?.logoUrl ?? null}
             isFullscreenMode={isFullscreenMode}
             cursorIdle={cursorIdle}
             isPlaying={isPlaying}

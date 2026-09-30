@@ -64,6 +64,7 @@ import {
 } from '@/lib/client/project-download';
 import { downloadProgressPercent } from '@/lib/client/download-file';
 import { beginUnloadGuard } from '@/lib/client/unload-guard';
+import { ProjectBrandLogo } from '@/components/project-branding';
 import { parseProjectContentSort, projectContentSortLabels } from '@/lib/project-content-sort';
 import {
   createDownloadProgressToast,
@@ -92,6 +93,8 @@ interface ProjectContentClientProps {
     members: { role: string }[];
   };
   projectId: string;
+  /** Client logo shown next to the project name, when the project is branded. */
+  logoUrl?: string | null;
   folderId?: string | null;
   folders: FolderEntry[];
   canSeeRoot: boolean;
@@ -113,6 +116,7 @@ interface ProjectContentClientProps {
 export function ProjectContentClient({
   project,
   projectId,
+  logoUrl = null,
   folderId = null,
   folders,
   canSeeRoot,
@@ -366,6 +370,7 @@ export function ProjectContentClient({
       <div className="space-y-5 mb-6">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
+            {logoUrl ? <ProjectBrandLogo src={logoUrl} /> : null}
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
             <Badge variant="outline" className="flex items-center gap-1">
               {project.visibility === 'PUBLIC' && <Globe className="h-3 w-3" />}

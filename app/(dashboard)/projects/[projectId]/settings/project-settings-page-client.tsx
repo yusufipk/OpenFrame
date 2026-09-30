@@ -33,6 +33,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import type { ProjectBranding } from '@/lib/project-branding';
+import { ProjectBrandingCard } from './project-branding-card';
 
 type Visibility = 'PRIVATE' | 'INVITE' | 'PUBLIC';
 
@@ -92,6 +94,7 @@ export default function ProjectSettingsPageClient({
     visibility: 'PRIVATE' as Visibility,
     allowDownloads: false,
   });
+  const [branding, setBranding] = useState<ProjectBranding | null>(null);
   const deleteNameMatches = !requireDeleteNameConfirmation || deleteConfirmation === formData.name;
 
   // Tag management state
@@ -118,6 +121,7 @@ export default function ProjectSettingsPageClient({
             visibility: project.visibility || 'PRIVATE',
             allowDownloads: project.allowDownloads ?? false,
           });
+          setBranding(project.branding ?? null);
         }
       })
       .catch(() => setError('Failed to load project'))
@@ -421,6 +425,12 @@ export default function ProjectSettingsPageClient({
               </form>
             </CardContent>
           </Card>
+
+          <ProjectBrandingCard
+            projectId={projectId}
+            projectName={formData.name}
+            initialBranding={branding}
+          />
 
           {/* Comment Tags */}
           <Card id="comment-tags" className="border-border/50 shadow-lg">

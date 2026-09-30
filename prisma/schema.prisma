@@ -239,6 +239,11 @@ model Project {
 
   // Whether non-admin viewers may download project media
   allowDownloads Boolean @default(false)
+
+  // Client branding shown to everyone who opens the project
+  brandColor     String? // "#rrggbb"
+  brandBannerKey String? // R2 object key, branding/<uuid>.<ext>
+  brandLogoKey   String? // R2 object key, branding/<uuid>.<ext>
   
   // Ownership
   ownerId     String

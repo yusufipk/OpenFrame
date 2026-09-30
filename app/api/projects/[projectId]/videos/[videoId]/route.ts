@@ -10,6 +10,7 @@ import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
+import { toProjectBranding, withoutBrandKeys } from '@/lib/project-branding';
 import { canDownloadProjectMedia } from '@/lib/project-download';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
@@ -135,12 +136,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const response = successResponse({
       ...video,
       project: access.hasProjectAccess
-        ? video.project
+        ? withoutBrandKeys(video.project)
         : {
             id: video.projectId,
             name: 'Shared video',
             allowDownloads: video.project.allowDownloads,
           },
+      branding: toProjectBranding(video.projectId, video.project, { videoId: video.id }),
       isAuthenticated: !!session?.user?.id,
       currentUserId: session?.user?.id || null,
       currentUserName: session?.user?.name || null,

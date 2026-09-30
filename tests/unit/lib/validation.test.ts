@@ -233,6 +233,73 @@ describe('validateAnnotationStrokes', () => {
     expect(Object.getPrototypeOf(result![0])).toBe(Object.prototype);
   });
 
+  it.each(['rectangle', 'ellipse', 'line', 'arrow'])(
+    'keeps the %s shape on a two-point stroke',
+    (shape) => {
+      const input = [
+        stroke({
+          points: [
+            { x: 0.1, y: 0.2 },
+            { x: 0.7, y: 0.9 },
+          ],
+          shape,
+        }),
+      ];
+
+      expect(validateAnnotationStrokes(input)).toEqual([
+        {
+          points: [
+            { x: 0.1, y: 0.2 },
+            { x: 0.7, y: 0.9 },
+          ],
+          color: '#FF3B30',
+          width: 4,
+          shape,
+        },
+      ]);
+    }
+  );
+
+  it('writes no shape key for a freehand stroke', () => {
+    expect(Object.keys(validateAnnotationStrokes([stroke()])![0]).sort()).toEqual([
+      'color',
+      'points',
+      'width',
+    ]);
+  });
+
+  it.each([
+    ['an unknown shape name', { shape: 'triangle' }],
+    ['an explicit freehand shape', { shape: 'freehand' }],
+    ['a non-string shape', { shape: 1 }],
+    ['a null shape', { shape: null }],
+    ['a rectangle with one point', { shape: 'rectangle', points: [{ x: 0, y: 0 }] }],
+    ['an arrow with no points', { shape: 'arrow', points: [] }],
+    [
+      'an arrow whose start and end are the same point',
+      {
+        shape: 'arrow',
+        points: [
+          { x: 0.4, y: 0.4 },
+          { x: 0.4, y: 0.4 },
+        ],
+      },
+    ],
+    [
+      'a line with three points',
+      {
+        shape: 'line',
+        points: [
+          { x: 0, y: 0 },
+          { x: 0.5, y: 0.5 },
+          { x: 1, y: 1 },
+        ],
+      },
+    ],
+  ])('rejects a stroke with %s', (_label, overrides) => {
+    expect(validateAnnotationStrokes([stroke(overrides)])).toBeNull();
+  });
+
   it('accepts a null-prototype stroke object', () => {
     const nullProto = Object.assign(Object.create(null), stroke());
 

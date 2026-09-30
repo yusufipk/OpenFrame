@@ -20,11 +20,11 @@ type ProxyR2MediaOptions = {
 };
 
 // Every key this proxy is ever asked for is a prefix plus a stored uuid file name. The
-// guard lives here rather than in each caller so it travels with the function: all three
-// call sites gate the file name on a strict pattern first, and a fourth that forgot would
+// guard lives here rather than in each caller so it travels with the function: every
+// call site gates the file name on a strict pattern first, and a new one that forgot would
 // otherwise hand a traversal straight to GetObject.
 const SAFE_MEDIA_OBJECT_KEY =
-  /^(?:images|voice|videos|subtitles)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+  /^(?:images|voice|videos|subtitles|branding)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
 
 export function isSafeR2MediaKey(key: string): boolean {
   return SAFE_MEDIA_OBJECT_KEY.test(key);
