@@ -51,6 +51,11 @@ import { useApprovals } from '@/components/video-page/hooks/use-approvals';
 import { useVideoAssets } from '@/components/video-page/hooks/use-video-assets';
 import { useSubtitles } from '@/components/video-page/hooks/use-subtitles';
 import { useYoutubeCaptions } from '@/components/video-page/hooks/use-youtube-captions';
+import {
+  pickCaptionToggleLanguage,
+  useSubtitleAppearance,
+} from '@/components/video-page/hooks/subtitle-appearance';
+import { readStoredSubtitleLanguage } from '@/components/video-page/hooks/subtitle-preference';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { getSpeedOptionsForProvider } from '@/components/video-page/hooks/video-player-utils';
 import type { AttachmentCommentTarget } from '@/lib/attachment-comment-target';
@@ -116,6 +121,7 @@ export function VideoPageContent({
   const scheduleWatchProgressSaveRef = useRef<
     (input: { progress: number; duration?: number; immediate?: boolean; force?: boolean }) => void
   >(() => {});
+  const toggleCaptionsRef = useRef<() => void>(() => {});
 
   const {
     playingVoiceId,
@@ -454,6 +460,7 @@ export function VideoPageContent({
     speedOptions,
     scheduleWatchProgressSaveRef,
     setViewingAnnotation,
+    toggleCaptionsRef,
     playbackLocked: liveReview.playbackLocked,
   });
 
@@ -474,6 +481,8 @@ export function VideoPageContent({
     [handleLocalSeekToTimestamp, isLiveReviewJoined, selectLiveComment]
   );
 
+  const { subtitleAppearance, setSubtitleAppearance } = useSubtitleAppearance();
+
   const { youtubeCaptionTracks, activeYoutubeCaptionLanguage, selectYoutubeCaptionLanguage } =
     useYoutubeCaptions({
       videoId,
@@ -482,6 +491,7 @@ export function VideoPageContent({
       enabled: activeProviderId === 'youtube',
       isReady,
       moduleRevision: youtubeModuleRevision,
+      captionSize: subtitleAppearance.size,
     });
 
   // One CC menu, two sources behind it. A YouTube version can only offer the captions the
@@ -494,6 +504,38 @@ export function VideoPageContent({
   const selectCaptionLanguage = isYoutubeVersion
     ? selectYoutubeCaptionLanguage
     : selectSubtitleLanguage;
+
+  // The language the shortcut brings back after it has turned subtitles off. Turning them
+  // off also forgets the stored preference, so this is the only place it survives.
+  const lastCaptionLanguageRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeCaptionLanguage) lastCaptionLanguageRef.current = activeCaptionLanguage;
+  }, [activeCaptionLanguage]);
+
+  const toggleCaptions = useCallback(() => {
+    // Other providers play in an iframe that cannot show a track, and switching there
+    // would still rewrite the language remembered for this video.
+    if (!isYoutubeVersion && !supportsSubtitles) return;
+    const next = pickCaptionToggleLanguage({
+      active: activeCaptionLanguage,
+      previous: lastCaptionLanguageRef.current,
+      stored: readStoredSubtitleLanguage(videoId),
+      available: subtitleTracks.map((track) => track.language),
+    });
+    if (next === activeCaptionLanguage) return;
+    selectCaptionLanguage(next);
+  }, [
+    activeCaptionLanguage,
+    isYoutubeVersion,
+    selectCaptionLanguage,
+    subtitleTracks,
+    supportsSubtitles,
+    videoId,
+  ]);
+
+  useEffect(() => {
+    toggleCaptionsRef.current = toggleCaptions;
+  }, [toggleCaptions]);
 
   const {
     savedProgress,
@@ -1113,6 +1155,8 @@ export function VideoPageContent({
                 onUploadSubtitle={uploadSubtitle}
                 onDeleteSubtitle={deleteSubtitle}
                 isUploadingSubtitle={isUploadingSubtitle}
+                subtitleAppearance={subtitleAppearance}
+                onChangeSubtitleAppearance={setSubtitleAppearance}
                 playbackSpeed={playbackSpeed}
                 speedOptions={speedOptions}
                 handleSpeedChange={handleSpeedChange}

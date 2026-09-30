@@ -17,6 +17,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -29,6 +32,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import {
+  SUBTITLE_BACKGROUND_OPTIONS,
+  SUBTITLE_SIZE_OPTIONS,
+  type SubtitleAppearance,
+} from '@/components/video-page/hooks/subtitle-appearance';
 import type { SubtitleTrackOption } from '@/components/video-page/types';
 
 const COMMON_LANGUAGES = [
@@ -81,6 +89,10 @@ interface SubtitleControlsProps {
   onUploadSubtitle: (file: File, language: string, label: string) => Promise<string | null>;
   onDeleteSubtitle: (subtitleId: string) => Promise<string | null>;
   isUploadingSubtitle: boolean;
+  appearance: SubtitleAppearance;
+  onChangeAppearance: (next: Partial<SubtitleAppearance>) => void;
+  /** False for YouTube, whose embed API offers a caption size but no background. */
+  supportsBackground: boolean;
 }
 
 export const SubtitleControls = memo(function SubtitleControls({
@@ -91,6 +103,9 @@ export const SubtitleControls = memo(function SubtitleControls({
   onUploadSubtitle,
   onDeleteSubtitle,
   isUploadingSubtitle,
+  appearance,
+  onChangeAppearance,
+  supportsBackground,
 }: SubtitleControlsProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -159,13 +174,13 @@ export const SubtitleControls = memo(function SubtitleControls({
             variant={activeSubtitle ? 'default' : 'ghost'}
             size="sm"
             className="h-8 gap-1 text-xs"
-            title="Subtitles"
+            title="Subtitles (C)"
           >
             <Captions className="h-3.5 w-3.5" />
             {activeSubtitle ? activeSubtitle.label : 'CC'}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-[180px]">
+        <DropdownMenuContent align="end" className="min-w-[220px]">
           <DropdownMenuItem
             onClick={() => onSelectSubtitleLanguage(null)}
             className={cn(!activeSubtitleLanguage && 'font-bold text-primary')}
@@ -198,6 +213,56 @@ export const SubtitleControls = memo(function SubtitleControls({
               )}
             </DropdownMenuItem>
           ))}
+          {subtitles.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  Size
+                  <span className="flex-1 pl-4 text-right text-muted-foreground">
+                    {SUBTITLE_SIZE_OPTIONS.find((option) => option.value === appearance.size)
+                      ?.label ?? ''}
+                  </span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {SUBTITLE_SIZE_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onClick={() => onChangeAppearance({ size: option.value })}
+                      className={cn(option.value === appearance.size && 'font-bold text-primary')}
+                    >
+                      {option.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              {supportsBackground && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    Background
+                    <span className="flex-1 pl-4 text-right text-muted-foreground">
+                      {SUBTITLE_BACKGROUND_OPTIONS.find(
+                        (option) => option.value === appearance.background
+                      )?.label ?? ''}
+                    </span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {SUBTITLE_BACKGROUND_OPTIONS.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        onClick={() => onChangeAppearance({ background: option.value })}
+                        className={cn(
+                          option.value === appearance.background && 'font-bold text-primary'
+                        )}
+                      >
+                        {option.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
+            </>
+          )}
           {canManageSubtitles && (
             <>
               {subtitles.length > 0 && <DropdownMenuSeparator />}

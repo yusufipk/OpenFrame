@@ -141,3 +141,26 @@
   inset: 0;
   background: var(--foreground);
 }
+
+/*
+ * Viewer-chosen subtitle look, set on the player's <video>. The size arrives as a pixel
+ * value in --subtitle-font-size, worked out from the picture height by useCueFontSize:
+ * a percentage here would resolve against the page font in Firefox and against the
+ * picture in Chromium. The translucent box is the browser's own default, so it needs no
+ * rule.
+ */
+video[data-subtitle-scaled]::cue {
+  font-size: var(--subtitle-font-size);
+}
+
+video[data-subtitle-background='solid']::cue {
+  background-color: #000;
+}
+
+video[data-subtitle-background='none']::cue {
+  background-color: transparent;
+  text-shadow:
+    0 0 3px #000,
+    0 0 3px #000,
+    1px 1px 2px #000;
+}

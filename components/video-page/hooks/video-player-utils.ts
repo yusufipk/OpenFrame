@@ -141,7 +141,8 @@ export type PlayerShortcut =
   | 'toggle-mute'
   | 'jump-back'
   | 'jump-forward'
-  | 'toggle-fullscreen';
+  | 'toggle-fullscreen'
+  | 'toggle-captions';
 
 /**
  * Map a physical key to a player action. `null` means "not a player shortcut",
@@ -151,7 +152,12 @@ export type PlayerShortcut =
 export function resolvePlayerShortcut(event: {
   code: string;
   shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
 }): PlayerShortcut | null {
+  // Ctrl+C, Cmd+F and the like belong to the browser and the OS, not to the player.
+  if (event.ctrlKey || event.metaKey || event.altKey) return null;
   switch (event.code) {
     case 'Space':
     case 'KeyK':
@@ -176,6 +182,8 @@ export function resolvePlayerShortcut(event: {
       return 'jump-forward';
     case 'KeyF':
       return 'toggle-fullscreen';
+    case 'KeyC':
+      return 'toggle-captions';
     default:
       return null;
   }
