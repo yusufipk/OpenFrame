@@ -221,7 +221,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-start justify-center py-12 px-4">
+    <div className="min-h-[calc(100dvh-4rem)] flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-xl space-y-6">
         <Link
           href={`/projects/${projectId}/videos/${videoId}`}

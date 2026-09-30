@@ -15,7 +15,6 @@ function renderPlayer() {
     toggleFullscreen: vi.fn(),
     showComments: true,
     setShowComments: vi.fn(),
-    setIsMobileCommentsOpen: vi.fn(),
     isAnnotating: false,
     annotationCanvasRef: { current: null },
     setAnnotationStrokes: vi.fn(),
@@ -60,7 +59,6 @@ describe('ImageReviewPlayer', () => {
     const { props, dimensions, heights } = renderPlayer();
     fireEvent.click(screen.getByRole('button', { name: 'Hide comments' }));
     expect(props.setShowComments).toHaveBeenCalledWith(false);
-    expect(props.setIsMobileCommentsOpen).toHaveBeenCalledWith(false);
     dimensions.mockRestore();
     heights.mockRestore();
   });

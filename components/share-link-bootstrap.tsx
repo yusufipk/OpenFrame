@@ -56,7 +56,7 @@ export function ShareLinkBootstrap({ videoId, shareToken }: ShareLinkBootstrapPr
   }, [router, shareToken, videoId]);
 
   return (
-    <div className="h-screen flex items-center justify-center bg-background px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-background px-4 py-6">
       <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-sm text-center space-y-3">
         <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />

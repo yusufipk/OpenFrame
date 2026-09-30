@@ -35,7 +35,7 @@ export function GuestGate({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-background">
+    <div className="min-h-dvh flex items-center justify-center bg-background px-4 py-6">
       <div className="w-full max-w-sm mx-auto p-6">
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-4">

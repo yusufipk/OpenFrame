@@ -3,6 +3,7 @@
 import { memo } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { STACKED_MEDIA_HEIGHT } from '@/components/video-page/stacked-layout';
 import { cn } from '@/lib/utils';
 
 interface VideoPageLoadingProps {
@@ -24,10 +25,13 @@ export const VideoPageLoading = memo(function VideoPageLoading({
 }: VideoPageLoadingProps) {
   return (
     <div className={cn(containerHeight, 'flex flex-col bg-background overflow-hidden')}>
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex flex-col wide:flex-row overflow-hidden min-h-0">
         <div
           className={cn(
-            'flex-1 flex flex-col overflow-hidden min-h-0',
+            'flex flex-col overflow-hidden',
+            isFullscreenMode || !showComments
+              ? 'flex-1 min-h-0'
+              : 'shrink-0 wide:flex-1 wide:min-h-0',
             isFullscreenMode && 'relative'
           )}
         >
@@ -53,7 +57,7 @@ export const VideoPageLoading = memo(function VideoPageLoading({
               {mode === 'dashboard' && <Skeleton className="h-8 w-28 rounded-md" />}
             </div>
           </div>
-          <div className="flex-1 bg-black min-h-0" />
+          <div className={cn('bg-black', showComments ? STACKED_MEDIA_HEIGHT : 'flex-1 min-h-0')} />
           <div
             className={cn(
               'shrink-0 px-4 py-2 bg-background border-t',
@@ -78,8 +82,8 @@ export const VideoPageLoading = memo(function VideoPageLoading({
         </div>
         <div
           className={cn(
-            'hidden lg:flex w-80 shrink-0 border-l bg-card flex-col overflow-hidden',
-            isFullscreenMode && !showComments && 'hidden'
+            'flex-1 min-h-0 border-t wide:flex-none wide:w-80 wide:border-t-0 wide:border-l bg-card flex flex-col overflow-hidden',
+            !showComments && 'hidden'
           )}
         >
           <div className="shrink-0 flex items-center justify-between p-4 border-b">

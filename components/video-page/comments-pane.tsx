@@ -53,9 +53,6 @@ import type {
 
 interface CommentsPaneProps {
   isImage?: boolean;
-  isMobileCommentsOpen: boolean;
-  setIsMobileCommentsOpen: (open: boolean) => void;
-  isFullscreenMode: boolean;
   showComments: boolean;
   comments: Comment[];
   filteredComments: Comment[];
@@ -159,9 +156,6 @@ function voiceNoteFileName(
 
 export const CommentsPane = memo(function CommentsPane({
   isImage = false,
-  isMobileCommentsOpen,
-  setIsMobileCommentsOpen,
-  isFullscreenMode,
   showComments,
   comments,
   filteredComments,
@@ -258,19 +252,10 @@ export const CommentsPane = memo(function CommentsPane({
     <>
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden transition-opacity duration-300',
-          isMobileCommentsOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        )}
-        onClick={() => setIsMobileCommentsOpen(false)}
-      />
-
-      <div
-        className={cn(
-          'bg-card flex flex-col overflow-hidden z-50 relative',
-          'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl transition-transform duration-300 transform',
-          isMobileCommentsOpen ? 'translate-x-0' : 'translate-x-full',
-          'lg:static lg:w-80 lg:shrink-0 lg:border-l lg:transition-none lg:translate-x-0 lg:shadow-none lg:z-auto',
-          isFullscreenMode && !showComments ? 'hidden' : ''
+          'bg-card flex flex-col overflow-hidden relative',
+          // Below the player on a stacked layout, beside it when there is width.
+          'flex-1 min-h-72 border-t wide:min-h-0 wide:flex-none wide:w-80 wide:shrink-0 wide:border-t-0 wide:border-l',
+          !showComments && 'hidden'
         )}
         onDragOver={(e) => {
           if (activePane !== 'comments') return;
@@ -299,8 +284,8 @@ export const CommentsPane = memo(function CommentsPane({
             <p className="text-sm font-medium text-primary">Drop images to attach</p>
           </div>
         )}
-        <div className="shrink-0 p-4 border-b lg:cursor-default space-y-2">
-          <div className="flex items-center justify-between gap-2">
+        <div className="shrink-0 p-3 wide:p-4 border-b flex flex-wrap items-center gap-2 max-lg:group-has-[textarea:focus]/page:hidden">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
               <Button
                 variant={activePane === 'comments' ? 'default' : 'ghost'}
@@ -320,26 +305,18 @@ export const CommentsPane = memo(function CommentsPane({
                 className="h-8 shrink-0"
                 onClick={() => setActivePane('assets')}
               >
-                <FolderOpen className="h-4 w-4 mr-1" />
-                Assets
+                <FolderOpen className="h-4 w-4 sm:mr-1" />
+                {/* Icon only on a phone, so the filters fit on the same row as the tabs. */}
+                <span className="sr-only sm:not-sr-only">Assets</span>
                 <Badge variant="secondary" className="ml-2">
                   {assets.length}
                 </Badge>
               </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 lg:hidden shrink-0"
-              aria-label="Close comments panel"
-              onClick={() => setIsMobileCommentsOpen(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
 
           {activePane === 'comments' && (
-            <div className="flex w-full items-center justify-end gap-2 flex-wrap">
+            <div className="ml-auto flex items-center justify-end gap-2">
               <Button
                 variant={showResolved ? 'default' : 'outline'}
                 size="sm"
@@ -366,7 +343,7 @@ export const CommentsPane = memo(function CommentsPane({
                     ) : (
                       <Download className="h-4 w-4" />
                     )}
-                    <ChevronDown className="h-4 w-4 ml-0.5" />
+                    <ChevronDown className="hidden h-4 w-4 ml-0.5 sm:block" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">

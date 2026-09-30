@@ -46,11 +46,25 @@ interface AnnotationCanvasProps {
   onCancel?: () => void;
   onDismiss?: () => void;
   toolbarContainer?: HTMLElement | null;
+  /**
+   * `overlay` floats the toolbar over the top of the frame. `inline` lays it out as a
+   * full-width strip, for a container outside the frame: on a phone the player is too
+   * small to draw on with a toolbar covering it.
+   */
+  toolbarPlacement?: 'overlay' | 'inline';
 }
 
 export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCanvasProps>(
   function AnnotationCanvas(
-    { mode, strokes: initialStrokes, onConfirm, onCancel, onDismiss, toolbarContainer },
+    {
+      mode,
+      strokes: initialStrokes,
+      onConfirm,
+      onCancel,
+      onDismiss,
+      toolbarContainer,
+      toolbarPlacement = 'overlay',
+    },
     ref
   ) {
     const [strokes, setStrokes] = useState<AnnotationStroke[]>(initialStrokes || []);
@@ -104,7 +118,13 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCan
     }
 
     const toolbar = (
-      <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]">
+      <div
+        className={
+          toolbarPlacement === 'inline'
+            ? 'pointer-events-auto flex w-full items-center justify-center flex-wrap gap-x-2 gap-y-2 border-b bg-background px-3 py-2'
+            : 'pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 flex items-center justify-center flex-wrap gap-x-2 gap-y-2 w-[calc(100%-24px)] max-w-fit bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border z-[70]'
+        }
+      >
         <div className="flex items-center gap-1" role="group" aria-label="Drawing tool">
           {ANNOTATION_TOOLS.map(({ tool: option, label, icon: Icon }) => (
             <Button

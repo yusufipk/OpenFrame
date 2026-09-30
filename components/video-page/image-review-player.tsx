@@ -8,6 +8,8 @@ import {
   type AnnotationStroke,
 } from '@/components/annotation-canvas';
 import { Button } from '@/components/ui/button';
+import { STACKED_MEDIA_HEIGHT } from '@/components/video-page/stacked-layout';
+import { useStackedLayout } from '@/components/video-page/hooks/use-stacked-layout';
 import { cn } from '@/lib/utils';
 
 interface ImageReviewPlayerProps {
@@ -18,7 +20,6 @@ interface ImageReviewPlayerProps {
   toggleFullscreen: () => void;
   showComments: boolean;
   setShowComments: (value: boolean) => void;
-  setIsMobileCommentsOpen: (value: boolean) => void;
   isAnnotating: boolean;
   annotationCanvasRef: RefObject<AnnotationCanvasHandle | null>;
   setAnnotationStrokes: (strokes: AnnotationStroke[] | null) => void;
@@ -40,7 +41,6 @@ export const ImageReviewPlayer = memo(function ImageReviewPlayer({
   toggleFullscreen,
   showComments,
   setShowComments,
-  setIsMobileCommentsOpen,
   isAnnotating,
   annotationCanvasRef,
   setAnnotationStrokes,
@@ -63,6 +63,13 @@ export const ImageReviewPlayer = memo(function ImageReviewPlayer({
   const [loadError, setLoadError] = useState(false);
   const [annotationToolbarContainer, setAnnotationToolbarContainer] =
     useState<HTMLDivElement | null>(null);
+  // On a phone the drawing toolbar moves under the image instead of covering it.
+  const isStackedLayout = useStackedLayout();
+  const [annotationToolbarSlot, setAnnotationToolbarSlot] = useState<HTMLDivElement | null>(null);
+  const inlineAnnotationToolbar = isStackedLayout && !isFullscreenMode;
+  const annotationToolbarProps = inlineAnnotationToolbar
+    ? { toolbarContainer: annotationToolbarSlot, toolbarPlacement: 'inline' as const }
+    : { toolbarContainer: annotationToolbarContainer };
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -130,8 +137,12 @@ export const ImageReviewPlayer = memo(function ImageReviewPlayer({
       <div
         ref={viewportRef}
         className={cn(
-          'relative flex-1 min-h-0 overflow-hidden bg-black touch-none',
-          isFullscreenMode && 'absolute inset-0'
+          'relative overflow-hidden bg-black touch-none',
+          isFullscreenMode
+            ? 'absolute inset-0'
+            : showComments
+              ? STACKED_MEDIA_HEIGHT
+              : 'flex-1 min-h-0'
         )}
         data-testid="image-review-viewport"
         onClickCapture={(event) => {
@@ -184,7 +195,7 @@ export const ImageReviewPlayer = memo(function ImageReviewPlayer({
               <AnnotationCanvas
                 ref={annotationCanvasRef}
                 mode="draw"
-                toolbarContainer={annotationToolbarContainer}
+                {...annotationToolbarProps}
                 onConfirm={(strokes) => {
                   setAnnotationStrokes(strokes);
                   setIsAnnotating(false);
@@ -206,7 +217,7 @@ export const ImageReviewPlayer = memo(function ImageReviewPlayer({
               <AnnotationCanvas
                 ref={editAnnotationCanvasRef}
                 mode="draw"
-                toolbarContainer={annotationToolbarContainer}
+                {...annotationToolbarProps}
                 strokes={editAnnotationInitialStrokes}
                 onConfirm={(strokes) => {
                   setEditAnnotationData(JSON.stringify(strokes));
@@ -223,6 +234,7 @@ export const ImageReviewPlayer = memo(function ImageReviewPlayer({
           className="pointer-events-none absolute inset-0 z-[80]"
         />
       </div>
+      {inlineAnnotationToolbar && <div ref={setAnnotationToolbarSlot} className="shrink-0" />}
       <div
         className={cn(
           'shrink-0 flex items-center gap-1 border-t bg-background px-4 py-2',
@@ -266,10 +278,7 @@ export const ImageReviewPlayer = memo(function ImageReviewPlayer({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              setShowComments(!showComments);
-              setIsMobileCommentsOpen(!showComments);
-            }}
+            onClick={() => setShowComments(!showComments)}
             title={showComments ? 'Hide comments' : 'Show comments'}
           >
             {showComments ? (

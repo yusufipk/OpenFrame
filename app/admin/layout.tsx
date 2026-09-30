@@ -12,7 +12,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col">
+    <div className="relative flex min-h-dvh flex-col">
       <Header user={session.user} showAppNavigation />
       <div className="w-full px-4 md:px-8 flex-1 items-start md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
         {/* Mobile Nav */}
@@ -49,7 +49,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </nav>
         </div>
         {/* Desktop Nav */}
-        <aside className="fixed top-14 z-30 -ml-2 hidden h-[calc(100vh-3.5rem)] w-full shrink-0 md:sticky md:block">
+        <aside className="fixed top-14 z-30 -ml-2 hidden h-[calc(100dvh-3.5rem)] w-full shrink-0 md:sticky md:block">
           <div className="h-full py-6 pr-6 lg:py-8">
             <nav className="flex flex-col gap-2">
               <Link
