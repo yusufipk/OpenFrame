@@ -183,14 +183,18 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: ['**/dashboard-mobile.spec.ts', '**/live-review*.spec.ts'],
+      testIgnore: [
+        '**/dashboard-mobile.spec.ts',
+        '**/review-mobile.spec.ts',
+        '**/live-review*.spec.ts',
+      ],
     },
     {
-      // One mobile project, for one spec. Section 6 asks for a mobile smoke
-      // test, not a second full pass.
+      // One mobile project, for the phone-only specs. Section 6 asks for a mobile
+      // smoke test, not a second full pass.
       name: 'mobile-chrome',
       use: { ...devices['Pixel 7'] },
-      testMatch: '**/dashboard-mobile.spec.ts',
+      testMatch: ['**/dashboard-mobile.spec.ts', '**/review-mobile.spec.ts'],
     },
     // Safari, for the one thing that genuinely differs there.
     //

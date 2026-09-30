@@ -312,7 +312,11 @@ test('asset image, audio and video previews have independent persistent comments
       for (const control of [
         page.getByRole('link', { name: 'Back', exact: true }),
         page.getByRole('button', { name: 'Start Live Review', exact: true }),
-        page.getByTitle('Toggle frame step mode', { exact: true }),
+        // Below Tailwind's sm breakpoint (640px) frame step moves into the phone
+        // overflow menu, so that menu's trigger is what has to fit instead.
+        width < 640
+          ? page.getByRole('button', { name: 'More playback options', exact: true })
+          : page.getByTitle('Toggle frame step mode', { exact: true }),
         page.getByTitle('Fullscreen (F)', { exact: true }),
       ]) {
         await expect(control).toBeVisible();

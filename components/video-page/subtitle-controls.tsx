@@ -177,7 +177,8 @@ export const SubtitleControls = memo(function SubtitleControls({
             title="Subtitles (C)"
           >
             <Captions className="h-3.5 w-3.5" />
-            {activeSubtitle ? activeSubtitle.label : 'CC'}
+            {/* A phone's control row has no room for a language name. */}
+            <span className="hidden sm:inline">{activeSubtitle ? activeSubtitle.label : 'CC'}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[220px]">

@@ -22,7 +22,7 @@ export function ComparisonPage({ page, isLoggedIn }: ComparisonPageProps) {
   const relatedSlugs = page.relatedSlugs.filter((slug) => slug in comparisonPageMap);
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans">
+    <div className="min-h-dvh bg-background text-foreground font-sans">
       <MarketingHeader isLoggedIn={isLoggedIn} />
 
       <main>

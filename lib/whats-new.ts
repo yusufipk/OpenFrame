@@ -17,6 +17,12 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-09-30',
+    title: 'Review on your phone',
+    description:
+      'On a phone the comments now sit right under the video, so you can watch and read feedback on one screen without opening a panel. You can also drag the timeline with your finger.',
+  },
+  {
+    date: '2026-09-30',
     title: 'Download all assets',
     description:
       'The Assets tab of a video has a Download all button that saves every image, video and voice note attached to it in one go.',
