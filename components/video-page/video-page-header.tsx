@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { ProjectBrandLogo } from '@/components/project-branding';
 import { DownloadControls } from '@/components/video-page/download-controls';
 import { VersionDeleteDialog } from '@/components/video-page/version-delete-dialog';
 import { VersionActionsDialog } from '@/components/video-page/version-actions-dialog';
@@ -40,6 +41,7 @@ interface VideoPageHeaderProps {
   backHref: string;
   title: string;
   projectName: string;
+  projectLogoUrl?: string | null;
   isFullscreenMode: boolean;
   cursorIdle: boolean;
   isPlaying: boolean;
@@ -92,6 +94,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   backHref,
   title,
   projectName,
+  projectLogoUrl = null,
   isFullscreenMode,
   cursorIdle,
   isPlaying,
@@ -162,6 +165,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
         <div className="hidden sm:flex min-w-0 items-center gap-2">
           <span className="text-sm font-medium truncate">{title}</span>
           <span className="text-xs text-muted-foreground shrink-0">•</span>
+          {projectLogoUrl ? <ProjectBrandLogo src={projectLogoUrl} className="h-5 w-5" /> : null}
           <span className="text-xs text-muted-foreground truncate">{projectName}</span>
         </div>
       </div>

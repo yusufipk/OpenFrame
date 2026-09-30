@@ -8,6 +8,7 @@ import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
+import { normalizeBrandColor, toProjectBranding, withoutBrandKeys } from '@/lib/project-branding';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -85,7 +86,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.forbidden('Access denied');
     }
 
-    const response = successResponse(project);
+    const response = successResponse({
+      ...withoutBrandKeys(project),
+      branding: toProjectBranding(project.id, project),
+    });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching project:', error);
@@ -118,7 +122,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name, description, visibility, allowDownloads } = body;
+    const { name, description, visibility, allowDownloads, brandColor } = body;
 
     if (name !== undefined) {
       if (typeof name !== 'string' || name.trim().length === 0) {
@@ -144,12 +148,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (allowDownloads !== undefined && typeof allowDownloads !== 'boolean') {
       return apiErrors.badRequest('allowDownloads must be a boolean');
     }
+    const normalizedBrandColor = normalizeBrandColor(brandColor);
+    if (brandColor !== undefined && brandColor !== null && !normalizedBrandColor) {
+      return apiErrors.badRequest('brandColor must be a hex color like #1a2b3c');
+    }
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name.trim();
     if (description !== undefined) updateData.description = description?.trim() || null;
     if (visibility !== undefined) updateData.visibility = visibility;
     if (allowDownloads !== undefined) updateData.allowDownloads = allowDownloads;
+    if (brandColor !== undefined) updateData.brandColor = normalizedBrandColor;
 
     const project = await db.project.update({
       where: { id: projectId },
@@ -162,7 +171,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    const response = successResponse(project);
+    const response = successResponse({
+      ...withoutBrandKeys(project),
+      branding: toProjectBranding(project.id, project),
+    });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error updating project:', error);

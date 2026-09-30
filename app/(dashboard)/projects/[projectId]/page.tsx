@@ -19,6 +19,8 @@ import {
   projectFolderOrderBy,
   projectVideoOrderBy,
 } from '@/lib/project-content-sort';
+import { brandStyle, toProjectBranding } from '@/lib/project-branding';
+import { PoweredByOpenFrame, ProjectBrandBanner } from '@/components/project-branding';
 
 function formatDuration(seconds: number | null): string {
   if (!seconds) return '0:00';
@@ -221,22 +223,36 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
     members: projectAccess.hasAccess ? project.members : [],
   };
 
+  // A viewer who only reaches a folder has no project access, so the branding image
+  // route needs the folder to authorize them.
+  const branding = toProjectBranding(
+    projectId,
+    project,
+    projectAccess.hasAccess ? {} : { folderId }
+  );
+
   // Guest name gate for unauthenticated users on public projects
   if (!isAuthenticated && isPublic) {
     return (
       <GuestGate>
-        <div className="px-6 lg:px-8 py-8 w-full">
-          {/* Back link */}
-          <div className="mb-6">
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back to Projects
-            </Link>
-          </div>
+        <div className="px-6 lg:px-8 py-8 w-full" style={brandStyle(branding?.color)}>
+          {/* A guest has no dashboard to go back to, so a branded page shows the banner
+              in the back link's place. */}
+          {branding?.bannerUrl ? (
+            <ProjectBrandBanner src={branding.bannerUrl} className="mb-6" />
+          ) : (
+            <div className="mb-6">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Back to Projects
+              </Link>
+            </div>
+          )}
           <ProjectContentClient
+            logoUrl={branding?.logoUrl ?? null}
             key={`${folderId ?? 'root'}-${all}`}
             folderId={folderId}
             folders={folderEntries}
@@ -257,13 +273,14 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
             imageUploadsEnabled={imageUploadsEnabled}
             directUploadProvider={directUploadProvider}
           />
+          {branding ? <PoweredByOpenFrame className="mt-10 border-t pt-4" /> : null}
         </div>
       </GuestGate>
     );
   }
 
   return (
-    <div className="px-6 lg:px-8 py-8 w-full">
+    <div className="px-6 lg:px-8 py-8 w-full" style={brandStyle(branding?.color)}>
       {/* Back link */}
       <div className="mb-6">
         <Link
@@ -274,7 +291,11 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
           Back to Projects
         </Link>
       </div>
+      {branding?.bannerUrl ? (
+        <ProjectBrandBanner src={branding.bannerUrl} className="mb-6" />
+      ) : null}
       <ProjectContentClient
+        logoUrl={branding?.logoUrl ?? null}
         key={`${folderId ?? 'root'}-${all}`}
         folderId={folderId}
         folders={folderEntries}
@@ -295,6 +316,7 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
         imageUploadsEnabled={imageUploadsEnabled}
         directUploadProvider={directUploadProvider}
       />
+      {branding ? <PoweredByOpenFrame className="mt-10 border-t pt-4" /> : null}
     </div>
   );
 }
