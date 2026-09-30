@@ -3,6 +3,14 @@ import { act, renderHook, type RenderHookResult } from '@testing-library/react';
 import { useVideoAssets } from '@/components/video-page/hooks/use-video-assets';
 import type { VideoAsset } from '@/components/video-page/types';
 import { unloadGuardCount } from '@/lib/client/unload-guard';
+import {
+  ASSET_DOWNLOAD_BUDGET,
+  ASSET_DOWNLOAD_WINDOW_MS,
+} from '@/components/video-page/hooks/use-video-assets';
+import { RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
+
+// lib/rate-limit reaches the Prisma client at import time; only its config table is used.
+vi.mock('@/lib/db', () => ({ db: {} }));
 
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -788,6 +796,16 @@ describe('useVideoAssets downloading', () => {
   });
 });
 
+describe('useVideoAssets download pacing against the server limit', () => {
+  // A browser-started download can neither see nor retry a 429, so the pacer must never
+  // plan more requests than the server bucket allows, with room left for single downloads.
+  it('keeps its budget below the asset-download limit, over a window at least as long', () => {
+    const serverLimit = RATE_LIMIT_CONFIGS['asset-download'];
+    expect(ASSET_DOWNLOAD_BUDGET).toBeLessThan(serverLimit.maxRequests);
+    expect(ASSET_DOWNLOAD_WINDOW_MS).toBeGreaterThan(serverLimit.windowMs);
+  });
+});
+
 describe('useVideoAssets downloading every asset', () => {
   const pageUrl = (offset: number) => `/api/videos/${VIDEO_ID}/assets?limit=100&offset=${offset}`;
   const downloadUrlOf = (id: string) => `/api/videos/${VIDEO_ID}/assets/${id}/download`;
@@ -932,27 +950,33 @@ describe('useVideoAssets downloading every asset', () => {
     });
   });
 
-  it('holds the eleventh download until the rate-limit window has passed', async () => {
+  it('holds the hundred-and-first download until the rate-limit window has passed', async () => {
     const harness = await renderAssets();
-    routeFetch({ [pageUrl(0)]: listResponse({ assets: images(11) }) });
+    routeFetch({ [pageUrl(0)]: listResponse({ assets: images(101) }) });
+    const waiting = (seconds: number) => ({
+      id: `download-all-assets-${VIDEO_ID}`,
+      description: `Waiting ${seconds}s for the download limit`,
+    });
 
     await act(async () => {
       const run = harness.result.current.downloadAllAssets();
-      // Ten downloads 500 ms apart go out by 4.5 s. The eleventh finishes its own gap at
-      // 5 s and then waits until 61 s after the first one: the server's 60 s window plus
-      // one second of margin.
-      await vi.advanceTimersByTimeAsync(5_000);
-      expect(clicked).toHaveLength(10);
-      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 11/11', {
-        id: `download-all-assets-${VIDEO_ID}`,
-        description: 'Waiting 56s for the download limit',
-      });
-      await vi.advanceTimersByTimeAsync(55_999);
-      expect(clicked).toHaveLength(10);
+      // A hundred downloads 500 ms apart go out by 49.5 s, which spends the budget. The
+      // next one finishes its own gap at 50 s and then waits until 61 s after the first:
+      // the server's 60 s window plus one second of margin.
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(clicked).toHaveLength(100);
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 101/101', waiting(11));
+      // The countdown ticks down once a second rather than freezing on its first value.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 101/101', waiting(10));
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 101/101', waiting(1));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(clicked).toHaveLength(100);
       await vi.advanceTimersByTimeAsync(1);
-      expect(clicked).toHaveLength(11);
+      expect(clicked).toHaveLength(101);
       // Once the wait is over the toast names the file again.
-      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 11/11', {
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 101/101', {
         id: `download-all-assets-${VIDEO_ID}`,
         description: 'Reference frame',
       });
@@ -962,24 +986,41 @@ describe('useVideoAssets downloading every asset', () => {
 
   it('counts a Bunny prepare call against the same limit', async () => {
     const harness = await renderAssets();
-    const bunnies = Array.from({ length: 6 }, (_, i) =>
+    const bunnies = Array.from({ length: 51 }, (_, i) =>
       makeAsset({ id: `bn${i + 1}`, provider: 'BUNNY' })
     );
-    routeFetch({ [pageUrl(0)]: listResponse({ assets: bunnies }) });
+    // The first prepare answers after 300 ms, which moves everything after it off the
+    // 500 ms grid the stagger otherwise keeps every wait on.
+    routeFetch({ [pageUrl(0)]: listResponse({ assets: bunnies }) }, (url) =>
+      url === `${downloadUrlOf('bn1')}?prepare=1`
+        ? new Promise((resolve) => setTimeout(() => resolve(jsonResponse(true, {})), 300))
+        : jsonResponse(true, {})
+    );
 
     await act(async () => {
       const run = harness.result.current.downloadAllAssets();
-      // Five prepares and five downloads fill the budget by 2 s; the sixth prepare has to
-      // wait until 61 s after the first request, and its download follows 500 ms later.
-      await vi.advanceTimersByTimeAsync(60_999);
-      expect(callsTo(`${downloadUrlOf('bn6')}?prepare=1`)).toHaveLength(0);
-      expect(clicked).toHaveLength(5);
+      // Fifty prepares and fifty downloads spend the budget by 24.8 s. The last prepare
+      // waits until 61 s after the first request: 36.2 s, which shows as 37s (rounding
+      // would say 36s), and its download follows 500 ms later.
+      await vi.advanceTimersByTimeAsync(24_800);
+      expect(clicked).toHaveLength(50);
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 51/51', {
+        id: `download-all-assets-${VIDEO_ID}`,
+        description: 'Waiting 37s for the download limit',
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(toastLoading).toHaveBeenLastCalledWith('Downloading asset 51/51', {
+        id: `download-all-assets-${VIDEO_ID}`,
+        description: 'Waiting 36s for the download limit',
+      });
+      await vi.advanceTimersByTimeAsync(35_999);
+      expect(callsTo(`${downloadUrlOf('bn51')}?prepare=1`)).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(1);
-      expect(callsTo(`${downloadUrlOf('bn6')}?prepare=1`)).toHaveLength(1);
+      expect(callsTo(`${downloadUrlOf('bn51')}?prepare=1`)).toHaveLength(1);
       await vi.advanceTimersByTimeAsync(499);
-      expect(clicked).toHaveLength(5);
+      expect(clicked).toHaveLength(50);
       await vi.advanceTimersByTimeAsync(1);
-      expect(clicked).toHaveLength(6);
+      expect(clicked).toHaveLength(51);
       await run;
     });
   });

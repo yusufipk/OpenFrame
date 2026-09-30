@@ -69,7 +69,9 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'asset-list': { windowMs: 60 * 1000, maxRequests: 120 }, // 120 per minute
   'asset-create': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
   'asset-delete': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
-  'asset-download': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
+  // "Download all" in the Assets tab sends one request per file (two for a Bunny video),
+  // and everyone behind one IP shares this bucket.
+  'asset-download': { windowMs: 60 * 1000, maxRequests: 120 }, // 120 per minute
   'asset-bunny-init': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'asset-r2-init': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'subtitle-list': { windowMs: 60 * 1000, maxRequests: 120 }, // 120 per minute
@@ -85,9 +87,13 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   // Exports
   'comment-export': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
 
-  // Downloads — strict enough to limit upstream probing/cost abuse
-  'video-download': { windowMs: 60 * 1000, maxRequests: 8 }, // 8 per minute
-  'video-download-prepare': { windowMs: 60 * 1000, maxRequests: 5 }, // 5 per minute
+  // Downloads: nothing upstream is fetched before the route's access check passes, so these
+  // bound unauthenticated id probing and how many files an authorized caller can pull
+  // through the server per minute. A project download sends one 'video-download' request
+  // per video (per version with versions=all), and everyone behind one IP shares the bucket
+  // (every caller, without TRUSTED_PROXY_MODE), so a single-digit limit broke real use.
+  'video-download': { windowMs: 60 * 1000, maxRequests: 60 }, // 60 per minute
+  'video-download-prepare': { windowMs: 60 * 1000, maxRequests: 30 }, // 30 per minute
   'project-download': { windowMs: 60 * 1000, maxRequests: 3 }, // 3 per minute
 
   // Email verification
