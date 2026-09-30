@@ -314,6 +314,8 @@ function validStroke(stroke: unknown): stroke is Omit<LiveStroke, 'participantId
   if (!stroke || typeof stroke !== 'object') return false;
   const s = stroke as Partial<LiveStroke>;
   return (
+    // Live drawing is freehand only; a peer cannot make everyone else render a shape.
+    s.shape === undefined &&
     typeof s.id === 'string' &&
     s.id.length > 0 &&
     s.id.length <= 80 &&

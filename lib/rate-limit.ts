@@ -65,6 +65,7 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'create-project': { windowMs: 60 * 60 * 1000, maxRequests: 20 }, // 20 per hour
   'create-video': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'drive-import-list': { windowMs: 60 * 1000, maxRequests: 60 }, // 60 per minute (import progress polling)
+  'drive-import-user': { windowMs: 60 * 1000, maxRequests: 10 }, // per signed-in user, not per IP
   'create-version': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'create-workspace': { windowMs: 60 * 60 * 1000, maxRequests: 10 }, // 10 per hour
   'asset-list': { windowMs: 60 * 1000, maxRequests: 120 }, // 120 per minute

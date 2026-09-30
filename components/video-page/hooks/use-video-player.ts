@@ -57,6 +57,8 @@ interface UseVideoPlayerParams {
     (input: { progress: number; duration?: number; immediate?: boolean; force?: boolean }) => void
   >;
   setViewingAnnotation: (strokes: AnnotationStroke[] | null) => void;
+  /** Turns subtitles on or off. Lives outside this hook, next to the caption state. */
+  toggleCaptionsRef: RefObject<() => void>;
   playbackLocked?: boolean;
 }
 
@@ -80,6 +82,7 @@ export function useVideoPlayer({
   speedOptions,
   scheduleWatchProgressSaveRef,
   setViewingAnnotation,
+  toggleCaptionsRef,
   playbackLocked = false,
 }: UseVideoPlayerParams) {
   const annotationSeekRef = useRef<number | null>(null);
@@ -1181,7 +1184,16 @@ export function useVideoPlayer({
       const shortcut = resolvePlayerShortcut(e);
       if (shortcut === null) return;
       e.preventDefault();
-      if (playbackLocked && shortcut !== 'toggle-mute' && shortcut !== 'toggle-fullscreen') return;
+      // Mute, fullscreen and subtitles only change what this viewer sees and hears, so
+      // they stay available while someone else is driving playback.
+      if (
+        playbackLocked &&
+        shortcut !== 'toggle-mute' &&
+        shortcut !== 'toggle-fullscreen' &&
+        shortcut !== 'toggle-captions'
+      ) {
+        return;
+      }
 
       const stepPlaybackSpeed = (direction: 1 | -1) => {
         const newSpeed = getAdjacentPlaybackSpeed(speedOptions, playbackSpeed, direction);
@@ -1237,6 +1249,9 @@ export function useVideoPlayer({
         case 'toggle-fullscreen':
           toggleFullscreen();
           break;
+        case 'toggle-captions':
+          toggleCaptionsRef.current();
+          break;
       }
     };
 
@@ -1253,6 +1268,7 @@ export function useVideoPlayer({
     flashSeekReadout,
     handleSkip,
     toggleFullscreen,
+    toggleCaptionsRef,
     playerRef,
     playbackLocked,
     handlePlayPause,

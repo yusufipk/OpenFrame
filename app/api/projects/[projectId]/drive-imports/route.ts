@@ -1,4 +1,4 @@
-import { NextRequest, type NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { checkUploadDestination } from '@/lib/content-access';
@@ -13,7 +13,7 @@ import {
   type DriveImportView,
 } from '@/lib/drive-import';
 import { importDriveImageReview } from '@/lib/drive-image-review-import';
-import { getDriveImportBackend } from '@/lib/feature-flags';
+import { getDriveImportBackend, hasR2Config } from '@/lib/feature-flags';
 import {
   getDriveFileMetadata,
   isPlausibleAccessToken,
@@ -22,7 +22,7 @@ import {
   verifyDriveAccessToken,
 } from '@/lib/google-drive';
 import { logError } from '@/lib/logger';
-import { rateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, RATE_LIMIT_CONFIGS, rateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { runWithConcurrency } from '@/lib/async-pool';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
@@ -83,6 +83,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
+    }
+    // One request can start ten downloads (and ten image decodes), so the limit
+    // also follows the account, which cannot change IPs to get around it.
+    const userLimit = RATE_LIMIT_CONFIGS['drive-import-user']!;
+    const perUser = await checkRateLimit(session.user.id, 'drive-import-user', userLimit);
+    if (!perUser.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: rateLimitHeaders(perUser, userLimit.maxRequests) }
+      );
     }
 
     const body = await request.json().catch(() => null);
@@ -168,6 +178,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
 
         if (lookup.file.mimeType.startsWith('image/')) {
+          // Image reviews always live in object storage, whatever holds videos.
+          if (!hasR2Config()) {
+            errors.push({
+              driveFileId: fileId,
+              error: 'Image uploads require configured object storage',
+            });
+            return;
+          }
           const run = imageQueue.then(() =>
             importDriveImageReview({
               projectId,

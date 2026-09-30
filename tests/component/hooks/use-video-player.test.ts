@@ -134,6 +134,7 @@ function renderPlayer(overrides: Partial<Params> = {}) {
     speedOptions: SPEED_OPTIONS,
     scheduleWatchProgressSaveRef: { current: vi.fn() },
     setViewingAnnotation: vi.fn(),
+    toggleCaptionsRef: { current: vi.fn() },
     ...overrides,
   };
 
@@ -180,11 +181,12 @@ function measureFrameRate(video: VideoStub, fps: number) {
 
 function pressKey(
   code: string,
-  options: { shiftKey?: boolean; target?: EventTarget } = {}
+  options: { shiftKey?: boolean; ctrlKey?: boolean; target?: EventTarget } = {}
 ): KeyboardEvent {
   const event = new KeyboardEvent('keydown', {
     code,
     shiftKey: options.shiftKey ?? false,
+    ctrlKey: options.ctrlKey ?? false,
     bubbles: true,
     cancelable: true,
   });
@@ -765,6 +767,26 @@ describe('useVideoPlayer keyboard shortcuts', () => {
     expect(result.current.isFullscreenMode).toBe(true);
     // Fullscreen is for watching, so the comments pane gets out of the way.
     expect(result.current.showComments).toBe(false);
+  });
+
+  it('toggles subtitles with C, including for a follower in a live review', () => {
+    const toggle = vi.fn();
+    renderPlayer({ toggleCaptionsRef: { current: toggle }, playbackLocked: true });
+
+    const event = pressKey('KeyC');
+
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('leaves Ctrl+C to the browser so a selection can still be copied', () => {
+    const toggle = vi.fn();
+    renderPlayer({ toggleCaptionsRef: { current: toggle } });
+
+    const event = pressKey('KeyC', { ctrlKey: true });
+
+    expect(toggle).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it('ignores a shortcut typed into a text field', () => {

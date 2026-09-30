@@ -32,6 +32,8 @@ model User {
   stripeCancelAt DateTime?
   billingAccessEndedAt DateTime?
   subscriptionStatus BillingSubscriptionStatus @default(FREE)
+  // When false, deleting a project asks for a plain confirmation instead of the typed name.
+  requireProjectDeleteNameConfirmation Boolean @default(true)
 
   // Relations
   accounts           Account[]
@@ -238,6 +240,11 @@ model Project {
 
   // Whether non-admin viewers may download project media
   allowDownloads Boolean @default(false)
+
+  // Client branding shown to everyone who opens the project
+  brandColor     String? // "#rrggbb"
+  brandBannerKey String? // R2 object key, branding/<uuid>.<ext>
+  brandLogoKey   String? // R2 object key, branding/<uuid>.<ext>
   
   // Ownership
   ownerId     String

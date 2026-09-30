@@ -1,3 +1,5 @@
+import type { ProjectBranding } from '@/lib/project-branding';
+
 export interface Version {
   id: string;
   versionNumber: number;
@@ -149,6 +151,7 @@ export interface VideoData {
     members?: { role: string }[];
     visibility?: string;
   };
+  branding?: ProjectBranding | null;
   versions: (Version & { comments: Comment[] })[];
   isAuthenticated: boolean;
   currentUserId: string | null;

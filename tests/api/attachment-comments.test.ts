@@ -393,6 +393,19 @@ describe('video attachment comments API', () => {
     ]);
   });
 
+  it('keeps the shape of a rectangle drawn on an attachment', async () => {
+    const { owner, video, target } = await assetScenario();
+    signedInAs(owner);
+    const drawing = [{ ...DRAWING[0], shape: 'rectangle' }];
+
+    const response = await postWithAnnotation(video.id, target, drawing);
+
+    expect(response.status).toBe(201);
+    expect((await db.attachmentComment.findFirstOrThrow()).annotationData).toBe(
+      JSON.stringify(drawing)
+    );
+  });
+
   it('normalizes an empty drawing with text to a plain comment', async () => {
     const { owner, video, target } = await assetScenario();
     signedInAs(owner);
@@ -432,6 +445,7 @@ describe('video attachment comments API', () => {
     ['empty array', []],
     ['no drawn points', [{ ...DRAWING[0], points: [] }]],
     ['one undrawn point', [{ ...DRAWING[0], points: [{ x: 0.2, y: 0.3 }] }]],
+    ['an unknown shape', [{ ...DRAWING[0], shape: 'triangle' }]],
   ])('rejects an annotation-only comment with %s', async (_label, annotationData) => {
     const { owner, video, target } = await assetScenario();
     signedInAs(owner);

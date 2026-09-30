@@ -8,6 +8,10 @@ import {
   readStoredSubtitleLanguage,
   writeStoredSubtitleLanguage,
 } from '@/components/video-page/hooks/subtitle-preference';
+import {
+  youtubeCaptionFontSize,
+  type SubtitleSize,
+} from '@/components/video-page/hooks/subtitle-appearance';
 import type { PlayerAdapter, SubtitleTrackOption } from '@/components/video-page/types';
 
 interface UseYoutubeCaptionsParams {
@@ -19,6 +23,8 @@ interface UseYoutubeCaptionsParams {
   isReady: boolean;
   /** Incremented by the player on every onApiChange. */
   moduleRevision: number;
+  /** The viewer's subtitle size. YouTube has no background option, so only this applies. */
+  captionSize: SubtitleSize;
 }
 
 /** One entry of `getOption('captions', 'tracklist')`. Only these fields are relied on. */
@@ -29,6 +35,14 @@ type YoutubeCaptionTrack = {
 };
 
 const CAPTIONS_MODULE = 'captions';
+
+function applyCaptionSize(player: YT.Player, size: SubtitleSize): void {
+  try {
+    player.setOption(CAPTIONS_MODULE, 'fontSize', youtubeCaptionFontSize(size));
+  } catch {
+    // A player that refuses the option keeps its default size, which is still readable.
+  }
+}
 
 function asYoutubePlayer(
   player: YT.Player | PlayerAdapter | null
@@ -54,6 +68,7 @@ export function useYoutubeCaptions({
   enabled,
   isReady,
   moduleRevision,
+  captionSize,
 }: UseYoutubeCaptionsParams) {
   const [tracks, setTracks] = useState<SubtitleTrackOption[]>([]);
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null);
@@ -141,6 +156,14 @@ export function useYoutubeCaptions({
       // Same as above: a player that will not take the option has no captions to give.
     }
   }, [enabled, isReady, moduleRevision, playerRef, versionId, videoId]);
+
+  // Reapplied on every module change as well as on a new size: loading the captions module
+  // again (turning them back on, a new track) can reset the player to its default size.
+  useEffect(() => {
+    if (!enabled || !isReady || !activeLanguage) return;
+    const player = asYoutubePlayer(playerRef.current);
+    if (player) applyCaptionSize(player, captionSize);
+  }, [activeLanguage, captionSize, enabled, isReady, moduleRevision, playerRef]);
 
   const selectCaptionLanguage = useCallback(
     (language: string | null) => {

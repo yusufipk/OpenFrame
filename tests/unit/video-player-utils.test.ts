@@ -258,6 +258,18 @@ describe('resolvePlayerShortcut', () => {
     expect(resolvePlayerShortcut({ code: 'KeyL' })).toBe('jump-forward');
     expect(resolvePlayerShortcut({ code: 'KeyM' })).toBe('toggle-mute');
     expect(resolvePlayerShortcut({ code: 'KeyF' })).toBe('toggle-fullscreen');
+    expect(resolvePlayerShortcut({ code: 'KeyC' })).toBe('toggle-captions');
+  });
+
+  // Ctrl+C with a comment selected has to copy, and Ctrl+F has to open the browser's find
+  // bar, instead of toggling subtitles or fullscreen and swallowing the keystroke.
+  it('leaves every shortcut alone while Ctrl, Cmd or Alt is held', () => {
+    for (const code of ['KeyC', 'KeyF', 'KeyK', 'KeyM', 'Space', 'ArrowLeft']) {
+      expect(resolvePlayerShortcut({ code, ctrlKey: true })).toBeNull();
+      expect(resolvePlayerShortcut({ code, metaKey: true })).toBeNull();
+      expect(resolvePlayerShortcut({ code, altKey: true })).toBeNull();
+    }
+    expect(resolvePlayerShortcut({ code: 'Period', shiftKey: true, ctrlKey: true })).toBeNull();
   });
 
   it('maps the arrow keys to speed changes regardless of shift', () => {

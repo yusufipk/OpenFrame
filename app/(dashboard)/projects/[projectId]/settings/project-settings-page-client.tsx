@@ -33,6 +33,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import type { ProjectBranding } from '@/lib/project-branding';
+import { ProjectBrandingCard } from './project-branding-card';
 
 type Visibility = 'PRIVATE' | 'INVITE' | 'PUBLIC';
 
@@ -64,6 +66,8 @@ const visibilityOptions: {
 
 interface ProjectSettingsPageProps {
   projectId: string;
+  /** The user's preference from /settings; off means a plain confirmation is enough. */
+  requireDeleteNameConfirmation: boolean;
 }
 
 interface CommentTag {
@@ -73,7 +77,10 @@ interface CommentTag {
   position: number;
 }
 
-export default function ProjectSettingsPageClient({ projectId }: ProjectSettingsPageProps) {
+export default function ProjectSettingsPageClient({
+  projectId,
+  requireDeleteNameConfirmation,
+}: ProjectSettingsPageProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -87,6 +94,8 @@ export default function ProjectSettingsPageClient({ projectId }: ProjectSettings
     visibility: 'PRIVATE' as Visibility,
     allowDownloads: false,
   });
+  const [branding, setBranding] = useState<ProjectBranding | null>(null);
+  const deleteNameMatches = !requireDeleteNameConfirmation || deleteConfirmation === formData.name;
 
   // Tag management state
   const [tags, setTags] = useState<CommentTag[]>([]);
@@ -112,6 +121,7 @@ export default function ProjectSettingsPageClient({ projectId }: ProjectSettings
             visibility: project.visibility || 'PRIVATE',
             allowDownloads: project.allowDownloads ?? false,
           });
+          setBranding(project.branding ?? null);
         }
       })
       .catch(() => setError('Failed to load project'))
@@ -215,7 +225,7 @@ export default function ProjectSettingsPageClient({ projectId }: ProjectSettings
   };
 
   const handleDelete = async () => {
-    if (deleteConfirmation !== formData.name) {
+    if (!deleteNameMatches) {
       setError('Project name does not match');
       return;
     }
@@ -416,6 +426,12 @@ export default function ProjectSettingsPageClient({ projectId }: ProjectSettings
             </CardContent>
           </Card>
 
+          <ProjectBrandingCard
+            projectId={projectId}
+            projectName={formData.name}
+            initialBranding={branding}
+          />
+
           {/* Comment Tags */}
           <Card id="comment-tags" className="border-border/50 shadow-lg">
             <CardHeader className="pb-3">
@@ -562,19 +578,29 @@ export default function ProjectSettingsPageClient({ projectId }: ProjectSettings
                             This will permanently delete this project and all of its videos,
                             versions, and comments. This action cannot be undone.
                           </p>
-                          <div className="space-y-2">
-                            <Label htmlFor="delete-confirm">
-                              Type <strong className="text-foreground">{formData.name}</strong> to
-                              confirm
-                            </Label>
-                            <Input
-                              id="delete-confirm"
-                              value={deleteConfirmation}
-                              onChange={(e) => setDeleteConfirmation(e.target.value)}
-                              placeholder="Project name"
-                              className="h-11"
-                            />
-                          </div>
+                          {requireDeleteNameConfirmation ? (
+                            <div className="space-y-2">
+                              <Label htmlFor="delete-confirm">
+                                Type <strong className="text-foreground">{formData.name}</strong> to
+                                confirm
+                              </Label>
+                              <Input
+                                id="delete-confirm"
+                                value={deleteConfirmation}
+                                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                                placeholder="Project name"
+                                className="h-11"
+                              />
+                            </div>
+                          ) : (
+                            <p className="text-xs">
+                              Typing the project name is turned off in your{' '}
+                              <Link href="/settings" className="underline underline-offset-2">
+                                settings
+                              </Link>
+                              .
+                            </p>
+                          )}
                         </div>
                       </AlertDialogDescription>
                     </AlertDialogHeader>
@@ -584,7 +610,7 @@ export default function ProjectSettingsPageClient({ projectId }: ProjectSettings
                       </AlertDialogCancel>
                       <AlertDialogAction
                         onClick={handleDelete}
-                        disabled={deleteConfirmation !== formData.name || isDeleting}
+                        disabled={!deleteNameMatches || isDeleting}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
                         {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

@@ -9,6 +9,7 @@ import { getShareSessionFromRequest } from '@/lib/share-session';
 import { canDownloadProjectMedia } from '@/lib/project-download';
 import { getGuestIdentityFromRequest } from '@/lib/guest-identity';
 import { logError } from '@/lib/logger';
+import { toProjectBranding } from '@/lib/project-branding';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -210,6 +211,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         visibility: project.visibility,
         allowDownloads: project.allowDownloads,
       },
+      branding: toProjectBranding(video.projectId, project, { videoId: video.id }),
       isAuthenticated: !!session?.user?.id,
       currentUserId: session?.user?.id || null,
       currentUserName: session?.user?.name || null,
