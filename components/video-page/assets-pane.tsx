@@ -106,6 +106,8 @@ interface AssetsPaneProps {
   }) => Promise<VideoAsset | null>;
   deleteAsset: (assetId: string) => Promise<boolean>;
   downloadAsset: (asset: VideoAsset, preference?: AssetDownloadPreference) => Promise<void>;
+  downloadAllAssets: () => Promise<void>;
+  isDownloadingAll: boolean;
   hasMoreAssets: boolean;
   isLoadingMoreAssets: boolean;
   loadMoreAssets: () => Promise<void>;
@@ -130,6 +132,8 @@ export const AssetsPane = memo(function AssetsPane({
   createAsset,
   deleteAsset,
   downloadAsset,
+  downloadAllAssets,
+  isDownloadingAll,
   hasMoreAssets,
   isLoadingMoreAssets,
   loadMoreAssets,
@@ -1555,6 +1559,26 @@ export const AssetsPane = memo(function AssetsPane({
           You do not have permission to upload assets.
         </div>
       )}
+
+      {canDownloadAssets &&
+      (hasMoreAssets || assets.some((asset) => asset.provider !== 'YOUTUBE')) ? (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            disabled={isDownloadingAll}
+            onClick={() => void downloadAllAssets()}
+          >
+            {isDownloadingAll ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Download className="h-3 w-3" />
+            )}
+            Download all
+          </Button>
+        </div>
+      ) : null}
 
       <AssetListSection
         assets={sortedAssets}
