@@ -46,7 +46,7 @@ export function ShareLinkUnlock({ videoId }: ShareLinkUnlockProps) {
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-background px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-background px-4 py-6">
       <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-sm">
         <div className="text-center mb-5">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-3">

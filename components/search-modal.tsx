@@ -246,7 +246,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
           </div>
 
           {/* Results */}
-          <div className="h-[520px] overflow-y-auto">
+          <div className="h-[520px] max-h-[calc(100dvh-6rem)] overflow-y-auto">
             {showInitial && (
               <p className="text-sm text-muted-foreground text-center py-8 px-4">
                 Type at least 2 characters to search.

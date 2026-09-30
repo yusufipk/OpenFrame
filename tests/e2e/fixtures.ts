@@ -15,7 +15,13 @@
 import '../helpers/env';
 
 import { test as base, expect, type APIRequest, type APIRequestContext } from '@playwright/test';
-import { ProjectMemberRole, ProjectVisibility, type Project, type User } from '@prisma/client';
+import {
+  ProjectMemberRole,
+  ProjectVisibility,
+  type Project,
+  type SharePermission,
+  type User,
+} from '@prisma/client';
 import { db } from '@/lib/db';
 import {
   addProjectMember,
@@ -190,12 +196,14 @@ export class Seed {
     token?: string;
     expiresAt?: Date | null;
     password?: string;
+    permission?: SharePermission;
   }) {
     return createShareLink({
       projectId: input.projectId,
       videoId: input.videoId ?? null,
       token: input.token ?? `e2e-share-${uniqueTag()}`,
       expiresAt: input.expiresAt ?? null,
+      permission: input.permission,
       ...(input.password === undefined ? {} : { password: input.password }),
     });
   }

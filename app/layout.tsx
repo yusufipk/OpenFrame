@@ -123,7 +123,7 @@ export default function RootLayout({
       className={`${jetbrainsMono.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >
-      <body className="antialiased min-h-screen bg-background font-sans">
+      <body className="antialiased min-h-dvh bg-background font-sans">
         {/* Not executed, only parsed by readRuntimePublicConfig(). It carries the
             public settings the browser cannot get from NEXT_PUBLIC_* variables,
             which are frozen into the bundle when the image is built. */}

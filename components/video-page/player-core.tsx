@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type ReactNode, type RefObject } from 'react';
+import { memo, useState, type ReactNode, type RefObject } from 'react';
 import {
   AlertCircle,
   Clock,
@@ -16,6 +16,7 @@ import {
   Volume2,
   VolumeX,
   Loader2,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +24,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -33,6 +37,8 @@ import {
 } from '@/components/annotation-canvas';
 import { SILENT_ABOVE_SPEED } from '@/components/video-page/hooks/video-player-utils';
 import { SubtitleControls } from '@/components/video-page/subtitle-controls';
+import { STACKED_MEDIA_HEIGHT } from '@/components/video-page/stacked-layout';
+import { useStackedLayout } from '@/components/video-page/hooks/use-stacked-layout';
 import {
   useCueFontSize,
   type SubtitleAppearance,
@@ -122,9 +128,8 @@ interface PlayerCoreProps {
   toggleFullscreen: () => void;
   showComments: boolean;
   setShowComments: (value: boolean) => void;
-  setIsMobileCommentsOpen: (value: boolean) => void;
-  handleTimelineMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
-  handleTimelineMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void;
+  handleTimelinePointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  handleTimelinePointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
   handleSeekToTimestamp: (
     timestamp: number,
     annotation?: string | null,
@@ -201,9 +206,8 @@ export const PlayerCore = memo(function PlayerCore({
   toggleFullscreen,
   showComments,
   setShowComments,
-  setIsMobileCommentsOpen,
-  handleTimelineMouseDown,
-  handleTimelineMouseMove,
+  handleTimelinePointerDown,
+  handleTimelinePointerMove,
   handleSeekToTimestamp,
   commentMarkers,
   liveOverlay,
@@ -212,13 +216,24 @@ export const PlayerCore = memo(function PlayerCore({
   // <video>: the page can hold a version id while it still shows the guest name gate,
   // and an effect there would find no element and never run again.
   const subtitleFontSize = useCueFontSize(videoRef, activeVersionId, subtitleAppearance.size);
+  // On a phone the drawing toolbar moves under the player instead of covering it.
+  const isStackedLayout = useStackedLayout();
+  const [annotationToolbarSlot, setAnnotationToolbarSlot] = useState<HTMLDivElement | null>(null);
+  const inlineAnnotationToolbar = isStackedLayout && !isFullscreenMode;
+  const annotationToolbarProps = inlineAnnotationToolbar
+    ? { toolbarContainer: annotationToolbarSlot, toolbarPlacement: 'inline' as const }
+    : {};
   return (
     <>
       <div
         ref={videoContainerRef}
         className={cn(
-          'flex-1 bg-black flex items-center justify-center relative cursor-pointer group min-h-0',
-          isFullscreenMode && 'absolute inset-0',
+          'bg-black flex items-center justify-center relative cursor-pointer group',
+          isFullscreenMode
+            ? 'absolute inset-0'
+            : showComments
+              ? STACKED_MEDIA_HEIGHT
+              : 'flex-1 min-h-0',
           cursorIdle && isPlaying && 'cursor-none'
         )}
         onClick={handlePlayPause}
@@ -380,6 +395,7 @@ export const PlayerCore = memo(function PlayerCore({
           {isAnnotating && (
             <AnnotationCanvas
               ref={annotationCanvasRef}
+              {...annotationToolbarProps}
               mode="draw"
               onConfirm={(strokes) => {
                 setAnnotationStrokes(strokes);
@@ -403,6 +419,7 @@ export const PlayerCore = memo(function PlayerCore({
           {isEditingAnnotation && (
             <AnnotationCanvas
               ref={editAnnotationCanvasRef}
+              {...annotationToolbarProps}
               mode="draw"
               strokes={editAnnotationInitialStrokes}
               onConfirm={(strokes) => {
@@ -416,6 +433,8 @@ export const PlayerCore = memo(function PlayerCore({
           )}
         </div>
       </div>
+
+      {inlineAnnotationToolbar && <div ref={setAnnotationToolbarSlot} className="shrink-0" />}
 
       <div
         className={cn(
@@ -459,11 +478,11 @@ export const PlayerCore = memo(function PlayerCore({
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
 
-          <div className="ml-auto flex w-full min-w-0 flex-wrap items-center justify-end sm:w-auto sm:flex-nowrap">
+          <div className="ml-auto flex min-w-0 items-center justify-end">
             <Button
               variant={isFrameMode ? 'default' : 'ghost'}
               size="sm"
-              className="h-8 gap-1 text-xs"
+              className="hidden h-8 gap-1 text-xs sm:inline-flex"
               onClick={handleFrameModeToggle}
               title="Toggle frame step mode"
             >
@@ -473,7 +492,11 @@ export const PlayerCore = memo(function PlayerCore({
             {activeProviderId === 'bunny' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="hidden h-8 gap-1 text-xs sm:inline-flex"
+                  >
                     Quality {selectedQualityLabel}
                   </Button>
                 </DropdownMenuTrigger>
@@ -523,7 +546,11 @@ export const PlayerCore = memo(function PlayerCore({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="hidden h-8 gap-1 text-xs sm:inline-flex"
+                >
                   <Gauge className="h-3.5 w-3.5" />
                   {playbackSpeed === 1 ? '1x' : `${playbackSpeed}x`}
                 </Button>
@@ -546,6 +573,81 @@ export const PlayerCore = memo(function PlayerCore({
                     )}
                   </DropdownMenuItem>
                 ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* On a phone the row has room for playback, subtitles and fullscreen
+                only; frame stepping, quality and speed move into this menu. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={isFrameMode ? 'default' : 'ghost'}
+                  size="icon"
+                  className="h-8 w-8 sm:hidden"
+                  aria-label="More playback options"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[180px]">
+                <DropdownMenuItem
+                  onClick={handleFrameModeToggle}
+                  className={cn(isFrameMode && 'font-bold text-primary')}
+                >
+                  Frame step {frameStepLabel}
+                  {isFrameMode && <span className="ml-auto">On</span>}
+                </DropdownMenuItem>
+                {activeProviderId === 'bunny' && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Quality {selectedQualityLabel}</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem
+                        onClick={() => handleQualityChange(-1)}
+                        className={cn(selectedQualityLevel === -1 && 'font-bold text-primary')}
+                      >
+                        Auto
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleQualityChange(-2)}
+                        className={cn(selectedQualityLevel === -2 && 'font-bold text-primary')}
+                      >
+                        Original
+                      </DropdownMenuItem>
+                      {qualityOptions.map((option) => (
+                        <DropdownMenuItem
+                          key={option.level}
+                          onClick={() => handleQualityChange(option.level)}
+                          className={cn(
+                            option.level === selectedQualityLevel && 'font-bold text-primary'
+                          )}
+                        >
+                          {option.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    Speed {playbackSpeed === 1 ? '1x' : `${playbackSpeed}x`}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {speedOptions.map((speed) => (
+                      <DropdownMenuItem
+                        key={speed}
+                        onClick={() => handleSpeedChange(speed)}
+                        className={cn(speed === playbackSpeed && 'font-bold text-primary')}
+                      >
+                        {speed}x
+                        {speed > SILENT_ABOVE_SPEED && (
+                          <span className="ml-auto text-[10px] font-normal text-muted-foreground">
+                            no audio
+                          </span>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -577,25 +679,15 @@ export const PlayerCore = memo(function PlayerCore({
                   <MessageSquare className="h-4 w-4" />
                 )}
               </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 lg:hidden"
-                onClick={() => setIsMobileCommentsOpen(true)}
-                title="Show comments"
-              >
-                <MessageSquare className="h-4 w-4" />
-              </Button>
-            )}
+            ) : null}
           </div>
         </div>
 
         <div
           ref={timelineRef}
-          className="relative h-8 bg-muted rounded cursor-pointer select-none"
-          onMouseDown={handleTimelineMouseDown}
-          onMouseMove={handleTimelineMouseMove}
+          className="relative h-8 bg-muted rounded cursor-pointer select-none touch-none"
+          onPointerDown={handleTimelinePointerDown}
+          onPointerMove={handleTimelinePointerMove}
         >
           {/* Position (width/left) is driven directly on the DOM via a rAF loop
               in use-video-player for smooth scrubbing/playback; see progressRef
@@ -638,7 +730,7 @@ export const PlayerCore = memo(function PlayerCore({
               return (
                 <button
                   key={comment.id}
-                  onMouseDown={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSeekToTimestamp(comment.timestamp, comment.annotationData, {
@@ -673,7 +765,7 @@ export const PlayerCore = memo(function PlayerCore({
             return (
               <button
                 key={comment.id}
-                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleSeekToTimestamp(comment.timestamp, comment.annotationData, {

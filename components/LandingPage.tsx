@@ -232,7 +232,7 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
   return (
     <div
       ref={rootRef}
-      className="min-h-screen overflow-x-hidden bg-background text-foreground font-sans selection:bg-primary/20"
+      className="min-h-dvh overflow-x-hidden bg-background text-foreground font-sans selection:bg-primary/20"
     >
       <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-background">
         <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center justify-between px-4 sm:h-16 sm:px-6 lg:px-10">

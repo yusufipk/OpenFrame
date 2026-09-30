@@ -48,7 +48,8 @@ export const ImageAttachmentStrip = memo(function ImageAttachmentStrip({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={src} alt={alt} className="h-full w-full object-cover" />
-      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover/attachment:opacity-100">
+      {/* A touch screen has no hover, so the remove button is always shown there. */}
+      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover/attachment:opacity-100 pointer-coarse:bg-black/30 pointer-coarse:opacity-100">
         <Button size="icon" variant="destructive" className={buttonSize} onClick={onRemove}>
           <Trash2 className={iconSize} />
         </Button>

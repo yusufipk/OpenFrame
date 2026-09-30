@@ -1,7 +1,11 @@
+import type { Viewport } from 'next';
 import { notFound } from 'next/navigation';
 import { ShareLinkBootstrap } from '@/components/share-link-bootstrap';
 import { db } from '@/lib/db';
 import { validateShareLinkAccess } from '@/lib/share-links';
+import { REVIEW_PAGE_VIEWPORT } from '@/components/video-page/stacked-layout';
+
+export const viewport: Viewport = REVIEW_PAGE_VIEWPORT;
 
 interface ShortSharePageProps {
   params: Promise<{ token: string }>;

@@ -166,14 +166,8 @@ test('owner and guest review one native video through the real room service', as
   const startButton = page.getByRole('button', { name: 'Start Live Review' });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
-    .poll(() =>
-      page
-        .getByRole('button', { name: 'Close comments panel' })
-        .evaluate(
-          (element) => element.closest('.transition-transform')!.getBoundingClientRect().left
-        )
-    )
-    .toBeGreaterThanOrEqual(389);
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
   await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: 'instant' }));
   await expect(startButton).toBeInViewport();
   const startBounds = await startButton.boundingBox();
@@ -359,28 +353,12 @@ test('owner and guest review one native video through the real room service', as
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
       .toBe(true);
-    await expect
-      .poll(() =>
-        page
-          .getByRole('button', { name: 'Close comments panel' })
-          .evaluate(
-            (element) => element.closest('.transition-transform')!.getBoundingClientRect().left
-          )
-      )
-      .toBeGreaterThanOrEqual(389);
     await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: 'instant' }));
     await page.screenshot({ path: 'test-results/live-review-mobile.png' });
-    await page.getByTitle('Show comments', { exact: true }).click();
-    await expect
-      .poll(() =>
-        page
-          .getByRole('button', { name: 'Close comments panel' })
-          .evaluate(
-            (element) => element.closest('.transition-transform')!.getBoundingClientRect().right
-          )
-      )
-      .toBeLessThanOrEqual(391);
+    // On a phone the comments are stacked under the player, so the composer is
+    // reachable without opening anything; a short screen scrolls to it.
     const mobileComposer = page.getByPlaceholder('Add a comment...');
+    await mobileComposer.scrollIntoViewIfNeeded();
     await expect(mobileComposer).toBeInViewport();
     await expect
       .poll(() =>
@@ -412,7 +390,6 @@ test('owner and guest review one native video through the real room service', as
     expect(JSON.parse(annotatedComment.annotationData!)).toEqual([
       expect.objectContaining({ color: '#007AFF', width: 5 }),
     ]);
-    await page.getByRole('button', { name: 'Close comments panel' }).click();
     await page.setViewportSize({ width: 1280, height: 720 });
     const ownerStrokeMode = page.getByRole('button', { name: 'Stroke Mode' });
     if ((await ownerStrokeMode.getAttribute('aria-pressed')) !== 'true') {
