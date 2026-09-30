@@ -151,7 +151,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
           ? 'absolute top-0 left-0 right-0 z-50 transition-opacity duration-300'
           : // On a phone, upright or sideways, the keyboard takes half the screen, so
             // the header gives its height to the player and the comment being typed.
-            'max-lg:group-has-[textarea:focus]/page:hidden',
+            'cramped:group-has-[textarea:focus]/page:hidden',
         isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
       )}
     >

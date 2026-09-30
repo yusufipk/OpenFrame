@@ -4,14 +4,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* The review page puts the player beside the comments when there is width to
-   spare (desktop, or a phone held sideways) and stacks them otherwise. The two
-   queries are exact complements, so every element matches exactly one. */
+/* The review page puts the player beside the comments in any landscape window at
+   least 40rem wide (desktop, a half-width desktop window, a phone held sideways) and
+   stacks them in portrait or on a very narrow screen. `wide` and `narrow` are exact
+   complements, so every element matches exactly one. */
 @custom-variant wide {
   @media (width >= 64rem) {
     @slot;
   }
-  @media (orientation: landscape) and (height < 32rem) {
+  @media (orientation: landscape) and (width >= 40rem) {
     @slot;
   }
 }
@@ -19,7 +20,20 @@
   @media (width < 64rem) and (orientation: portrait) {
     @slot;
   }
-  @media (width < 64rem) and (height >= 32rem) {
+  @media (width < 40rem) {
+    @slot;
+  }
+}
+/* Where an on-screen keyboard leaves too little room to keep the page header while a
+   comment is typed: the stacked layout, or a phone held sideways. */
+@custom-variant cramped {
+  @media (width < 64rem) and (orientation: portrait) {
+    @slot;
+  }
+  @media (width < 40rem) {
+    @slot;
+  }
+  @media (height < 32rem) {
     @slot;
   }
 }
