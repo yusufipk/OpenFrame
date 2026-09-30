@@ -109,6 +109,10 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'invitation-preview-token': { windowMs: 15 * 60 * 1000, maxRequests: 12 }, // 12 per 15 min per IP+token
   'manage-member': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
 
+  // Requests refused for a wrong, revoked or under-scoped API token. The lookup
+  // already happened, so this bounds a script stuck retrying rather than guessing.
+  'api-token-refused': { windowMs: 60 * 1000, maxRequests: 30 }, // 30 per minute
+
   // Mutations (update/delete) — moderate
   mutate: { windowMs: 60 * 1000, maxRequests: 30 }, // 30 per minute
 

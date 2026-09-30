@@ -1,14 +1,15 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkUploadDestination } from '@/lib/content-access';
 import { contentId, contentTransaction } from '@/lib/content-mutations';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import crypto from 'crypto';
 import { cleanupBunnyStreamVideos } from '@/lib/bunny-stream-cleanup';
 import { createBunnyUploadToken, readBunnyUploadGrant } from '@/lib/bunny-upload-token';
 import { isBunnyUploadsEnabled } from '@/lib/feature-flags';
+import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { logError } from '@/lib/logger';
 import {
   enforceStorageQuota,
@@ -56,12 +57,12 @@ async function getProjectWithEditAccess(
 }
 
 // POST /api/projects/[projectId]/videos/bunny-init
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -185,12 +186,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       3600
     );
 
+    // The two URLs the browser builds for itself before it adds the version,
+    // handed over ready-made so a script does not need to know the CDN hostname.
+    const cdnHostname = resolveServerBunnyCdnHostname();
     const response = successResponse({
       videoId,
       libraryId,
       signature,
       expirationTime,
       uploadToken,
+      videoUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`,
+      thumbnailUrl: cdnHostname ? `https://${cdnHostname}/${videoId}/thumbnail.jpg` : null,
     });
 
     return withCacheControl(response, 'private, no-store');
@@ -202,12 +208,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 // DELETE /api/projects/[projectId]/videos/bunny-init
 // Best-effort cleanup for interrupted uploads before a DB row is created.
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -276,3 +282,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to cleanup pending upload');
   }
 }
+
+export const POST = withApiToken('upload', handlePost);
+export const DELETE = withApiToken('upload', handleDelete);

@@ -1,6 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
@@ -106,7 +106,7 @@ function hasValidAudioMagicBytes(header: Buffer, mimeType: string): boolean {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     // Check Content-Length header BEFORE loading the file
     const contentLength = request.headers.get('content-length');
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     const limited = await rateLimit(request, 'voice-upload');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
 
     const formData = await request.formData();
     const file = formData.get('audio') as File | null;
@@ -290,3 +290,5 @@ export async function POST(request: NextRequest) {
     return apiErrors.internalError('Failed to upload audio');
   }
 }
+
+export const POST = withApiToken(['upload', 'comments:write'], handlePost);

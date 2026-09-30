@@ -1,7 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse } from '@/lib/api-response';
 import { buildBillingAccessWhereInput } from '@/lib/billing';
 import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
@@ -11,9 +11,9 @@ const MAX_Q_LENGTH = 100;
 const RESULTS_PER_CATEGORY = 5;
 
 // GET /api/search?q=term : search projects, workspaces, and videos accessible to the user
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
     }
@@ -140,3 +140,5 @@ export async function GET(request: NextRequest) {
     return apiErrors.internalError();
   }
 }
+
+export const GET = withApiToken('read', handleGet);

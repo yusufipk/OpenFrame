@@ -62,8 +62,29 @@ model User {
   subscriptionCancellations SubscriptionCancellation[]
   managedLiveReviews LiveReviewSession[]
   liveReviewParticipants LiveReviewParticipant[]
+  apiTokens          ApiToken[]
 
   @@map("users")
+}
+
+/// A personal access token for scripts and agents working without a browser session.
+/// Only the SHA-256 of the token is stored; the plaintext is shown once, when it
+/// is created. Routes opt in with withApiToken() in lib/api-tokens.ts.
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique @map("token_hash")
+  /// The first characters of the token, kept so the settings page can tell tokens apart.
+  prefix     String
+  /// What the token may do; see API_TOKEN_SCOPES in lib/api-token-scopes.ts.
+  scopes     String[]  @default([])
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("api_tokens")
 }
 
 enum BillingSubscriptionStatus {

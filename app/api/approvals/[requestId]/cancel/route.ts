@@ -1,7 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -14,12 +14,12 @@ function isSerializableConflict(error: unknown): boolean {
 }
 
 // POST /api/approvals/[requestId]/cancel
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
 
     const { requestId } = await params;
@@ -99,3 +99,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to cancel approval request');
   }
 }
+
+export const POST = withApiToken('approvals', handlePost);

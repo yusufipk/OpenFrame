@@ -1,3 +1,4 @@
+import { withApiToken } from '@/lib/api-tokens';
 import { contentTransaction, ContentError } from '@/lib/content-mutations';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { VideoAssetProvider } from '@prisma/client';
@@ -209,7 +210,7 @@ async function isFreshAudioAttachment(url: string): Promise<AttachmentCheck> {
 }
 
 // GET /api/videos/[videoId]/assets
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'asset-list');
     if (limited) return limited;
@@ -302,7 +303,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/videos/[videoId]/assets
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   let reservationId: string | null = null;
   // What the reservation above was opened for, and who it is billed to. A hold is
   // only ever consumed by the flow that opened it: the id below can arrive in the
@@ -736,3 +737,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to create asset');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const POST = withApiToken('upload', handlePost);

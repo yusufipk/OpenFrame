@@ -1,8 +1,8 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { contentTransaction, ContentError } from '@/lib/content-mutations';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { validateUrl, validateOptionalUrlOrAppPath } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
@@ -15,9 +15,9 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
 // GET /api/projects/[projectId]/videos/[videoId]/versions
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { projectId, videoId } = await params;
 
     const video = await db.video.findFirst({
@@ -53,12 +53,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/projects/[projectId]/videos/[videoId]/versions - Add a new version
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'create-version');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, videoId } = await params;
 
     if (!session?.user?.id) {
@@ -316,3 +316,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to create version');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const POST = withApiToken('upload', handlePost);

@@ -17,6 +17,12 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-09-30',
+    title: 'API tokens for scripts and AI agents',
+    description:
+      'Create an API token in Settings, choose what it may do, and a render script or an AI agent like Claude Code can upload versions, work through comments, request approvals and more for you, no browser needed.',
+  },
+  {
+    date: '2026-09-30',
     title: 'Review on your phone',
     description:
       'On a phone the comments now sit right under the video, so you can watch and read feedback on one screen without opening a panel. You can also drag the timeline with your finger.',

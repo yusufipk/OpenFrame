@@ -1,6 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -14,7 +14,7 @@ import {
   subtitleFileNameToProxyUrl,
 } from '@/lib/subtitle-validation';
 
-export async function GET(
+async function handleGet(
   request: NextRequest,
   { params }: { params: Promise<{ filename: string }> }
 ) {
@@ -47,7 +47,7 @@ export async function GET(
           },
         },
       }),
-      auth(),
+      getSession(),
     ]);
 
     const video = subtitle?.version?.video ?? null;
@@ -90,3 +90,5 @@ export async function GET(
     return apiErrors.internalError('Failed to retrieve subtitle');
   }
 }
+
+export const GET = withApiToken('read', handleGet);

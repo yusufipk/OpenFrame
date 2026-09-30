@@ -1,6 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkWorkspaceAccess } from '@/lib/auth';
+import { checkWorkspaceAccess } from '@/lib/auth';
 import { InvitationRole, WorkspaceMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import {
@@ -15,9 +16,9 @@ import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 type RouteParams = { params: Promise<{ workspaceId: string }> };
 
 // GET /api/workspaces/[workspaceId]/members - List members
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { workspaceId } = await params;
     const MAX_LIMIT = 100;
     const MAX_PAGE = 1000;
@@ -129,12 +130,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/workspaces/[workspaceId]/members - Invite a member
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'invite-member');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { workspaceId } = await params;
 
     if (!session?.user?.id) {
@@ -223,3 +224,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to invite member');
   }
 }
+
+export const GET = withApiToken('share', handleGet);
+export const POST = withApiToken('share', handlePost);

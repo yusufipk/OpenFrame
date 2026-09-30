@@ -1,3 +1,4 @@
+import { withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
@@ -71,7 +72,7 @@ const SUBTITLE_SELECT = {
 } as const;
 
 // GET /api/videos/[videoId]/subtitles?versionId=...
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'subtitle-list');
     if (limited) return limited;
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/videos/[videoId]/subtitles
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   let reservationId: string | null = null;
   let billedUserId: string | null = null;
   let storedObjectKey: string | null = null;
@@ -274,3 +275,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to upload subtitle');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const POST = withApiToken('upload', handlePost);

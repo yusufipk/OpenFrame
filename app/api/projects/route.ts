@@ -1,7 +1,8 @@
+import { apiTokenScopeRefusal, getSession, withApiToken } from '@/lib/api-tokens';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkWorkspaceAccess } from '@/lib/auth';
+import { checkWorkspaceAccess } from '@/lib/auth';
 import { ProjectVisibility } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { buildBillingAccessWhereInput, isPaidTier } from '@/lib/billing';
@@ -12,9 +13,9 @@ import { logError } from '@/lib/logger';
 import { eventKey, recordEvent } from '@/lib/analytics/record';
 
 // GET /api/projects - List all projects for the authenticated user
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const MAX_LIMIT = 100;
     const MAX_PAGE = 1000;
     const MAX_OFFSET = 10000;
@@ -99,12 +100,12 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/projects - Create a new project
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const limited = await rateLimit(request, 'create-project');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
 
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
@@ -112,6 +113,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { name, description, visibility, workspaceId } = body;
+
+    // Creating a project anyone can open is a sharing decision; see the PATCH
+    // route. A private project is plain `manage`.
+    if (visibility && visibility !== ProjectVisibility.PRIVATE) {
+      const scopeRefusal = apiTokenScopeRefusal('share');
+      if (scopeRefusal) return scopeRefusal;
+    }
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return apiErrors.badRequest('Project name is required');
@@ -234,3 +242,6 @@ export async function POST(request: NextRequest) {
     return apiErrors.internalError('Failed to create project');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const POST = withApiToken('manage', handlePost);

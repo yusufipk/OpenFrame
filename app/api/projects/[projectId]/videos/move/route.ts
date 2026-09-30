@@ -1,8 +1,9 @@
+import { apiTokenScopeRefusal, getSession, withApiToken } from '@/lib/api-tokens';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { moveContentVideos, ContentError, contentId } from '@/lib/content-mutations';
 import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { db } from '@/lib/db';
 import { logError } from '@/lib/logger';
@@ -18,12 +19,12 @@ const MAX_BULK_MOVE = 50;
 // GET /api/projects/[projectId]/videos/move
 // Lists destination projects (same workspace, manageable by the user) the
 // current project's videos can be moved into.
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'api');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
 
     if (!session?.user?.id) {
@@ -86,12 +87,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
+    // A moved video takes on the access of wherever it lands, so for an API
+    // token moving is `share` as well as `manage`.
+    const scopeRefusal = apiTokenScopeRefusal('share');
+    if (scopeRefusal) return scopeRefusal;
     const { projectId } = await params;
     const body = await request.json();
     if (
@@ -125,3 +130,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to move videos');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const POST = withApiToken('manage', handlePost);

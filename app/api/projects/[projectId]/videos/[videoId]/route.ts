@@ -1,9 +1,9 @@
+import { apiTokenLacksScope, getSession, withApiToken } from '@/lib/api-tokens';
 import { contentTransaction, ContentError } from '@/lib/content-mutations';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { collectVideoMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
@@ -16,14 +16,16 @@ import { canDownloadProjectMedia } from '@/lib/project-download';
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
 // GET /api/projects/[projectId]/videos/[videoId]
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { projectId, videoId } = await params;
 
     // Parse query params for pagination and options
     const searchParams = request.nextUrl.searchParams;
-    const includeComments = searchParams.get('includeComments') !== 'false';
+    // Comment content is `comments:read`; a token with only `read` gets the video without it.
+    const includeComments =
+      searchParams.get('includeComments') !== 'false' && !apiTokenLacksScope('comments:read');
     const commentLimit = Math.min(parseInt(searchParams.get('commentLimit') || '50'), 100);
     const commentOffset = Math.max(0, parseInt(searchParams.get('commentOffset') || '0'));
     const includeReplies = searchParams.get('includeReplies') === 'true';
@@ -163,12 +165,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/projects/[projectId]/videos/[videoId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, videoId } = await params;
 
     if (!session?.user?.id) {
@@ -232,12 +234,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/projects/[projectId]/videos/[videoId]
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, videoId } = await params;
 
     if (!session?.user?.id) {
@@ -316,3 +318,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete video');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const PATCH = withApiToken('manage', handlePatch);
+export const DELETE = withApiToken('delete', handleDelete);

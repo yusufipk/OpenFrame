@@ -1,6 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { InvitationStatus, ProjectMemberRole } from '@prisma/client';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -9,12 +10,12 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ projectId: string; invitationId: string }> };
 
 // DELETE /api/projects/[projectId]/members/invitations/[invitationId] - Cancel a pending invitation
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'manage-member');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, invitationId } = await params;
 
     if (!session?.user?.id) {
@@ -70,3 +71,5 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to cancel invitation');
   }
 }
+
+export const DELETE = withApiToken('share', handleDelete);
