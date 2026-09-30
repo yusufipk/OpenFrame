@@ -1,7 +1,8 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkWorkspaceAccess } from '@/lib/auth';
+import { checkWorkspaceAccess } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { collectWorkspaceMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
@@ -12,9 +13,9 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ workspaceId: string }> };
 
 // GET /api/workspaces/[workspaceId] - Get a single workspace
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     const { workspaceId } = await params;
     const MAX_LIMIT = 100;
     const MAX_OFFSET = 10000;
@@ -83,12 +84,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/workspaces/[workspaceId] - Update a workspace
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { workspaceId } = await params;
 
     if (!session?.user?.id) {
@@ -150,12 +151,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/workspaces/[workspaceId] - Delete a workspace
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { workspaceId } = await params;
 
     if (!session?.user?.id) {
@@ -240,3 +241,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete workspace');
   }
 }
+
+export const GET = withApiToken('read', handleGet);
+export const PATCH = withApiToken('manage', handlePatch);
+export const DELETE = withApiToken('delete', handleDelete);

@@ -1,3 +1,4 @@
+import { withApiToken } from '@/lib/api-tokens';
 import { VideoAssetProvider } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -13,7 +14,7 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ videoId: string; assetId: string }> };
 
 // DELETE /api/videos/[videoId]/assets/[assetId]
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'asset-delete');
     if (limited) return limited;
@@ -198,3 +199,5 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete asset');
   }
 }
+
+export const DELETE = withApiToken('delete', handleDelete);

@@ -1,6 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
@@ -30,7 +30,7 @@ import {
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + 512 * 1024; // file + multipart overhead
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     // Check Content-Length header BEFORE loading the file
     const contentLength = request.headers.get('content-length');
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     const limited = await rateLimit(request, 'image-upload');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
 
     const formData = await request.formData();
     const files = formData.getAll('image');
@@ -208,3 +208,5 @@ export async function POST(request: NextRequest) {
     return apiErrors.internalError('Failed to upload image');
   }
 }
+
+export const POST = withApiToken(['upload', 'comments:write'], handlePost);

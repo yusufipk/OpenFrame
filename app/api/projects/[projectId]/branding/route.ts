@@ -1,7 +1,8 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -55,7 +56,7 @@ async function removeObjectBestEffort(projectId: string, key: string | null) {
 // one logo, each capped at BRAND_ASSET_MAX_BYTES, and a replaced file is deleted.
 // scripts/r2-orphan-cleanup.ts does not scan branding/, so an object whose key never made
 // it into the row (the row update throwing after PutObject succeeded) stays in the bucket.
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const contentLength = Number(request.headers.get('content-length'));
     if (!Number.isFinite(contentLength) || contentLength <= 0) {
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const limited = await rateLimit(request, 'image-upload');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
     if (!session?.user?.id) return apiErrors.unauthorized();
 
@@ -127,12 +128,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/projects/[projectId]/branding?kind=banner|logo - Remove the banner or the logo
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
     if (!session?.user?.id) return apiErrors.unauthorized();
 
@@ -166,3 +167,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to remove branding image');
   }
 }
+
+export const POST = withApiToken('manage', handlePost);
+export const DELETE = withApiToken('manage', handleDelete);

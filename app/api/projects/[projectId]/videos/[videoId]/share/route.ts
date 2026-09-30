@@ -1,10 +1,10 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { ContentError, contentTransaction } from '@/lib/content-mutations';
 import { checkVideoAccess } from '@/lib/content-access';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth } from '@/lib/auth';
 import { apiErrors, errorResponse, successResponse, withCacheControl } from '@/lib/api-response';
 import { db } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
@@ -90,9 +90,9 @@ function serializeShareLink(
 }
 
 // GET /api/projects/[projectId]/videos/[videoId]/share
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
     }
@@ -136,12 +136,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/projects/[projectId]/videos/[videoId]/share
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
     }
@@ -273,12 +273,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/projects/[projectId]/videos/[videoId]/share
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
     }
@@ -350,12 +350,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/projects/[projectId]/videos/[videoId]/share
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) {
       return apiErrors.unauthorized();
     }
@@ -385,3 +385,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete video share link');
   }
 }
+
+export const GET = withApiToken('share', handleGet);
+export const POST = withApiToken('share', handlePost);
+export const PATCH = withApiToken('share', handlePatch);
+export const DELETE = withApiToken('share', handleDelete);

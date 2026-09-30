@@ -1,3 +1,4 @@
+import { withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -11,7 +12,7 @@ import { getVideoAssetAccessContext } from '@/lib/video-assets';
 type RouteParams = { params: Promise<{ videoId: string; subtitleId: string }> };
 
 // DELETE /api/videos/[videoId]/subtitles/[subtitleId]
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'subtitle-delete');
     if (limited) return limited;
@@ -46,3 +47,5 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to delete subtitle');
   }
 }
+
+export const DELETE = withApiToken('delete', handleDelete);

@@ -1,9 +1,9 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { randomUUID } from 'crypto';
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/lib/auth';
 import { checkUploadDestination } from '@/lib/content-access';
 import { contentId, contentTransaction, ContentError } from '@/lib/content-mutations';
 import { db } from '@/lib/db';
@@ -39,14 +39,14 @@ function optionalText(value: FormDataEntryValue | null, maxLength: number): stri
   return value.trim() || null;
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   let reservationId: string | null = null;
   let billedUserId: string | null = null;
   const uploadedKeys: string[] = [];
   try {
     const limited = await rateLimit(request, 'create-video');
     if (limited) return limited;
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
     const { projectId } = await params;
     if (!hasR2Config())
@@ -327,3 +327,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 function neverUploadTarget(): never {
   throw new ContentError(403, 'Upload destination changed');
 }
+
+export const POST = withApiToken('upload', handlePost);

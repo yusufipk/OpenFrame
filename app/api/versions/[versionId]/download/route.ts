@@ -1,6 +1,6 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { db } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
@@ -245,7 +245,7 @@ function extractHeightFromBunnyMp4Url(url: string): number | null {
 }
 
 // GET /api/versions/[versionId]/download
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { searchParams } = new URL(request.url);
     const isPrepareOnly = searchParams.get('prepare') === '1';
@@ -253,7 +253,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const limited = await rateLimit(request, rateLimitAction);
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { versionId } = await params;
     const requestedQuality = Number(searchParams.get('quality'));
     const rawQuality = searchParams.get('quality');
@@ -408,3 +408,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to download video');
   }
 }
+
+export const GET = withApiToken('download', handleGet);

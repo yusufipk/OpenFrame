@@ -1,6 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { visibleVideoWhere } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { db } from '@/lib/db';
 import { logError } from '@/lib/logger';
@@ -15,12 +16,12 @@ import { rateLimit } from '@/lib/rate-limit';
 type RouteParams = { params: Promise<{ projectId: string }> };
 
 // GET /api/projects/[projectId]/download
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'project-download');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId } = await params;
     const requestedVideoIds = parseRequestedVideoIds(request.nextUrl.searchParams.get('videoIds'));
     const includeAllVersions = request.nextUrl.searchParams.get('versions') === 'all';
@@ -117,3 +118,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to prepare project download');
   }
 }
+
+export const GET = withApiToken('download', handleGet);

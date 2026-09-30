@@ -1,7 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { notifyUsers } from '@/lib/notifications';
 import { rateLimit } from '@/lib/rate-limit';
@@ -16,12 +16,12 @@ function isSerializableConflict(error: unknown): boolean {
 }
 
 // POST /api/approvals/[requestId]/decision
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'mutate');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
 
     const { requestId } = await params;
@@ -255,3 +255,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to respond to approval request');
   }
 }
+
+export const POST = withApiToken('approvals', handlePost);

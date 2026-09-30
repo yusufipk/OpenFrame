@@ -1,6 +1,7 @@
+import { getSession, withApiToken } from '@/lib/api-tokens';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { auth, checkProjectAccess } from '@/lib/auth';
+import { checkProjectAccess } from '@/lib/auth';
 import { ProjectMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
@@ -9,12 +10,12 @@ import { logError } from '@/lib/logger';
 type RouteParams = { params: Promise<{ projectId: string; memberId: string }> };
 
 // PATCH /api/projects/[projectId]/members/[memberId] - Update member role
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'manage-member');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, memberId } = await params;
 
     if (!session?.user?.id) {
@@ -72,12 +73,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/projects/[projectId]/members/[memberId] - Remove member
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'manage-member');
     if (limited) return limited;
 
-    const session = await auth();
+    const session = await getSession();
     const { projectId, memberId } = await params;
 
     if (!session?.user?.id) {
@@ -121,3 +122,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return apiErrors.internalError('Failed to remove member');
   }
 }
+
+export const PATCH = withApiToken('share', handlePatch);
+export const DELETE = withApiToken('share', handleDelete);
