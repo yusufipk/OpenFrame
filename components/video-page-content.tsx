@@ -247,6 +247,7 @@ export function VideoPageContent({
     isCreatingAsset,
     deletingAssetIds,
     activeDownloadAssetId,
+    isDownloadingAll,
     hasMoreAssets,
     isLoadingMoreAssets,
     fetchAssets,
@@ -254,6 +255,7 @@ export function VideoPageContent({
     createAsset,
     deleteAsset,
     downloadAsset,
+    downloadAllAssets,
     getGuestUploadToken,
   } = useVideoAssets({
     videoId,
@@ -1267,6 +1269,8 @@ export function VideoPageContent({
               createAsset={createAsset}
               deleteAsset={deleteAsset}
               downloadAsset={downloadAsset}
+              downloadAllAssets={downloadAllAssets}
+              isDownloadingAll={isDownloadingAll}
               hasMoreAssets={hasMoreAssets}
               isLoadingMoreAssets={isLoadingMoreAssets}
               loadMoreAssets={loadMoreAssets}

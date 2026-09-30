@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import type { AssetDownloadPreference, VideoAsset } from '@/components/video-page/types';
 import { apiRequestError, toastApiError } from '@/lib/client/api-error';
 import { downloadAudioAsWav } from '@/lib/client/download-file';
+import { beginUnloadGuard } from '@/lib/client/unload-guard';
 
 type CreateAssetPayload = {
   provider: 'R2_IMAGE' | 'YOUTUBE' | 'BUNNY' | 'R2_AUDIO' | 'R2_VIDEO';
@@ -47,6 +48,57 @@ interface AssetCreateResponse {
 }
 
 const ASSET_PAGE_SIZE = 40;
+/** The list route's own ceiling, so collecting every asset takes as few reads as it can. */
+const DOWNLOAD_ALL_PAGE_SIZE = 100;
+/** Browsers drop or block anchor downloads fired in the same tick; a gap keeps each one. */
+const DOWNLOAD_ALL_STAGGER_MS = 500;
+/**
+ * Mirrors the 'asset-download' rate limit in lib/rate-limit.ts (10 per minute per IP),
+ * which a Bunny prepare call counts against too. The extra second absorbs clock skew
+ * between this tab and the server's window. Keep the two in step.
+ */
+const ASSET_DOWNLOAD_BUDGET = 10;
+const ASSET_DOWNLOAD_WINDOW_MS = 61_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Spends one request from a sliding-window budget, waiting first when the window is
+ * full. A download the browser starts cannot be retried or even observed from here, so
+ * the only way to keep one from failing on a 429 is to never send it early. The pacer
+ * only sees this run: single downloads made in the minute before it share the server's
+ * budget, so the first few files of a run can still be refused.
+ */
+function createRequestPacer(budget: number, windowMs: number) {
+  const sentAt: number[] = [];
+  return async (onWait: (waitMs: number) => void): Promise<void> => {
+    const now = Date.now();
+    while (sentAt.length > 0 && now - sentAt[0]! >= windowMs) sentAt.shift();
+    if (sentAt.length >= budget) {
+      const waitMs = windowMs - (now - sentAt[0]!);
+      onWait(waitMs);
+      await sleep(waitMs);
+      sentAt.shift();
+    }
+    sentAt.push(Date.now());
+  };
+}
+
+/**
+ * Hands one same-origin download to the browser. The empty `download` attribute keeps
+ * the tab where it is even if the route answers with an error, and the server's
+ * Content-Disposition still names the file.
+ */
+function startAnchorDownload(url: string): void {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = '';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
 
 export function useVideoAssets({
   videoId,
@@ -62,6 +114,8 @@ export function useVideoAssets({
   // spinner, so the first one stopped indicating progress while it was still running.
   const [deletingAssetIds, setDeletingAssetIds] = useState<string[]>([]);
   const [activeDownloadAssetId, setActiveDownloadAssetId] = useState<string | null>(null);
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const isDownloadingAllRef = useRef(false);
   const [hasMoreAssets, setHasMoreAssets] = useState(false);
   const [nextAssetsOffset, setNextAssetsOffset] = useState(0);
   const [isLoadingMoreAssets, setIsLoadingMoreAssets] = useState(false);
@@ -289,6 +343,123 @@ export function useVideoAssets({
     [canDownloadAssets, videoId]
   );
 
+  /**
+   * Downloads every asset on the video, not only the pages already on screen, so the
+   * list is read afresh at the route's largest page size. Each file goes through the
+   * same per-asset route as the single download button, which keeps the access check
+   * in one place and lets share-link viewers use it too.
+   *
+   * Bunny videos use the route's default source (the original, else the compressed
+   * rendition), and voice notes arrive exactly as stored: converting a batch of them
+   * to WAV would mean buffering and decoding every one of them in this tab.
+   */
+  const downloadAllAssets = useCallback(async () => {
+    if (!canDownloadAssets) {
+      toast.error('Asset downloads require an authenticated account');
+      return;
+    }
+    if (isDownloadingAllRef.current) return;
+    isDownloadingAllRef.current = true;
+    setIsDownloadingAll(true);
+
+    const toastId = `download-all-assets-${videoId}`;
+    let releaseUnloadGuard: (() => void) | null = null;
+    try {
+      const everyAsset: VideoAsset[] = [];
+      let offset: number | null = 0;
+      while (offset !== null) {
+        const res = await fetch(
+          `/api/videos/${videoId}/assets?limit=${DOWNLOAD_ALL_PAGE_SIZE}&offset=${offset}`,
+          { cache: 'no-store' }
+        );
+        const payload = (await res.json().catch(() => null)) as AssetsListResponse | null;
+        if (!res.ok) {
+          toast.error(payload?.error || 'Failed to list assets');
+          return;
+        }
+        const list = Array.isArray(payload?.data?.assets) ? payload.data.assets : [];
+        for (const asset of list) {
+          if (!everyAsset.some((existing) => existing.id === asset.id)) everyAsset.push(asset);
+        }
+        const pagination = payload?.data?.pagination;
+        const nextOffset =
+          pagination?.hasMore && typeof pagination.nextOffset === 'number'
+            ? pagination.nextOffset
+            : null;
+        // A server that keeps answering the same offset would otherwise spin forever.
+        offset = nextOffset !== null && nextOffset > offset ? nextOffset : null;
+      }
+
+      const downloadable = everyAsset.filter((asset) => asset.provider !== 'YOUTUBE');
+      if (downloadable.length === 0) {
+        toast.error('No downloadable assets on this video');
+        return;
+      }
+
+      // The files themselves are owned by the browser once started, but the ones this
+      // loop has not reached yet are lost if the tab closes, so warn until it finishes.
+      releaseUnloadGuard = beginUnloadGuard();
+      const spendRequest = createRequestPacer(ASSET_DOWNLOAD_BUDGET, ASSET_DOWNLOAD_WINDOW_MS);
+      let started = 0;
+      let skipped = 0;
+      for (let index = 0; index < downloadable.length; index += 1) {
+        const asset = downloadable[index]!;
+        const progressTitle = `Downloading asset ${index + 1}/${downloadable.length}`;
+        toast.loading(progressTitle, { id: toastId, description: asset.displayName });
+        const waitForBudget = async () => {
+          let waited = false;
+          await spendRequest((waitMs) => {
+            waited = true;
+            toast.loading(progressTitle, {
+              id: toastId,
+              description: `Waiting ${Math.ceil(waitMs / 1000)}s for the download limit`,
+            });
+          });
+          if (waited) {
+            toast.loading(progressTitle, { id: toastId, description: asset.displayName });
+          }
+        };
+        const downloadUrl = `/api/videos/${videoId}/assets/${asset.id}/download`;
+        if (asset.provider === 'BUNNY') {
+          // A video still encoding has no file yet; skipping it beats saving an error body.
+          await waitForBudget();
+          const prepareRes = await fetch(`${downloadUrl}?prepare=1`, { cache: 'no-store' }).catch(
+            () => null
+          );
+          if (!prepareRes?.ok) {
+            skipped += 1;
+            continue;
+          }
+        }
+        // Stagger first, so the time the pacer records is the time the request leaves.
+        if (started > 0) await sleep(DOWNLOAD_ALL_STAGGER_MS);
+        await waitForBudget();
+        startAnchorDownload(downloadUrl);
+        started += 1;
+      }
+
+      if (started === 0) {
+        toast.error('None of the assets could be prepared for download', {
+          id: toastId,
+          description: undefined,
+        });
+      } else if (skipped > 0) {
+        toast.warning(
+          `Started ${started} of ${downloadable.length} downloads. ${skipped} could not be prepared.`,
+          { id: toastId, description: undefined }
+        );
+      } else {
+        toast.success(`Started ${started} downloads`, { id: toastId, description: undefined });
+      }
+    } catch {
+      toast.error('Failed to download assets', { id: toastId, description: undefined });
+    } finally {
+      releaseUnloadGuard?.();
+      isDownloadingAllRef.current = false;
+      setIsDownloadingAll(false);
+    }
+  }, [canDownloadAssets, videoId]);
+
   const getGuestUploadToken = useCallback(
     async (intent: 'image' | 'audio') => {
       if (isAuthenticated) return null;
@@ -316,6 +487,7 @@ export function useVideoAssets({
     isCreatingAsset,
     deletingAssetIds,
     activeDownloadAssetId,
+    isDownloadingAll,
     hasMoreAssets,
     isLoadingMoreAssets,
     fetchAssets,
@@ -323,6 +495,7 @@ export function useVideoAssets({
     createAsset,
     deleteAsset,
     downloadAsset,
+    downloadAllAssets,
     getGuestUploadToken,
   };
 }
