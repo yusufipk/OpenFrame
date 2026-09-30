@@ -777,8 +777,8 @@ describe('POST /api/videos/[videoId]/assets/drive-import: what is stored', () =>
     signedInAs(owner);
     const realFetch = vi.mocked(fetch).getMockImplementation()!;
     vi.mocked(fetch).mockImplementation(async (input, init) => {
-      const url = String(input instanceof Request ? input.url : input);
-      if (url.startsWith('https://oauth2.googleapis.com')) {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      if (url.origin === 'https://oauth2.googleapis.com') {
         return json({ aud: 'other.apps.googleusercontent.com', scope: DRIVE_FILE_SCOPE });
       }
       return realFetch(input, init);
