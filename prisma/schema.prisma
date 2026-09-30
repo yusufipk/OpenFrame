@@ -60,6 +60,7 @@ model User {
   subscriptionCancellations SubscriptionCancellation[]
   managedLiveReviews LiveReviewSession[]
   liveReviewParticipants LiveReviewParticipant[]
+  driveImports       DriveImport[]
 
   @@map("users")
 }
@@ -257,6 +258,7 @@ model Project {
   shareLinks  ShareLink[]
   commentTags CommentTag[]
   invitations Invitation[]
+  driveImports DriveImport[]
   
   @@index([ownerId])
   @@index([slug])
@@ -940,6 +942,67 @@ model WatchProgress {
   @@index([userId])
   @@index([versionId])
   @@map("watch_progress")
+}
+
+enum DriveImportBackend {
+  BUNNY
+  S3
+}
+
+enum DriveImportStatus {
+  /// Bytes are on their way: Bunny is fetching them, or this server is copying them to S3.
+  TRANSFERRING
+  /// One caller has claimed the row and is writing the video or version for it.
+  FINALIZING
+  DONE
+  FAILED
+}
+
+/// A Google Drive file being copied into a project. The video or version row is
+/// only written once the bytes have landed, so a failed import leaves nothing
+/// behind in the project; this row is what the uploader sees in the meantime.
+/// See docs/google-drive-import.md.
+model DriveImport {
+  id                 String             @id @default(cuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Destination folder for a new video, null for the project root.
+  folderId           String?
+  /// Set when the import adds a new version to this video instead of creating one.
+  targetVideoId      String?
+  /// Set when the import becomes an attachment (asset) on this video instead.
+  assetVideoId       String?
+  driveFileId        String
+  fileName           String
+  title              String
+  mimeType           String
+  /// As reported by Drive, which is what the quota was reserved against.
+  sizeBytes          BigInt             @map("size_bytes")
+  billedUserId       String
+  reservationId      String?
+  backend            DriveImportBackend
+  status             DriveImportStatus  @default(TRANSFERRING)
+  bunnyVideoId       String?
+  objectKey          String?
+  multipartUploadId  String?
+  thumbnailObjectKey String?
+  /// Set by the S3 copier once the object is complete; Bunny imports use Bunny's status instead.
+  transferredAt      DateTime?
+  /// Refreshed by the S3 copier while it runs, so a copy lost to a restart can be told from a slow one.
+  heartbeatAt        DateTime           @default(now())
+  createdVideoId     String?
+  createdVersionId   String?
+  createdAssetId     String?
+  error              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([projectId, userId, status])
+  @@index([status])
+  @@index([bunnyVideoId])
+  @@map("drive_imports")
 }
 
 // Tracks in-flight R2 upload slots so concurrent uploads are counted against quota

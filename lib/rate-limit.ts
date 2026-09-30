@@ -64,6 +64,7 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'feedback-upload': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
   'create-project': { windowMs: 60 * 60 * 1000, maxRequests: 20 }, // 20 per hour
   'create-video': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
+  'drive-import-list': { windowMs: 60 * 1000, maxRequests: 60 }, // 60 per minute (import progress polling)
   'create-version': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'create-workspace': { windowMs: 60 * 60 * 1000, maxRequests: 10 }, // 10 per hour
   'asset-list': { windowMs: 60 * 1000, maxRequests: 120 }, // 120 per minute
@@ -72,6 +73,8 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'asset-download': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'asset-bunny-init': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'asset-r2-init': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
+  'asset-drive-import': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
+  'asset-drive-import-user': { windowMs: 60 * 1000, maxRequests: 10 }, // per signed-in user, not per IP
   'subtitle-list': { windowMs: 60 * 1000, maxRequests: 120 }, // 120 per minute
   'subtitle-create': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
   'subtitle-delete': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute

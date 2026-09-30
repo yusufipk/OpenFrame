@@ -2,6 +2,8 @@
 
 import { memo, type ReactNode } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
+import { DriveVersionImportIndicator } from '@/components/drive-import/drive-imports-panel';
 import {
   ArrowLeft,
   ChevronDown,
@@ -167,6 +169,9 @@ export const VideoPageHeader = memo(function VideoPageHeader({
       </div>
 
       <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:shrink-0 sm:flex-nowrap">
+        {mode === 'dashboard' && mediaType === 'VIDEO' && directUploadsEnabled && projectId ? (
+          <DriveVersionImportIndicator projectId={projectId} videoId={videoId} />
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -295,6 +300,14 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                   isCreatingVersion={isCreatingVersion}
                   versionsCount={versions.length}
                   onCreateVersion={onCreateVersion}
+                  projectId={projectId}
+                  videoId={videoId}
+                  onDriveImportStarted={() => {
+                    setShowVersionDialog(false);
+                    toast.success(
+                      'Importing from Google Drive. The new version appears once the copy finishes.'
+                    );
+                  }}
                 />
               </div>
             ) : null}

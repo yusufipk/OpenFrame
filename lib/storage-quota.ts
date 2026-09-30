@@ -134,6 +134,8 @@ export const UPLOAD_RESERVATION_PURPOSES = {
   BUNNY: 'BUNNY',
   /** A subtitle track, which lands in our own S3-compatible storage whatever hosts the video. */
   SUBTITLE: 'SUBTITLE',
+  /** A Google Drive file being copied to Bunny or to our own storage. */
+  DRIVE_IMPORT: 'DRIVE_IMPORT',
 } as const;
 
 export type UploadReservationPurpose =

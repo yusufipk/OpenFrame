@@ -71,6 +71,7 @@ import * as projectTagsRoute from '@/app/api/projects/[projectId]/tags/route';
 import * as projectTagRoute from '@/app/api/projects/[projectId]/tags/[tagId]/route';
 import * as videosBulkDeleteRoute from '@/app/api/projects/[projectId]/videos/bulk-delete/route';
 import * as videosBunnyInitRoute from '@/app/api/projects/[projectId]/videos/bunny-init/route';
+import * as driveImportsRoute from '@/app/api/projects/[projectId]/drive-imports/route';
 import * as videosImagesRoute from '@/app/api/projects/[projectId]/videos/images/route';
 import * as videosMoveRoute from '@/app/api/projects/[projectId]/videos/move/route';
 import * as videosR2CompleteRoute from '@/app/api/projects/[projectId]/videos/r2-complete/route';
@@ -99,6 +100,7 @@ import * as assetRoute from '@/app/api/videos/[videoId]/assets/[assetId]/route';
 import * as attachmentCommentsRoute from '@/app/api/videos/[videoId]/attachment-comments/route';
 import * as attachmentCommentRoute from '@/app/api/videos/[videoId]/attachment-comments/[attachmentCommentId]/route';
 import * as assetsBunnyInitRoute from '@/app/api/videos/[videoId]/assets/bunny-init/route';
+import * as assetsDriveImportRoute from '@/app/api/videos/[videoId]/assets/drive-import/route';
 import * as assetsR2InitRoute from '@/app/api/videos/[videoId]/assets/r2-init/route';
 import * as assetsRoute from '@/app/api/videos/[videoId]/assets/route';
 import * as subtitleRoute from '@/app/api/videos/[videoId]/subtitles/[subtitleId]/route';
@@ -156,7 +158,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 74;
+const EXPECTED_ROUTE_MODULE_COUNT = 76;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -558,6 +560,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     body: { title: 'anon' },
   },
   {
+    file: 'projects/[projectId]/drive-imports/route.ts',
+    module: driveImportsRoute,
+    url: (f) => `/api/projects/${f.projectId}/drive-imports`,
+    params: (f) => ({ projectId: f.projectId }),
+    body: { fileIds: ['1AbCdEfGhIjKlMnOpQrStUvWxYz'], accessToken: 'ya29.anonymous' },
+  },
+  {
     file: 'projects/[projectId]/folders/route.ts',
     module: foldersRoute,
     url: (f) => `/api/projects/${f.projectId}/folders`,
@@ -743,6 +752,16 @@ const ROUTE_CASES: readonly RouteCase[] = [
     // is in tests/api/assets-authz.test.ts, which asserts the 403 for a stranger
     // next to the 400 a member gets one line below the guard.
     body: { fileName: 'a.mp4' },
+  },
+  {
+    file: 'videos/[videoId]/assets/drive-import/route.ts',
+    module: assetsDriveImportRoute,
+    url: (f) => `/api/videos/${f.videoId}/assets/drive-import`,
+    params: (f) => ({ videoId: f.videoId }),
+    body: {
+      fileIds: ['1AbCdEfGhIjKlMnOpQrStUvWxYz'],
+      accessToken: 'ya29.anonymous',
+    },
   },
   {
     file: 'videos/[videoId]/assets/r2-init/route.ts',

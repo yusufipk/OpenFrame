@@ -16,6 +16,8 @@
  * needs either has to opt into per-request rendering.
  */
 
+import { getDriveImportBackend, getGoogleDriveConfig } from '@/lib/feature-flags';
+
 export const RUNTIME_PUBLIC_CONFIG_ELEMENT_ID = 'openframe-runtime-public-config';
 
 export interface RuntimePublicConfig {
@@ -23,6 +25,11 @@ export interface RuntimePublicConfig {
   bunnyCdnUrl: string;
   /** Comma-separated hostnames, as the environment variable spells them. */
   directDownloadAllowedHosts: string;
+  /**
+   * What the Google Picker needs in the browser, or null when this host has no
+   * Drive import. None of it is secret: the API key is restricted by referrer.
+   */
+  googleDrive: { clientId: string; apiKey: string; appId: string } | null;
 }
 
 /** Server-side: the values as configured for this deployment, read at request time. */
@@ -30,6 +37,7 @@ export function buildRuntimePublicConfig(): RuntimePublicConfig {
   return {
     bunnyCdnUrl: process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL || '',
     directDownloadAllowedHosts: process.env.NEXT_PUBLIC_DIRECT_DOWNLOAD_ALLOWED_HOSTS || '',
+    googleDrive: getDriveImportBackend() ? getGoogleDriveConfig() : null,
   };
 }
 
@@ -47,15 +55,29 @@ export function readRuntimePublicConfig(): RuntimePublicConfig | null {
   try {
     const parsed: unknown = JSON.parse(element.textContent);
     if (!parsed || typeof parsed !== 'object') return null;
-    const { bunnyCdnUrl, directDownloadAllowedHosts } = parsed as Record<string, unknown>;
+    const { bunnyCdnUrl, directDownloadAllowedHosts, googleDrive } = parsed as Record<
+      string,
+      unknown
+    >;
     return {
       bunnyCdnUrl: typeof bunnyCdnUrl === 'string' ? bunnyCdnUrl : '',
       directDownloadAllowedHosts:
         typeof directDownloadAllowedHosts === 'string' ? directDownloadAllowedHosts : '',
+      googleDrive: readGoogleDriveConfig(googleDrive),
     };
   } catch {
     return null;
   }
+}
+
+function readGoogleDriveConfig(value: unknown): RuntimePublicConfig['googleDrive'] {
+  if (!value || typeof value !== 'object') return null;
+  const { clientId, apiKey, appId } = value as Record<string, unknown>;
+  if (typeof clientId !== 'string' || typeof apiKey !== 'string' || typeof appId !== 'string') {
+    return null;
+  }
+  if (!clientId || !apiKey || !appId) return null;
+  return { clientId, apiKey, appId };
 }
 
 export function resolvePublicDirectDownloadAllowedHosts(): string[] {

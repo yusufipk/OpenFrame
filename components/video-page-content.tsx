@@ -272,6 +272,9 @@ export function VideoPageContent({
   });
 
   // Determine current user info for permission checks and comment display
+  const refreshAssetsAfterDriveImport = useCallback(() => {
+    void fetchAssets({ silent: true });
+  }, [fetchAssets]);
   const currentUserId = video?.currentUserId || null;
   const currentUserName = video?.currentUserName || null;
   const canResolveComments = !!video?.canResolveComments;
@@ -1227,6 +1230,8 @@ export function VideoPageContent({
               attachmentCommentCounts={attachmentCommentCounts}
               onAttachmentCommentsChanged={() => void refreshAttachmentCommentCounts()}
               guestName={isGuest ? normalizedGuestName : null}
+              driveImportProjectId={!isGuest && projectId ? projectId : null}
+              onDriveAssetsImported={refreshAssetsAfterDriveImport}
             />
           }
           composer={

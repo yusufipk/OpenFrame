@@ -1,3 +1,4 @@
+import type { Readable } from 'stream';
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -315,7 +316,8 @@ export async function createPresignedVideoPutUrl(
 
 export async function createMultipartVideoUpload(
   key: string,
-  contentType: string
+  contentType: string,
+  abortSignal?: AbortSignal
 ): Promise<string> {
   if (!key.startsWith(VIDEO_OBJECT_KEY_PREFIX)) {
     throw new Error('Invalid video object key');
@@ -326,7 +328,8 @@ export async function createMultipartVideoUpload(
       Bucket: R2_BUCKET_NAME,
       Key: key,
       ContentType: contentType,
-    })
+    }),
+    { abortSignal }
   );
 
   if (!result.UploadId) {
@@ -363,7 +366,8 @@ export async function createPresignedUploadPartUrl(
 export async function completeMultipartVideoUpload(
   key: string,
   uploadId: string,
-  parts: Array<{ partNumber: number; etag: string }>
+  parts: Array<{ partNumber: number; etag: string }>,
+  abortSignal?: AbortSignal
 ): Promise<void> {
   if (!key.startsWith(VIDEO_OBJECT_KEY_PREFIX)) {
     throw new Error('Invalid video object key');
@@ -383,7 +387,8 @@ export async function completeMultipartVideoUpload(
       Key: key,
       UploadId: uploadId,
       MultipartUpload: { Parts: orderedParts },
-    })
+    }),
+    { abortSignal }
   );
 }
 
@@ -398,6 +403,94 @@ export async function abortMultipartVideoUpload(key: string, uploadId: string): 
       Key: key,
       UploadId: uploadId,
     })
+  );
+}
+
+/**
+ * Server-side part upload, for bytes this server is copying itself (a Google
+ * Drive import on a self-hosted instance). Browser uploads use presigned part urls.
+ */
+export async function uploadVideoPart(
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  body: Uint8Array,
+  abortSignal?: AbortSignal
+): Promise<string> {
+  if (!key.startsWith(VIDEO_OBJECT_KEY_PREFIX)) {
+    throw new Error('Invalid video object key');
+  }
+
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
+    throw new Error('Invalid part number');
+  }
+
+  const result = await r2Client.send(
+    new UploadPartCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      UploadId: uploadId,
+      PartNumber: partNumber,
+      Body: body,
+      ContentLength: body.byteLength,
+    }),
+    { abortSignal }
+  );
+
+  if (!result.ETag) {
+    throw new Error('Storage did not return an ETag for the uploaded part');
+  }
+
+  return result.ETag;
+}
+
+export async function putImageObject(
+  key: string,
+  contentType: string,
+  body: Uint8Array,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  if (!key.startsWith(IMAGE_OBJECT_KEY_PREFIX)) {
+    throw new Error('Invalid image object key');
+  }
+
+  await r2Client.send(
+    new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      ContentType: contentType,
+      Body: body,
+      ContentLength: body.byteLength,
+    }),
+    { abortSignal }
+  );
+}
+
+/**
+ * Streams an image or audio attachment into storage without holding it in
+ * memory. The length must be known up front: S3 needs it for a streamed body,
+ * and a body that turns out shorter or longer makes the request fail.
+ */
+export async function putAttachmentObjectStream(
+  key: string,
+  contentType: string,
+  body: Readable,
+  contentLength: number,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  if (!key.startsWith(IMAGE_OBJECT_KEY_PREFIX) && !key.startsWith(AUDIO_OBJECT_KEY_PREFIX)) {
+    throw new Error('Invalid attachment object key');
+  }
+
+  await r2Client.send(
+    new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      ContentType: contentType,
+      Body: body,
+      ContentLength: contentLength,
+    }),
+    { abortSignal }
   );
 }
 

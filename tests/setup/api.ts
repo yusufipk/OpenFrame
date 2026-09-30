@@ -71,6 +71,16 @@ vi.mock('@/lib/r2', async (importOriginal) => {
     createMultipartVideoUpload: vi.fn(async () => 'test-multipart-upload-id'),
     completeMultipartVideoUpload: vi.fn(async () => undefined),
     abortMultipartVideoUpload: vi.fn(async () => undefined),
+    uploadVideoPart: vi.fn(
+      async (key: string, _uploadId: string, partNumber: number) => `"etag-${key}-${partNumber}"`
+    ),
+    putImageObject: vi.fn(async () => undefined),
+    putAttachmentObjectStream: vi.fn(
+      async (_key: string, _type: string, body: AsyncIterable<unknown>) => {
+        // Drain the stream the way S3 would, so the importer's byte count runs.
+        for await (const _chunk of body) void _chunk;
+      }
+    ),
     uploadAudio: vi.fn(async (key: string) => `https://r2.test/object/${key}`),
     deleteVideoObject: vi.fn(async () => undefined),
     deleteR2Object: vi.fn(async () => undefined),
