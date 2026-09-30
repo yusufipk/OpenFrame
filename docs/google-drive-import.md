@@ -19,7 +19,7 @@ An import that has not become a video within 24 hours is failed and cleaned up r
 
 ### Images on "Add file"
 
-The "Add file" page's picker also lists PNG, JPEG and WebP images. `POST /api/projects/[projectId]/drive-imports` turns each picked image into an image review within the request and returns it in `images`, next to the video `imports`. An image review has to be decoded in full to check it and draw its thumbnail, so the server downloads it into memory, up to the same 20 MB a browser image upload takes, and stores it through the same code (`lib/image-review-upload.ts`). Images of one pick are stored one at a time, since each takes the next position in the project. A new version only takes a video; an image review's new version is still uploaded from the computer.
+The "Add file" page's picker also lists PNG, JPEG and WebP images. `POST /api/projects/[projectId]/drive-imports` turns each picked image into an image review within the request and returns it in `images`, next to the video `imports`. An image review has to be decoded in full to check it and draw its thumbnail, so the server downloads it into memory, up to the same 20 MB a browser image upload takes, and stores it through the same code (`lib/image-review-upload.ts`). Images of one pick download in parallel but are stored one at a time, since each takes the next position in the project. A new version only takes a video; an image review's new version is still uploaded from the computer.
 
 ### Assets
 

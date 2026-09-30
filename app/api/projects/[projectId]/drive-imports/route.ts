@@ -155,9 +155,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const images: Array<{ driveFileId: string; videoId: string }> = [];
     const errors: Array<{ driveFileId: string; error: string }> = [];
     let firstRefusal: NextResponse | null = null;
-    // Image reviews are written one at a time: each claims the next position in
-    // the project inside a Serializable transaction, and two at once conflict.
+    // Image reviews download in parallel but are stored one at a time: each
+    // claims the next position in the project inside a Serializable
+    // transaction, and two at once conflict.
     let imageQueue: Promise<unknown> = Promise.resolve();
+    const runExclusive = <T>(run: () => Promise<T>): Promise<T> => {
+      const next = imageQueue.then(run);
+      imageQueue = next.catch(() => undefined);
+      return next;
+    };
 
     // A few files at a time: a slow Bunny start must not hold the whole batch
     // long enough for a proxy to time the request out after some files already
@@ -186,19 +192,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             });
             return;
           }
-          const run = imageQueue.then(() =>
-            importDriveImageReview({
-              projectId,
-              folderId,
-              userId: session.user.id,
-              userName: session.user.name,
-              billedUserId: project.workspace.ownerId,
-              accessToken,
-              file: lookup.file,
-            })
-          );
-          imageQueue = run.catch(() => undefined);
-          const result = await run;
+          const result = await importDriveImageReview({
+            projectId,
+            folderId,
+            userId: session.user.id,
+            userName: session.user.name,
+            billedUserId: project.workspace.ownerId,
+            accessToken,
+            file: lookup.file,
+            runExclusive,
+          });
           if (result.ok) {
             images.push({ driveFileId: fileId, videoId: result.videoId });
           } else {

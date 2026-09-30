@@ -17,6 +17,12 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-09-30',
+    title: 'Import from Google Drive',
+    description:
+      'Add videos and images to a project, a new version to a video, or attachments to its Assets tab straight from Google Drive, without downloading them first. Pick several files at once and browse your folders and shared drives.',
+  },
+  {
+    date: '2026-09-30',
     title: 'Download all assets',
     description:
       'The Assets tab of a video has a Download all button that saves every image, video and voice note attached to it in one go.',

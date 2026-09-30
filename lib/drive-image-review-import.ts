@@ -29,6 +29,12 @@ export type ImportDriveImageReviewInput = {
   billedUserId: string;
   accessToken: string;
   file: DriveFileMetadata;
+  /**
+   * Runs the store step. Several images of one pick may download at once, but
+   * each takes the next position in the project in a Serializable transaction,
+   * so the caller passes a queue that runs them one at a time.
+   */
+  runExclusive: <T>(run: () => Promise<T>) => Promise<T>;
 };
 
 export type ImportDriveImageReviewResult =
@@ -74,24 +80,31 @@ export async function importDriveImageReview(
     if (!response.ok) {
       return { ok: false, error: `Google Drive refused the download (${response.status})` };
     }
-    const bytes = await readExactly(response, Number(file.sizeBytes));
+    let bytes: Buffer | null;
+    try {
+      bytes = await readExactly(response, Number(file.sizeBytes));
+    } catch {
+      return { ok: false, error: 'Google Drive did not send the image in time. Try again.' };
+    }
     if (!bytes) {
       return { ok: false, error: 'The image from Google Drive did not match its reported size' };
     }
 
-    const stored = await storeImageReview({
-      projectId: input.projectId,
-      folderId: input.folderId,
-      targetVideoId: null,
-      userId: input.userId,
-      userName: input.userName,
-      reservedOwnerId: input.billedUserId,
-      bytes,
-      suppliedMime,
-      title: titleFromDriveFileName(file.name).slice(0, 100),
-      description: null,
-      versionLabel: null,
-    });
+    const stored = await input.runExclusive(() =>
+      storeImageReview({
+        projectId: input.projectId,
+        folderId: input.folderId,
+        targetVideoId: null,
+        userId: input.userId,
+        userName: input.userName,
+        reservedOwnerId: input.billedUserId,
+        bytes,
+        suppliedMime,
+        title: titleFromDriveFileName(file.name).slice(0, 100).trim() || 'Untitled image',
+        description: null,
+        versionLabel: null,
+      })
+    );
     if ('response' in stored) {
       return {
         ok: false,

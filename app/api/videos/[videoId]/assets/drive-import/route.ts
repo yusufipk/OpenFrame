@@ -6,7 +6,7 @@ import { checkVideoAccess } from '@/lib/content-access';
 import { db } from '@/lib/db';
 import { importDriveAttachment } from '@/lib/drive-asset-import';
 import { DRIVE_IMPORT_MAX_FILES, startDriveImport, type DriveImportView } from '@/lib/drive-import';
-import { getDriveImportBackend } from '@/lib/feature-flags';
+import { getDriveImportBackend, hasR2Config } from '@/lib/feature-flags';
 import {
   getDriveFileMetadata,
   isPlausibleAccessToken,
@@ -129,6 +129,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             errors.push({ driveFileId: fileId, error: result.error });
             firstRefusal ??= result.response ?? null;
           }
+          return;
+        }
+
+        // Image and audio attachments always live in object storage.
+        if (!hasR2Config()) {
+          errors.push({
+            driveFileId: fileId,
+            error: 'Attachments require configured object storage',
+          });
           return;
         }
 

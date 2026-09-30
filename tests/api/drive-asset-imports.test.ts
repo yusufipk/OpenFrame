@@ -95,6 +95,10 @@ beforeEach(() => {
   vi.stubEnv('BUNNY_STREAM_API_KEY', 'test-bunny-key');
   vi.stubEnv('BUNNY_STREAM_LIBRARY_ID', '424242');
   vi.stubEnv('BUNNY_CDN_URL', 'https://vz-test.b-cdn.net');
+  vi.stubEnv('R2_ACCESS_KEY_ID', 'test-key');
+  vi.stubEnv('R2_SECRET_ACCESS_KEY', 'test-secret');
+  vi.stubEnv('R2_BUCKET_NAME', 'test-bucket');
+  vi.stubEnv('R2_ENDPOINT', 'http://minio-test:9000');
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -205,6 +209,18 @@ describe('POST /api/videos/[videoId]/assets/drive-import: who may attach', () =>
     expect(downloads()).toHaveLength(0);
     expect(await db.uploadReservation.count()).toBe(0);
     expect(await db.driveImport.count()).toBe(0);
+  });
+
+  it('refuses image and audio attachments when object storage is not configured', async () => {
+    vi.stubEnv('R2_BUCKET_NAME', '');
+    const { owner, video } = await seedVersion();
+    signedInAs(owner);
+
+    const response = await importRequest(video.id, { fileIds: [FILE_ID], accessToken: TOKEN });
+
+    expect(response.status).toBe(400);
+    expect(await readError(response)).toContain('object storage');
+    expect(downloads()).toHaveLength(0);
   });
 
   it('refuses when this host has not configured Google Drive', async () => {

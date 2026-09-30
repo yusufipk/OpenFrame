@@ -3,12 +3,18 @@
 // stub; storage is a mocked S3 client, as in image-reviews.test.ts.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@/lib/db';
 import { POST } from '@/app/api/projects/[projectId]/drive-imports/route';
 import { apiRequest, callRoute, readData, readError } from '../helpers/request';
 import { signedInAs } from '../helpers/session';
-import { createUploadReservation, createUser, createVideo, seedProject } from '../factories';
+import {
+  createSubscribedUser,
+  createUploadReservation,
+  createUser,
+  createVideo,
+  seedProject,
+} from '../factories';
 
 const { r2Send } = vi.hoisted(() => ({ r2Send: vi.fn() }));
 vi.mock('@/lib/r2', async (importOriginal) => {
@@ -254,5 +260,61 @@ describe('POST /api/projects/[projectId]/drive-imports: images become image revi
     expect(response.status).toBe(507);
     expect(r2Send).not.toHaveBeenCalled();
     expect(await db.video.count()).toBe(0);
+  });
+
+  it('gives back storage and quota when writing the image fails', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'true');
+    const owner = await createSubscribedUser();
+    const { project } = await seedProject({ ownerUser: owner });
+    r2Send.mockImplementation(async (command: unknown) => {
+      if (command instanceof PutObjectCommand && command.input.ContentType === 'image/png') {
+        throw new Error('storage unavailable');
+      }
+      return {};
+    });
+    signedInAs(owner);
+
+    const response = await start(project.id, { fileIds: [IMAGE_ID], accessToken: TOKEN });
+
+    expect(response.status).toBe(400);
+    expect(await db.video.count()).toBe(0);
+    expect(await db.uploadReservation.count()).toBe(0);
+    const deleted = r2Send.mock.calls
+      .map(([command]) => command)
+      .filter((command): command is DeleteObjectCommand => command instanceof DeleteObjectCommand)
+      .map((command) => command.input.Key);
+    expect(deleted.sort()).toEqual(storedKeys().sort());
+  });
+
+  it('keeps going after an image it refused', async () => {
+    const fake = Buffer.from('not an image at all');
+    driveFiles[IMAGE_ID] = { name: 'x.png', mimeType: 'image/png', size: fake.length, bytes: fake };
+    const { owner, project } = await seedProject();
+    signedInAs(owner);
+
+    const response = await start(project.id, {
+      fileIds: [IMAGE_ID, OTHER_IMAGE_ID],
+      accessToken: TOKEN,
+    });
+
+    expect(response.status).toBe(201);
+    const data = await readData<{
+      images: Array<{ driveFileId: string }>;
+      errors: Array<{ driveFileId: string }>;
+    }>(response);
+    expect(data.images.map((image) => image.driveFileId)).toEqual([OTHER_IMAGE_ID]);
+    expect(data.errors.map((error) => error.driveFileId)).toEqual([IMAGE_ID]);
+  });
+
+  it('refuses an image whose download does not match the size Drive reported', async () => {
+    driveFiles[IMAGE_ID] = { ...driveFiles[IMAGE_ID]!, size: PNG.length + 10 };
+    const { owner, project } = await seedProject();
+    signedInAs(owner);
+
+    const response = await start(project.id, { fileIds: [IMAGE_ID], accessToken: TOKEN });
+
+    expect(response.status).toBe(400);
+    expect(await readError(response)).toContain('reported size');
+    expect(r2Send).not.toHaveBeenCalled();
   });
 });
