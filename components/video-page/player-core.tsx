@@ -33,6 +33,10 @@ import {
 } from '@/components/annotation-canvas';
 import { SILENT_ABOVE_SPEED } from '@/components/video-page/hooks/video-player-utils';
 import { SubtitleControls } from '@/components/video-page/subtitle-controls';
+import {
+  useCueFontSize,
+  type SubtitleAppearance,
+} from '@/components/video-page/hooks/subtitle-appearance';
 import type {
   BunnyQualityOption,
   CommentMarker,
@@ -110,6 +114,8 @@ interface PlayerCoreProps {
   onUploadSubtitle: (file: File, language: string, label: string) => Promise<string | null>;
   onDeleteSubtitle: (subtitleId: string) => Promise<string | null>;
   isUploadingSubtitle: boolean;
+  subtitleAppearance: SubtitleAppearance;
+  onChangeSubtitleAppearance: (next: Partial<SubtitleAppearance>) => void;
   playbackSpeed: number;
   speedOptions: number[];
   handleSpeedChange: (speed: number) => void;
@@ -187,6 +193,8 @@ export const PlayerCore = memo(function PlayerCore({
   onUploadSubtitle,
   onDeleteSubtitle,
   isUploadingSubtitle,
+  subtitleAppearance,
+  onChangeSubtitleAppearance,
   playbackSpeed,
   speedOptions,
   handleSpeedChange,
@@ -200,6 +208,10 @@ export const PlayerCore = memo(function PlayerCore({
   commentMarkers,
   liveOverlay,
 }: PlayerCoreProps) {
+  // Measured here rather than in the page because this component is what mounts the
+  // <video>: the page can hold a version id while it still shows the guest name gate,
+  // and an effect there would find no element and never run again.
+  const subtitleFontSize = useCueFontSize(videoRef, activeVersionId, subtitleAppearance.size);
   return (
     <>
       <div
@@ -240,9 +252,15 @@ export const PlayerCore = memo(function PlayerCore({
                     objectFit: 'contain',
                     objectPosition: 'center',
                     backgroundColor: 'black',
+                    ...(subtitleFontSize !== null && {
+                      '--subtitle-font-size': `${subtitleFontSize}px`,
+                    }),
                   }}
                   preload="metadata"
                   playsInline
+                  // Read by the ::cue rules in globals.css.
+                  data-subtitle-scaled={subtitleFontSize !== null ? '' : undefined}
+                  data-subtitle-background={subtitleAppearance.background}
                 >
                   {subtitles.map((subtitle) => (
                     <track
@@ -497,6 +515,9 @@ export const PlayerCore = memo(function PlayerCore({
                 onUploadSubtitle={onUploadSubtitle}
                 onDeleteSubtitle={onDeleteSubtitle}
                 isUploadingSubtitle={isUploadingSubtitle}
+                appearance={subtitleAppearance}
+                onChangeAppearance={onChangeSubtitleAppearance}
+                supportsBackground={activeProviderId !== 'youtube'}
               />
             )}
 

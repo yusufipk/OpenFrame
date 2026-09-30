@@ -22,6 +22,8 @@ const shortcutGroups: ShortcutGroup[] = [
     shortcuts: [
       { keys: ['Space', 'K'], description: 'Play / Pause' },
       { keys: ['M'], description: 'Mute / Unmute' },
+      { keys: ['C'], description: 'Subtitles on / off' },
+      { keys: ['F'], description: 'Fullscreen' },
     ],
   },
   {
