@@ -175,6 +175,8 @@ export function useVideoPlayer({
   // A remembered Original only opens the original where the viewer may download the
   // project's media; elsewhere it acts as Auto until Original is picked on this page.
   const [originalPickedHere, setOriginalPickedHere] = useState(false);
+  // Bumped to load the original again after it failed for a reason other than decoding.
+  const [originalRetryNonce, setOriginalRetryNonce] = useState(0);
   const effectiveSourcePreference: 'auto' | 'original' =
     bunnySourcePreference === 'original' && !autoOriginalAllowed && !originalPickedHere
       ? 'auto'
@@ -362,6 +364,8 @@ export function useVideoPlayer({
     setAutoPlaysOriginal(false);
     bunnySwitchToHlsRef.current = null;
     originalDecodeFailedRef.current = false;
+    // A pick waiting for a manifest belongs to the player being torn down.
+    pendingHlsQualityRef.current = null;
     setIsBunnyPortraitSource(false);
 
     if (playerRef.current) {
@@ -860,7 +864,7 @@ export function useVideoPlayer({
               const renditionPicked =
                 skipAutoOriginalRef.current ||
                 preferredHeightRef.current !== null ||
-                pendingHlsQualityRef.current !== null;
+                (pendingHlsQualityRef.current ?? -1) >= 0;
               if (renditionPicked || !(size > 0) || size > AUTO_ORIGINAL_MAX_BYTES) {
                 originalIsChosen = false;
                 isAutoOriginal = false;
@@ -1108,6 +1112,7 @@ export function useVideoPlayer({
     canInitializePlayer,
     formatBunnyQualityLabel,
     effectiveSourcePreference,
+    originalRetryNonce,
     autoOriginalAllowed,
     hlsRef,
     iframeRef,
@@ -1543,8 +1548,15 @@ export function useVideoPlayer({
         preferredHeightRef.current = null;
         skipAutoOriginalRef.current = false;
         if (effectiveSourcePreference === 'original') {
-          if (isBunny && !onOriginal && originalDecodeFailedRef.current) {
-            toast.info("This browser can't play the original file of this video.");
+          if (isBunny && !onOriginal) {
+            if (originalDecodeFailedRef.current) {
+              toast.info("This browser can't play the original file of this video.");
+            } else {
+              // It fell back for a network reason; try it again.
+              captureResumePoint();
+              setSelectedQualityLevel(-2);
+              setOriginalRetryNonce((nonce) => nonce + 1);
+            }
           }
           return;
         }
