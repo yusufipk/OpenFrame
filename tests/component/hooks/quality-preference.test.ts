@@ -7,6 +7,7 @@ import {
   prefersHlsJsOverNative,
   markQualityHintSeen,
   readStoredQualityPreference,
+  shouldUseHlsJs,
   writeStoredQualityPreference,
 } from '@/components/video-page/hooks/quality-preference';
 
@@ -188,5 +189,28 @@ describe('prefersHlsJsOverNative', () => {
       )
     ).toBe(false);
     expect(prefersHlsJsOverNative(undefined)).toBe(false);
+  });
+});
+
+describe('shouldUseHlsJs', () => {
+  const chrome = { userAgent: 'Mozilla/5.0 Chrome/149.0 Safari/537.36' } as Navigator;
+  const safari = { userAgent: 'Mozilla/5.0 Version/18.0 Safari/605.1.15' } as Navigator;
+  const native = { canPlayType: () => 'maybe' as const };
+  const noNative = { canPlayType: () => '' as const };
+
+  it('uses hls.js on Chromium even with native HLS available', () => {
+    expect(shouldUseHlsJs(true, native, chrome)).toBe(true);
+  });
+
+  it('keeps native HLS on Safari', () => {
+    expect(shouldUseHlsJs(true, native, safari)).toBe(false);
+  });
+
+  it('uses hls.js wherever there is no native player', () => {
+    expect(shouldUseHlsJs(true, noNative, safari)).toBe(true);
+  });
+
+  it('never picks hls.js where it cannot run', () => {
+    expect(shouldUseHlsJs(false, noNative, chrome)).toBe(false);
   });
 });

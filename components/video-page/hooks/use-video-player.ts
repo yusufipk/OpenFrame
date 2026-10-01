@@ -38,8 +38,8 @@ import {
   findLevelForHeight,
   findTopLevel,
   parseMasterPlaylistLevels,
-  prefersHlsJsOverNative,
   readStoredQualityPreference,
+  shouldUseHlsJs,
   writeStoredQualityPreference,
 } from '@/components/video-page/hooks/quality-preference';
 
@@ -172,6 +172,13 @@ export function useVideoPlayer({
   // Which source the <video> is actually playing, which is not the same as the preference:
   // Auto plays the original for short clips, and an original that will not decode falls
   // back to the renditions.
+  // A remembered Original only opens the original where the viewer may download the
+  // project's media; elsewhere it acts as Auto until Original is picked on this page.
+  const [originalPickedHere, setOriginalPickedHere] = useState(false);
+  const effectiveSourcePreference: 'auto' | 'original' =
+    bunnySourcePreference === 'original' && !autoOriginalAllowed && !originalPickedHere
+      ? 'auto'
+      : bunnySourcePreference;
   const [activeBunnySource, setActiveBunnySource] = useState<'hls' | 'original'>('hls');
   const [autoPlaysOriginal, setAutoPlaysOriginal] = useState(false);
   const bunnySwitchToHlsRef = useRef<(() => void) | null>(null);
@@ -322,6 +329,10 @@ export function useVideoPlayer({
   // Set when the viewer picks a rendition, so a rebuild for it does not land back on Auto's
   // short-clip original when that rendition has no height to remember it by.
   const skipAutoOriginalRef = useRef(false);
+  // Whether a chosen original failed to decode for the version on screen, and whether the
+  // viewer has been told about such a failure on this page already.
+  const originalDecodeFailedRef = useRef(false);
+  const originalFailureToastShownRef = useRef(false);
 
   useEffect(() => {
     if (!canInitializePlayer) return;
@@ -346,10 +357,11 @@ export function useVideoPlayer({
     setEstimatedFrameRate(null);
     setPlaybackSpeed(1);
     setQualityOptions((prev) => (versionChanged ? [] : prev));
-    setSelectedQualityLevel(bunnySourcePreference === 'original' ? -2 : -1);
+    setSelectedQualityLevel(effectiveSourcePreference === 'original' ? -2 : -1);
     setActiveBunnySource('hls');
     setAutoPlaysOriginal(false);
     bunnySwitchToHlsRef.current = null;
+    originalDecodeFailedRef.current = false;
     setIsBunnyPortraitSource(false);
 
     if (playerRef.current) {
@@ -416,6 +428,10 @@ export function useVideoPlayer({
         const bunnyOriginalUrl = embedUrl.includes('/playlist.m3u8')
           ? embedUrl.replace('/playlist.m3u8', '/original')
           : '';
+        // Chromium now plays HLS natively too, but its own player opens on the lowest
+        // rendition and exposes no levels to pick from, so it always gets hls.js. Safari
+        // keeps its native player (and AirPlay); browsers without either get the error.
+        const useHlsJs = shouldUseHlsJs(Hls.isSupported(), videoEl, navigator);
 
         let cachedDuration = 0;
         let destroyed = false;
@@ -425,7 +441,7 @@ export function useVideoPlayer({
         // Auto tries the original for a cut that is short, or whose length we were never
         // told (an upload that did not report it); the metadata settles the length below.
         const autoTriesOriginal =
-          bunnySourcePreference === 'auto' &&
+          effectiveSourcePreference === 'auto' &&
           autoOriginalAllowed &&
           preferredHeightRef.current === null &&
           !skipAutoOriginalRef.current &&
@@ -433,7 +449,7 @@ export function useVideoPlayer({
           (activeVersionDurationRef.current === null ||
             activeVersionDurationRef.current <= SHORT_CLIP_ORIGINAL_MAX_SECONDS);
         let sourceMode: 'hls' | 'original' =
-          bunnySourcePreference === 'original' || autoTriesOriginal ? 'original' : 'hls';
+          effectiveSourcePreference === 'original' || autoTriesOriginal ? 'original' : 'hls';
         // True while the original is playing because it was chosen (by the viewer or by
         // Auto for a short clip), as opposed to Early-Play standing in for a cut that is
         // still encoding. A chosen original that fails falls back to the renditions; the
@@ -529,7 +545,8 @@ export function useVideoPlayer({
         // renditions to step down to. The master playlist is a few hundred bytes.
         let renditionOptionsRequested = false;
         const loadRenditionOptions = () => {
-          if (renditionOptionsRequested) return;
+          // Only hls.js can be told which rendition to play; Safari's player picks its own.
+          if (renditionOptionsRequested || !useHlsJs) return;
           renditionOptionsRequested = true;
           fetch(embedUrl)
             .then((response) => (response.ok ? response.text() : ''))
@@ -560,7 +577,7 @@ export function useVideoPlayer({
               Number.isFinite(videoEl.duration) &&
               videoEl.duration > SHORT_CLIP_ORIGINAL_MAX_SECONDS;
             if (cannotShowPicture || tooLongForAuto) {
-              leaveOriginalForHls();
+              leaveOriginalForHls(cannotShowPicture ? 'decode' : 'switch');
               return;
             }
           }
@@ -641,7 +658,8 @@ export function useVideoPlayer({
           if (destroyed) return;
           if (usingHlsJs) return;
           if (sourceMode === 'original' && originalIsChosen) {
-            leaveOriginalForHls();
+            const networkError = videoEl.error?.code === MediaError.MEDIA_ERR_NETWORK;
+            leaveOriginalForHls(networkError ? 'network' : 'decode');
             return;
           }
           if (videoEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
@@ -719,14 +737,7 @@ export function useVideoPlayer({
         const startHlsPlayback = () => {
           sourceMode = 'hls';
           setActiveBunnySource('hls');
-          // Chromium now plays HLS natively too, but its own player opens on the lowest
-          // rendition and exposes no levels to pick from, so it always gets hls.js. Safari
-          // keeps its native player (and AirPlay); browsers without either get the error.
-          if (
-            Hls.isSupported() &&
-            (prefersHlsJsOverNative(navigator) ||
-              !videoEl.canPlayType('application/vnd.apple.mpegurl'))
-          ) {
+          if (useHlsJs) {
             usingHlsJs = true;
             // Loading waits for MANIFEST_PARSED, so the start level is picked before the first
             // fragment rather than left to hls.js's 500 kbps opening guess.
@@ -799,7 +810,7 @@ export function useVideoPlayer({
           }
         };
 
-        const leaveOriginalForHls = () => {
+        const leaveOriginalForHls = (reason: 'decode' | 'network' | 'switch' = 'switch') => {
           if (destroyed || sourceMode !== 'original') return;
           // A decode failure can come after playback started; pick up where it stopped.
           // A switch the viewer asked for has already recorded its own resume point.
@@ -813,10 +824,16 @@ export function useVideoPlayer({
               wasPlaying: !videoEl.paused,
             };
           }
-          if (originalIsChosen && !isAutoOriginal) {
-            toast.info(
-              "This browser can't play the original file, so the best encoded version is playing instead."
-            );
+          if (reason === 'decode' && originalIsChosen && !isAutoOriginal) {
+            originalDecodeFailedRef.current = true;
+            // Once per page: a remembered Original that never decodes here (ProRes in
+            // Chrome, say) would otherwise repeat this on every video.
+            if (!originalFailureToastShownRef.current) {
+              originalFailureToastShownRef.current = true;
+              toast.info(
+                "This browser can't play the original file, so the best encoded version is playing instead."
+              );
+            }
           }
           originalIsChosen = false;
           isAutoOriginal = false;
@@ -839,7 +856,12 @@ export function useVideoPlayer({
             .catch(() => NaN)
             .then((size) => {
               if (destroyed || sourceMode !== 'original') return;
-              if (!(size > 0) || size > AUTO_ORIGINAL_MAX_BYTES) {
+              // The viewer may have picked a rendition while the size was being checked.
+              const renditionPicked =
+                skipAutoOriginalRef.current ||
+                preferredHeightRef.current !== null ||
+                pendingHlsQualityRef.current !== null;
+              if (renditionPicked || !(size > 0) || size > AUTO_ORIGINAL_MAX_BYTES) {
                 originalIsChosen = false;
                 isAutoOriginal = false;
                 startHlsPlayback();
@@ -1085,7 +1107,7 @@ export function useVideoPlayer({
     isApiLoaded,
     canInitializePlayer,
     formatBunnyQualityLabel,
-    bunnySourcePreference,
+    effectiveSourcePreference,
     autoOriginalAllowed,
     hlsRef,
     iframeRef,
@@ -1517,11 +1539,11 @@ export function useVideoPlayer({
 
       if (level === -2) {
         writeStoredQualityPreference({ mode: 'original' });
+        setOriginalPickedHere(true);
         preferredHeightRef.current = null;
         skipAutoOriginalRef.current = false;
-        if (bunnySourcePreference === 'original') {
-          if (isBunny && !onOriginal) {
-            // The original was tried for this video and could not be shown here.
+        if (effectiveSourcePreference === 'original') {
+          if (isBunny && !onOriginal && originalDecodeFailedRef.current) {
             toast.info("This browser can't play the original file of this video.");
           }
           return;
@@ -1543,7 +1565,7 @@ export function useVideoPlayer({
         skipAutoOriginalRef.current = true;
       }
 
-      if (bunnySourcePreference === 'original') {
+      if (effectiveSourcePreference === 'original') {
         // The player rebuilds for the new preference: a rendition is found again by its
         // height, and Auto decides between the original and the renditions again.
         if (isBunny) captureResumePoint();
@@ -1584,7 +1606,7 @@ export function useVideoPlayer({
     [
       activeBunnySource,
       activeProviderId,
-      bunnySourcePreference,
+      effectiveSourcePreference,
       hlsRef,
       isPlaying,
       playerRef,

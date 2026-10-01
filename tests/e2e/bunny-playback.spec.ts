@@ -251,7 +251,7 @@ test('a remembered Original opens the next video on the original', async ({
   expect(secondRequests.some((request) => request.endsWith('.ts'))).toBe(false);
 });
 
-test('a member who may not download gets the renditions, not the original', async ({
+test('a member who may not download gets the renditions, even with Original remembered', async ({
   browser,
   playwright,
   baseURL,
@@ -268,6 +268,11 @@ test('a member who may not download gets the renditions, not the original', asyn
   const memberContext = await browser.newContext({ baseURL, storageState: memberState });
   try {
     const memberPage = await memberContext.newPage();
+    // Original remembered from a project where this browser could download: it does not
+    // carry over to one where it cannot.
+    await memberPage.addInitScript(() => {
+      window.localStorage.setItem('openframe:playback-quality', '{"mode":"original"}');
+    });
     const requests = await serveBunnyCdn(memberPage, seeded.providerVideoId, 'short');
 
     await openVideo(memberPage, seeded.project.id, seeded.videoId);
@@ -337,4 +342,23 @@ test('saving the measured length of an unknown-length clip does not reload the p
   await page.waitForTimeout(1500);
   expect(requests.filter((request) => request === 'original')).toHaveLength(1);
   await expect(qualityButton(page)).toHaveText('Quality Auto (Original)');
+});
+
+test('a remembered Original that will not decode falls back once and says why', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('openframe:playback-quality', '{"mode":"original"}');
+  });
+  const seeded = await seed.bunnyVersion(seededUser, { duration: 120 });
+  const requests = await serveBunnyCdn(page, seeded.providerVideoId, 'undecodable');
+
+  await openVideo(page, seeded.project.id, seeded.videoId);
+
+  await expect.poll(() => firstSegmentRendition(requests)).toBe('1080p');
+  await expect(page.getByText("This browser can't play the original file")).toHaveCount(1);
+  // Hls.js renditions are listed again once the original is out of the picture.
+  await expect(qualityButton(page)).toHaveText('Quality Auto');
 });

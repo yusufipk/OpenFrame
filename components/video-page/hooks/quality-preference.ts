@@ -154,3 +154,16 @@ export function prefersHlsJsOverNative(nav: Navigator | undefined): boolean {
   // Chrome on iOS (CriOS) is WebKit underneath and keeps the native player.
   return /\b(Chrome|Chromium|Edg)\//.test(nav?.userAgent ?? '');
 }
+
+/**
+ * Whether Bunny HLS should play through hls.js rather than the browser's own player:
+ * always where there is no native player, and on Chromium even where there is one.
+ */
+export function shouldUseHlsJs(
+  hlsJsSupported: boolean,
+  video: Pick<HTMLVideoElement, 'canPlayType'>,
+  nav: Navigator | undefined
+): boolean {
+  if (!hlsJsSupported) return false;
+  return prefersHlsJsOverNative(nav) || !video.canPlayType('application/vnd.apple.mpegurl');
+}
