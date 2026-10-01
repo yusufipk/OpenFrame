@@ -19,6 +19,7 @@ import {
 } from '@/components/video-page/preview-player-controls';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import type { BunnyPlaybackState, BunnyQualityOption } from '@/components/video-page/types';
+import { findTopLevel } from '@/components/video-page/hooks/quality-preference';
 
 import {
   AttachmentVideoAnnotationContext,
@@ -183,8 +184,8 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         } catch {
           // ignore stop-load failures and continue with a fresh loadSource
         }
+        // Loading starts from MANIFEST_PARSED, once the start level is known.
         hlsInstance.loadSource(retryUrl);
-        hlsInstance.startLoad(-1);
       };
 
       const activateOriginalFallback = (): boolean => {
@@ -326,24 +327,17 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         );
         const pendingQuality = pendingHlsQualityRef.current;
         pendingHlsQualityRef.current = null;
+        const manualLevel =
+          pendingQuality !== null && pendingQuality >= 0 && pendingQuality < levels.length
+            ? pendingQuality
+            : -1;
 
-        if (pendingQuality === null || pendingQuality === -1) {
-          if (hlsInstance) {
-            hlsInstance.currentLevel = -1;
-            hlsInstance.nextLevel = -1;
-          }
-          setSelectedQualityLevel(-1);
-          return;
-        }
-
-        if (pendingQuality >= 0 && pendingQuality < levels.length && hlsInstance) {
-          hlsInstance.currentLevel = pendingQuality;
-          hlsInstance.nextLevel = pendingQuality;
-          setSelectedQualityLevel(pendingQuality);
-          return;
-        }
-
-        setSelectedQualityLevel(-1);
+        setSelectedQualityLevel(manualLevel);
+        if (!hlsInstance) return;
+        // Nothing is buffered yet, so loadLevel pins the level without currentLevel's flush.
+        hlsInstance.startLevel = manualLevel >= 0 ? manualLevel : Math.max(0, findTopLevel(levels));
+        hlsInstance.loadLevel = manualLevel;
+        hlsInstance.startLoad(-1);
       };
 
       videoEl.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -356,14 +350,12 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
 
       if (sourceMode === 'original' && originalUrl) {
         retryOriginalLoad();
-      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        sourceMode = 'hls';
-        videoEl.src = playlistUrl;
-        videoEl.load();
       } else if (Hls.isSupported()) {
+        // hls.js before native HLS: Chrome's native player opens on the lowest rendition.
         sourceMode = 'hls';
         usingHlsJs = true;
-        const hls = new Hls();
+        // Loading waits for MANIFEST_PARSED so Auto can open on the best rendition.
+        const hls = new Hls({ autoStartLoad: false });
         hlsInstance = hls;
         hlsRef.current = hls;
         hls.attachMedia(videoEl);
@@ -425,6 +417,10 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
             console.error('Fatal Bunny preview HLS error:', data);
           }
         });
+      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        sourceMode = 'hls';
+        videoEl.src = playlistUrl;
+        videoEl.load();
       } else {
         setBunnyPlaybackState('error');
         console.error('HLS is not supported in this browser.');

@@ -34,6 +34,19 @@ import {
   timeFromClientX as timeFromClientXWithin,
 } from '@/components/video-page/hooks/video-player-utils';
 import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
+import {
+  findLevelForHeight,
+  findTopLevel,
+  readStoredQualityPreference,
+  writeStoredQualityPreference,
+} from '@/components/video-page/hooks/quality-preference';
+
+/**
+ * In Auto, a cut no longer than this plays from the uploaded original instead of the
+ * Bunny renditions. Short VFX shots are exactly where the renditions band and smear, and
+ * at this length the original costs little more to stream than the encode does.
+ */
+const SHORT_CLIP_ORIGINAL_MAX_SECONDS = 20;
 
 interface UseVideoPlayerParams {
   activeVersion: Version | undefined;
@@ -133,7 +146,21 @@ export function useVideoPlayer({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [qualityOptions, setQualityOptions] = useState<BunnyQualityOption[]>([]);
   const [selectedQualityLevel, setSelectedQualityLevel] = useState<number>(-1);
-  const [bunnySourcePreference, setBunnySourcePreference] = useState<'auto' | 'original'>('auto');
+  // Read once per mount: the choice is per browser, and React state carries it after that.
+  const [storedQualityPreference] = useState(readStoredQualityPreference);
+  const [bunnySourcePreference, setBunnySourcePreference] = useState<'auto' | 'original'>(() =>
+    storedQualityPreference?.mode === 'original' ? 'original' : 'auto'
+  );
+  // A remembered rendition, as a height so it carries over to videos with other levels.
+  const preferredHeightRef = useRef<number | null>(
+    storedQualityPreference?.mode === 'height' ? storedQualityPreference.height : null
+  );
+  // Which source the <video> is actually playing, which is not the same as the preference:
+  // Auto plays the original for short clips, and an original that will not decode falls
+  // back to the renditions.
+  const [activeBunnySource, setActiveBunnySource] = useState<'hls' | 'original'>('hls');
+  const [autoPlaysOriginal, setAutoPlaysOriginal] = useState(false);
+  const bunnySwitchToHlsRef = useRef<(() => void) | null>(null);
   const pendingHlsQualityRef = useRef<number | null>(null);
   const bunnySourceSwitchResumeRef = useRef<{ time: number; wasPlaying: boolean } | null>(null);
   const previousVersionKeyRef = useRef<string | null>(null);
@@ -271,6 +298,8 @@ export function useVideoPlayer({
     };
   }, [activeProviderId, isApiLoaded]);
 
+  const activeVersionDuration = activeVersion?.duration ?? null;
+
   useEffect(() => {
     if (!canInitializePlayer) return;
     if (!activeProviderId) return;
@@ -295,6 +324,9 @@ export function useVideoPlayer({
     setPlaybackSpeed(1);
     setQualityOptions((prev) => (versionChanged ? [] : prev));
     setSelectedQualityLevel(bunnySourcePreference === 'original' ? -2 : -1);
+    setActiveBunnySource('hls');
+    setAutoPlaysOriginal(false);
+    bunnySwitchToHlsRef.current = null;
     setIsBunnyPortraitSource(false);
 
     if (playerRef.current) {
@@ -367,8 +399,22 @@ export function useVideoPlayer({
         let retryAttempt = 0;
         let usingHlsJs = false;
         let hlsInstance: Hls | null = null;
+        // Auto tries the original for a cut that is short, or whose length we were never
+        // told (an upload that did not report it); the metadata settles the length below.
+        const autoTriesOriginal =
+          bunnySourcePreference === 'auto' &&
+          preferredHeightRef.current === null &&
+          !!bunnyOriginalUrl &&
+          (activeVersionDuration === null ||
+            activeVersionDuration <= SHORT_CLIP_ORIGINAL_MAX_SECONDS);
         let sourceMode: 'hls' | 'original' =
-          bunnySourcePreference === 'original' ? 'original' : 'hls';
+          bunnySourcePreference === 'original' || autoTriesOriginal ? 'original' : 'hls';
+        // True while the original is playing because it was chosen (by the viewer or by
+        // Auto for a short clip), as opposed to Early-Play standing in for a cut that is
+        // still encoding. A chosen original that fails falls back to the renditions; the
+        // stand-in keeps retrying, because the renditions are not there yet.
+        let originalIsChosen = sourceMode === 'original';
+        let isAutoOriginal = autoTriesOriginal;
         const clearRetryTimer = () => {
           if (bunnyRetryTimerRef.current) {
             clearTimeout(bunnyRetryTimerRef.current);
@@ -405,12 +451,16 @@ export function useVideoPlayer({
           } catch {
             // ignore stop-load failures and continue with a fresh loadSource
           }
+          // Loading starts from MANIFEST_PARSED, once the start level is known.
           hlsInstance.loadSource(retryUrl);
-          hlsInstance.startLoad(-1);
         };
         const activateOriginalFallback = (): boolean => {
           if (!bunnyOriginalUrl) return false;
           sourceMode = 'original';
+          originalIsChosen = false;
+          isAutoOriginal = false;
+          setActiveBunnySource('original');
+          setAutoPlaysOriginal(false);
           usingHlsJs = false;
           clearRetryTimer();
           if (hlsRef.current) {
@@ -453,10 +503,26 @@ export function useVideoPlayer({
         const onLoadedMetadata = () => {
           if (destroyed) return;
           clearRetryTimer();
-          if (sourceMode === 'original') {
-            setSelectedQualityLevel(-2);
+          if (sourceMode === 'original' && originalIsChosen) {
+            // A container the browser opens but whose video track it cannot decode (a
+            // ProRes .mov in Chrome, say) reports no picture size and plays sound only.
+            const cannotShowPicture = videoEl.videoWidth === 0 || videoEl.videoHeight === 0;
+            const tooLongForAuto =
+              isAutoOriginal &&
+              Number.isFinite(videoEl.duration) &&
+              videoEl.duration > SHORT_CLIP_ORIGINAL_MAX_SECONDS;
+            if (cannotShowPicture || tooLongForAuto) {
+              leaveOriginalForHls();
+              return;
+            }
           }
-          setBunnyPlaybackState(sourceMode === 'original' ? 'processing' : 'none');
+          if (sourceMode === 'original') {
+            setSelectedQualityLevel(isAutoOriginal ? -1 : -2);
+            setAutoPlaysOriginal(isAutoOriginal);
+          }
+          setBunnyPlaybackState(
+            sourceMode === 'original' && !originalIsChosen ? 'processing' : 'none'
+          );
           if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
             setIsBunnyPortraitSource(videoEl.videoHeight > videoEl.videoWidth);
           }
@@ -525,6 +591,10 @@ export function useVideoPlayer({
         const onVideoError = () => {
           if (destroyed) return;
           if (usingHlsJs) return;
+          if (sourceMode === 'original' && originalIsChosen) {
+            leaveOriginalForHls();
+            return;
+          }
           if (videoEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
             setBunnyPlaybackState('error');
             return;
@@ -563,102 +633,138 @@ export function useVideoPlayer({
             levels.map((level, index) => ({
               level: index,
               label: formatBunnyQualityLabel(level, index),
+              height: level.height > 0 ? level.height : undefined,
             }))
           );
           const pendingQuality = pendingHlsQualityRef.current;
           pendingHlsQualityRef.current = null;
 
-          if (pendingQuality === null || pendingQuality === -1) {
-            if (hlsInstance) {
-              hlsInstance.currentLevel = -1;
-              hlsInstance.nextLevel = -1;
-            }
-            setSelectedQualityLevel(-1);
+          let manualLevel = -1;
+          if (pendingQuality !== null && pendingQuality >= 0 && pendingQuality < levels.length) {
+            manualLevel = pendingQuality;
+          } else if (pendingQuality === null && preferredHeightRef.current !== null) {
+            manualLevel = findLevelForHeight(levels, preferredHeightRef.current);
+          }
+
+          if (!hlsInstance) {
+            setSelectedQualityLevel(manualLevel);
             return;
           }
 
-          if (pendingQuality >= 0 && pendingQuality < levels.length && hlsInstance) {
-            hlsInstance.currentLevel = pendingQuality;
-            hlsInstance.nextLevel = pendingQuality;
-            setSelectedQualityLevel(pendingQuality);
-            return;
+          if (manualLevel >= 0) {
+            // loadLevel pins the level without the buffer flush currentLevel does; nothing
+            // is buffered yet at this point.
+            hlsInstance.startLevel = manualLevel;
+            hlsInstance.loadLevel = manualLevel;
+          } else {
+            // Auto starts on the best rendition and lets ABR step down if the connection
+            // cannot keep up. Short review clips often fit in a single segment, so a low
+            // opening level would be the only level the viewer ever sees.
+            hlsInstance.startLevel = Math.max(0, findTopLevel(levels));
+            hlsInstance.loadLevel = -1;
           }
-
-          setSelectedQualityLevel(-1);
+          setSelectedQualityLevel(manualLevel);
+          hlsInstance.startLoad(-1);
         };
 
-        if (sourceMode === 'original' && bunnyOriginalUrl) {
-          retryOriginalLoad();
-        } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        const startHlsPlayback = () => {
           sourceMode = 'hls';
-          videoEl.src = embedUrl;
-          videoEl.load();
-        } else if (Hls.isSupported()) {
-          sourceMode = 'hls';
-          usingHlsJs = true;
-          const hls = new Hls();
-          hlsInstance = hls;
-          hlsRef.current = hls;
-          hls.attachMedia(videoEl);
+          setActiveBunnySource('hls');
+          // hls.js first wherever Media Source Extensions exist. Chrome now plays HLS
+          // natively too, but its own player opens on the lowest rendition and exposes no
+          // levels to pick from, so native playback is only the fallback for browsers
+          // without MSE.
+          if (Hls.isSupported()) {
+            usingHlsJs = true;
+            // Loading waits for MANIFEST_PARSED, so the start level is picked before the first
+            // fragment rather than left to hls.js's 500 kbps opening guess.
+            const hls = new Hls({ autoStartLoad: false });
+            hlsInstance = hls;
+            hlsRef.current = hls;
+            hls.attachMedia(videoEl);
 
-          hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-            if (!destroyed) {
-              hls.loadSource(embedUrl);
-            }
-          });
+            hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+              if (!destroyed) {
+                hls.loadSource(embedUrl);
+              }
+            });
 
-          hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-            if (destroyed) return;
-            clearRetryTimer();
-            setBunnyPlaybackState('none');
-            configureHlsLevels(data.levels);
-            setIsReady(true);
-            syncDuration();
-          });
+            hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+              if (destroyed) return;
+              clearRetryTimer();
+              setBunnyPlaybackState('none');
+              configureHlsLevels(data.levels);
+              setIsReady(true);
+              syncDuration();
+            });
 
-          hls.on(Hls.Events.ERROR, (_, data) => {
-            if (destroyed) return;
-            const responseCode = (data as { response?: { code?: number } }).response?.code;
-            const isManifestLoadFailure =
-              data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
-              data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT;
-            const hasProcessingLikeStatus =
-              responseCode === undefined ||
-              responseCode === 0 ||
-              responseCode === 403 ||
-              responseCode === 404 ||
-              responseCode === 423 ||
-              responseCode === 429 ||
-              responseCode === 503;
-            const isLikelyProcessing = isManifestLoadFailure && hasProcessingLikeStatus;
-            const isNetworkPreMetadataProcessing =
-              data.type === Hls.ErrorTypes.NETWORK_ERROR &&
-              hasProcessingLikeStatus &&
-              videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
-            const isUnknownPreMetadataProcessing =
-              !data.details && !data.type && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
-            if (
-              isLikelyProcessing ||
-              isNetworkPreMetadataProcessing ||
-              isUnknownPreMetadataProcessing
-            ) {
-              if (activateOriginalFallback()) {
+            hls.on(Hls.Events.ERROR, (_, data) => {
+              if (destroyed) return;
+              const responseCode = (data as { response?: { code?: number } }).response?.code;
+              const isManifestLoadFailure =
+                data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+                data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT;
+              const hasProcessingLikeStatus =
+                responseCode === undefined ||
+                responseCode === 0 ||
+                responseCode === 403 ||
+                responseCode === 404 ||
+                responseCode === 423 ||
+                responseCode === 429 ||
+                responseCode === 503;
+              const isLikelyProcessing = isManifestLoadFailure && hasProcessingLikeStatus;
+              const isNetworkPreMetadataProcessing =
+                data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+                hasProcessingLikeStatus &&
+                videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
+              const isUnknownPreMetadataProcessing =
+                !data.details && !data.type && videoEl.readyState < HTMLMediaElement.HAVE_METADATA;
+              if (
+                isLikelyProcessing ||
+                isNetworkPreMetadataProcessing ||
+                isUnknownPreMetadataProcessing
+              ) {
+                if (activateOriginalFallback()) {
+                  return;
+                }
+                setIsReady(false);
+                setBunnyPlaybackState('processing');
+                scheduleRetry(retryHlsLoad);
                 return;
               }
-              setIsReady(false);
-              setBunnyPlaybackState('processing');
-              scheduleRetry(retryHlsLoad);
-              return;
-            }
 
-            if (data.fatal) {
-              setBunnyPlaybackState('error');
-              console.error('Fatal HLS error:', data);
-            }
-          });
+              if (data.fatal) {
+                setBunnyPlaybackState('error');
+                console.error('Fatal HLS error:', data);
+              }
+            });
+          } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+            videoEl.src = embedUrl;
+            videoEl.load();
+          } else {
+            setBunnyPlaybackState('error');
+            console.error('HLS is not supported in this browser.');
+          }
+        };
+
+        const leaveOriginalForHls = () => {
+          if (destroyed || sourceMode !== 'original') return;
+          originalIsChosen = false;
+          isAutoOriginal = false;
+          clearRetryTimer();
+          setAutoPlaysOriginal(false);
+          setIsReady(false);
+          videoEl.removeAttribute('src');
+          videoEl.load();
+          startHlsPlayback();
+        };
+        bunnySwitchToHlsRef.current = leaveOriginalForHls;
+
+        if (sourceMode === 'original' && bunnyOriginalUrl) {
+          setActiveBunnySource('original');
+          retryOriginalLoad();
         } else {
-          setBunnyPlaybackState('error');
-          console.error('HLS is not supported in this browser.');
+          startHlsPlayback();
         }
 
         playerRef.current = {
@@ -886,6 +992,7 @@ export function useVideoPlayer({
     canInitializePlayer,
     formatBunnyQualityLabel,
     bunnySourcePreference,
+    activeVersionDuration,
     hlsRef,
     iframeRef,
     playerRef,
@@ -1300,29 +1407,60 @@ export function useVideoPlayer({
 
   const handleQualityChange = useCallback(
     (level: number) => {
-      const shouldCaptureSourceSwitch =
-        activeProviderId === 'bunny' &&
-        ((level === -2 && bunnySourcePreference !== 'original') ||
-          (level !== -2 && bunnySourcePreference === 'original'));
-
-      if (shouldCaptureSourceSwitch) {
+      const captureResumePoint = () => {
         const fallbackCurrentTime = videoRef.current?.currentTime ?? 0;
         const current = playerRef.current?.getCurrentTime?.() ?? fallbackCurrentTime;
         bunnySourceSwitchResumeRef.current = {
           time: Number.isFinite(current) ? Math.max(0, current) : 0,
           wasPlaying: isPlaying,
         };
-      }
+      };
+      const isBunny = activeProviderId === 'bunny';
+      const onOriginal = isBunny && activeBunnySource === 'original';
 
       if (level === -2) {
+        writeStoredQualityPreference({ mode: 'original' });
+        preferredHeightRef.current = null;
         pendingHlsQualityRef.current = null;
+        if (bunnySourcePreference === 'original') return;
+        if (isBunny) captureResumePoint();
         setBunnySourcePreference('original');
         setSelectedQualityLevel(-2);
         return;
       }
 
+      const height =
+        level === -1
+          ? null
+          : (qualityOptions.find((option) => option.level === level)?.height ?? null);
+      if (level === -1) {
+        writeStoredQualityPreference({ mode: 'auto' });
+      } else if (height) {
+        writeStoredQualityPreference({ mode: 'height', height });
+      }
+      preferredHeightRef.current = height;
       pendingHlsQualityRef.current = level;
-      setBunnySourcePreference('auto');
+
+      if (bunnySourcePreference === 'original') {
+        // The player rebuilds for the new preference and picks the level up from the
+        // pending ref (or, for Auto, decides between original and renditions again).
+        if (isBunny) captureResumePoint();
+        setBunnySourcePreference('auto');
+        setSelectedQualityLevel(level);
+        return;
+      }
+
+      if (onOriginal) {
+        // Auto is already playing the original for a short clip; Auto again is a no-op.
+        if (level === -1) {
+          pendingHlsQualityRef.current = null;
+          return;
+        }
+        captureResumePoint();
+        setSelectedQualityLevel(level);
+        bunnySwitchToHlsRef.current?.();
+        return;
+      }
 
       const hls = hlsRef.current;
       if (!hls) {
@@ -1341,7 +1479,16 @@ export function useVideoPlayer({
       hls.nextLevel = level;
       setSelectedQualityLevel(level);
     },
-    [activeProviderId, bunnySourcePreference, hlsRef, isPlaying, playerRef, videoRef]
+    [
+      activeBunnySource,
+      activeProviderId,
+      bunnySourcePreference,
+      hlsRef,
+      isPlaying,
+      playerRef,
+      qualityOptions,
+      videoRef,
+    ]
   );
 
   // Convert a clientX into a time using the timeline rect captured at drag start
@@ -1474,6 +1621,7 @@ export function useVideoPlayer({
     playbackSpeed,
     qualityOptions,
     selectedQualityLevel,
+    autoPlaysOriginal,
     isBunnyPortraitSource,
     bunnyPortraitFrameWidth,
     cursorIdle,

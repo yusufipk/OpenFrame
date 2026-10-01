@@ -110,6 +110,10 @@ const APP_ENV: Record<string, string> = {
   // connect-src automatically by lib/content-security-policy.ts.
   OPENFRAME_ENABLE_S3_VIDEO_UPLOADS: 'true',
   OPENFRAME_ENABLE_BUNNY_UPLOADS: 'false',
+  // Bunny playback, with uploads still off. Nothing listens on this hostname:
+  // bunny-playback.spec.ts answers every request to it through page.route(),
+  // and the value only has to reach the client config and the CSP media-src.
+  BUNNY_CDN_URL: 'https://bunny-e2e.b-cdn.net',
   R2_ENDPOINT: process.env.R2_ENDPOINT ?? 'http://minio-test:9000',
   R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID ?? 'openframe',
   R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY ?? 'openframe-test-secret',
