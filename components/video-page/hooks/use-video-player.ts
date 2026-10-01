@@ -37,6 +37,8 @@ import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
 import {
   findLevelForHeight,
   findTopLevel,
+  parseMasterPlaylistLevels,
+  prefersHlsJsOverNative,
   readStoredQualityPreference,
   writeStoredQualityPreference,
 } from '@/components/video-page/hooks/quality-preference';
@@ -47,6 +49,11 @@ import {
  * at this length the original costs little more to stream than the encode does.
  */
 const SHORT_CLIP_ORIGINAL_MAX_SECONDS = 20;
+/**
+ * Auto also leaves an original alone when it is bigger than this, whatever its length:
+ * Safari decodes ProRes, so a 15 second 4K ProRes source would otherwise download whole.
+ */
+const AUTO_ORIGINAL_MAX_BYTES = 100 * 1024 * 1024;
 
 interface UseVideoPlayerParams {
   activeVersion: Version | undefined;
@@ -73,6 +80,12 @@ interface UseVideoPlayerParams {
   /** Turns subtitles on or off. Lives outside this hook, next to the caption state. */
   toggleCaptionsRef: RefObject<() => void>;
   playbackLocked?: boolean;
+  /**
+   * Whether Auto may open short clips on the uploaded original. Off where the viewer may
+   * not download the project's media: the original as the <video> source is one
+   * "Save video as" away from a download.
+   */
+  autoOriginalAllowed?: boolean;
 }
 
 export function useVideoPlayer({
@@ -97,6 +110,7 @@ export function useVideoPlayer({
   setViewingAnnotation,
   toggleCaptionsRef,
   playbackLocked = false,
+  autoOriginalAllowed = false,
 }: UseVideoPlayerParams) {
   const annotationSeekRef = useRef<number | null>(null);
   const dismissAnnotation = useCallback(() => {
@@ -298,7 +312,16 @@ export function useVideoPlayer({
     };
   }, [activeProviderId, isApiLoaded]);
 
-  const activeVersionDuration = activeVersion?.duration ?? null;
+  // Read through a ref: the page saves the measured length back to the version after
+  // playback starts, and a dependency on it would rebuild the player mid-playback.
+  // Declared before the player effect, so it has run by the time that one reads it.
+  const activeVersionDurationRef = useRef<number | null>(null);
+  useEffect(() => {
+    activeVersionDurationRef.current = activeVersion?.duration ?? null;
+  }, [activeVersion?.duration]);
+  // Set when the viewer picks a rendition, so a rebuild for it does not land back on Auto's
+  // short-clip original when that rendition has no height to remember it by.
+  const skipAutoOriginalRef = useRef(false);
 
   useEffect(() => {
     if (!canInitializePlayer) return;
@@ -403,10 +426,12 @@ export function useVideoPlayer({
         // told (an upload that did not report it); the metadata settles the length below.
         const autoTriesOriginal =
           bunnySourcePreference === 'auto' &&
+          autoOriginalAllowed &&
           preferredHeightRef.current === null &&
+          !skipAutoOriginalRef.current &&
           !!bunnyOriginalUrl &&
-          (activeVersionDuration === null ||
-            activeVersionDuration <= SHORT_CLIP_ORIGINAL_MAX_SECONDS);
+          (activeVersionDurationRef.current === null ||
+            activeVersionDurationRef.current <= SHORT_CLIP_ORIGINAL_MAX_SECONDS);
         let sourceMode: 'hls' | 'original' =
           bunnySourcePreference === 'original' || autoTriesOriginal ? 'original' : 'hls';
         // True while the original is playing because it was chosen (by the viewer or by
@@ -500,6 +525,29 @@ export function useVideoPlayer({
           });
         };
 
+        // hls.js loads nothing while the original plays, so the Quality menu would list no
+        // renditions to step down to. The master playlist is a few hundred bytes.
+        let renditionOptionsRequested = false;
+        const loadRenditionOptions = () => {
+          if (renditionOptionsRequested) return;
+          renditionOptionsRequested = true;
+          fetch(embedUrl)
+            .then((response) => (response.ok ? response.text() : ''))
+            .then((text) => {
+              if (destroyed || sourceMode !== 'original') return;
+              setQualityOptions(
+                parseMasterPlaylistLevels(text).map((level, index) => ({
+                  level: index,
+                  label: formatBunnyQualityLabel(level, index),
+                  height: level.height && level.height > 0 ? level.height : undefined,
+                }))
+              );
+            })
+            .catch(() => {
+              // The menu keeps Auto and Original; nothing else depends on this list.
+            });
+        };
+
         const onLoadedMetadata = () => {
           if (destroyed) return;
           clearRetryTimer();
@@ -519,6 +567,7 @@ export function useVideoPlayer({
           if (sourceMode === 'original') {
             setSelectedQualityLevel(isAutoOriginal ? -1 : -2);
             setAutoPlaysOriginal(isAutoOriginal);
+            if (originalIsChosen) loadRenditionOptions();
           }
           setBunnyPlaybackState(
             sourceMode === 'original' && !originalIsChosen ? 'processing' : 'none'
@@ -670,11 +719,14 @@ export function useVideoPlayer({
         const startHlsPlayback = () => {
           sourceMode = 'hls';
           setActiveBunnySource('hls');
-          // hls.js first wherever Media Source Extensions exist. Chrome now plays HLS
-          // natively too, but its own player opens on the lowest rendition and exposes no
-          // levels to pick from, so native playback is only the fallback for browsers
-          // without MSE.
-          if (Hls.isSupported()) {
+          // Chromium now plays HLS natively too, but its own player opens on the lowest
+          // rendition and exposes no levels to pick from, so it always gets hls.js. Safari
+          // keeps its native player (and AirPlay); browsers without either get the error.
+          if (
+            Hls.isSupported() &&
+            (prefersHlsJsOverNative(navigator) ||
+              !videoEl.canPlayType('application/vnd.apple.mpegurl'))
+          ) {
             usingHlsJs = true;
             // Loading waits for MANIFEST_PARSED, so the start level is picked before the first
             // fragment rather than left to hls.js's 500 kbps opening guess.
@@ -749,6 +801,23 @@ export function useVideoPlayer({
 
         const leaveOriginalForHls = () => {
           if (destroyed || sourceMode !== 'original') return;
+          // A decode failure can come after playback started; pick up where it stopped.
+          // A switch the viewer asked for has already recorded its own resume point.
+          if (
+            !bunnySourceSwitchResumeRef.current &&
+            videoEl.readyState >= HTMLMediaElement.HAVE_METADATA &&
+            videoEl.currentTime > 0
+          ) {
+            bunnySourceSwitchResumeRef.current = {
+              time: videoEl.currentTime,
+              wasPlaying: !videoEl.paused,
+            };
+          }
+          if (originalIsChosen && !isAutoOriginal) {
+            toast.info(
+              "This browser can't play the original file, so the best encoded version is playing instead."
+            );
+          }
           originalIsChosen = false;
           isAutoOriginal = false;
           clearRetryTimer();
@@ -760,9 +829,34 @@ export function useVideoPlayer({
         };
         bunnySwitchToHlsRef.current = leaveOriginalForHls;
 
+        // Auto checks the size first: the length alone says nothing about a 4K ProRes
+        // source, and Bunny exposes Content-Length to cross-origin requests.
+        const startAutoOriginal = () => {
+          fetch(bunnyOriginalUrl, { method: 'HEAD' })
+            .then((response) =>
+              response.ok ? Number(response.headers.get('content-length')) : NaN
+            )
+            .catch(() => NaN)
+            .then((size) => {
+              if (destroyed || sourceMode !== 'original') return;
+              if (!(size > 0) || size > AUTO_ORIGINAL_MAX_BYTES) {
+                originalIsChosen = false;
+                isAutoOriginal = false;
+                startHlsPlayback();
+                return;
+              }
+              setActiveBunnySource('original');
+              retryOriginalLoad();
+            });
+        };
+
         if (sourceMode === 'original' && bunnyOriginalUrl) {
-          setActiveBunnySource('original');
-          retryOriginalLoad();
+          if (isAutoOriginal) {
+            startAutoOriginal();
+          } else {
+            setActiveBunnySource('original');
+            retryOriginalLoad();
+          }
         } else {
           startHlsPlayback();
         }
@@ -992,7 +1086,7 @@ export function useVideoPlayer({
     canInitializePlayer,
     formatBunnyQualityLabel,
     bunnySourcePreference,
-    activeVersionDuration,
+    autoOriginalAllowed,
     hlsRef,
     iframeRef,
     playerRef,
@@ -1417,33 +1511,41 @@ export function useVideoPlayer({
       };
       const isBunny = activeProviderId === 'bunny';
       const onOriginal = isBunny && activeBunnySource === 'original';
+      // Indices only mean something to the list they came from: the hls.js levels while
+      // HLS plays, the parsed master playlist while the original plays. Heights carry over.
+      pendingHlsQualityRef.current = null;
 
       if (level === -2) {
         writeStoredQualityPreference({ mode: 'original' });
         preferredHeightRef.current = null;
-        pendingHlsQualityRef.current = null;
-        if (bunnySourcePreference === 'original') return;
+        skipAutoOriginalRef.current = false;
+        if (bunnySourcePreference === 'original') {
+          if (isBunny && !onOriginal) {
+            // The original was tried for this video and could not be shown here.
+            toast.info("This browser can't play the original file of this video.");
+          }
+          return;
+        }
         if (isBunny) captureResumePoint();
         setBunnySourcePreference('original');
         setSelectedQualityLevel(-2);
         return;
       }
 
-      const height =
-        level === -1
-          ? null
-          : (qualityOptions.find((option) => option.level === level)?.height ?? null);
       if (level === -1) {
         writeStoredQualityPreference({ mode: 'auto' });
-      } else if (height) {
-        writeStoredQualityPreference({ mode: 'height', height });
+        preferredHeightRef.current = null;
+        skipAutoOriginalRef.current = false;
+      } else {
+        const height = qualityOptions.find((option) => option.level === level)?.height ?? null;
+        if (height) writeStoredQualityPreference({ mode: 'height', height });
+        preferredHeightRef.current = height;
+        skipAutoOriginalRef.current = true;
       }
-      preferredHeightRef.current = height;
-      pendingHlsQualityRef.current = level;
 
       if (bunnySourcePreference === 'original') {
-        // The player rebuilds for the new preference and picks the level up from the
-        // pending ref (or, for Auto, decides between original and renditions again).
+        // The player rebuilds for the new preference: a rendition is found again by its
+        // height, and Auto decides between the original and the renditions again.
         if (isBunny) captureResumePoint();
         setBunnySourcePreference('auto');
         setSelectedQualityLevel(level);
@@ -1452,10 +1554,7 @@ export function useVideoPlayer({
 
       if (onOriginal) {
         // Auto is already playing the original for a short clip; Auto again is a no-op.
-        if (level === -1) {
-          pendingHlsQualityRef.current = null;
-          return;
-        }
+        if (level === -1) return;
         captureResumePoint();
         setSelectedQualityLevel(level);
         bunnySwitchToHlsRef.current?.();
@@ -1464,6 +1563,9 @@ export function useVideoPlayer({
 
       const hls = hlsRef.current;
       if (!hls) {
+        // hls.js has not parsed the manifest yet (or this is native HLS); the level is
+        // applied when MANIFEST_PARSED arrives.
+        pendingHlsQualityRef.current = level;
         setSelectedQualityLevel(level === -1 ? -1 : level);
         return;
       }

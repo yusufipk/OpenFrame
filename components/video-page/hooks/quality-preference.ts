@@ -115,3 +115,42 @@ export function findTopLevel(levels: ReadonlyArray<{ bitrate?: number; height?: 
   });
   return top;
 }
+
+/**
+ * The renditions a master playlist offers, in playlist order, read without hls.js.
+ *
+ * Used to fill the Quality menu while the original is playing and hls.js has not loaded
+ * anything. Entries are matched to hls.js levels by height later, never by position.
+ */
+export function parseMasterPlaylistLevels(text: string): { height?: number; bitrate?: number }[] {
+  const levels: { height?: number; bitrate?: number }[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
+    const bandwidth = line.match(/[:,]BANDWIDTH=(\d+)/);
+    const resolution = line.match(/[:,]RESOLUTION=(\d+)x(\d+)/);
+    levels.push({
+      bitrate: bandwidth ? Number(bandwidth[1]) : undefined,
+      height: resolution ? Number(resolution[2]) : undefined,
+    });
+  }
+  return levels;
+}
+
+/**
+ * Whether the browser should get hls.js even though it reports native HLS support.
+ *
+ * Chromium's native HLS player opens on the lowest rendition and exposes no levels, so
+ * Chromium always gets hls.js. Safari keeps its own player: hls.js there runs on
+ * ManagedMediaSource, which turns off AirPlay for the element.
+ */
+export function prefersHlsJsOverNative(nav: Navigator | undefined): boolean {
+  const brands = (
+    nav as (Navigator & { userAgentData?: { brands?: { brand: string }[] } }) | undefined
+  )?.userAgentData?.brands;
+  if (brands?.some((entry) => /Chromium|Google Chrome|Microsoft Edge/.test(entry.brand))) {
+    return true;
+  }
+  // Older Chromium builds without userAgentData still name themselves in the UA string.
+  // Chrome on iOS (CriOS) is WebKit underneath and keeps the native player.
+  return /\b(Chrome|Chromium|Edg)\//.test(nav?.userAgent ?? '');
+}

@@ -3,6 +3,8 @@ import {
   findLevelForHeight,
   findTopLevel,
   hasSeenQualityHint,
+  parseMasterPlaylistLevels,
+  prefersHlsJsOverNative,
   markQualityHintSeen,
   readStoredQualityPreference,
   writeStoredQualityPreference,
@@ -114,5 +116,77 @@ describe('findTopLevel', () => {
 
   it('is -1 for an empty playlist', () => {
     expect(findTopLevel([])).toBe(-1);
+  });
+});
+
+describe('parseMasterPlaylistLevels', () => {
+  it('reads height and bandwidth from each stream, in playlist order', () => {
+    const playlist = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      '',
+      '#EXT-X-STREAM-INF:BANDWIDTH=190804,AVERAGE-BANDWIDTH=190804,CODECS="avc1.64001e",RESOLUTION=640x360',
+      '360p/video.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1295817,RESOLUTION=1920x1080,CLOSED-CAPTIONS=NONE',
+      '1080p/video.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=64000',
+      'audio/video.m3u8',
+    ].join('\r\n');
+    expect(parseMasterPlaylistLevels(playlist)).toEqual([
+      { bitrate: 190_804, height: 360 },
+      { bitrate: 1_295_817, height: 1080 },
+      { bitrate: 64_000, height: undefined },
+    ]);
+  });
+
+  it('does not mistake AVERAGE-BANDWIDTH for BANDWIDTH', () => {
+    expect(
+      parseMasterPlaylistLevels('#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=1,BANDWIDTH=2,RESOLUTION=1x2')
+    ).toEqual([{ bitrate: 2, height: 2 }]);
+  });
+
+  it('is empty for anything that is not a master playlist', () => {
+    expect(parseMasterPlaylistLevels('')).toEqual([]);
+    expect(parseMasterPlaylistLevels('<html>Not found</html>')).toEqual([]);
+  });
+});
+
+describe('prefersHlsJsOverNative', () => {
+  const nav = (userAgent: string, brands?: string[]) =>
+    ({
+      userAgent,
+      ...(brands ? { userAgentData: { brands: brands.map((brand) => ({ brand })) } } : {}),
+    }) as unknown as Navigator;
+
+  it('sends Chromium browsers to hls.js', () => {
+    expect(prefersHlsJsOverNative(nav('', ['Chromium', 'Google Chrome']))).toBe(true);
+    expect(
+      prefersHlsJsOverNative(
+        nav(
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36'
+        )
+      )
+    ).toBe(true);
+    expect(
+      prefersHlsJsOverNative(nav('Mozilla/5.0 ... Chrome/149.0 Safari/537.36 Edg/149.0'))
+    ).toBe(true);
+  });
+
+  it('leaves Safari and WebKit-based iOS browsers on the native player', () => {
+    expect(
+      prefersHlsJsOverNative(
+        nav(
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+        )
+      )
+    ).toBe(false);
+    expect(
+      prefersHlsJsOverNative(
+        nav(
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/149.0 Mobile/15E148 Safari/604.1'
+        )
+      )
+    ).toBe(false);
+    expect(prefersHlsJsOverNative(undefined)).toBe(false);
   });
 });

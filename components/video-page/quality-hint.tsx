@@ -46,8 +46,8 @@ export function QualityHint({ onDismiss }: { onDismiss: () => void }) {
       </button>
       <p className="pr-4 font-medium">Playback quality</p>
       <p className="mt-1 text-muted-foreground">
-        Auto starts at the best available quality, and short clips play from the original file. Pick
-        a quality here and this browser will remember it.
+        Auto starts at the best available quality. Pick a quality here and this browser will
+        remember it.
       </p>
     </div>
   );

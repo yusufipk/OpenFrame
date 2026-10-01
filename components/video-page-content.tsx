@@ -463,6 +463,7 @@ export function VideoPageContent({
     setViewingAnnotation,
     toggleCaptionsRef,
     playbackLocked: liveReview.playbackLocked,
+    autoOriginalAllowed: !!video?.canDownload,
   });
 
   const { isJoined: isLiveReviewJoined, selectComment: selectLiveComment } = liveReview;

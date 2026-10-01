@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page, Route } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, storageStateFor } from './fixtures';
 import { REPO_ROOT } from '../helpers/env';
 
 const CDN_ORIGIN = 'https://bunny-e2e.b-cdn.net';
@@ -45,14 +45,17 @@ const MASTER_PLAYLIST = [
   '',
 ].join('\n');
 
-type OriginalKind = 'short' | 'long' | 'audio-only' | 'undecodable';
+type OriginalKind = 'short' | 'long' | 'audio-only' | 'undecodable' | 'huge';
 
 const ORIGINAL_BODIES: Record<OriginalKind, { body: Buffer; contentType: string }> = {
   short: { body: SHORT_ORIGINAL, contentType: 'video/mp4' },
   long: { body: LONG_ORIGINAL, contentType: 'video/mp4' },
   'audio-only': { body: AUDIO_ONLY_ORIGINAL, contentType: 'video/mp4' },
   undecodable: { body: UNDECODABLE_ORIGINAL, contentType: 'video/quicktime' },
+  // Playable, but its HEAD reports 2 GB: a short 4K ProRes source as Safari would see it.
+  huge: { body: SHORT_ORIGINAL, contentType: 'video/mp4' },
 };
+const HUGE_ORIGINAL_BYTES = 2 * 1024 * 1024 * 1024;
 
 /** Serves the fake CDN for one video and records every path the browser asked for. */
 async function serveBunnyCdn(page: Page, providerVideoId: string, original: OriginalKind) {
@@ -65,7 +68,9 @@ async function serveBunnyCdn(page: Page, providerVideoId: string, original: Orig
       return;
     }
     const rest = url.pathname.slice(prefix.length);
-    requests.push(rest);
+    const method = route.request().method();
+    // GETs are logged by path alone; the player's size check on the original is a HEAD.
+    requests.push(method === 'GET' ? rest : `${method} ${rest}`);
     const headers = { 'access-control-allow-origin': '*' };
 
     if (rest === 'playlist.m3u8') {
@@ -79,6 +84,15 @@ async function serveBunnyCdn(page: Page, providerVideoId: string, original: Orig
     }
     if (rest === 'original') {
       const { body, contentType } = ORIGINAL_BODIES[original];
+      if (method === 'HEAD') {
+        const size = original === 'huge' ? HUGE_ORIGINAL_BYTES : body.length;
+        await route.fulfill({
+          status: 200,
+          headers: { ...headers, 'content-length': String(size) },
+          contentType,
+        });
+        return;
+      }
       await route.fulfill({ status: 200, headers, contentType, body });
       return;
     }
@@ -154,7 +168,7 @@ test('an unknown length is settled by the original, and a long one goes to the r
   await openVideo(page, seeded.project.id, seeded.videoId);
 
   await expect.poll(() => firstSegmentRendition(requests)).toBe('1080p');
-  expect(requests[0]).toBe('original');
+  expect(requests).toContain('original');
   await expect(qualityButton(page)).toHaveText('Quality Auto');
 });
 
@@ -170,7 +184,7 @@ for (const original of ['undecodable', 'audio-only'] as const) {
     await openVideo(page, seeded.project.id, seeded.videoId);
 
     await expect.poll(() => firstSegmentRendition(requests)).toBe('1080p');
-    expect(requests[0]).toBe('original');
+    expect(requests).toContain('original');
     await expect(qualityButton(page)).toHaveText('Quality Auto');
     await expect
       .poll(() => page.locator('video').evaluate((el) => (el as HTMLVideoElement).videoWidth))
@@ -235,4 +249,92 @@ test('a remembered Original opens the next video on the original', async ({
     .poll(() => videoSource(page))
     .toContain(`${CDN_ORIGIN}/${second.providerVideoId}/original`);
   expect(secondRequests.some((request) => request.endsWith('.ts'))).toBe(false);
+});
+
+test('a member who may not download gets the renditions, not the original', async ({
+  browser,
+  playwright,
+  baseURL,
+  seed,
+  seededUser,
+}) => {
+  // The seeded project leaves allowDownloads off, so a commenter cannot download, and
+  // the original as the <video> source would be one "Save video as" away from that.
+  const seeded = await seed.bunnyVersion(seededUser, { duration: 2 });
+  const member = await seed.user({ name: 'Commenting Member' });
+  await seed.member(seeded.project.id, member.id, 'COMMENTATOR');
+
+  const memberState = await storageStateFor(playwright.request, baseURL ?? '', member.email ?? '');
+  const memberContext = await browser.newContext({ baseURL, storageState: memberState });
+  try {
+    const memberPage = await memberContext.newPage();
+    const requests = await serveBunnyCdn(memberPage, seeded.providerVideoId, 'short');
+
+    await openVideo(memberPage, seeded.project.id, seeded.videoId);
+
+    await expect.poll(() => firstSegmentRendition(requests)).toBe('1080p');
+    expect(requests).not.toContain('original');
+    await expect(qualityButton(memberPage)).toHaveText('Quality Auto');
+  } finally {
+    await memberContext.close();
+  }
+});
+
+test('Auto leaves a short clip on the renditions when the original is too big', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.bunnyVersion(seededUser, { duration: 2 });
+  const requests = await serveBunnyCdn(page, seeded.providerVideoId, 'huge');
+
+  await openVideo(page, seeded.project.id, seeded.videoId);
+
+  await expect.poll(() => firstSegmentRendition(requests)).toBe('1080p');
+  expect(requests).toContain('HEAD original');
+  expect(requests).not.toContain('original');
+  await expect(qualityButton(page)).toHaveText('Quality Auto');
+});
+
+test('while Auto plays the original, the menu lists the renditions and one can be picked', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.bunnyVersion(seededUser, { duration: 2 });
+  const requests = await serveBunnyCdn(page, seeded.providerVideoId, 'short');
+
+  await openVideo(page, seeded.project.id, seeded.videoId);
+  await expect(qualityButton(page)).toHaveText('Quality Auto (Original)');
+
+  await qualityButton(page).click();
+  await expect(page.getByRole('menuitem', { name: '1080p', exact: true })).toBeVisible();
+  await page.getByRole('menuitem', { name: '720p', exact: true }).click();
+
+  await expect.poll(() => firstSegmentRendition(requests)).toBe('720p');
+  await expect(qualityButton(page)).toHaveText('Quality 720p');
+  expect(await videoSource(page)).toMatch(/^blob:/);
+});
+
+test('saving the measured length of an unknown-length clip does not reload the player', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const seeded = await seed.bunnyVersion(seededUser, { duration: null });
+  const requests = await serveBunnyCdn(page, seeded.providerVideoId, 'short');
+  const durationSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      response.url().includes(`/versions/${seeded.versionId}`)
+  );
+
+  await openVideo(page, seeded.project.id, seeded.videoId);
+  await expect(qualityButton(page)).toHaveText('Quality Auto (Original)');
+  await durationSaved;
+
+  // Give a rebuild the time it would need to show up as a second load.
+  await page.waitForTimeout(1500);
+  expect(requests.filter((request) => request === 'original')).toHaveLength(1);
+  await expect(qualityButton(page)).toHaveText('Quality Auto (Original)');
 });

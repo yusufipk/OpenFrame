@@ -19,7 +19,10 @@ import {
 } from '@/components/video-page/preview-player-controls';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import type { BunnyPlaybackState, BunnyQualityOption } from '@/components/video-page/types';
-import { findTopLevel } from '@/components/video-page/hooks/quality-preference';
+import {
+  findTopLevel,
+  prefersHlsJsOverNative,
+} from '@/components/video-page/hooks/quality-preference';
 
 import {
   AttachmentVideoAnnotationContext,
@@ -350,8 +353,12 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
 
       if (sourceMode === 'original' && originalUrl) {
         retryOriginalLoad();
-      } else if (Hls.isSupported()) {
-        // hls.js before native HLS: Chrome's native player opens on the lowest rendition.
+      } else if (
+        Hls.isSupported() &&
+        (prefersHlsJsOverNative(navigator) || !videoEl.canPlayType('application/vnd.apple.mpegurl'))
+      ) {
+        // hls.js on Chromium, whose native HLS player opens on the lowest rendition;
+        // Safari keeps its native player and AirPlay.
         sourceMode = 'hls';
         usingHlsJs = true;
         // Loading waits for MANIFEST_PARSED so Auto can open on the best rendition.
