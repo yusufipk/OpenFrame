@@ -1548,7 +1548,9 @@ export function useVideoPlayer({
         preferredHeightRef.current = null;
         skipAutoOriginalRef.current = false;
         if (effectiveSourcePreference === 'original') {
-          if (isBunny && !onOriginal) {
+          // playerRef is empty for the moment a rebuild is pending; a second click then
+          // would only overwrite the resume point the first one recorded.
+          if (isBunny && !onOriginal && playerRef.current) {
             if (originalDecodeFailedRef.current) {
               toast.info("This browser can't play the original file of this video.");
             } else {
