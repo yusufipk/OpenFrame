@@ -226,6 +226,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           sizeBytes: BigInt(bytes.length),
           thumbnailSizeBytes: BigInt(thumbnailBytes.length),
           isActive: true,
+          uploadedById: session.user.id,
         },
       });
       if (targetVideoId) {
@@ -287,6 +288,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           name: 'VIDEO_ADDED',
           dedupeKey: eventKey('VIDEO_ADDED', result.id),
           userId: project.ownerId,
+          actorId: session.user.id,
         });
       }
     } catch (error) {

@@ -24,6 +24,13 @@ export interface RecordEventInput {
    */
   dedupeKey: string;
   userId?: string | null;
+  /**
+   * Who did it, when that can differ from `userId`. The scoreboard counts events
+   * per account through `userId`; this keeps the team member who acted on that
+   * account's behalf without moving the event to them. Only VIDEO_ADDED sets it
+   * so far, so NULL on any other event means "not recorded", not "the owner".
+   */
+  actorId?: string | null;
   anonymousId?: string | null;
   /**
    * Only set for events that happen before there is an account. Once a user
@@ -61,6 +68,7 @@ export async function recordEvent(input: RecordEventInput): Promise<void> {
           name: input.name,
           dedupeKey: input.dedupeKey,
           userId: input.userId ?? null,
+          actorId: input.actorId ?? null,
           anonymousId: input.anonymousId ?? null,
           channel: input.channel ?? null,
           ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
