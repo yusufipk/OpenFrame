@@ -6,6 +6,7 @@ import { isBunnyUploadsFeatureEnabled, isStripeBillingEnabled } from '@/lib/feat
 import {
   buildBillingAccessWhereInput,
   buildEffectiveBillingStatusWhereInput,
+  getBillingAccessEndDate,
   getBillingStatusLabel,
   getEffectiveBillingStatus,
   hasBillingAccess,
@@ -82,6 +83,14 @@ function getOwnBillingAccess(
   // date its access runs out instead of an open-ended "Active access".
   if (getEffectiveBillingStatus(user, now) === BillingSubscriptionStatus.TRIALING) {
     endsAt = user.trialEndsAt;
+  } else if (
+    user.subscriptionStatus === BillingSubscriptionStatus.PAST_DUE ||
+    user.subscriptionStatus === BillingSubscriptionStatus.UNPAID
+  ) {
+    // Behind on payment: access runs to the end of the payment grace window, not
+    // the period end Stripe advanced for the unpaid renewal invoice, unless a trial
+    // still running outlasts it. Safe here because access is already confirmed above.
+    endsAt = getBillingAccessEndDate(user);
   } else if (isEnding) {
     endsAt = user.stripeCurrentPeriodEnd ?? user.stripeCancelAt;
   }
