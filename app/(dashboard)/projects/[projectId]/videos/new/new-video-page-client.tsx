@@ -26,7 +26,6 @@ import {
   getThumbnailUrl,
   type VideoSource,
 } from '@/lib/video-providers';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { isTrialStorageError } from '@/lib/client/api-error';
 import {
   isImageFile,
@@ -56,7 +55,6 @@ export default function NewVideoPageClient({
   directUploadProvider: DirectUploadProvider;
 }) {
   const router = useRouter();
-  const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
 
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingMeta, setIsFetchingMeta] = useState(false);
@@ -349,7 +347,6 @@ export default function NewVideoPageClient({
       provider: directUploadProvider,
       title,
       description,
-      bunnyCdnHostname,
       onProgress: (progress) => {
         setUploadProgress(progress);
         setUploadStatus(`Uploading... ${progress}%`);
@@ -398,7 +395,6 @@ export default function NewVideoPageClient({
           await uploadProjectVideo(projectId, file, {
             folderId,
             provider: directUploadProvider,
-            bunnyCdnHostname,
             onProgress: (progress) => {
               setUploadProgress(progress);
               setUploadStatus(

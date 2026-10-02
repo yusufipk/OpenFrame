@@ -20,6 +20,7 @@ import {
   projectVideoOrderBy,
 } from '@/lib/project-content-sort';
 import { brandStyle, toProjectBranding } from '@/lib/project-branding';
+import { signBunnyThumbnail } from '@/lib/bunny-cdn-token';
 import { PoweredByOpenFrame, ProjectBrandBanner } from '@/components/project-branding';
 
 function formatDuration(seconds: number | null): string {
@@ -196,7 +197,10 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
       mediaType: video.mediaType,
       title: video.title,
       thumbnailUrl:
-        activeVersion?.thumbnailUrl || 'https://via.placeholder.com/320x180?text=No+Thumbnail',
+        signBunnyThumbnail(
+          activeVersion?.thumbnailUrl,
+          activeVersion?.providerId === 'bunny' ? activeVersion.videoId : null
+        ) || 'https://via.placeholder.com/320x180?text=No+Thumbnail',
       currentVersion: video._count.versions,
       commentCount: activeVersion?._count.comments || 0,
       duration: formatDuration(activeVersion?.duration),

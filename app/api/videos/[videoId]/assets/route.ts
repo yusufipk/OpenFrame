@@ -15,6 +15,11 @@ import { getShareSessionFromRequest } from '@/lib/share-session';
 import { validateUrl, validateOptionalUrl } from '@/lib/validation';
 import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
 import {
+  canonicalBunnyThumbnailUrl,
+  signBunnyThumbnail,
+  thumbnailTokenBucket,
+} from '@/lib/bunny-cdn-token';
+import {
   SAFE_BUNNY_VIDEO_ID,
   SAFE_IMAGE_PROXY_PATH,
   SAFE_AUDIO_PROXY_PATH,
@@ -111,7 +116,12 @@ function shapeAssetForViewer(
     displayName: asset.displayName,
     sourceUrl: canExposeSource ? asset.sourceUrl : null,
     providerVideoId: canExposeSource ? asset.providerVideoId : null,
-    thumbnailUrl: canExposeSource ? asset.thumbnailUrl : null,
+    thumbnailUrl: canExposeSource
+      ? signBunnyThumbnail(
+          asset.thumbnailUrl,
+          asset.provider === 'BUNNY' ? asset.providerVideoId : null
+        )
+      : null,
     uploadedByUserId: asset.uploadedByUserId ?? null,
     uploadedByGuestName: asset.uploadedByGuestName,
     createdAt: asset.createdAt,
@@ -234,7 +244,10 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       _count: { id: true },
       _max: { updatedAt: true },
     });
-    const etag = `"assets:${videoId}:${limit}:${offset}:${includeDeleteMetadata ? 1 : 0}:${context.canDownloadAssets ? 1 : 0}:${assetsRevision._count.id}:${assetsRevision._max.updatedAt?.getTime() ?? 0}"`;
+    // The last term is the thumbnail token bucket: signed thumbnail URLs change with
+    // their hour-rounded expiry, and a 304 would otherwise keep a client on URLs
+    // that have stopped working.
+    const etag = `"assets:${videoId}:${limit}:${offset}:${includeDeleteMetadata ? 1 : 0}:${context.canDownloadAssets ? 1 : 0}:${assetsRevision._count.id}:${assetsRevision._max.updatedAt?.getTime() ?? 0}:${thumbnailTokenBucket()}"`;
     const ifNoneMatch = request.headers.get('if-none-match');
     if (ifNoneMatch) {
       const matches = ifNoneMatch.split(',').map(normalizeEtag).includes(normalizeEtag(etag));
@@ -571,12 +584,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }
 
       displayName = sanitizeAssetDisplayName(requestedDisplayName, `Bunny ${providerVideoId}`);
-      if (!thumbnailUrl) {
-        const bunnyCdnHostname = resolveServerBunnyCdnHostname();
-        if (bunnyCdnHostname) {
-          thumbnailUrl = `https://${bunnyCdnHostname}/${providerVideoId}/thumbnail.jpg`;
-        }
-      }
+      // Derived here rather than taken from the client, so the stored URL is the
+      // unsigned canonical one; viewers get it signed by shapeAssetForViewer.
+      thumbnailUrl = canonicalBunnyThumbnailUrl(providerVideoId);
       kind = 'VIDEO';
 
       const quotaError = await enforceStorageQuota(billedUserId, assetSizeBytes);
