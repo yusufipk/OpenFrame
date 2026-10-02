@@ -114,6 +114,77 @@ describe('proxy', () => {
     });
   });
 
+  it('does not file a click through our own pages as a referral behind a reverse proxy', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+    // Inside the container the request URL is the internal address, so only the
+    // configured origin knows the site is open-frame.net.
+    vi.stubEnv('NEXTAUTH_URL', 'https://open-frame.net');
+    const issued = await proxy(documentRequest('http://localhost:3000/'));
+
+    const response = await proxy(
+      documentRequest('http://localhost:3000/vs/frameio', {
+        headers: { referer: 'https://open-frame.net/pricing' },
+        cookies: {
+          [ANONYMOUS_ID_COOKIE]: issued.cookies.get(ANONYMOUS_ID_COOKIE)?.value ?? '',
+        },
+      })
+    );
+
+    expect(
+      await readFirstTouchCookie(response.cookies.get(FIRST_TOUCH_COOKIE)?.value)
+    ).toMatchObject({ channel: 'DIRECT', referrerHost: null, landingPath: '/vs/frameio' });
+  });
+
+  it('counts no visitor for a cookieless client coming from our own pages', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+    vi.stubEnv('NEXTAUTH_URL', 'https://open-frame.net');
+    const request = documentRequest('http://localhost:3000/vs/frameio', {
+      headers: { referer: 'https://www.open-frame.net/' },
+    });
+
+    const response = await proxy(request);
+
+    expect(response.cookies.get(ANONYMOUS_ID_COOKIE)).toBeUndefined();
+    expect(response.cookies.get(FIRST_TOUCH_COOKIE)).toBeUndefined();
+    // The page reads the request cookies, so nothing may be set there either.
+    expect(request.cookies.get(ANONYMOUS_ID_COOKIE)).toBeUndefined();
+  });
+
+  it('re-issues an id to a browser whose cookie stopped verifying, even mid-site', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+    vi.stubEnv('NEXTAUTH_URL', 'https://open-frame.net');
+    const issued = await proxy(documentRequest('http://localhost:3000/'));
+    const stale = issued.cookies.get(ANONYMOUS_ID_COOKIE)?.value ?? '';
+
+    // The secret was rotated: the browser still holds a cookie, and it no longer verifies.
+    vi.stubEnv('NEXTAUTH_SECRET', 'a-rotated-secret');
+    const response = await proxy(
+      documentRequest('http://localhost:3000/pricing', {
+        headers: { referer: 'https://open-frame.net/' },
+        cookies: { [ANONYMOUS_ID_COOKIE]: stale },
+      })
+    );
+
+    const fresh = await readAnonymousIdCookie(response.cookies.get(ANONYMOUS_ID_COOKIE)?.value);
+    expect(fresh).toMatch(/^[a-z0-9]{32}$/);
+  });
+
+  it('still counts a cookieless client that an outside site sent', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+    vi.stubEnv('NEXTAUTH_URL', 'https://open-frame.net');
+
+    const response = await proxy(
+      documentRequest('http://localhost:3000/vs/frameio', {
+        headers: { referer: 'https://some-blog.example/post' },
+      })
+    );
+
+    expect(response.cookies.get(ANONYMOUS_ID_COOKIE)?.value).toBeDefined();
+    expect(
+      await readFirstTouchCookie(response.cookies.get(FIRST_TOUCH_COOKIE)?.value)
+    ).toMatchObject({ channel: 'REFERRAL', referrerHost: 'some-blog.example' });
+  });
+
   it('does not overwrite the first touch of a returning visitor', async () => {
     vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
     const issued = await proxy(documentRequest('https://open-frame.net/?utm_source=github'));

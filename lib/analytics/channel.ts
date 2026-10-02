@@ -60,22 +60,37 @@ export function extractReferrerHost(
   referrer: string | null | undefined,
   selfHost?: string | null
 ): string | null {
+  const host = referrerUrlHost(referrer);
+  if (!host || isOwnHost(host, selfHost)) return null;
+  return host;
+}
+
+/** Whether the referrer is one of this deployment's own pages. */
+export function isOwnReferrer(
+  referrer: string | null | undefined,
+  selfHost: string | null | undefined
+): boolean {
+  const host = referrerUrlHost(referrer);
+  return host !== null && isOwnHost(host, selfHost);
+}
+
+function referrerUrlHost(referrer: string | null | undefined): string | null {
   if (!referrer) return null;
-  let host: string | null;
   try {
     const url = new URL(referrer);
     // Browsers only ever send an http(s) referrer. Anything else is a scheme we
     // have no host for, such as `android-app://com.example`, and reading its
     // opaque body as a domain would invent a referring site.
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    host = normalizeHost(url.hostname);
+    return normalizeHost(url.hostname);
   } catch {
     return null;
   }
-  if (!host) return null;
+}
+
+function isOwnHost(host: string, selfHost: string | null | undefined): boolean {
   const self = normalizeHost(selfHost);
-  if (self && host === self) return null;
-  return host;
+  return self !== null && host === self;
 }
 
 // What a URL path is allowed to be made of, per RFC 3986: unreserved characters,
