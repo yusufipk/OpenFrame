@@ -226,10 +226,13 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         const now = Date.now();
         if (now - lastTokenRecoveryAt < 60 * 1000) return false;
         lastTokenRecoveryAt = now;
-        sourceSwitchResumeRef.current = {
-          time: videoEl.currentTime || 0,
-          wasPlaying: !videoEl.paused,
-        };
+        // A source switch that failed before metadata still holds the viewer's position.
+        if (!sourceSwitchResumeRef.current) {
+          sourceSwitchResumeRef.current = {
+            time: videoEl.currentTime || 0,
+            wasPlaying: !videoEl.paused,
+          };
+        }
         setBunnyPlaybackState('processing');
         void bunnyPlaybackRef.current.refresh().then(() => {
           if (destroyed) return;

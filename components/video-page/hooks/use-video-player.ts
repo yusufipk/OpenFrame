@@ -736,7 +736,8 @@ export function useVideoPlayer({
             }
             // Before metadata, an HTTP failure (an expired token's 403, say) reports the
             // same code as a format the browser cannot open, so ask the CDN which it was.
-            fetch(currentOriginalUrl(), { method: 'HEAD' })
+            // Ask about the URL that failed: a grant refreshed meanwhile would answer 200.
+            fetch(videoEl.currentSrc || currentOriginalUrl(), { method: 'HEAD' })
               .then((response) => response.ok)
               .catch(() => false)
               .then((reachable) => {
