@@ -56,6 +56,7 @@ const REVIEWED_MIGRATIONS = [
   '20260929160000_project_client_branding',
   '20261002120000_version_uploader',
   '20260930120000_api_tokens',
+  '20261002120000_paid_acquisition_channel',
   '20260926130000_attachment_comment_annotations', // replayed: annotation-only comment check
   '20260926120000_attachment_comments', // replayed: target and content checks
   '20260925120000_add_video_media_type', // replayed: image object key uniqueness

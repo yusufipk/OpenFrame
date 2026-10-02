@@ -3,9 +3,10 @@
 // Pure and dependency-free on purpose: this runs in the proxy (edge runtime), so
 // the only Prisma reference here is a type-only import, which the compiler erases.
 //
-// Everything that reaches this file is already reduced to a host and a couple of
-// UTM tags. Nothing here ever sees a full URL, so a query string carrying a share
-// token or an email address cannot be classified into a stored column by mistake.
+// Everything that reaches this file is already reduced to a host, a couple of
+// UTM tags and a yes/no on whether an ad click id was present. Nothing here ever
+// sees a full URL, so a query string carrying a share token or an email address
+// cannot be classified into a stored column by mistake.
 
 import type { AcquisitionChannel } from '@prisma/client';
 
@@ -13,6 +14,8 @@ export interface ChannelInput {
   utmSource?: string | null;
   utmMedium?: string | null;
   referrerHost?: string | null;
+  /** True when the landing URL carried an ad network's click id (see `hasAdClickId`). */
+  adClickId?: boolean;
 }
 
 const MAX_TAG_LENGTH = 64;
@@ -191,9 +194,33 @@ const SOURCE_NAMES: ReadonlyMap<string, AcquisitionChannel> = new Map([
   ['outreach', 'OUTBOUND'],
 ]);
 
+// Query parameters ad networks append to the landing URL of a paid click: Google
+// Ads auto-tagging (gclid, and gbraid/wbraid on iOS), Campaign Manager (dclid)
+// and Microsoft Ads (msclkid). Only their presence is read, never the value.
+// fbclid is left out on purpose: Facebook appends it to organic outbound links
+// too, so it does not mean anybody paid for the click.
+const AD_CLICK_ID_PARAMS = ['gclid', 'gbraid', 'wbraid', 'dclid', 'msclkid'];
+
+/** Whether a landing URL's query string carries an ad network's click id. */
+export function hasAdClickId(params: URLSearchParams): boolean {
+  return AD_CLICK_ID_PARAMS.some((name) => (params.get(name) ?? '').trim() !== '');
+}
+
 // A medium that names the motion beats the source that names the place: an
-// outbound campaign sent from a LinkedIn account is outbound, not community.
+// outbound campaign sent from a LinkedIn account is outbound, not community, and
+// `utm_source=google&utm_medium=cpc` is a paid click, not organic search.
 const MEDIUM_NAMES: ReadonlyMap<string, AcquisitionChannel> = new Map([
+  ['cpc', 'PAID'],
+  ['ppc', 'PAID'],
+  ['cpm', 'PAID'],
+  ['paid', 'PAID'],
+  ['paidsearch', 'PAID'],
+  ['paid-search', 'PAID'],
+  ['paid_search', 'PAID'],
+  ['paidsocial', 'PAID'],
+  ['paid-social', 'PAID'],
+  ['paid_social', 'PAID'],
+  ['sem', 'PAID'],
   ['outbound', 'OUTBOUND'],
   ['email', 'OUTBOUND'],
   ['cold-email', 'OUTBOUND'],
@@ -218,9 +245,15 @@ function classifyHost(host: string): AcquisitionChannel | null {
 /**
  * The bucket a visit belongs to.
  *
- * Precedence: an explicit medium that names the motion, then an explicit source,
- * then the referring host, then direct. A tagged campaign we do not recognise is
- * OTHER rather than DIRECT, because somebody deliberately tagged it.
+ * Precedence: an explicit medium that names the motion, then an ad click id, then
+ * an explicit source, then the referring host, then direct. The click id beats
+ * the source and the referrer because auto-tagged ads carry it with no UTM tags
+ * at all, and the referrer of such a click is plain google.com, which would read
+ * as organic. A recognised medium still beats it: a link someone copied out of
+ * an ad landing page and sent in a tagged newsletter is that newsletter's
+ * traffic. An untagged copy of such a link shared on a forum is still counted as
+ * PAID; nothing in the request tells the two apart. A tagged campaign we do not
+ * recognise is OTHER rather than DIRECT, because somebody deliberately tagged it.
  *
  * An unrecognised site that links to us counts as REFERRAL. The raw host is
  * stored alongside, so a host that turns out to matter can be promoted into one
@@ -233,6 +266,8 @@ export function classifyChannel(input: ChannelInput): AcquisitionChannel {
 
   const byMedium = medium ? MEDIUM_NAMES.get(medium) : undefined;
   if (byMedium) return byMedium;
+
+  if (input.adClickId) return 'PAID';
 
   if (source) {
     const bySource = SOURCE_NAMES.get(source);

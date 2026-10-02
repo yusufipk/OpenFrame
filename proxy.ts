@@ -3,6 +3,7 @@ import { buildContentSecurityPolicy } from '@/lib/content-security-policy';
 import {
   classifyChannel,
   extractReferrerHost,
+  hasAdClickId,
   isOwnReferrer,
   sanitizeLandingPath,
   sanitizeTag,
@@ -77,7 +78,12 @@ async function applyAcquisitionCookies(
   const utmMedium = sanitizeTag(params.get('utm_medium'));
 
   const firstTouch = await signFirstTouch({
-    channel: classifyChannel({ utmSource, utmMedium, referrerHost }),
+    channel: classifyChannel({
+      utmSource,
+      utmMedium,
+      referrerHost,
+      adClickId: hasAdClickId(params),
+    }),
     utmSource,
     utmMedium,
     utmCampaign: sanitizeTag(params.get('utm_campaign')),
