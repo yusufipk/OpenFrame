@@ -95,6 +95,9 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   'video-download': { windowMs: 60 * 1000, maxRequests: 60 }, // 60 per minute
   'video-download-prepare': { windowMs: 60 * 1000, maxRequests: 30 }, // 30 per minute
   'project-download': { windowMs: 60 * 1000, maxRequests: 3 }, // 3 per minute
+  // Signed Bunny playback URLs: one per opened player plus a refresh every few hours.
+  // A compare page opens two and an office shares one IP, so the bound is generous.
+  'media-playback': { windowMs: 60 * 1000, maxRequests: 120 }, // 120 per minute
 
   // Email verification
   'verify-email': { windowMs: 15 * 60 * 1000, maxRequests: 20 }, // 20 per 15 min (clicked link)

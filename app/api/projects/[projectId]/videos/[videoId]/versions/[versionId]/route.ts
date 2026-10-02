@@ -7,6 +7,7 @@ import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { deleteMediaFilesBestEffort } from '@/lib/r2-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { withSignedThumbnail } from '@/lib/bunny-cdn-token';
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string; versionId: string }> };
@@ -86,7 +87,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       data: updateData,
     });
 
-    const response = successResponse(updated);
+    const response = successResponse(withSignedThumbnail(updated));
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error updating version:', error);

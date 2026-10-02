@@ -8,6 +8,7 @@ import { collectProjectMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-cl
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { withSignedThumbnail } from '@/lib/bunny-cdn-token';
 import { logError } from '@/lib/logger';
 import { normalizeBrandColor, toProjectBranding, withoutBrandKeys } from '@/lib/project-branding';
 
@@ -60,6 +61,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
               select: {
                 id: true,
                 thumbnailUrl: true,
+                providerId: true,
+                videoId: true,
                 duration: true,
                 versionNumber: true,
                 _count: { select: { comments: true } },
@@ -89,6 +92,10 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     const response = successResponse({
       ...withoutBrandKeys(project),
+      videos: project.videos.map((video) => ({
+        ...video,
+        versions: video.versions.map((version) => withSignedThumbnail(version)),
+      })),
       branding: toProjectBranding(project.id, project),
     });
     return withCacheControl(response, 'private, no-store');
