@@ -4,6 +4,7 @@ interface ExportAuthor {
 
 interface ExportTag {
   name: string;
+  color?: string;
 }
 
 interface ExportComment {
@@ -34,6 +35,8 @@ export interface ExportCommentRow {
   timestamp: number;
   timestampEnd: number | null;
   tag: string;
+  // Hex tag color; NLE exports turn it into a marker color. CSV/PDF ignore it.
+  tagColor?: string | null;
   isResolved: boolean;
   hasVoiceNote: boolean;
   voiceDuration: number | null;
@@ -136,6 +139,7 @@ export function flattenCommentsForExport(comments: ExportComment[]): ExportComme
       timestamp: comment.timestamp,
       timestampEnd: comment.timestampEnd,
       tag: comment.tag?.name || '',
+      tagColor: comment.tag?.color ?? null,
       isResolved: comment.isResolved,
       hasVoiceNote: !!comment.voiceUrl,
       voiceDuration: comment.voiceDuration,
@@ -155,6 +159,7 @@ export function flattenCommentsForExport(comments: ExportComment[]): ExportComme
         timestamp: reply.timestamp,
         timestampEnd: reply.timestampEnd,
         tag: reply.tag?.name || '',
+        tagColor: reply.tag?.color ?? null,
         isResolved: reply.isResolved,
         hasVoiceNote: !!reply.voiceUrl,
         voiceDuration: reply.voiceDuration,

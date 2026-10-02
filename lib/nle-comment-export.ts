@@ -1,4 +1,5 @@
 import type { ExportCommentRow } from '@/lib/comment-export';
+import { commentMarkerColor } from '@/lib/comment-tags';
 
 export type CommentExportFormat = 'csv' | 'pdf' | 'edl' | 'xml';
 export interface NleExportOptions {
@@ -100,12 +101,178 @@ export function nleTimecode(frame: number, rate: Rate): string {
   );
 }
 
-// JSON retains controls, line breaks, IDs, reply relationships and attachment flags.
-// Literal pipes could start Resolve directives; JSON unicode escapes are reversible.
-function markerNote(rows: ExportCommentRow[]): string {
-  return JSON.stringify(rows)
-    .replace(/\|/g, '\\u007c')
-    .replace(/[\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16)}`);
+// Hue bands rather than the nearest RGB value: Premiere's palette is muted (its
+// green is olive), so a distance match turns a bright green tag cyan. Each entry
+// is the upper hue bound (exclusive) of the band.
+const RESOLVE_HUES: [number, string][] = [
+  [15, 'Red'],
+  [70, 'Yellow'],
+  [160, 'Green'],
+  [200, 'Cyan'],
+  [250, 'Blue'],
+  [290, 'Purple'],
+  [345, 'Pink'],
+  [360, 'Red'],
+];
+
+// Premiere's marker palette as packed 0xAABBGGRR integers, the form `pproColor` takes.
+const PREMIERE_HUES: [number, number][] = [
+  [15, 4281740498], // red
+  [33, 4280578025], // orange
+  [70, 4281049552], // yellow
+  [160, 4281828977], // green
+  [200, 4292277273], // cyan
+  [250, 4294741314], // blue
+  [345, 4289825711], // violet
+  [360, 4281740498], // red
+];
+const PREMIERE_WHITE = 4294967295;
+
+function hexRgb(hex: string): [number, number, number] {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  return match
+    ? ([1, 2, 3].map((i) => parseInt(match[i], 16)) as [number, number, number])
+    : [0, 0, 0];
+}
+
+function hsl(hex: string) {
+  const [r, g, b] = hexRgb(hex).map((value) => value / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+  const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+  let hue = 0;
+  if (delta !== 0) {
+    if (max === r) hue = 60 * (((g - b) / delta + 6) % 6);
+    else if (max === g) hue = 60 * ((b - r) / delta + 2);
+    else hue = 60 * ((r - g) / delta + 4);
+  }
+  return { hue, saturation, lightness };
+}
+
+function band<T>(hue: number, bands: [number, T][]): T {
+  return bands.find(([upper]) => hue < upper)![1];
+}
+
+export function resolveMarkerColor(hex: string): string {
+  const { hue, saturation, lightness } = hsl(hex);
+  if (saturation < 0.15) return lightness >= 0.5 ? 'Cream' : 'Cocoa';
+  return band(hue, RESOLVE_HUES);
+}
+
+export function premiereMarkerColor(hex: string): number {
+  const { hue, saturation } = hsl(hex);
+  return saturation < 0.15 ? PREMIERE_WHITE : band(hue, PREMIERE_HUES);
+}
+
+interface MarkerEntry {
+  row: ExportCommentRow;
+  // Replies above this one inside the same marker.
+  depth: number;
+  // Author of the parent when the parent sits on another marker.
+  replyTo: string | null;
+}
+
+// Rows of one marker in thread order: each comment followed by its replies, so a
+// reply is never listed under a different comment that happens to share the frame.
+// A reply carries its own timestamp, so its parent can be on another marker; it is
+// then listed at the top level and names the author it answers instead.
+function threadOrder(rows: ExportCommentRow[], authors: Map<string, string>): MarkerEntry[] {
+  const ids = new Set(rows.map((row) => row.commentId));
+  const children = new Map<string, ExportCommentRow[]>();
+  const tops: ExportCommentRow[] = [];
+  for (const row of rows) {
+    if (row.parentCommentId !== null && ids.has(row.parentCommentId)) {
+      children.set(row.parentCommentId, [...(children.get(row.parentCommentId) ?? []), row]);
+    } else tops.push(row);
+  }
+  const ordered: MarkerEntry[] = [];
+  const visit = (row: ExportCommentRow, depth: number, replyTo: string | null) => {
+    ordered.push({ row, depth, replyTo });
+    for (const child of children.get(row.commentId) ?? []) visit(child, depth + 1, null);
+  };
+  for (const row of tops) {
+    visit(row, 0, row.parentCommentId === null ? null : (authors.get(row.parentCommentId) ?? null));
+  }
+  if (ordered.length !== rows.length) {
+    throw new NleExportError('Cannot export a cyclic comment thread.');
+  }
+  return ordered;
+}
+
+function attachmentLabels(row: ExportCommentRow): string[] {
+  return [
+    row.hasVoiceNote && '(voice note)',
+    row.hasImageAttachment && '(image)',
+    row.hasAnnotation && '(drawing)',
+  ].filter((label): label is string => Boolean(label));
+}
+
+// What an editor reads on the marker: who said it, its tag and state, the text.
+function commentHeading({ row, replyTo }: MarkerEntry): string {
+  const labels = [
+    replyTo !== null && `(reply to ${replyTo})`,
+    row.tag && `[${row.tag}]`,
+    row.isResolved && '(resolved)',
+    ...attachmentLabels(row),
+  ].filter(Boolean);
+  return [row.authorName, ...labels].join(' ');
+}
+
+function xmlNote(entries: MarkerEntry[]): string {
+  return entries
+    .map((entry) => {
+      const indent = '  '.repeat(Math.max(0, entry.depth - 1));
+      const prefix = entry.depth > 0 ? `${indent}↳ ` : '';
+      const [first, ...rest] = entry.row.content.split(/\r\n|\r|\n/);
+      const continuation = ' '.repeat(prefix.length);
+      return [
+        `${prefix}${commentHeading(entry)}: ${first}`,
+        ...rest.map((line) => continuation + line),
+      ]
+        .join('\n')
+        .trimEnd();
+    })
+    .join('\n');
+}
+
+function xmlName(entries: MarkerEntry[]): string {
+  const { row } = entries[0];
+  // A voice note or drawing without text still gets a name that says what it is.
+  const text =
+    row.content.split(/\r\n|\r|\n/)[0].trim() || attachmentLabels(row).join(' ') || '(no text)';
+  const line = `${row.authorName}: ${text}`;
+  const chars = Array.from(line);
+  const clipped = chars.length > 80 ? `${chars.slice(0, 79).join('').trimEnd()}…` : line;
+  return entries.length > 1 ? `${clipped} (+${entries.length - 1})` : clipped;
+}
+
+// EDL marker text is one line. Resolve garbles characters outside the Basic
+// Multilingual Plane (emoji) when it reads an EDL, so they are dropped, and a
+// literal pipe would start a new directive, so it becomes a broken bar.
+function edlText(value: string): string {
+  return Array.from(value)
+    .map((char) => {
+      const code = char.codePointAt(0)!;
+      if (code > 0xffff || (code >= 0xd800 && code <= 0xdfff)) return '';
+      if (code === 0x200d || code === 0xfe0e || code === 0xfe0f) return '';
+      if (code < 32 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029)
+        return ' ';
+      return char === '|' ? '¦' : char;
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function edlNote(entries: MarkerEntry[]): string {
+  return entries
+    .map((entry) => {
+      const prefix = entry.depth > 0 ? '↳ ' : '';
+      return edlText(`${prefix}${commentHeading(entry)}: ${entry.row.content}`);
+    })
+    .join(' / ');
 }
 
 function xmlText(value: string): string {
@@ -146,7 +313,15 @@ export function buildNleComments(
       group.rows.push(row);
     } else groups.set(start, { start, end, rows: [row] });
   }
-  const markers = [...groups.values()].sort((a, b) => a.start - b.start);
+  const authors = new Map(rows.map((row) => [row.commentId, row.authorName]));
+  const markers = [...groups.values()]
+    .sort((a, b) => a.start - b.start)
+    .map((marker) => {
+      const entries = threadOrder(marker.rows, authors);
+      // The first comment of the marker decides its color, as in the player.
+      const color = commentMarkerColor(entries[0].row.tagColor, entries[0].row.isResolved);
+      return { ...marker, entries, color };
+    });
   if (format === 'edl') {
     if (markers.length > 999)
       throw new NleExportError(
@@ -163,7 +338,7 @@ export function buildNleComments(
       const out = nleTimecode(rate.originFrames + marker.start + 1, rate);
       lines.push(
         `${String(index + 1).padStart(3, '0')}  001  V  C  ${start} ${out} ${start} ${out}`,
-        ` |C:ResolveColorBlue |M:${markerNote(marker.rows)} |D:${marker.end - marker.start}`,
+        ` |C:ResolveColor${resolveMarkerColor(marker.color)} |M:${edlNote(marker.entries)} |D:${marker.end - marker.start}`,
         ''
       );
     });
@@ -172,10 +347,11 @@ export function buildNleComments(
   const rateXml = `<rate><timebase>${rate.nominal}</timebase><ntsc>${rate.denominator === 1001 ? 'TRUE' : 'FALSE'}</ntsc></rate>`;
   const duration = Math.max(1, ...markers.map((marker) => marker.end));
   const markerXml = markers
-    .map(
-      (marker) =>
-        `<marker><name>${xmlText(`${marker.rows.length} OpenFrame comment(s)`)}</name><comment>${xmlText(markerNote(marker.rows))}</comment><in>${marker.start}</in><out>${marker.end}</out></marker>`
-    )
+    .map((marker) => {
+      // Premiere reads `pproColor`; other FCP7 XML readers read the RGB components.
+      const [red, green, blue] = hexRgb(marker.color).map((value) => value * 257);
+      return `<marker><name>${xmlText(xmlName(marker.entries))}</name><comment>${xmlText(xmlNote(marker.entries))}</comment><in>${marker.start}</in><out>${marker.end}</out><pproColor>${premiereMarkerColor(marker.color)}</pproColor><color><alpha>0</alpha><red>${red}</red><green>${green}</green><blue>${blue}</blue></color></marker>`;
+    })
     .join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<xmeml version="5"><sequence id="openframe-comments"><name>${xmlText(title)}</name><duration>${duration}</duration>${rateXml}<timecode>${rateXml}<string>${options.origin}</string><frame>${rate.originFrames}</frame><displayformat>${rate.drop ? 'DF' : 'NDF'}</displayformat></timecode><media><video><format><samplecharacteristics>${rateXml}<width>1920</width><height>1080</height><anamorphic>FALSE</anamorphic><pixelaspectratio>square</pixelaspectratio><fielddominance>none</fielddominance></samplecharacteristics></format><track/></video><audio><track/></audio></media>${markerXml}</sequence></xmeml>\n`;
 }

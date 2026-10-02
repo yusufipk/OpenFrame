@@ -133,7 +133,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         createdAt: true,
         author: { select: { name: true } },
         guestName: true,
-        tag: { select: { name: true } },
+        tag: { select: { name: true, color: true } },
       },
     });
     if (records.length > MAX_EXPORT_COMMENTS) {

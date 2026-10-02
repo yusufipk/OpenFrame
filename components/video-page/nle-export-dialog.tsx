@@ -28,7 +28,11 @@ export function NleExportDialog({
     <Dialog
       open={format !== null}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) {
+          // A validation error belongs to the attempt that caused it, not the next opening.
+          setError('');
+          onClose();
+        }
       }}
     >
       <DialogContent>
@@ -99,14 +103,14 @@ export function NleExportDialog({
             Drop-frame timecode (29.97 / 59.94 only)
           </label>
           <p className="text-sm text-muted-foreground">
-            Same-frame comments share one marker. Marker text contains all comment details,
-            including replies and original ranges. Line breaks appear as escaped text.
+            Same-frame comments share one marker, with replies listed under their comment. Markers
+            take the color of the comment tag.
+            {format === 'edl' && ' Most emoji are left out: Resolve cannot read them from an EDL.'}
           </p>
           <p className="text-sm text-muted-foreground">
             {format === 'edl'
               ? 'In Resolve, use Timeline Markers from EDL on the timeline in the Media Pool.'
-              : 'In Premiere, use File → Import. XML creates a separate sequence with markers; it does not modify your existing sequence.'}{' '}
-            Native application import has not yet been verified.
+              : 'In Premiere, use File → Import. XML creates a separate sequence with markers; it does not modify your existing sequence.'}
           </p>
           {error && (
             <p role="alert" className="text-sm text-destructive">

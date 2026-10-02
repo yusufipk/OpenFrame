@@ -34,25 +34,32 @@ describe('NLE comment exports', () => {
   });
 
   it.each(['edl', 'xml'])(
-    'downloads %s preserving same-frame comments, ranges and replies',
+    'downloads %s preserving same-frame comments, ranges, replies and the tag color',
     async (format) => {
       const scenario = await seedVersion();
+      const tag = await db.commentTag.create({
+        data: { projectId: scenario.project.id, name: 'Technical', color: '#EF4444' },
+      });
       const parent = await createComment({
         versionId: scenario.version.id,
+        guestName: 'Ahmet',
         content: '中文 & <marker>\n|D:999',
         timestamp: 1001,
         timestampEnd: 1002,
+        tagId: tag.id,
       });
       const reply = await createComment({
         versionId: scenario.version.id,
         parentId: parent.id,
+        guestName: 'Elif',
         content: 'Resolved reply',
         timestamp: 1001,
         isResolved: true,
       });
-      const nested = await createComment({
+      await createComment({
         versionId: scenario.version.id,
         parentId: reply.id,
+        guestName: 'Ahmet',
         content: 'Nested reply',
         timestamp: 1001,
       });
@@ -74,25 +81,30 @@ describe('NLE comment exports', () => {
       );
       expect(response.headers.get('x-content-type-options')).toBe('nosniff');
       const text = await response.text();
-      const markers = format === 'edl' ? parseMarkerEdl(text) : parseMarkerXml(text).markers;
-      expect(markers).toHaveLength(1);
-      expect(markers[0].entries).toEqual([
-        expect.objectContaining({
-          commentId: parent.id,
-          content: parent.content,
-          timestampEnd: 1002,
-        }),
-        expect.objectContaining({
-          commentId: reply.id,
-          parentCommentId: parent.id,
-          isResolved: true,
-        }),
-        expect.objectContaining({
-          commentId: nested.id,
-          parentCommentId: reply.id,
-          content: nested.content,
-        }),
-      ]);
+      if (format === 'edl') {
+        const events = parseMarkerEdl(text);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          color: 'Red',
+          duration: 30,
+          text: 'Ahmet [Technical]: 中文 & <marker> ¦D:999 / ↳ Elif (resolved): Resolved reply / ↳ Ahmet: Nested reply',
+        });
+      } else {
+        const { markers } = parseMarkerXml(text);
+        expect(markers).toHaveLength(1);
+        expect(markers[0]).toMatchObject({
+          start: 30000,
+          end: 30030,
+          name: 'Ahmet: 中文 & <marker> (+2)',
+          comment: [
+            'Ahmet [Technical]: 中文 & <marker>',
+            '|D:999',
+            '↳ Elif (resolved): Resolved reply',
+            '  ↳ Ahmet: Nested reply',
+          ].join('\n'),
+          pproColor: 4281740498,
+        });
+      }
       expect(text).not.toContain('Hidden resolved root');
     }
   );

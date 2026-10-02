@@ -27,14 +27,14 @@ for (const format of ['edl', 'xml'] as const) {
       content: 'Reply\ncontinued',
       timestamp: 1001,
     });
-    const nested = await createComment({
+    await createComment({
       versionId: seeded.versionId,
       parentId: reply.id,
       authorId: seededUser.id,
       content: 'Nested reply',
       timestamp: 1001,
     });
-    const same = await createComment({
+    await createComment({
       versionId: seeded.versionId,
       authorId: seededUser.id,
       content: 'Same frame',
@@ -68,24 +68,34 @@ for (const format of ['edl', 'xml'] as const) {
     const path = await download.path();
     expect(path).not.toBeNull();
     const text = await readFile(path!, 'utf8');
-    const markers = format === 'edl' ? parseMarkerEdl(text) : parseMarkerXml(text).markers;
-    expect(markers).toHaveLength(1);
-    expect(markers[0].entries.map((entry: { commentId: string }) => entry.commentId)).toEqual([
-      parent.id,
-      reply.id,
-      nested.id,
-      same.id,
-    ]);
-    expect(markers[0].entries[0].content).toBe(content);
-    expect(markers[0].entries[1].parentCommentId).toBe(parent.id);
-    expect(markers[0].entries[2].parentCommentId).toBe(reply.id);
-    expect(markers[0].entries[3].timestampEnd).toBe(1003);
+    const name = seededUser.name ?? 'Anonymous';
     expect(text).not.toContain('Filtered resolved comment');
     if (format === 'edl') {
-      expect(parseMarkerEdl(text)[0]).toMatchObject({ timecode: '01:16:41;00', duration: 60 });
+      const events = parseMarkerEdl(text);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        timecode: '01:16:41;00',
+        duration: 60,
+        color: 'Cyan',
+        text:
+          `${name}: İpek 中文 <marker> & "quotes" Second line ¦D:999` +
+          ` / ↳ ${name}: Reply continued / ↳ ${name}: Nested reply / ${name}: Same frame`,
+      });
     } else {
       const parsed = parseMarkerXml(text);
-      expect(parsed.markers[0]).toMatchObject({ start: 30000, end: 30060 });
+      expect(parsed.markers).toHaveLength(1);
+      expect(parsed.markers[0]).toMatchObject({
+        start: 30000,
+        end: 30060,
+        comment: [
+          `${name}: ${content.split('\n')[0]}`,
+          'Second line |D:999',
+          `↳ ${name}: Reply`,
+          '  continued',
+          `  ↳ ${name}: Nested reply`,
+          `${name}: Same frame`,
+        ].join('\n'),
+      });
       expect(parsed.doc.querySelector('sequence > timecode > frame')!.textContent).toBe('107892');
       expect(parsed.doc.querySelectorAll('marker')).toHaveLength(1);
     }

@@ -16,6 +16,12 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    date: '2026-10-02',
+    title: 'Comments as markers in Resolve and Premiere',
+    description:
+      'Download comments as a DaVinci Resolve EDL or an Adobe Premiere XML and import them as timeline markers, colored by tag, with replies listed under each comment.',
+  },
+  {
     date: '2026-10-01',
     title: 'Sharper playback from the first frame',
     description:

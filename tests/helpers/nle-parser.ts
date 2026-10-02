@@ -11,7 +11,12 @@ export function parseMarkerXml(text: string) {
     markers: Array.from(doc.querySelectorAll('sequence > marker')).map((marker) => ({
       start: Number(marker.querySelector('in')!.textContent),
       end: Number(marker.querySelector('out')!.textContent),
-      entries: JSON.parse(marker.querySelector('comment')!.textContent!),
+      name: marker.querySelector('name')!.textContent!,
+      comment: marker.querySelector('comment')!.textContent!,
+      pproColor: Number(marker.querySelector('pproColor')!.textContent),
+      rgb: ['red', 'green', 'blue'].map((channel) =>
+        Number(marker.querySelector(`color > ${channel}`)!.textContent)
+      ),
     })),
   };
 }
@@ -28,13 +33,15 @@ export function parseMarkerEdl(text: string) {
       /^(\d{3})\s+001\s+V\s+C\s+(\d{2}:\d{2}:\d{2}[:;]\d{2})\s+(\d{2}:\d{2}:\d{2}[:;]\d{2})\s+(\d{2}:\d{2}:\d{2}[:;]\d{2})\s+(\d{2}:\d{2}:\d{2}[:;]\d{2})$/.exec(
         lines[i]
       );
-    const note = /^ \|C:ResolveColorBlue \|M:(.+) \|D:(\d+)$/.exec(lines[++i] ?? '');
+    // Exactly three directives; a pipe inside the text would add a fourth and fail here.
+    const note = /^ \|C:ResolveColor([A-Za-z]+) \|M:([^|]+) \|D:(\d+)$/.exec(lines[++i] ?? '');
     if (!event || !note) throw new Error('Invalid EDL event');
     events.push({
       timecode: event[4],
       out: event[5],
-      duration: Number(note[2]),
-      entries: JSON.parse(note[1]),
+      color: note[1],
+      text: note[2],
+      duration: Number(note[3]),
     });
   }
   return events;

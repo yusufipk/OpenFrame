@@ -5,6 +5,7 @@ import Hls from 'hls.js';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { brandStyle } from '@/lib/project-branding';
+import { commentMarkerColor } from '@/lib/comment-tags';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
 import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
 import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
@@ -766,7 +767,7 @@ export function VideoPageContent({
       id: comment.id,
       timestamp: comment.timestamp,
       timestampEnd: comment.timestampEnd,
-      color: comment.tag?.color || (comment.isResolved ? '#22C55E' : '#22D3EE'),
+      color: commentMarkerColor(comment.tag?.color, comment.isResolved),
       annotationData: comment.annotationData,
       preview: `${comment.tag ? ` [${comment.tag.name}]` : ''} - ${comment.content?.substring(0, 30) || '(voice note)'}...`,
     }));

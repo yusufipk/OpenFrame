@@ -3,10 +3,12 @@ import {
   buildNleComments,
   nleTimecode,
   parseNleOptions,
+  premiereMarkerColor,
+  resolveMarkerColor,
   secondsToNleFrames,
   selectNleThreads,
 } from '@/lib/nle-comment-export';
-import type { ExportCommentRow } from '@/lib/comment-export';
+import { flattenCommentsForExport, type ExportCommentRow } from '@/lib/comment-export';
 import { parseMarkerEdl, parseMarkerXml } from '../../helpers/nle-parser';
 
 const options = { fps: '24', origin: '01:00:00:00', dropFrame: false };
@@ -102,36 +104,134 @@ describe('NLE timing', () => {
 
 describe('NLE serializers', () => {
   const hostile =
-    'İpek 中文 🎬 & <marker><in>0</in></marker> " \'\r\n001 001 V C\n|C:ResolveColorRed |M:Injected |D:999\t\u0000\u0001\u2028\ud800';
+    'İpek 中文 🎬 & <marker><in>0</in></marker> " \'\r\n001 001 V C\n|C:ResolveColorRed |M:Injected |D:999\t\u0000\u0001 \ud800';
+  // Input order is creation order: the second root predates the replies, but the
+  // marker still lists each reply under the comment it answers.
   const rows = [
     row({ content: hostile, timestampEnd: 3 }),
+    row({ commentId: 'same', authorName: 'Elif', content: 'Same frame', tag: '', timestampEnd: 4 }),
     row({
       commentId: 'reply',
       parentCommentId: 'parent',
       level: 1,
+      authorName: 'Ahmet',
+      tag: '',
       timestamp: 1.001,
       content: 'Reply\nSecond line',
       isResolved: true,
     }),
-    row({ commentId: 'same', content: 'Same frame', timestampEnd: 4 }),
-    row({ commentId: 'later', timestamp: 5 }),
+    row({
+      commentId: 'nested',
+      parentCommentId: 'reply',
+      level: 1,
+      authorName: 'Elif',
+      tag: '',
+      content: 'Nested',
+    }),
+    row({ commentId: 'later', timestamp: 5, content: 'Later', hasVoiceNote: true }),
   ];
-  it('round trips all rows through XML without injecting nodes or external references', () => {
+  it('writes readable XML marker text in thread order without injecting nodes or external references', () => {
     const { doc, markers } = parseMarkerXml(buildNleComments(rows, hostile, 'xml', options));
     expect(markers).toHaveLength(2);
-    expect(markers[0]).toEqual({ start: 24, end: 96, entries: rows.slice(0, 3) });
-    expect(markers[1]).toEqual({ start: 120, end: 121, entries: [rows[3]] });
+    expect(markers[0]).toMatchObject({
+      start: 24,
+      end: 96,
+      name: 'İpek 🎬: İpek 中文 🎬 & <marker><in>0</in></marker> " \' (+3)',
+      comment: [
+        'İpek 🎬 [Review]: İpek 中文 🎬 & <marker><in>0</in></marker> " \'',
+        '001 001 V C',
+        '|C:ResolveColorRed |M:Injected |D:999\t\\u0000\\u0001 \\ud800',
+        '↳ Ahmet (resolved): Reply',
+        '  Second line',
+        '  ↳ Elif: Nested',
+        'Elif: Same frame',
+      ].join('\n'),
+    });
+    expect(markers[1]).toMatchObject({
+      start: 120,
+      end: 121,
+      name: 'İpek 🎬: Later',
+      comment: 'İpek 🎬 [Review] (voice note): Later',
+    });
     expect(doc.querySelectorAll('marker')).toHaveLength(2);
     expect(doc.querySelectorAll('file, pathurl, effect')).toHaveLength(0);
     expect(doc.querySelector('sequence > duration')!.textContent).toBe('121');
     expect(doc.querySelector('sequence > name')!.textContent).toContain('<marker>');
   });
-  it('round trips same-frame ranges, threads and hostile text in EDL without injecting directives', () => {
+  it('writes one readable EDL line per marker, dropping emoji and neutralising directives', () => {
     const events = parseMarkerEdl(buildNleComments(rows, hostile, 'edl', options));
     expect(events).toEqual([
-      { timecode: '01:00:01:00', out: '01:00:01:01', duration: 72, entries: rows.slice(0, 3) },
-      { timecode: '01:00:05:00', out: '01:00:05:01', duration: 1, entries: [rows[3]] },
+      {
+        timecode: '01:00:01:00',
+        out: '01:00:01:01',
+        duration: 72,
+        color: 'Cyan',
+        text:
+          'İpek [Review]: İpek 中文 & <marker><in>0</in></marker> " \' 001 001 V C ¦C:ResolveColorRed ¦M:Injected ¦D:999' +
+          ' / ↳ Ahmet (resolved): Reply Second line / ↳ Elif: Nested / Elif: Same frame',
+      },
+      {
+        timecode: '01:00:05:00',
+        out: '01:00:05:01',
+        duration: 1,
+        color: 'Cyan',
+        text: 'İpek [Review] (voice note): Later',
+      },
     ]);
+  });
+  it('names the author a reply answers when its parent is on another marker', () => {
+    // Carol answered Alice at a later frame, before Bob commented there: the 2s marker
+    // must not present Carol as a reply to Bob, nor indent her under nothing.
+    const crossRows = [
+      row({ commentId: 'alice', authorName: 'Alice', tag: '', content: 'At one' }),
+      row({
+        commentId: 'carol',
+        parentCommentId: 'alice',
+        authorName: 'Carol',
+        tag: '',
+        tagColor: '#3B82F6',
+        timestamp: 2,
+        content: 'Answer',
+      }),
+      row({ commentId: 'bob', authorName: 'Bob', tag: '', timestamp: 2, content: 'At two' }),
+    ];
+    const { markers } = parseMarkerXml(buildNleComments(crossRows, '', 'xml', options));
+    expect(markers[1].comment).toBe('Carol (reply to Alice): Answer\nBob: At two');
+    expect(markers[1].name).toBe('Carol: Answer (+1)');
+    expect(parseMarkerEdl(buildNleComments(crossRows, '', 'edl', options))[1]).toMatchObject({
+      color: 'Blue',
+      text: 'Carol (reply to Alice): Answer / Bob: At two',
+    });
+  });
+  it('names a marker after its attachment when the first comment has no text', () => {
+    const [marker] = parseMarkerXml(
+      buildNleComments(
+        [row({ authorName: 'A', tag: '', content: '', hasVoiceNote: true })],
+        '',
+        'xml',
+        options
+      )
+    ).markers;
+    expect(marker.name).toBe('A: (voice note)');
+  });
+  it('treats C1 line breaks (NEL) as spaces so EDL text stays on its own line', () => {
+    const [event] = parseMarkerEdl(
+      buildNleComments(
+        [row({ authorName: 'A', tag: '', content: 'a\u0085\u009b|C:ResolveColorRed b' })],
+        '',
+        'edl',
+        options
+      )
+    );
+    expect(event.text).toBe('A: a ¦C:ResolveColorRed b');
+  });
+  it('clips only the XML marker name; the comment keeps the full text', () => {
+    const long = 'x'.repeat(200);
+    const [marker] = parseMarkerXml(
+      buildNleComments([row({ authorName: 'A', content: long, tag: '' })], '', 'xml', options)
+    ).markers;
+    expect(marker.name).toBe(`A: ${'x'.repeat(76)}…`);
+    expect(marker.comment).toBe(`A: ${long}`);
   });
   it('sorts markers by their frame even when input rows are reversed', () => {
     const unsorted = [row({ timestamp: 5 }), row({ timestamp: 1 })];
@@ -153,6 +253,168 @@ describe('NLE serializers', () => {
     const many = Array.from({ length: 1000 }, (_, i) => row({ timestamp: i }));
     expect(() => buildNleComments(many, '', 'edl', options)).toThrow('999');
     expect(parseMarkerXml(buildNleComments(many, '', 'xml', options)).markers).toHaveLength(1000);
+  });
+  it('refuses a cyclic thread inside one marker instead of dropping its comments', () => {
+    const cyclic = [
+      row({ commentId: 'a', parentCommentId: 'b' }),
+      row({ commentId: 'b', parentCommentId: 'a' }),
+    ];
+    expect(() => buildNleComments(cyclic, '', 'xml', options)).toThrow('cyclic');
+  });
+});
+
+describe('NLE marker colors', () => {
+  it.each([
+    ['#3B82F6', 'Blue', 4294741314],
+    ['#EF4444', 'Red', 4281740498],
+    ['#E11D48', 'Red', 4281740498],
+    ['#8B5CF6', 'Purple', 4289825711],
+    ['#EC4899', 'Pink', 4289825711],
+    ['#22C55E', 'Green', 4281828977],
+    ['#F59E0B', 'Yellow', 4281049552],
+    ['#F97316', 'Yellow', 4280578025],
+    ['#22D3EE', 'Cyan', 4292277273],
+    ['#6B7280', 'Cocoa', 4294967295],
+    ['#F3F4F6', 'Cream', 4294967295],
+  ])('maps tag color %s to Resolve %s and Premiere %i', (hex, resolve, premiere) => {
+    expect(resolveMarkerColor(hex)).toBe(resolve);
+    expect(premiereMarkerColor(hex)).toBe(premiere);
+  });
+  it('colors a marker from its first comment, falling back to the player colors', () => {
+    const colored = [
+      // Listed first but a reply: the comment it answers decides the color.
+      row({ commentId: 'reply', parentCommentId: 'parent', tagColor: '#3B82F6' }),
+      row({ tagColor: '#EF4444' }),
+      row({ commentId: 'resolved', timestamp: 2, tag: '', tagColor: null, isResolved: true }),
+      row({ commentId: 'open', timestamp: 3, tag: '', tagColor: null }),
+    ];
+    expect(
+      parseMarkerEdl(buildNleComments(colored, '', 'edl', options)).map((event) => event.color)
+    ).toEqual(['Red', 'Green', 'Cyan']);
+    const { markers } = parseMarkerXml(buildNleComments(colored, '', 'xml', options));
+    expect(markers.map((marker) => marker.pproColor)).toEqual([4281740498, 4281828977, 4292277273]);
+    expect(markers.map((marker) => marker.rgb)).toEqual([
+      [61423, 17476, 17476],
+      [8738, 50629, 24158],
+      [8738, 54227, 61166],
+    ]);
+  });
+});
+
+describe('NLE marker text edge cases', () => {
+  it('orders sibling replies, indents continuations at every depth and splits on lone CR', () => {
+    const tree = [
+      row({ authorName: 'P', tag: '', content: 'root' }),
+      row({
+        commentId: 'r1',
+        parentCommentId: 'parent',
+        authorName: 'R1',
+        tag: '',
+        content: 'a\rb',
+      }),
+      row({
+        commentId: 'r2',
+        parentCommentId: 'parent',
+        authorName: 'R2',
+        tag: '',
+        content: 'e\n',
+      }),
+      row({ commentId: 'n', parentCommentId: 'r1', authorName: 'N', tag: '', content: 'c\nd' }),
+    ];
+    const [marker] = parseMarkerXml(buildNleComments(tree, '', 'xml', options)).markers;
+    expect(marker.comment).toBe(
+      ['P: root', '↳ R1: a', '  b', '  ↳ N: c', '    d', '↳ R2: e'].join('\n')
+    );
+  });
+  it('names every attachment kind', () => {
+    const [marker] = parseMarkerXml(
+      buildNleComments(
+        [
+          row({
+            authorName: 'A',
+            tag: '',
+            content: 'x',
+            hasImageAttachment: true,
+            hasAnnotation: true,
+          }),
+        ],
+        '',
+        'xml',
+        options
+      )
+    ).markers;
+    expect(marker.comment).toBe('A (image) (drawing): x');
+  });
+  it('drops joiners and variation selectors and spaces out DEL in EDL text', () => {
+    const [event] = parseMarkerEdl(
+      buildNleComments(
+        [row({ authorName: 'A', tag: '', content: 'a❤️ ok a‍b c\u007fd' })],
+        '',
+        'edl',
+        options
+      )
+    );
+    expect(event.text).toBe('A: a❤ ok ab c d');
+  });
+  it('clips the XML name at exactly 80 code points, never inside a surrogate pair', () => {
+    const name = (content: string) =>
+      parseMarkerXml(buildNleComments([row({ authorName: 'A', content })], '', 'xml', options))
+        .markers[0].name;
+    expect(name('x'.repeat(77))).toBe(`A: ${'x'.repeat(77)}`);
+    expect(name(`${'x'.repeat(75)}🎬yyyy`)).toBe(`A: ${'x'.repeat(75)}🎬…`);
+    expect(name(`${'x'.repeat(75)} ${'y'.repeat(10)}`)).toBe(`A: ${'x'.repeat(75)}…`);
+  });
+  it('refuses a cycle that sits beside a valid root in the same marker', () => {
+    const rows = [
+      row(),
+      row({ commentId: 'a', parentCommentId: 'b' }),
+      row({ commentId: 'b', parentCommentId: 'a' }),
+    ];
+    expect(() => buildNleComments(rows, '', 'edl', options)).toThrow('cyclic');
+  });
+});
+
+describe('NLE marker color boundaries', () => {
+  it.each([
+    ['#B0A090', 'Yellow', 4280578025], // saturation 0.17: just above the neutral cut
+    ['#808080', 'Cream', 4294967295], // lightness 0.502
+    ['#7F7F7F', 'Cocoa', 4294967295], // lightness 0.498
+    ['#FF8800', 'Yellow', 4280578025], // hue 32: Premiere orange
+    ['#FF9100', 'Yellow', 4281049552], // hue 34: Premiere yellow
+    ['#FF3300', 'Red', 4281740498], // hue 12
+    ['#00BFFF', 'Cyan', 4292277273], // hue 195
+    ['#0088FF', 'Blue', 4294741314], // hue 208
+    ['#C026D3', 'Pink', 4289825711], // hue 293
+  ])('maps %s to Resolve %s and Premiere %i', (hex, resolve, premiere) => {
+    expect(resolveMarkerColor(hex)).toBe(resolve);
+    expect(premiereMarkerColor(hex)).toBe(premiere);
+  });
+  it('carries the tag color for replies as well as top-level comments', () => {
+    const base = {
+      parentId: null,
+      content: 'x',
+      timestamp: 1,
+      timestampEnd: null,
+      isResolved: false,
+      voiceUrl: null,
+      voiceDuration: null,
+      imageUrl: null,
+      annotationData: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      author: { name: 'A' },
+      guestName: null,
+    };
+    const rows = flattenCommentsForExport([
+      {
+        ...base,
+        id: 'root',
+        tag: { name: 'Red', color: '#EF4444' },
+        replies: [
+          { ...base, id: 'reply', parentId: 'root', tag: { name: 'Blue', color: '#3B82F6' } },
+        ],
+      },
+    ]);
+    expect(rows.map((r) => r.tagColor)).toEqual(['#EF4444', '#3B82F6']);
   });
 });
 

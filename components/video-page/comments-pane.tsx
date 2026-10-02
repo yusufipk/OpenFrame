@@ -5,6 +5,7 @@ import type { CommentExportFormat, NleExportOptions } from '@/lib/nle-comment-ex
 import { memo, useState, type ReactNode, type RefObject } from 'react';
 import {
   ArrowUpRight,
+  Clapperboard,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -392,12 +393,14 @@ export const CommentsPane = memo(function CommentsPane({
                         disabled={!activeVersion || isExportingNle}
                         onSelect={() => setNleFormat('edl')}
                       >
+                        <Clapperboard className="h-4 w-4 mr-2" />
                         DaVinci Resolve (EDL)
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         disabled={!activeVersion || isExportingNle}
                         onSelect={() => setNleFormat('xml')}
                       >
+                        <Clapperboard className="h-4 w-4 mr-2" />
                         Adobe Premiere (XML)
                       </DropdownMenuItem>
                     </>

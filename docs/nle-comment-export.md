@@ -21,11 +21,18 @@ the edit that produced that video. For example, a comment at one second with a
   markers into an earlier day. Point comments occupy one frame; ranges use the rounded
   end, extended to at least one frame.
 - Multiple comments and replies that round to the same frame share one marker whose
-  range covers their longest range. Marker text is a JSON array of complete export rows:
-  IDs, author, content, original timestamps/ranges, reply parent, resolved state, tag,
-  creation time, and attachment-presence flags. No comment text is truncated. Attachment
-  media itself is not embedded. JSON escaping preserves line breaks and controls;
-  EDL additionally encodes `|` as `\u007c` to prevent marker directive injection.
+  range covers their longest range. Marker text is plain text an editor can read:
+  `Author [Tag] (resolved): comment`, with each reply listed under the comment it
+  answers. Voice notes, images and drawings are named but not embedded. No comment
+  text is truncated, except the short XML marker name; the XML comment holds it all.
+- In XML the marker comment keeps line breaks and indents replies. EDL marker text is
+  a single line: comments are separated by slashes, line breaks become spaces, `|`
+  becomes `¦` so it cannot start a directive, and emoji outside the Basic Multilingual Plane (most of them) are dropped because Resolve
+  garbles them when it reads an EDL.
+- A marker takes the color of its first comment's tag, falling back to the colors
+  the OpenFrame player uses (cyan, or green when resolved). Tag colors are matched by
+  hue to Resolve's marker palette (EDL) and Premiere's (`pproColor` in XML), so a
+  custom tag color lands on the nearest named color.
 - NLE exports preserve every reply depth and actual parent ID; the resolved filter applies to the thread root. To bound memory, NLE exports enforce a 5,000-comment limit for the whole version before filtering. CSV/PDF retain their existing root/direct-reply layout and filtered limit. EDL also refuses more than 999 distinct
   marker frames. Use XML or CSV when an EDL would exceed that event limit.
 
@@ -41,13 +48,11 @@ It does not insert markers directly into an existing sequence. The sequence uses
 placeholder 1920×1080 square-pixel progressive video settings; adjust those settings
 as needed for your edit. No media files or external URLs are referenced.
 
-Native Resolve/Premiere import has **not** been tested in this Linux environment.
-Automated tests verify timing, escaping, structure and content through independent
-parsers, and browser tests cover the seeded-comment-to-download path. These tests do
-not prove native application import compatibility. Before using a file on a live edit,
-import into a copy and verify point/range markers, same-frame groups, Unicode and DF
-minute/ten-minute/hour boundaries. In particular, check long marker text against your
-editor version's display/storage limits.
+Checked by hand in DaVinci Resolve Studio 20.3: a 29.97 DF marker EDL imported
+through Timeline Markers from EDL, and 23.976 NDF and 59.94 DF XML files (one starting
+at `00:59:59;58`) imported as timelines, all landed on the exact expected frames and
+durations. Premiere import has **not** been tested. Before relying on a file for a live
+edit, import it into a copy and check marker positions, colors and text.
 
 Final Cut Pro's modern FCPXML is a different format and is not included in this change;
 its inclusion awaits confirmation of the requested editor. This feature exports from
