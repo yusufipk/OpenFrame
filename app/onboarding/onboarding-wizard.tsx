@@ -114,6 +114,7 @@ const SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'GITHUB', label: 'GitHub' },
   { value: 'YOUTUBE', label: 'YouTube' },
   { value: 'GOOGLE', label: 'A search engine' },
+  { value: 'PAID', label: 'An ad' },
   { value: 'REVIEW_LINK', label: 'A review or comparison site' },
   { value: 'REFERRAL', label: 'Someone recommended it' },
   { value: 'COMMUNITY', label: 'Reddit, X, Discord or a forum' },

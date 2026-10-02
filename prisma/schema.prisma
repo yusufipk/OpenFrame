@@ -1040,7 +1040,14 @@ enum AcquisitionChannel {
   DIRECT
   GITHUB
   YOUTUBE
+  // Organic search only. A paid click on a search ad is PAID.
   GOOGLE
+  // Any paid ad click: an ad network's click id on the landing URL, or a paid
+  // utm_medium such as cpc. utm_source and utm_campaign say which network.
+  // First touch still applies: a visitor who already holds a first-touch cookie
+  // from an earlier visit keeps that channel when they later click an ad, so
+  // this bucket undercounts ad clicks from people who had been here before.
+  PAID
   REVIEW_LINK
   REFERRAL
   OUTBOUND
