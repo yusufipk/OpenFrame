@@ -28,6 +28,7 @@ export const AT_RISK_SILENT_DAYS = 14;
 
 const DEFAULT_WEEKS = 12;
 const CHANNEL_WINDOW_DAYS = 28;
+const REFERRAL_ROW_LIMIT = 25;
 
 /**
  * How many paid accounts the per-account table carries.
@@ -63,6 +64,23 @@ export interface ChannelRow {
   signups: number;
   trials: number;
   paid: number;
+}
+
+/**
+ * Where the REFERRAL channel's visitors came from and where they landed.
+ *
+ * REFERRAL is the catch-all for a site no list recognises, so its total says
+ * nothing until it is broken down: one forum thread, a spam referrer and our own
+ * pages filed by mistake all look the same as a single number.
+ *
+ * Touches recorded before the proxy compared referrers against the public host
+ * can still show our own domain here; they age out of the window, they are not
+ * rewritten.
+ */
+export interface ReferralRow {
+  referrerHost: string | null;
+  landingPath: string | null;
+  visitors: number;
 }
 
 export interface PaidAccountRow {
@@ -109,6 +127,8 @@ export interface Scoreboard {
   weeks: WeeklyRow[];
   channels: ChannelRow[];
   channelWindowDays: number;
+  /** The busiest REFERRAL host and landing path pairs over the channel window. */
+  referrals: ReferralRow[];
   paidAccounts: PaidAccountRow[];
   /** True when there are more paid accounts than the table shows. */
   paidAccountsTruncated: boolean;
@@ -131,6 +151,12 @@ interface ChannelQueryRow {
   channel: AcquisitionChannel | null;
   name: string;
   subjects: number;
+}
+
+interface ReferralQueryRow {
+  referrer_host: string | null;
+  landing_path: string | null;
+  visitors: number;
 }
 
 interface PaidQueryRow {
@@ -346,12 +372,13 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
   const channelWindowStart = new Date(now);
   channelWindowStart.setUTCDate(channelWindowStart.getUTCDate() - CHANNEL_WINDOW_DAYS);
 
-  const [weekRows, channelRows, priorPaid, paidAccounts, stripeStats, cohorts] = await Promise.all([
-    // COUNT(DISTINCT COALESCE(anonymous_id, id)) rather than COUNT(*): a landing
-    // view is deduped per visitor per day, so a visitor who came back on three
-    // days would otherwise be three weekly visitors. Rows with no anonymous id
-    // fall back to their own primary key and stay distinct.
-    db.$queryRaw<WeeklyQueryRow[]>`
+  const [weekRows, channelRows, referralRows, priorPaid, paidAccounts, stripeStats, cohorts] =
+    await Promise.all([
+      // COUNT(DISTINCT COALESCE(anonymous_id, id)) rather than COUNT(*): a landing
+      // view is deduped per visitor per day, so a visitor who came back on three
+      // days would otherwise be three weekly visitors. Rows with no anonymous id
+      // fall back to their own primary key and stay distinct.
+      db.$queryRaw<WeeklyQueryRow[]>`
       SELECT date_trunc('week', occurred_at) AS week,
              name::text AS name,
              COUNT(DISTINCT COALESCE(anonymous_id, id))::int AS subjects
@@ -359,7 +386,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       WHERE occurred_at >= ${firstWeekStart}
       GROUP BY 1, 2
     `,
-    db.$queryRaw<ChannelQueryRow[]>`
+      db.$queryRaw<ChannelQueryRow[]>`
       SELECT COALESCE(ua.channel, e.channel) AS channel,
              e.name::text AS name,
              COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS subjects
@@ -368,14 +395,30 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       WHERE e.occurred_at >= ${channelWindowStart}
       GROUP BY 1, 2
     `,
-    db.$queryRaw<Array<{ started: number; canceled: number }>>`
+      // Same channel rule as the table above, so these rows add up to its REFERRAL
+      // visitors whenever there are no more than the limit.
+      db.$queryRaw<ReferralQueryRow[]>`
+      SELECT COALESCE(ua.referrer_host, t.referrer_host) AS referrer_host,
+             COALESCE(ua.landing_path, t.landing_path) AS landing_path,
+             COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS visitors
+      FROM analytics_events e
+      LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
+      LEFT JOIN acquisition_touches t ON t.anonymous_id = e.anonymous_id
+      WHERE e.occurred_at >= ${channelWindowStart}
+        AND e.name::text = 'LANDING_VIEW'
+        AND COALESCE(ua.channel, e.channel)::text = 'REFERRAL'
+      GROUP BY 1, 2
+      ORDER BY 3 DESC, 1 ASC NULLS LAST, 2 ASC NULLS LAST
+      LIMIT ${REFERRAL_ROW_LIMIT}
+    `,
+      db.$queryRaw<Array<{ started: number; canceled: number }>>`
       SELECT
         COUNT(*) FILTER (WHERE name::text = 'SUBSCRIPTION_STARTED')::int AS started,
         COUNT(*) FILTER (WHERE name::text = 'SUBSCRIPTION_CANCELED')::int AS canceled
       FROM analytics_events
       WHERE occurred_at < ${firstWeekStart}
     `,
-    db.$queryRaw<PaidQueryRow[]>`
+      db.$queryRaw<PaidQueryRow[]>`
       SELECT u.id AS user_id,
              u.name,
              u.email,
@@ -406,9 +449,9 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       ORDER BY MAX(e.occurred_at) ASC NULLS FIRST
       LIMIT ${PAID_ACCOUNT_LIMIT + 1}
     `,
-    getCachedStripeStats(),
-    getCohortComparison(now),
-  ]);
+      getCachedStripeStats(),
+      getCohortComparison(now),
+    ]);
 
   const byWeek = new Map<number, WeeklyRow>();
   for (let index = 0; index < weeks; index += 1) {
@@ -480,6 +523,11 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     weeks: orderedWeeks,
     channels: [...channelBuckets.values()].sort((a, b) => b.visitors - a.visitors),
     channelWindowDays: CHANNEL_WINDOW_DAYS,
+    referrals: referralRows.map((row) => ({
+      referrerHost: row.referrer_host,
+      landingPath: row.landing_path,
+      visitors: row.visitors,
+    })),
     paidAccounts: accounts,
     paidAccountsTruncated,
     paidAccountLimit: PAID_ACCOUNT_LIMIT,

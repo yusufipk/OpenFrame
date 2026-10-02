@@ -3,6 +3,7 @@ import { buildContentSecurityPolicy } from '@/lib/content-security-policy';
 import {
   classifyChannel,
   extractReferrerHost,
+  isOwnReferrer,
   sanitizeLandingPath,
   sanitizeTag,
 } from '@/lib/analytics/channel';
@@ -30,6 +31,7 @@ async function applyAcquisitionCookies(
   if (!isCountableDocumentRequest(request.headers)) return;
   if (isLikelyBot(request.headers.get('user-agent'))) return;
 
+  const publicUrl = new URL(getPublicOrigin(request));
   const cookieOptions = {
     httpOnly: true,
     sameSite: 'lax' as const,
@@ -37,12 +39,26 @@ async function applyAcquisitionCookies(
     // which is the deployment shape the README documents, that is the
     // container-internal `http://localhost:3000` and the flag would silently
     // come off in exactly the setup that needs it.
-    secure: getPublicOrigin(request).startsWith('https:'),
+    secure: publicUrl.protocol === 'https:',
     path: '/',
     maxAge: ANONYMOUS_ID_MAX_AGE_SECONDS,
   };
 
+  // The public host, for the same reason: compared against the internal
+  // `localhost`, a referrer from our own pages never matched and was filed as an
+  // outside site linking to us.
+  const referrer = request.headers.get('referer');
+  const selfHost = publicUrl.hostname;
+
   const existingId = await readAnonymousIdCookie(request.cookies.get(ANONYMOUS_ID_COOKIE)?.value);
+  // Coming from one of our own pages without the id we issued there means the
+  // client does not keep cookies: a crawler with a browser user agent, or a
+  // browser that blocks them. Minting an id would count it as a new visitor on
+  // every page it opens, so it is not counted at all. Only when no cookie was
+  // sent: one that fails verification (a rotated secret) belongs to a real
+  // browser, which gets a fresh id below.
+  const sentNoId = !request.cookies.get(ANONYMOUS_ID_COOKIE);
+  if (sentNoId && isOwnReferrer(referrer, selfHost)) return;
   if (!existingId) {
     const signedId = await signAnonymousId(generateAnonymousId());
     if (!signedId) return;
@@ -56,10 +72,7 @@ async function applyAcquisitionCookies(
   if (request.cookies.get(FIRST_TOUCH_COOKIE)) return;
 
   const params = request.nextUrl.searchParams;
-  const referrerHost = extractReferrerHost(
-    request.headers.get('referer'),
-    request.nextUrl.hostname
-  );
+  const referrerHost = extractReferrerHost(referrer, selfHost);
   const utmSource = sanitizeTag(params.get('utm_source'));
   const utmMedium = sanitizeTag(params.get('utm_medium'));
 
