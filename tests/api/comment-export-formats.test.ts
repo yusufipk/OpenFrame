@@ -44,9 +44,10 @@ describe('comment export formats through the route', () => {
     const response = await request(scenario.version.id, 'format=csv');
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('text/csv; charset=utf-8');
-    const text = await response.text();
-    expect(text.charCodeAt(0)).toBe(0xfeff);
-    const [header, first, second] = parseCsv(text.slice(1));
+    // Response.text() strips a byte order mark, so check the raw bytes.
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+    const [header, first, second] = parseCsv(new TextDecoder().decode(bytes.slice(3)));
     expect(header.slice(0, 7)).toEqual([
       '#',
       'Time',
