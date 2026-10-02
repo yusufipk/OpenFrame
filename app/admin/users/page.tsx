@@ -17,6 +17,11 @@ import {
   getCachedUserDownloadEgress,
   getCachedUserMediaStorage,
 } from '@/lib/admin-stats';
+import {
+  getUploaderCountsByAccount,
+  UPLOADER_WINDOW_DAYS,
+  uploaderWindowStart,
+} from '@/lib/uploader-stats';
 import { Film, HardDrive } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -94,6 +99,7 @@ type SortBy =
   | 'joinedDate'
   | 'workspacesOwned'
   | 'invitedMembers'
+  | 'uploaders'
   | 'projectsOwned'
   | 'totalComments'
   | 'bunnyUpload'
@@ -146,6 +152,7 @@ const SORTABLE_COLUMNS: SortBy[] = [
   'joinedDate',
   'workspacesOwned',
   'invitedMembers',
+  'uploaders',
   'projectsOwned',
   'totalComments',
   'bunnyUpload',
@@ -357,6 +364,7 @@ export default async function AdminUsersPage({
     userBunnyStorage,
     userDownloadEgress,
     bunnyStorageStats,
+    uploaderCounts,
   ] = await Promise.all([
     db.user.count(),
     db.user.count({ where }),
@@ -364,6 +372,7 @@ export default async function AdminUsersPage({
     getCachedUserBunnyStorage(),
     getCachedUserDownloadEgress(),
     getCachedBunnyStorageStats(),
+    getUploaderCountsByAccount(uploaderWindowStart(now)),
   ]);
   const totalPages = Math.max(1, Math.ceil(matchingUsers / pageSize));
   const page = Math.min(Math.max(1, requestedPage), totalPages);
@@ -413,6 +422,7 @@ export default async function AdminUsersPage({
     ownedWorkspaces: Array<{ _count: { members: number } }>;
     _count: { ownedWorkspaces: number; projects: number; comments: number };
     invitedMembersCount: number;
+    uploadersCount: number;
     bunnyUploadBytes: number;
     downloadEgressBytes: number;
     mediaStorageBytes: number;
@@ -434,6 +444,7 @@ export default async function AdminUsersPage({
         (total, workspace) => total + workspace._count.members,
         0
       ),
+      uploadersCount: uploaderCounts[user.id] ?? 0,
       bunnyUploadBytes: userBunnyStorage[user.id] || 0,
       downloadEgressBytes: userDownloadEgress[user.id] || 0,
       mediaStorageBytes: userStorage[user.id]?.total || 0,
@@ -448,6 +459,7 @@ export default async function AdminUsersPage({
         (total, workspace) => total + workspace._count.members,
         0
       ),
+      uploadersCount: uploaderCounts[user.id] ?? 0,
       bunnyUploadBytes: userBunnyStorage[user.id] || 0,
       downloadEgressBytes: userDownloadEgress[user.id] || 0,
       mediaStorageBytes: userStorage[user.id]?.total || 0,
@@ -462,6 +474,8 @@ export default async function AdminUsersPage({
           STATUS_SORT_ORDER.indexOf(b.effectiveStatus);
       } else if (sortBy === 'invitedMembers') {
         comparison = a.invitedMembersCount - b.invitedMembersCount;
+      } else if (sortBy === 'uploaders') {
+        comparison = a.uploadersCount - b.uploadersCount;
       } else if (sortBy === 'bunnyUpload') {
         comparison = a.bunnyUploadBytes - b.bunnyUploadBytes;
       } else if (sortBy === 'downloadEgress') {
@@ -700,6 +714,18 @@ export default async function AdminUsersPage({
                   </TableHead>
                   <TableHead className="text-center">
                     <Link
+                      href={buildSortHref('uploaders')}
+                      title={`Distinct people, owner included, who added a video or version to this account's workspaces in the last ${UPLOADER_WINDOW_DAYS} days. Uploads from before this was recorded are not counted.`}
+                      className="inline-flex items-center justify-center gap-1 hover:underline"
+                    >
+                      Uploaders ({UPLOADER_WINDOW_DAYS}d)
+                      <span className="text-xs">
+                        {getSortIndicator('uploaders', sortBy, sortDirection)}
+                      </span>
+                    </Link>
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <Link
                       href={buildSortHref('projectsOwned')}
                       className="inline-flex items-center justify-center gap-1 hover:underline"
                     >
@@ -758,7 +784,10 @@ export default async function AdminUsersPage({
               <TableBody>
                 {paginatedUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={stripeBillingEnabled ? 10 : 9} className="h-24 text-center">
+                    <TableCell
+                      colSpan={stripeBillingEnabled ? 11 : 10}
+                      className="h-24 text-center"
+                    >
                       {hasActiveFilters ? 'No users match these filters.' : 'No users found.'}
                     </TableCell>
                   </TableRow>
@@ -804,6 +833,7 @@ export default async function AdminUsersPage({
                       <TableCell>{format(new Date(user.createdAt), 'MMM dd, yyyy')}</TableCell>
                       <TableCell className="text-center">{user._count.ownedWorkspaces}</TableCell>
                       <TableCell className="text-center">{user.invitedMembersCount}</TableCell>
+                      <TableCell className="text-center">{user.uploadersCount}</TableCell>
                       <TableCell className="text-center">{user._count.projects}</TableCell>
                       <TableCell className="text-center">{user._count.comments}</TableCell>
                       <TableCell className="text-right text-sm font-medium">
