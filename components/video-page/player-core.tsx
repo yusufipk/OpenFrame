@@ -37,6 +37,7 @@ import {
 } from '@/components/annotation-canvas';
 import { SILENT_ABOVE_SPEED } from '@/components/video-page/hooks/video-player-utils';
 import { SubtitleControls } from '@/components/video-page/subtitle-controls';
+import { QualityHint, useQualityHint } from '@/components/video-page/quality-hint';
 import { STACKED_MEDIA_HEIGHT } from '@/components/video-page/stacked-layout';
 import { useStackedLayout } from '@/components/video-page/hooks/use-stacked-layout';
 import {
@@ -212,6 +213,7 @@ export const PlayerCore = memo(function PlayerCore({
   commentMarkers,
   liveOverlay,
 }: PlayerCoreProps) {
+  const qualityHint = useQualityHint(activeProviderId === 'bunny');
   // Measured here rather than in the page because this component is what mounts the
   // <video>: the page can hold a version id while it still shows the guest name gate,
   // and an effect there would find no element and never run again.
@@ -490,16 +492,19 @@ export const PlayerCore = memo(function PlayerCore({
             </Button>
 
             {activeProviderId === 'bunny' && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="hidden h-8 gap-1 text-xs sm:inline-flex"
-                  >
-                    Quality {selectedQualityLabel}
-                  </Button>
-                </DropdownMenuTrigger>
+              <DropdownMenu
+                onOpenChange={(open) => {
+                  if (open && qualityHint.visible) qualityHint.dismiss();
+                }}
+              >
+                <div className="relative hidden sm:block">
+                  {qualityHint.visible && <QualityHint onDismiss={qualityHint.dismiss} />}
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                      Quality {selectedQualityLabel}
+                    </Button>
+                  </DropdownMenuTrigger>
+                </div>
                 <DropdownMenuContent align="end" className="min-w-[120px]">
                   <DropdownMenuItem
                     onClick={() => handleQualityChange(-1)}

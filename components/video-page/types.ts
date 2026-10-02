@@ -169,6 +169,8 @@ export interface VideoData {
 export interface BunnyQualityOption {
   level: number;
   label: string;
+  /** Rendition height in pixels, used to remember the choice across videos. */
+  height?: number;
 }
 
 export type BunnyPlaybackState = 'none' | 'processing' | 'error';

@@ -427,6 +427,7 @@ export function VideoPageContent({
     playbackSpeed,
     qualityOptions,
     selectedQualityLevel,
+    autoPlaysOriginal,
     isBunnyPortraitSource,
     bunnyPortraitFrameWidth,
     cursorIdle,
@@ -467,6 +468,7 @@ export function VideoPageContent({
     setViewingAnnotation,
     toggleCaptionsRef,
     playbackLocked: liveReview.playbackLocked,
+    autoOriginalAllowed: !!video?.canDownload,
     bunnySource: bunnyPlayback,
   });
 
@@ -599,9 +601,9 @@ export function VideoPageContent({
 
   const selectedQualityLabel = useMemo(() => {
     if (selectedQualityLevel === -2) return 'Original';
-    if (selectedQualityLevel === -1) return 'Auto';
+    if (selectedQualityLevel === -1) return autoPlaysOriginal ? 'Auto (Original)' : 'Auto';
     return qualityOptions.find((option) => option.level === selectedQualityLevel)?.label ?? 'Auto';
-  }, [qualityOptions, selectedQualityLevel]);
+  }, [autoPlaysOriginal, qualityOptions, selectedQualityLevel]);
 
   useEffect(() => {
     if (!activeVersionId || mode !== 'dashboard') return;

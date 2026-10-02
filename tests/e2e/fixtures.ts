@@ -184,6 +184,41 @@ export class Seed {
     return { ...seeded, videoId: video.id, versionId: version.id };
   }
 
+  /**
+   * A project with one video whose active version is hosted on Bunny Stream.
+   *
+   * Nothing is uploaded: the spec answers every request to the CDN hostname in
+   * playwright.config.ts itself, so `providerVideoId` only has to be unique.
+   * `duration: null` is what an upload that never reported a length stores.
+   */
+  async bunnyVersion(
+    owner: User,
+    options: { duration: number | null; title?: string }
+  ): Promise<SeededVersion & { providerVideoId: string }> {
+    const seeded = await this.project(owner);
+    const tag = uniqueTag();
+    const providerVideoId = `e2e-bunny-${tag}`;
+    const video = await createVideo({
+      projectId: seeded.project.id,
+      title: options.title ?? `E2E Bunny Video ${tag}`,
+    });
+    const version = await createVersion({
+      videoParentId: video.id,
+      providerId: 'bunny',
+      providerVideoId,
+      originalUrl: `https://iframe.mediadelivery.net/play/1/${providerVideoId}`,
+      title: `E2E Bunny Version ${tag}`,
+    });
+    if (options.duration !== 120) {
+      // The factory defaults a missing duration to 120, so null is set here.
+      await db.videoVersion.update({
+        where: { id: version.id },
+        data: { duration: options.duration },
+      });
+    }
+    return { ...seeded, videoId: video.id, versionId: version.id, providerVideoId };
+  }
+
   /** Adds `user` to `project` with the given role. */
   member(projectId: string, userId: string, role: ProjectMemberRole) {
     return addProjectMember({ projectId, userId, role });
