@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyChannel,
   extractReferrerHost,
+  isOwnReferrer,
   normalizeHost,
   sanitizeLandingPath,
   sanitizeTag,
@@ -40,6 +41,16 @@ describe('normalizeHost', () => {
   it('rejects a value that is not a host', () => {
     expect(normalizeHost('not a host')).toBeNull();
     expect(normalizeHost('https://github.com')).toBeNull();
+  });
+});
+
+describe('isOwnReferrer', () => {
+  it('is true only for a referrer on our own host', () => {
+    expect(isOwnReferrer('https://www.open-frame.net/pricing', 'open-frame.net')).toBe(true);
+    expect(isOwnReferrer('https://open-frame.net.evil.example/', 'open-frame.net')).toBe(false);
+    expect(isOwnReferrer('https://github.com/', 'open-frame.net')).toBe(false);
+    expect(isOwnReferrer(null, 'open-frame.net')).toBe(false);
+    expect(isOwnReferrer('https://open-frame.net/', null)).toBe(false);
   });
 });
 
