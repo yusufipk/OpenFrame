@@ -1,6 +1,5 @@
 'use client';
 
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { cleanupPendingR2VideoUpload, uploadVideoToR2 } from '@/lib/client/r2-video-upload';
 import type { DirectUploadProvider } from '@/components/video-page/types';
 import { apiRequestError } from '@/lib/client/api-error';
@@ -81,7 +80,6 @@ export async function uploadProjectVideo(
     folderId?: string | null;
     title?: string;
     description?: string | null;
-    bunnyCdnHostname?: string | null;
   } & ProjectVideoUploadProgress
 ): Promise<void> {
   const {
@@ -89,7 +87,6 @@ export async function uploadProjectVideo(
     folderId = null,
     title: titleOverride,
     description = null,
-    bunnyCdnHostname = resolvePublicBunnyCdnHostname(),
     onProgress,
     onStatus,
     onTusUploadReady,
@@ -236,9 +233,8 @@ export async function uploadProjectVideo(
         videoUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`,
         providerId: 'bunny',
         videoId,
-        thumbnailUrl: bunnyCdnHostname
-          ? `https://${bunnyCdnHostname}/${videoId}/thumbnail.jpg`
-          : null,
+        // The server derives a Bunny version's thumbnail itself.
+        thumbnailUrl: null,
         duration: null,
         uploadToken,
       }),

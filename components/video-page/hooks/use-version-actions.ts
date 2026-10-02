@@ -10,7 +10,6 @@ import {
   type VideoSource,
 } from '@/lib/video-providers';
 import type { VersionActionsConfig, VideoData } from '@/components/video-page/types';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { cleanupPendingR2VideoUpload, uploadVideoToR2 } from '@/lib/client/r2-video-upload';
 import { apiRequestError, toastApiError } from '@/lib/client/api-error';
 import { isImageFile, uploadProjectImage } from '@/lib/client/project-image-upload';
@@ -53,7 +52,6 @@ export function useVersionActions({
   const [showDeleteVersionDialog, setShowDeleteVersionDialog] = useState(false);
   const [versionToDelete, setVersionToDelete] = useState<string | null>(null);
   const [isDeletingVersion, setIsDeletingVersion] = useState(false);
-  const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
 
   const handleNewVersionUrlChange = (url: string) => {
     setNewVersionUrl(url);
@@ -167,9 +165,8 @@ export function useVersionActions({
       finalVideoUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${bunnyVideoId}`,
       finalProviderId: 'bunny',
       finalProviderVideoId: bunnyVideoId,
-      finalThumbnailUrl: bunnyCdnHostname
-        ? `https://${bunnyCdnHostname}/${bunnyVideoId}/thumbnail.jpg`
-        : null,
+      // The server derives a Bunny version's thumbnail itself.
+      finalThumbnailUrl: null as string | null,
       finalDuration: null as number | null,
       uploadToken,
       objectKey: null as string | null,

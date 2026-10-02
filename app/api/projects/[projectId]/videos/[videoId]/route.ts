@@ -9,6 +9,7 @@ import { collectVideoMediaUrls, deleteMediaFilesBestEffort } from '@/lib/r2-clea
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { buildCleanupWarnings, logCleanupWarnings } from '@/lib/cleanup-warnings';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { withSignedThumbnail } from '@/lib/bunny-cdn-token';
 import { logError } from '@/lib/logger';
 import { toProjectBranding, withoutBrandKeys } from '@/lib/project-branding';
 import { canDownloadProjectMedia } from '@/lib/project-download';
@@ -137,6 +138,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const canDownload = canDownloadProjectMedia(video.project, access);
     const response = successResponse({
       ...video,
+      versions: video.versions.map((version) => withSignedThumbnail(version)),
       project: access.hasProjectAccess
         ? withoutBrandKeys(video.project)
         : {

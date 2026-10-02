@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
 import Hls from 'hls.js';
 import Link from 'next/link';
@@ -29,7 +29,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
+import {
+  useBunnyPlaybackSource,
+  versionPlaybackEndpoint,
+} from '@/components/video-page/hooks/use-bunny-playback-source';
 import { isPlayableVideoUrl, resolveR2PlaybackUrl } from '@/lib/video-upload-validation';
 import { cn } from '@/lib/utils';
 
@@ -1159,7 +1162,12 @@ function BunnyPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
+  const bunnyPlayback = useBunnyPlaybackSource(versionPlaybackEndpoint(version.id));
+  const bunnyPlaybackBaseUrl = bunnyPlayback.baseUrl;
+  const bunnyPlaybackRef = useRef(bunnyPlayback);
+  useEffect(() => {
+    bunnyPlaybackRef.current = bunnyPlayback;
+  }, [bunnyPlayback]);
   const [portraitFrameWidth, setPortraitFrameWidth] = useState<number>(0);
   const [isPortraitSource, setIsPortraitSource] = useState(false);
 
@@ -1248,6 +1256,7 @@ function BunnyPanel({
         videoEl.removeEventListener('ended', onEnded);
         videoEl.removeEventListener('loadedmetadata', onLoadedMetadata);
         videoEl.removeEventListener('error', onError);
+        if (pendingRestore) videoEl.removeEventListener('loadedmetadata', pendingRestore);
         if (hlsRef.current) {
           try {
             hlsRef.current.destroy();
@@ -1282,11 +1291,53 @@ function BunnyPanel({
     const onEnded = () => {
       isPlaying = false;
     };
-    if (!bunnyCdnHostname) {
+    if (!bunnyPlaybackBaseUrl) {
       return;
     }
-    const hlsUrl = `https://${bunnyCdnHostname}/${version.videoId}/playlist.m3u8`;
-    const originalUrl = `https://${bunnyCdnHostname}/${version.videoId}/original`;
+    // Reloads read the newest signed base, so a refreshed grant is picked up
+    // without tearing the panel down.
+    const latestBase = () => bunnyPlaybackRef.current.getLatestBaseUrl() ?? bunnyPlaybackBaseUrl;
+    const hlsUrl = () => `${latestBase()}playlist.m3u8`;
+    const originalUrl = () => `${latestBase()}original`;
+    // A token that expires mid-session fails the next request after playback has
+    // started. Fetch a fresh grant once a minute at most and reload where it stopped.
+    let lastTokenRecoveryAt = 0;
+    let pendingRestore: (() => void) | null = null;
+    const recoverWithFreshToken = (): boolean => {
+      const now = Date.now();
+      if (now - lastTokenRecoveryAt < 60 * 1000) return false;
+      lastTokenRecoveryAt = now;
+      const resumeTime = videoEl.currentTime || 0;
+      const wasPlaying = !videoEl.paused;
+      void bunnyPlaybackRef.current.refresh().then(() => {
+        if (destroyed) return;
+        // hls.js re-attaches the media on loadSource and forgets any start position
+        // passed alongside it, so both paths restore the time on loadedmetadata.
+        if (pendingRestore) videoEl.removeEventListener('loadedmetadata', pendingRestore);
+        const restore = () => {
+          videoEl.removeEventListener('loadedmetadata', restore);
+          pendingRestore = null;
+          videoEl.currentTime = resumeTime;
+          if (wasPlaying) videoEl.play().catch(() => {});
+        };
+        pendingRestore = restore;
+        videoEl.addEventListener('loadedmetadata', restore);
+        const hls = hlsRef.current;
+        if (hls && sourceMode === 'hls') {
+          try {
+            hls.stopLoad();
+          } catch {
+            // ignore stop-load failures; loadSource is the important part
+          }
+          hls.loadSource(getRetryUrl(hlsUrl()));
+          hls.startLoad(-1);
+          return;
+        }
+        videoEl.src = getRetryUrl(sourceMode === 'original' ? originalUrl() : hlsUrl());
+        videoEl.load();
+      });
+      return true;
+    };
     const activateOriginalFallback = (): void => {
       sourceMode = 'original';
       clearRetryTimer();
@@ -1298,12 +1349,14 @@ function BunnyPanel({
         }
         hlsRef.current = null;
       }
-      videoEl.src = getRetryUrl(originalUrl);
+      videoEl.src = getRetryUrl(originalUrl());
       videoEl.load();
     };
     const onError = () => {
       if (destroyed) return;
       if (videoEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        // Only a network failure can be an expired token; decode errors are final.
+        if (videoEl.error?.code === MediaError.MEDIA_ERR_NETWORK) recoverWithFreshToken();
         return;
       }
       if (sourceMode === 'hls') {
@@ -1311,7 +1364,7 @@ function BunnyPanel({
         return;
       }
       scheduleRetry(() => {
-        videoEl.src = getRetryUrl(originalUrl);
+        videoEl.src = getRetryUrl(originalUrl());
         videoEl.load();
       });
     };
@@ -1324,7 +1377,7 @@ function BunnyPanel({
     videoEl.addEventListener('error', onError);
     if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
       sourceMode = 'hls';
-      videoEl.src = hlsUrl;
+      videoEl.src = hlsUrl();
       videoEl.load();
     } else if (Hls.isSupported()) {
       sourceMode = 'hls';
@@ -1333,7 +1386,7 @@ function BunnyPanel({
       hls.attachMedia(videoEl);
       hls.on(Hls.Events.MEDIA_ATTACHED, () => {
         if (!destroyed) {
-          hls.loadSource(hlsUrl);
+          hls.loadSource(hlsUrl());
         }
       });
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -1367,17 +1420,20 @@ function BunnyPanel({
           isNetworkPreMetadataProcessing ||
           isUnknownPreMetadataProcessing
         ) {
+          // Either still encoding or a grant that expired before playback started;
+          // the hook throttles the refresh and the retries below pick it up.
+          if (responseCode === 403) void bunnyPlaybackRef.current.refresh();
           if (sourceMode === 'hls') {
             activateOriginalFallback();
             return;
           }
           scheduleRetry(() => {
             if (sourceMode === 'original') {
-              videoEl.src = getRetryUrl(originalUrl);
+              videoEl.src = getRetryUrl(originalUrl());
               videoEl.load();
               return;
             }
-            const retryUrl = getRetryUrl(hlsUrl);
+            const retryUrl = getRetryUrl(hlsUrl());
             try {
               hls.stopLoad();
             } catch {
@@ -1386,6 +1442,15 @@ function BunnyPanel({
             hls.loadSource(retryUrl);
             hls.startLoad(-1);
           });
+          return;
+        }
+
+        if (
+          data.fatal &&
+          data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+          responseCode === 403 &&
+          recoverWithFreshToken()
+        ) {
           return;
         }
 
@@ -1403,7 +1468,7 @@ function BunnyPanel({
       onUnregister(version.id);
       adapter.destroy();
     };
-  }, [version.id, version.videoId, onRegister, onUnregister, bunnyCdnHostname]);
+  }, [version.id, version.videoId, onRegister, onUnregister, bunnyPlaybackBaseUrl]);
 
   return (
     <div
@@ -1436,6 +1501,11 @@ function BunnyPanel({
           playsInline
         />
       </div>
+      {bunnyPlayback.failed && (
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-white/70">
+          This version could not be loaded.
+        </div>
+      )}
     </div>
   );
 }

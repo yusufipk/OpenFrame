@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { withRetryParam } from '@/lib/client/video-thumbnail';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -56,7 +57,6 @@ import {
   getThumbnailUrl,
   type VideoSource,
 } from '@/lib/video-providers';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { MoveVideosDialog } from '@/components/move-videos-dialog';
 import { cn } from '@/lib/utils';
 import { isImageFile, uploadProjectImage } from '@/lib/client/project-image-upload';
@@ -121,20 +121,8 @@ export function VideoCard({
 
   // Move dialog
   const [showMoveDialog, setShowMoveDialog] = useState(false);
-  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
-  const resolvedThumbnailUrl = useMemo(() => {
-    if (!video.thumbnailUrl) return '';
-    try {
-      const parsed = new URL(video.thumbnailUrl);
-      if (parsed.hostname === 'vz-thumbnail.b-cdn.net' && bunnyCdnHostname) {
-        parsed.hostname = bunnyCdnHostname;
-        return parsed.toString();
-      }
-      return parsed.toString();
-    } catch {
-      return video.thumbnailUrl;
-    }
-  }, [video.thumbnailUrl, bunnyCdnHostname]);
+  // Bunny thumbnails arrive signed and on the right host from the server.
+  const resolvedThumbnailUrl = video.thumbnailUrl || '';
 
   const handleEdit = async () => {
     setIsSaving(true);
@@ -303,7 +291,7 @@ export function VideoCard({
               ) : resolvedThumbnailUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={`${resolvedThumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`}
+                  src={withRetryParam(resolvedThumbnailUrl, retryKey)}
                   alt={video.title}
                   className="absolute inset-0 w-full h-full object-cover"
                   onError={() => {
@@ -339,7 +327,7 @@ export function VideoCard({
                 ) : resolvedThumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={`${resolvedThumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`}
+                    src={withRetryParam(resolvedThumbnailUrl, retryKey)}
                     alt={video.title}
                     className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105"
                     onError={() => {

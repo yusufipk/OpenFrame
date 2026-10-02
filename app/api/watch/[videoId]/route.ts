@@ -3,6 +3,7 @@ import { checkVideoAccess } from '@/lib/content-access';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
+import { withSignedThumbnail } from '@/lib/bunny-cdn-token';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -146,7 +147,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const viewerGuestIdentityId = viewerUserId ? null : getGuestIdentityFromRequest(request);
     const isProjectOwner = viewerUserId === project.ownerId;
 
-    const versions = videoData.versions.map((version) => {
+    const versions = videoData.versions.map((unsignedVersion) => {
+      const version = withSignedThumbnail(unsignedVersion);
       if (!('comments' in version)) {
         return version;
       }

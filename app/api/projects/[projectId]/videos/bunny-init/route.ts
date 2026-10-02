@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import { cleanupBunnyStreamVideos } from '@/lib/bunny-stream-cleanup';
 import { createBunnyUploadToken, readBunnyUploadGrant } from '@/lib/bunny-upload-token';
 import { isBunnyUploadsEnabled } from '@/lib/feature-flags';
-import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
+import { canonicalBunnyThumbnailUrl } from '@/lib/bunny-cdn-token';
 import { logError } from '@/lib/logger';
 import {
   enforceStorageQuota,
@@ -186,9 +186,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       3600
     );
 
-    // The two URLs the browser builds for itself before it adds the version,
-    // handed over ready-made so a script does not need to know the CDN hostname.
-    const cdnHostname = resolveServerBunnyCdnHostname();
+    // The two URLs a client passes back when it adds the version, handed over
+    // ready-made so a script does not need to know the CDN hostname. The routes that
+    // create the version derive the stored thumbnail themselves and ignore this one.
     const response = successResponse({
       videoId,
       libraryId,
@@ -196,7 +196,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       expirationTime,
       uploadToken,
       videoUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`,
-      thumbnailUrl: cdnHostname ? `https://${cdnHostname}/${videoId}/thumbnail.jpg` : null,
+      thumbnailUrl: canonicalBunnyThumbnailUrl(videoId),
     });
 
     return withCacheControl(response, 'private, no-store');

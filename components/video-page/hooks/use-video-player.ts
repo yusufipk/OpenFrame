@@ -33,6 +33,7 @@ import {
   resolveSkipAmount as resolveSkipAmountFor,
   timeFromClientX as timeFromClientXWithin,
 } from '@/components/video-page/hooks/video-player-utils';
+import type { BunnyPlaybackSource } from '@/components/video-page/hooks/use-bunny-playback-source';
 import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
 
 interface UseVideoPlayerParams {
@@ -60,6 +61,11 @@ interface UseVideoPlayerParams {
   /** Turns subtitles on or off. Lives outside this hook, next to the caption state. */
   toggleCaptionsRef: RefObject<() => void>;
   playbackLocked?: boolean;
+  /**
+   * Where a Bunny version's signed URLs come from. `embedUrl` is the first grant;
+   * reloads read the latest one so an expired token can be replaced mid-session.
+   */
+  bunnySource?: Pick<BunnyPlaybackSource, 'getLatestBaseUrl' | 'refresh'>;
 }
 
 export function useVideoPlayer({
@@ -84,7 +90,12 @@ export function useVideoPlayer({
   setViewingAnnotation,
   toggleCaptionsRef,
   playbackLocked = false,
+  bunnySource,
 }: UseVideoPlayerParams) {
+  const bunnySourceRef = useRef(bunnySource);
+  useEffect(() => {
+    bunnySourceRef.current = bunnySource;
+  }, [bunnySource]);
   const annotationSeekRef = useRef<number | null>(null);
   const dismissAnnotation = useCallback(() => {
     annotationSeekRef.current = null;
@@ -318,6 +329,9 @@ export function useVideoPlayer({
       bunnyRetryTimerRef.current = null;
     }
     stopBunnyFrameTracking();
+    // A Bunny version has no URL until its signed grant arrives; this effect runs
+    // again once it does.
+    if (isBunny && !embedUrl) return;
 
     const initPlayer = () => {
       if (isYoutube) {
@@ -361,6 +375,16 @@ export function useVideoPlayer({
         const bunnyOriginalUrl = embedUrl.includes('/playlist.m3u8')
           ? embedUrl.replace('/playlist.m3u8', '/original')
           : '';
+        // The signed base can be refreshed while this player lives; every reload
+        // reads the newest one rather than the URL the player was created with.
+        const currentPlaylistUrl = () => {
+          const latestBase = bunnySourceRef.current?.getLatestBaseUrl();
+          return latestBase ? `${latestBase}playlist.m3u8` : embedUrl;
+        };
+        const currentOriginalUrl = () => {
+          const latestBase = bunnySourceRef.current?.getLatestBaseUrl();
+          return latestBase ? `${latestBase}original` : bunnyOriginalUrl;
+        };
 
         let cachedDuration = 0;
         let destroyed = false;
@@ -389,17 +413,17 @@ export function useVideoPlayer({
           return `${baseUrl}${separator}retry=${Date.now()}-${retryAttempt}`;
         };
         const retryNativeLoad = () => {
-          videoEl.src = getRetryUrl(embedUrl);
+          videoEl.src = getRetryUrl(currentPlaylistUrl());
           videoEl.load();
         };
         const retryOriginalLoad = () => {
           if (!bunnyOriginalUrl) return;
-          videoEl.src = getRetryUrl(bunnyOriginalUrl);
+          videoEl.src = getRetryUrl(currentOriginalUrl());
           videoEl.load();
         };
         const retryHlsLoad = () => {
           if (destroyed || !hlsInstance) return;
-          const retryUrl = getRetryUrl(embedUrl);
+          const retryUrl = getRetryUrl(currentPlaylistUrl());
           try {
             hlsInstance.stopLoad();
           } catch {
@@ -407,6 +431,35 @@ export function useVideoPlayer({
           }
           hlsInstance.loadSource(retryUrl);
           hlsInstance.startLoad(-1);
+        };
+        // A CDN token that expires mid-session fails the next segment or range
+        // request after playback has started. Fetch a fresh grant and reload the
+        // same source where it stopped. Bounded so a source that is broken for
+        // another reason still ends up in the error state instead of looping.
+        let lastTokenRecoveryAt = 0;
+        const recoverWithFreshToken = (): boolean => {
+          const source = bunnySourceRef.current;
+          if (!source) return false;
+          const now = Date.now();
+          if (now - lastTokenRecoveryAt < 60 * 1000) return false;
+          lastTokenRecoveryAt = now;
+          const resumeTime = videoEl.currentTime || 0;
+          const wasPlaying = !videoEl.paused;
+          setBunnyPlaybackState('processing');
+          void source.refresh().then(() => {
+            if (destroyed) return;
+            // hls.js re-attaches the media on loadSource and forgets any start
+            // position passed alongside it, so the resume goes through the same
+            // loadedmetadata path a manual source switch uses.
+            bunnySourceSwitchResumeRef.current = { time: resumeTime, wasPlaying };
+            if (usingHlsJs && sourceMode === 'hls') {
+              retryHlsLoad();
+              return;
+            }
+            if (sourceMode === 'original') retryOriginalLoad();
+            else retryNativeLoad();
+          });
+          return true;
         };
         const activateOriginalFallback = (): boolean => {
           if (!bunnyOriginalUrl) return false;
@@ -526,6 +579,9 @@ export function useVideoPlayer({
           if (destroyed) return;
           if (usingHlsJs) return;
           if (videoEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
+            // Only a network failure can be an expired token; decode errors are final.
+            if (videoEl.error?.code === MediaError.MEDIA_ERR_NETWORK && recoverWithFreshToken())
+              return;
             setBunnyPlaybackState('error');
             return;
           }
@@ -591,7 +647,7 @@ export function useVideoPlayer({
           retryOriginalLoad();
         } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
           sourceMode = 'hls';
-          videoEl.src = embedUrl;
+          videoEl.src = currentPlaylistUrl();
           videoEl.load();
         } else if (Hls.isSupported()) {
           sourceMode = 'hls';
@@ -603,7 +659,7 @@ export function useVideoPlayer({
 
           hls.on(Hls.Events.MEDIA_ATTACHED, () => {
             if (!destroyed) {
-              hls.loadSource(embedUrl);
+              hls.loadSource(currentPlaylistUrl());
             }
           });
 
@@ -642,12 +698,25 @@ export function useVideoPlayer({
               isNetworkPreMetadataProcessing ||
               isUnknownPreMetadataProcessing
             ) {
+              // A 403 here is either a video still encoding or a grant that expired
+              // before playback started (a tab left open overnight). Ask for a fresh
+              // grant; the hook throttles this, and the retries pick it up.
+              if (responseCode === 403) void bunnySourceRef.current?.refresh();
               if (activateOriginalFallback()) {
                 return;
               }
               setIsReady(false);
               setBunnyPlaybackState('processing');
               scheduleRetry(retryHlsLoad);
+              return;
+            }
+
+            if (
+              data.fatal &&
+              data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+              responseCode === 403 &&
+              recoverWithFreshToken()
+            ) {
               return;
             }
 

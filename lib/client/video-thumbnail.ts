@@ -61,3 +61,13 @@ export async function captureVideoThumbnail(
     video.src = objectUrl;
   });
 }
+
+/**
+ * A thumbnail URL with a cache-busting `t` parameter for a retry. Signed Bunny
+ * thumbnails already carry a query string, and a second `?` would fold the retry
+ * key into the token's `expires` value and break the signature.
+ */
+export function withRetryParam(url: string, retryKey: number): string {
+  if (!retryKey) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}t=${retryKey}`;
+}

@@ -50,6 +50,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   vi.stubEnv('BUNNY_CDN_URL', `https://${HOST}`);
   vi.stubEnv('NEXT_PUBLIC_BUNNY_CDN_URL', undefined);
+  // These assertions are about unsigned URLs; a key in a developer's .env would sign them.
+  vi.stubEnv('BUNNY_CDN_TOKEN_KEY', '');
 });
 
 afterEach(() => {
