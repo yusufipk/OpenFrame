@@ -44,6 +44,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const versions = await db.videoVersion.findMany({
       where: { videoParentId: videoId },
       orderBy: { versionNumber: 'desc' },
+      // Readable by anyone with view access, who does not need to know who uploaded.
+      omit: { uploadedById: true },
       include: {
         _count: { select: { comments: true } },
       },
@@ -304,6 +306,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           sizeBytes: versionSizeBytes,
           isActive: setActive ?? false,
           videoParentId: videoId,
+          // The caller, or the owner of the API token the request came in on.
+          uploadedById: session.user.id,
         },
         include: {
           _count: { select: { comments: true } },
