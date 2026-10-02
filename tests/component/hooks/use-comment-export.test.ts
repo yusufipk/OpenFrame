@@ -245,3 +245,59 @@ describe('useCommentExport', () => {
     );
   });
 });
+
+describe('NLE downloads', () => {
+  it('encodes rational FPS, origin and DF options and uses the XML filename', async () => {
+    fetchMock.mockResolvedValue(
+      fakeResponse({ disposition: 'attachment; filename="markers.xml"' })
+    );
+    const { result } = renderHook(() =>
+      useCommentExport({ activeVersionId: 'ver1', showResolved: false })
+    );
+    await act(async () => {
+      await result.current.exportComments('xml', {
+        fps: '30000/1001',
+        origin: '01:00:00;00',
+        dropFrame: true,
+      });
+    });
+    const url = new URL(fetchMock.mock.calls[0][0], 'https://example.com');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      format: 'xml',
+      includeResolved: 'false',
+      fps: '30000/1001',
+      origin: '01:00:00;00',
+      dropFrame: 'true',
+    });
+    expect(clicked).toEqual([{ download: 'markers.xml', href: 'blob:openframe-test' }]);
+    expect(result.current.isExportingNle).toBe(false);
+  });
+  it('tracks a pending EDL export and clears it after refusal without downloading', async () => {
+    let finish!: (response: ReturnType<typeof fakeResponse>) => void;
+    fetchMock.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const { result } = renderHook(() =>
+      useCommentExport({ activeVersionId: 'ver1', showResolved: true })
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.exportComments('edl', {
+        fps: '24',
+        origin: '00:00:00:00',
+        dropFrame: false,
+      });
+    });
+    expect(result.current.isExportingNle).toBe(true);
+    expect(result.current.isExportingPdf).toBe(false);
+    await act(async () => {
+      finish(fakeResponse({ ok: false, json: async () => ({ error: 'Too many markers' }) }));
+      await pending;
+    });
+    expect(result.current.isExportingNle).toBe(false);
+    expect(clicked).toHaveLength(0);
+    expect(toastError).toHaveBeenCalledWith('Too many markers');
+  });
+});

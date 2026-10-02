@@ -278,7 +278,7 @@ export function VideoPageContent({
     setHighlightedAssetId(assetId);
   }, []);
 
-  const { isExportingCsv, isExportingPdf, exportComments } = useCommentExport({
+  const { isExportingCsv, isExportingPdf, isExportingNle, exportComments } = useCommentExport({
     activeVersionId,
     showResolved,
   });
@@ -1200,6 +1200,7 @@ export function VideoPageContent({
           isGuest={isGuest}
           isExportingCsv={isExportingCsv}
           isExportingPdf={isExportingPdf}
+          isExportingNle={isExportingNle}
           handleExportComments={commentsActions.onExportComments}
           canResolveComments={canResolveComments}
           handleResolveComment={commentsActions.onResolveComment}

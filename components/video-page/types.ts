@@ -1,3 +1,4 @@
+import type { CommentExportFormat, NleExportOptions } from '@/lib/nle-comment-export';
 import type { ProjectBranding } from '@/lib/project-branding';
 
 export interface Version {
@@ -237,7 +238,7 @@ export interface VideoPageHeaderActions {
 }
 
 export interface VideoPageCommentsActions {
-  onExportComments: (format: 'csv' | 'pdf') => void;
+  onExportComments: (format: CommentExportFormat, options?: NleExportOptions) => void;
   onResolveComment: (commentId: string, currentlyResolved: boolean) => void;
   onEditComment: (commentId: string) => void;
   onDeleteComment: (commentId: string) => void;
