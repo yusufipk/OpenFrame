@@ -1,7 +1,9 @@
 # Export comments to an editor
 
-Open a video version, choose **Download comments**, then **DaVinci Resolve (EDL)** or
-**Adobe Premiere (XML)**. CSV and PDF are still available, including for images.
+Open a video version, choose **Download comments**, then **DaVinci Resolve (EDL)**,
+**Adobe Premiere (XML)** or **Final Cut Pro (FCPXML)**. CSV and PDF are still available,
+including for images: the CSV opens in Excel with readable columns and UTF-8 text, and
+the PDF lists each thread with its time, tag and status.
 NLE exports require an authenticated account with access to the video. The resolved
 filter behaves like CSV/PDF: hidden resolved root comments are excluded; replies to
 included roots remain included, even if a reply is resolved.
@@ -45,30 +47,39 @@ Do not use the general EDL timeline/conform importer for this marker file.
 
 In Premiere, use **File → Import** for the `.xml` file. This is FCP7 `xmeml` version 5,
 which describes a separate sequence containing sequence markers and no linked media.
-It does not insert markers directly into an existing sequence. The sequence uses
-placeholder 1920×1080 square-pixel progressive video settings; adjust those settings
-as needed for your edit. No media files or external URLs are referenced.
+It does not insert markers directly into an existing sequence. To move them into your
+edit, turn on **Markers → Copy Paste Includes Sequence Markers**, put an adjustment
+layer across the imported sequence, copy it, and paste it at the start of your own
+sequence; the markers come with it. The sequence uses placeholder 1920×1080
+square-pixel progressive video settings. No media files or external URLs are referenced.
+
+In Final Cut Pro, use **File → Import → XML** for the `.fcpxml` file (FCPXML 1.9). It adds
+an event with a separate project whose markers sit on a gap clip spanning the comments.
+Final Cut markers have no colors, so every marker is a to-do: open threads stay
+incomplete and resolved ones are marked complete.
 
 Checked by hand in DaVinci Resolve Studio 20.3: a 29.97 DF marker EDL imported
 through Timeline Markers from EDL, and 23.976 NDF and 59.94 DF XML files (one starting
 at `00:59:59;58`) imported as timelines, all landed on the exact expected frames and
-durations. Premiere import has **not** been tested. Before relying on a file for a live
-edit, import it into a copy and check marker positions, colors and text.
-
-Final Cut Pro's modern FCPXML is a different format and is not included in this change;
-its inclusion awaits confirmation of the requested editor. This feature exports from
-OpenFrame for import into editors; it does not import editor files back into OpenFrame.
+durations. Premiere and Final Cut Pro import have **not** been tested, and neither has the
+Premiere copy-paste route above. Before relying on a file for a live edit, import it into
+a copy and check marker positions, colors and text. This feature exports from OpenFrame
+for import into editors; it does not import editor files back into OpenFrame.
 
 References:
 
 - [Apple FCP7 XML element catalog](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Elements/Elements.html)
 - [Adobe FCP7 XML import workflow](https://helpx.adobe.com/ph_fil/premiere-pro/how-to/migrate-from-final-cut-pro.html)
+- [Apple FCPXML reference](https://developer.apple.com/documentation/professional-video-applications/fcpxml-reference)
 - [Resolve marker EDL workflow](https://help.frame.io/en/articles/4128691-import-comments-into-resolve-with-edl)
 
 ## API
 
-`GET /api/versions/{versionId}/comments/export` keeps `format=csv|pdf` unchanged and
-adds `format=edl|xml`. NLE formats require all three timing parameters:
+`GET /api/versions/{versionId}/comments/export` takes `format=csv|pdf|edl|xml|fcpxml`.
+The CSV columns are `#, Time, Author, Comment, Reply to, Tag, Status, Attachments,
+Created, Comment ID, Parent comment ID` (no `Time` for images); a reply's `Status` is
+its thread's, since only a root can be resolved. UTF-8 with a byte order
+mark and CRLF line endings. NLE formats require all three timing parameters:
 
 ```text
 ?format=edl&fps=30000%2F1001&origin=01%3A00%3A00%3B00&dropFrame=true&includeResolved=false
@@ -76,5 +87,5 @@ adds `format=edl|xml`. NLE formats require all three timing parameters:
 
 Invalid options or unsupported image exports return 400. Session authentication,
 `comments:read` token scope, video access checks, the export rate limit and private
-no-store responses apply to NLE exports too. XML downloads use `application/xml`, EDL
-uses `text/plain`; both use UTF-8 and `Content-Disposition: attachment`.
+no-store responses apply to NLE exports too. XML and FCPXML downloads use
+`application/xml`, EDL uses `text/plain`; all use UTF-8 and `Content-Disposition: attachment`.

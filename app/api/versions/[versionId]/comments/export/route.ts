@@ -4,12 +4,13 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import {
   buildCommentsCsv,
-  buildCommentsPdf,
   buildExportFileBaseName,
   flattenCommentsForExport,
 } from '@/lib/comment-export';
+import { buildCommentsPdf } from '@/lib/comment-export-pdf';
 import {
   buildNleComments,
+  NLE_FORMATS,
   NleExportError,
   parseNleOptions,
   selectNleThreads,
@@ -37,12 +38,13 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(request.url);
 
     const format = (searchParams.get('format') || 'csv').toLowerCase();
-    if (!['csv', 'pdf', 'edl', 'xml'].includes(format)) {
-      return apiErrors.badRequest('Invalid format. Use "csv", "pdf", "edl" or "xml"');
+    if (!['csv', 'pdf', ...NLE_FORMATS].includes(format)) {
+      return apiErrors.badRequest('Invalid format. Use "csv", "pdf", "edl", "xml" or "fcpxml"');
     }
+    const nleFormat = NLE_FORMATS.find((candidate) => candidate === format);
 
     let nleOptions: NleExportOptions | undefined;
-    if (format === 'edl' || format === 'xml') {
+    if (nleFormat) {
       if (!['true', 'false'].includes(searchParams.get('dropFrame') ?? '')) {
         return apiErrors.badRequest(
           'Explicit fps, origin and dropFrame options are required for NLE exports.'
@@ -183,12 +185,12 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       versionLabel: version.versionLabel,
     };
 
-    if ((format === 'edl' || format === 'xml') && nleOptions) {
+    if (nleFormat && nleOptions) {
       return withCacheControl(
-        new Response(buildNleComments(rows, version.video.title, format, nleOptions), {
+        new Response(buildNleComments(rows, version.video.title, nleFormat, nleOptions), {
           headers: {
             'Content-Type':
-              format === 'xml' ? 'application/xml; charset=utf-8' : 'text/plain; charset=utf-8',
+              nleFormat === 'edl' ? 'text/plain; charset=utf-8' : 'application/xml; charset=utf-8',
             'Content-Disposition': `attachment; filename="${fileBaseName}.${format}"`,
             'X-Content-Type-Options': 'nosniff',
           },
@@ -210,9 +212,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       return withCacheControl(response, 'private, no-store');
     }
 
-    const pdf = buildCommentsPdf(rows, versionMeta);
-    const pdfBytes = Uint8Array.from(pdf);
-    const response = new Response(pdfBytes, {
+    const pdfBytes = await buildCommentsPdf(rows, versionMeta);
+    const response = new Response(Buffer.from(pdfBytes), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

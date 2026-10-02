@@ -1,6 +1,6 @@
 'use client';
 
-import type { CommentExportFormat, NleExportOptions } from '@/lib/nle-comment-export';
+import type { CommentExportFormat, NleExportOptions, NleFormat } from '@/lib/nle-comment-export';
 
 import { memo, useState, type ReactNode, type RefObject } from 'react';
 import {
@@ -240,7 +240,7 @@ export const CommentsPane = memo(function CommentsPane({
   setActivePane,
   assetsPane,
 }: CommentsPaneProps) {
-  const [nleFormat, setNleFormat] = useState<'edl' | 'xml' | null>(null);
+  const [nleFormat, setNleFormat] = useState<NleFormat | null>(null);
   const [isPaneDraggingOver, setIsPaneDraggingOver] = useState(false);
   const formatCommentRange = (timestamp: number, timestampEnd: number | null) => {
     if (timestampEnd === null) return formatTime(timestamp);
@@ -402,6 +402,13 @@ export const CommentsPane = memo(function CommentsPane({
                       >
                         <Clapperboard className="h-4 w-4 mr-2" />
                         Adobe Premiere (XML)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!activeVersion || isExportingNle}
+                        onSelect={() => setNleFormat('fcpxml')}
+                      >
+                        <Clapperboard className="h-4 w-4 mr-2" />
+                        Final Cut Pro (FCPXML)
                       </DropdownMenuItem>
                     </>
                   )}

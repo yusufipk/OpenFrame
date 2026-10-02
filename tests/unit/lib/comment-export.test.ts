@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildCommentsCsv,
-  buildCommentsPdf,
   buildExportFileBaseName,
   flattenCommentsForExport,
   type ExportCommentRow,
 } from '@/lib/comment-export';
+import { buildCommentsPdf, fitLine, pdfDrawableText, wrapText } from '@/lib/comment-export-pdf';
+import { parseCsv, pdfPages, pdfTextItems, type PdfTextItem } from '../../helpers/export-readers';
 
 type FlattenInput = Parameters<typeof flattenCommentsForExport>[0];
 type InputComment = FlattenInput[number];
@@ -77,12 +78,19 @@ type ExportMeta = Parameters<typeof buildCommentsCsv>[1];
 
 const META: ExportMeta = { videoTitle: 'My Video', versionNumber: 2, versionLabel: 'Rough cut' };
 
-function csvRows(rows: ExportCommentRow[], meta = META): string[][] {
-  // Splitting on newlines is only valid for rows whose cells carry no newline,
-  // so the multiline test parses its own output instead of using this helper.
-  return buildCommentsCsv(rows, meta)
-    .split('\n')
-    .map((line) => line.split(','));
+// A4 page width and the 48pt margins, written out rather than imported.
+const RIGHT_EDGE = 595.28 - 48;
+// Footers sit at 32pt; body text has to stay well above them.
+const FOOTER_TOP = 48;
+
+function find(items: PdfTextItem[], str: string): PdfTextItem {
+  const item = items.find((entry) => entry.str === str);
+  if (!item) throw new Error(`No text item "${str}" in ${items.map((i) => i.str).join(' | ')}`);
+  return item;
+}
+
+function csv(rows: ExportCommentRow[], meta = META): string[][] {
+  return parseCsv(buildCommentsCsv(rows, meta).replace(/^﻿/, ''));
 }
 
 describe('buildExportFileBaseName', () => {
@@ -224,232 +232,371 @@ describe('flattenCommentsForExport', () => {
 });
 
 describe('buildCommentsCsv', () => {
-  it('writes a fully quoted header row with 19 columns', () => {
-    const header = csvRows([])[0];
-
-    expect(header).toHaveLength(19);
-    expect(header[0]).toBe('"video_title"');
-    expect(header[header.length - 1]).toBe('"created_at_iso"');
-    expect(header.every((cell) => cell.startsWith('"') && cell.endsWith('"'))).toBe(true);
+  it('starts with a byte order mark and ends lines with CRLF so Excel reads UTF-8', () => {
+    const text = buildCommentsCsv([row({ content: 'Çalışma ğüşİ' })], META);
+    expect(text.startsWith('﻿"#","Time"')).toBe(true);
+    expect(text.endsWith('\r\n')).toBe(true);
+    expect(text.split('\r\n')).toHaveLength(3);
   });
 
-  it('emits one line per row plus the header', () => {
-    expect(buildCommentsCsv([row(), row({ commentId: 'c2' })], META).split('\n')).toHaveLength(3);
+  it('writes readable headers and one row per comment', () => {
+    const [header, line] = csv([
+      row({
+        content: 'Çalışma ğüşİ',
+        tag: 'Urgent',
+        timestampEnd: 18,
+        isResolved: true,
+        hasVoiceNote: true,
+        voiceDuration: 4.25,
+        hasImageAttachment: true,
+        hasAnnotation: true,
+      }),
+    ]);
+    expect(header).toEqual([
+      '#',
+      'Time',
+      'Author',
+      'Comment',
+      'Reply to',
+      'Tag',
+      'Status',
+      'Attachments',
+      'Created',
+      'Comment ID',
+      'Parent comment ID',
+    ]);
+    expect(line).toEqual([
+      '1',
+      '0:00:12 - 0:00:18',
+      'Alice',
+      'Çalışma ğüşİ',
+      '',
+      'Urgent',
+      'Resolved',
+      'Voice note (0:04), Image, Drawing',
+      '2026-01-15 09:00 UTC',
+      'comment-1',
+      '',
+    ]);
   });
 
-  it('repeats the video and version metadata on every row', () => {
-    const lines = csvRows([row(), row({ commentId: 'c2' })]);
-
-    expect(lines[1].slice(0, 3)).toEqual(['"My Video"', '"2"', '"Rough cut"']);
-    expect(lines[2].slice(0, 3)).toEqual(['"My Video"', '"2"', '"Rough cut"']);
+  it('numbers threads, repeats the number on replies and names who a reply answers', () => {
+    const lines = csv([
+      row({ commentId: 'c1', authorName: 'Alice' }),
+      row({ commentId: 'r1', parentCommentId: 'c1', level: 1, authorName: 'Bob' }),
+      row({ commentId: 'r2', parentCommentId: 'c1', level: 1, authorName: 'Cem' }),
+      row({ commentId: 'c2', authorName: 'Dee' }),
+    ]).slice(1);
+    expect(lines.map((line) => [line[0], line[2], line[4], line[10]])).toEqual([
+      ['1', 'Alice', '', ''],
+      ['1', 'Bob', 'Alice', 'c1'],
+      ['1', 'Cem', 'Alice', 'c1'],
+      ['2', 'Dee', '', ''],
+    ]);
   });
 
-  it('writes an empty cell for a null version label', () => {
-    const lines = csvRows([row()], { ...META, versionLabel: null });
-
-    expect(lines[1][2]).toBe('""');
+  it('says Open for unresolved comments and lists a voice note without a known length', () => {
+    const line = csv([row({ hasVoiceNote: true, voiceDuration: null })])[1];
+    expect(line[6]).toBe('Open');
+    expect(line[7]).toBe('Voice note');
   });
 
-  it('doubles embedded double quotes', () => {
-    const csv = buildCommentsCsv([row({ content: 'He said "ship it"' })], META);
-
-    expect(csv).toContain('"He said ""ship it"""');
+  it('gives a reply the status of its thread, not its own flag', () => {
+    const lines = csv([
+      row({ commentId: 'c1', isResolved: true }),
+      row({ commentId: 'r1', parentCommentId: 'c1', level: 1, isResolved: false }),
+      row({ commentId: 'c2', isResolved: false }),
+      row({ commentId: 'r2', parentCommentId: 'c2', level: 1, isResolved: true }),
+    ]).slice(1);
+    expect(lines.map((line) => line[6])).toEqual(['Resolved', 'Resolved', 'Open', 'Open']);
   });
 
-  it('keeps a newline inside the quoted content cell', () => {
-    const csv = buildCommentsCsv([row({ content: 'line one\nline two' })], META);
+  it.each([
+    ['-5', '-5'],
+    ['-2.5', '-2.5'],
+    ['+3', "'+3"],
+  ])('writes the number %s as %s', (content, expected) => {
+    expect(csv([row({ content })])[1][3]).toBe(expected);
+  });
 
-    expect(csv).toContain('"line one\nline two"');
+  it('keeps quotes and line breaks inside the comment cell', () => {
+    const content = 'He said "ship it"\nthen left, quickly';
+    expect(csv([row({ content })])[1][3]).toBe(content);
   });
 
   it.each(['=SUM(A1:A9)', '+1+1', '-2+3', '@import', '  =cmd|calc', '\t=danger'])(
     'neutralises the spreadsheet formula %s with a leading apostrophe',
     (content) => {
-      const csv = buildCommentsCsv([row({ content })], META);
-
-      expect(csv).toContain(`"'${content}"`);
+      expect(csv([row({ content })])[1][3]).toBe(`'${content}`);
     }
   );
 
   it('leaves ordinary content untouched', () => {
-    const csv = buildCommentsCsv([row({ content: 'Fix the audio at 0:12' })], META);
-
-    expect(csv).toContain('"Fix the audio at 0:12"');
-    expect(csv).not.toContain('"\'Fix');
-  });
-
-  it('writes the raw timestamp with three decimals', () => {
-    expect(csvRows([row({ timestamp: 12.5 })])[1][8]).toBe('"12.500"');
+    expect(csv([row({ content: 'Fix the audio at 0:12' })])[1][3]).toBe('Fix the audio at 0:12');
   });
 
   it.each([
-    [0, '0:00'],
-    [9, '0:09'],
-    [59.9, '0:59'],
-    [60, '1:00'],
-    [65, '1:05'],
-    [599, '9:59'],
-    [3599, '59:59'],
+    [0, '0:00:00'],
+    [9, '0:00:09'],
+    [59.9, '0:00:59'],
+    [60, '0:01:00'],
+    [65, '0:01:05'],
+    [599, '0:09:59'],
+    [3599, '0:59:59'],
     [3600, '1:00:00'],
     [3725, '1:02:05'],
     [36000, '10:00:00'],
-  ])('formats %s seconds as %s', (timestamp, expected) => {
-    expect(csvRows([row({ timestamp })])[1][9]).toBe(`"${expected}"`);
+  ])('writes %s seconds as the clock time %s', (timestamp, expected) => {
+    expect(csv([row({ timestamp })])[1][1]).toBe(expected);
   });
 
-  it('writes an empty cell for a null timestamp end and voice duration', () => {
-    const line = csvRows([row({ timestampEnd: null, voiceDuration: null })])[1];
-
-    expect(line[10]).toBe('""');
-    expect(line[15]).toBe('""');
-  });
-
-  it('writes three decimals for a present timestamp end and voice duration', () => {
-    const line = csvRows([row({ timestampEnd: 18, voiceDuration: 4.25 })])[1];
-
-    expect(line[10]).toBe('"18.000"');
-    expect(line[15]).toBe('"4.250"');
-  });
-
-  it('writes booleans as the literals true and false', () => {
-    const line = csvRows([
-      row({
-        isResolved: true,
-        hasVoiceNote: false,
-        hasImageAttachment: true,
-        hasAnnotation: false,
-      }),
-    ])[1];
-
-    expect(line[11]).toBe('"true"');
-    expect(line[14]).toBe('"false"');
-    expect(line[16]).toBe('"true"');
-    expect(line[17]).toBe('"false"');
-  });
-
-  // The formula guard prefixes an apostrophe to anything starting with =, +, - or @.
-  // Applying it to a plain negative number stopped the spreadsheet reading the cell as a
-  // number at all, which is what a negative timestamp is.
-  it('leaves a negative number readable as a number', () => {
-    expect(csvRows([row({ timestamp: -1 })])[1][8]).toBe(`"-1.000"`);
-  });
-
-  it('preserves the flattened thread order in the output', () => {
-    const lines = csvRows([
-      row({ commentId: 'c1' }),
-      row({ commentId: 'r1', parentCommentId: 'c1', level: 1 }),
-      row({ commentId: 'c2' }),
-    ]);
-
-    expect(lines.slice(1).map((line) => line[3])).toEqual(['"c1"', '"r1"', '"c2"']);
-    expect(lines.slice(1).map((line) => line[5])).toEqual(['"0"', '"1"', '"0"']);
+  it('leaves out the Time column for a still image', () => {
+    const [header, line] = csv([row({ timestamp: 0 })], { ...META, mediaType: 'IMAGE' });
+    expect(header.slice(0, 3)).toEqual(['#', 'Author', 'Comment']);
+    expect(line.slice(0, 3)).toEqual(['1', 'Alice', 'Looks good']);
   });
 });
 
 describe('buildCommentsPdf', () => {
-  function asText(rows: ExportCommentRow[], meta = META): string {
-    return buildCommentsPdf(rows, meta).toString('utf8');
-  }
-
-  it('produces a PDF 1.4 document with a trailer', () => {
-    const pdf = asText([row()]);
-
-    expect(pdf.startsWith('%PDF-1.4\n')).toBe(true);
-    expect(pdf.endsWith('%%EOF')).toBe(true);
-    expect(pdf).toContain('/Type /Catalog');
-    expect(pdf).toContain('startxref');
+  it('draws the header, thread, tag, status, attachments and Turkish text', async () => {
+    const pages = await pdfPages(
+      await buildCommentsPdf(
+        [
+          row({
+            content: 'Ünlü çalışma: İğde ağacı şöyle',
+            tag: 'Urgent',
+            tagColor: '#F59E0B',
+            timestampEnd: 18,
+            isResolved: true,
+            hasVoiceNote: true,
+            voiceDuration: 4.25,
+          }),
+          row({
+            commentId: 'r1',
+            parentCommentId: 'comment-1',
+            level: 1,
+            authorName: 'Bob',
+            content: 'Tamam',
+            timestamp: 47,
+          }),
+        ],
+        META
+      )
+    );
+    expect(pages).toHaveLength(1);
+    const text = pages[0];
+    for (const expected of [
+      'My Video',
+      'Version 2: Rough cut',
+      '1 comment, 1 reply',
+      '0:12',
+      'to 0:18',
+      'Alice',
+      'Urgent',
+      'Resolved',
+      'Ünlü çalışma: İğde ağacı şöyle',
+      'Voice note (0:04)',
+      '2026-01-15 09:00 UTC',
+      'Bob',
+      'Tamam',
+      'OpenFrame | My Video | v2',
+      'Page 1 of 1',
+    ]) {
+      expect(text).toContain(expected);
+    }
+    // A reply sits under its thread's time; it prints none of its own.
+    expect(text).not.toContain('0:47');
   });
 
-  it('returns a Buffer', () => {
-    expect(Buffer.isBuffer(buildCommentsPdf([row()], META))).toBe(true);
+  it('shows Resolved for a thread, never for a reply on its own flag', async () => {
+    const [text] = await pdfPages(
+      await buildCommentsPdf(
+        [row(), row({ commentId: 'r1', parentCommentId: 'comment-1', level: 1, isResolved: true })],
+        META
+      )
+    );
+    expect(text).not.toContain('Resolved');
   });
 
-  it('reports the entry count and the version label in the header block', () => {
-    const pdf = asText([row(), row({ commentId: 'c2' })]);
-
-    expect(pdf).toContain('Total Entries: 2');
-    expect(pdf).toContain('Version: v2 \\(Rough cut\\)');
+  it('prints the version without a label and names a nameless author Anonymous', async () => {
+    const [text] = await pdfPages(
+      await buildCommentsPdf([row({ authorName: '🎬' })], { ...META, versionLabel: null })
+    );
+    expect(text).toContain('Version 2 | 1 comment, 0 replies');
+    expect(text).not.toContain('null');
+    expect(text).toContain('Anonymous');
   });
 
-  it('omits the parenthesised label when there is none', () => {
-    const pdf = asText([row()], { ...META, versionLabel: null });
-
-    expect(pdf).toContain('Version: v2');
-    expect(pdf).not.toContain('Rough cut');
+  it('drops characters the font cannot draw instead of printing boxes', async () => {
+    const [text] = await pdfPages(await buildCommentsPdf([row({ content: 'ok 🎬 go' })], META));
+    expect(text).toContain('ok go');
+    expect(text).not.toContain('🎬');
   });
 
-  it('escapes backslashes and parentheses in the content stream', () => {
-    const pdf = asText([row({ content: 'path C:\\temp (draft)' })]);
-
-    expect(pdf).toContain('path C:\\\\temp \\(draft\\)');
+  it('wraps long comments inside the right margin', async () => {
+    const long = `${'kelime '.repeat(80)}${'x'.repeat(200)}`;
+    const items = await pdfTextItems(await buildCommentsPdf([row({ content: long })], META));
+    const body = items.filter((item) => /kelime|xxx/.test(item.str));
+    expect(body.length).toBeGreaterThan(4);
+    for (const item of body) expect(item.x + item.width).toBeLessThanOrEqual(RIGHT_EDGE + 0.5);
+    expect(
+      body
+        .map((item) => item.str)
+        .join('')
+        .replace(/\s/g, '')
+    ).toContain('x'.repeat(200));
   });
 
-  it('replaces non-ascii characters with a question mark', () => {
-    const pdf = asText([row({ content: 'Ünlü emoji test' })]);
-
-    expect(pdf).toContain('?nl? emoji test');
+  it('flows one very long comment across pages above the footer without losing a line', async () => {
+    const words = Array.from({ length: 1600 }, (_unused, i) => `w${i}`).join(' ');
+    const items = await pdfTextItems(await buildCommentsPdf([row({ content: words })], META));
+    const body = items.filter((item) => /^w\d/.test(item.str));
+    expect(new Set(body.map((item) => item.page)).size).toBeGreaterThan(1);
+    for (const item of body) expect(item.y).toBeGreaterThanOrEqual(FOOTER_TOP + 18);
+    expect(
+      body
+        .map((item) => item.str)
+        .join(' ')
+        .match(/w\d+/g)
+    ).toHaveLength(1600);
+    // The heading stays on the first page with the start of the text.
+    expect(find(items, 'Alice').page).toBe(1);
+    expect(body[0].page).toBe(1);
   });
 
-  it('marks a reply row differently from a top-level comment', () => {
-    const pdf = asText([row({ level: 1, authorName: 'Replier' })]);
-
-    expect(pdf).toContain('Reply');
+  it('keeps every heading on the page that holds its first three lines', async () => {
+    // Every word names its comment, so each wrapped line can be traced back to it.
+    const rows = Array.from({ length: 50 }, (_unused, i) =>
+      row({
+        commentId: `c${i}`,
+        authorName: `Author${i}`,
+        content: Array.from({ length: 48 + (i % 7) * 9 }, () => `b${i}x`).join(' '),
+      })
+    );
+    const items = await pdfTextItems(await buildCommentsPdf(rows, META));
+    expect(Math.max(...items.map((item) => item.page))).toBeGreaterThan(2);
+    for (let i = 0; i < 50; i++) {
+      const heading = find(items, `Author${i}`);
+      const lines = items.filter((item) => item.str.startsWith(`b${i}x`));
+      expect(lines.length).toBeGreaterThanOrEqual(3);
+      expect([i, ...lines.slice(0, 3).map((line) => line.page)]).toEqual([
+        i,
+        heading.page,
+        heading.page,
+        heading.page,
+      ]);
+    }
   });
 
-  it('renders the resolved, voice, image and annotation flags', () => {
-    const pdf = asText([
-      row({ isResolved: true, hasVoiceNote: true, hasImageAttachment: false, tag: 'Urgent' }),
-    ]);
-
-    expect(pdf).toContain('resolved=yes');
-    expect(pdf).toContain('voice=yes');
-    expect(pdf).toContain('image=no');
-    expect(pdf).toContain('tag=Urgent');
+  it('lays out author, tag, Resolved and the date left to right without overlap', async () => {
+    const items = await pdfTextItems(
+      await buildCommentsPdf(
+        [
+          row({
+            authorName: 'Maximiliana Alexandra Featherstonehaugh-Smith of Somewhere Rather Far',
+            tag: 'Color correction needed before the final delivery to the client',
+            isResolved: true,
+          }),
+        ],
+        META
+      )
+    );
+    const author = items.find((item) => item.str.startsWith('Maximiliana'))!;
+    const tag = items.find((item) => item.str.startsWith('Color correction'))!;
+    const resolved = find(items, 'Resolved');
+    const date = find(items, '2026-01-15 09:00 UTC');
+    expect(author.str.endsWith('…')).toBe(true);
+    expect(tag.str.endsWith('…')).toBe(true);
+    expect(author.x + author.width).toBeLessThan(tag.x);
+    expect(tag.x + tag.width).toBeLessThan(resolved.x);
+    expect(resolved.x + resolved.width).toBeLessThan(date.x);
+    expect(date.x + date.width).toBeLessThanOrEqual(RIGHT_EDGE + 0.5);
   });
 
-  it('omits the tag detail when the row has no tag', () => {
-    expect(asText([row({ tag: '' })])).not.toContain('tag=');
+  it('drops leading and trailing blank lines of a comment', async () => {
+    const top = async (content: string) =>
+      find(await pdfTextItems(await buildCommentsPdf([row({ content })], META)), 'Hello').y;
+    expect(await top('\n\n  \nHello\n\n')).toBe(await top('Hello'));
   });
 
-  it('produces a single page document for a short export', () => {
-    expect(asText([row()])).toContain('/Count 1');
+  it('starts a new page when comments overflow and numbers every page', async () => {
+    const rows = Array.from({ length: 60 }, (_unused, i) =>
+      row({ commentId: `c${i}`, content: `Comment number ${i}` })
+    );
+    const pages = await pdfPages(await buildCommentsPdf(rows, META));
+    expect(pages.length).toBeGreaterThan(1);
+    pages.forEach((page, index) => expect(page).toContain(`Page ${index + 1} of ${pages.length}`));
+    const all = pages.join('\n');
+    for (let i = 0; i < 60; i++) expect(all).toContain(`Comment number ${i}`);
   });
 
-  it('paginates once the line budget is exceeded', () => {
-    const rows = Array.from({ length: 40 }, (_unused, i) => row({ commentId: `c${i}` }));
-    const pdf = asText(rows);
-    const count = /\/Count (\d+)/.exec(pdf)?.[1];
-
-    expect(Number(count)).toBeGreaterThan(1);
+  it('produces a one-page document saying so when there are no comments', async () => {
+    const pages = await pdfPages(await buildCommentsPdf([], META));
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toContain('No comments on this version.');
+    expect(pages[0]).toContain('0 comments, 0 replies');
   });
 
-  it('still produces a valid document with no comments at all', () => {
-    const pdf = asText([]);
-
-    expect(pdf).toContain('Total Entries: 0');
-    expect(pdf).toContain('/Count 1');
-    expect(pdf.endsWith('%%EOF')).toBe(true);
+  it('shows no timecode for a still image and starts the text at the margin', async () => {
+    const items = await pdfTextItems(
+      await buildCommentsPdf([row({ timestamp: 72 })], { ...META, mediaType: 'IMAGE' })
+    );
+    expect(items.some((item) => item.str.includes('1:12'))).toBe(false);
+    expect(find(items, 'Looks good').x).toBeCloseTo(48, 1);
+    expect(find(items, 'Alice').x).toBeCloseTo(48, 1);
   });
 
-  it('wraps a very long comment across several text lines', () => {
-    const longWord = 'x'.repeat(300);
-    const pdf = asText([row({ content: longWord })]);
-    const chunks = pdf.match(/x{90,}/g) ?? [];
-
-    expect(chunks.length).toBeGreaterThan(1);
-    expect(chunks.every((chunk) => chunk.length <= 96)).toBe(true);
+  it('retries loading the fonts after a failed read', async () => {
+    vi.resetModules();
+    let failures = 1;
+    vi.doMock('node:fs/promises', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:fs/promises')>();
+      return {
+        ...actual,
+        readFile: (...args: Parameters<typeof actual.readFile>) =>
+          failures-- > 0 ? Promise.reject(new Error('EIO')) : actual.readFile(...args),
+      };
+    });
+    try {
+      const fresh = await import('@/lib/comment-export-pdf');
+      await expect(fresh.buildCommentsPdf([row()], META)).rejects.toThrow('EIO');
+      const [text] = await pdfPages(await fresh.buildCommentsPdf([row()], META));
+      expect(text).toContain('Looks good');
+    } finally {
+      vi.doUnmock('node:fs/promises');
+      vi.resetModules();
+    }
   });
 });
 
-describe('still image exports', () => {
-  it('leaves playback columns empty and labels the image in CSV and PDF', () => {
-    const meta: ExportMeta = { ...META, mediaType: 'IMAGE' };
-    const rows = csvRows([row({ timestamp: 0 })], meta);
-    expect(rows[0][0]).toBe('"image_title"');
-    expect(rows[1].slice(8, 11)).toEqual(['""', '""', '""']);
-    const pdf = buildCommentsPdf([row({ timestamp: 0 })], meta).toString('utf8');
-    expect(pdf).toContain('Image: My Video');
-    expect(pdf).toContain('Comment by Alice');
-    expect(pdf).not.toContain('00:00:00');
+describe('PDF text helpers', () => {
+  const measure = (value: string) => value.length;
+  it('wraps on words, keeps explicit line breaks and splits words longer than a line', () => {
+    expect(wrapText('aa bb cc\ndd', 5, measure)).toEqual(['aa bb', 'cc', 'dd']);
+    expect(wrapText('abcdefghij k', 4, measure)).toEqual(['abcd', 'efgh', 'ij k']);
+    expect(wrapText('', 5, measure)).toEqual(['']);
+  });
+  it('splits a very long word in linear time, measuring each distinct character once', () => {
+    let calls = 0;
+    const counted = (value: string) => {
+      calls++;
+      return value.length;
+    };
+    const lines = wrapText('ab'.repeat(5000), 80, counted);
+    expect(lines).toHaveLength(125);
+    expect(lines.every((line) => line.length === 80)).toBe(true);
+    // Two whole-word measurements plus one per distinct character.
+    expect(calls).toBeLessThan(10);
+  });
+  it('clips one line with an ellipsis only when it does not fit', () => {
+    expect(fitLine('abcdef', 6, measure)).toBe('abcdef');
+    expect(fitLine('abc defgh', 6, measure)).toBe('abc d…');
+    expect(fitLine('ab cdefgh', 4, measure)).toBe('ab…');
+  });
+  it('keeps supported characters, turns controls into spaces and drops the rest', () => {
+    const supported = new Set(Array.from('abŞ ').map((char) => char.codePointAt(0)!));
+    expect(pdfDrawableText('aŞ\tb\u0085a\n🎬b', supported)).toBe('aŞ b a\nb');
+    expect(pdfDrawableText('a\u2028b\u2029a', supported)).toBe('a b a');
+    expect(pdfDrawableText('a  b \t a', supported)).toBe('a b a');
   });
 });

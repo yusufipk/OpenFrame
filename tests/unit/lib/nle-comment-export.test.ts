@@ -9,7 +9,7 @@ import {
   selectNleThreads,
 } from '@/lib/nle-comment-export';
 import { flattenCommentsForExport, type ExportCommentRow } from '@/lib/comment-export';
-import { parseMarkerEdl, parseMarkerXml } from '../../helpers/nle-parser';
+import { parseFcpxml, parseMarkerEdl, parseMarkerXml } from '../../helpers/nle-parser';
 
 const options = { fps: '24', origin: '01:00:00:00', dropFrame: false };
 function row(overrides: Partial<ExportCommentRow> = {}): ExportCommentRow {
@@ -410,6 +410,144 @@ describe('NLE marker color boundaries', () => {
       },
     ]);
     expect(rows.map((r) => r.tagColor)).toEqual(['#EF4444', '#3B82F6']);
+  });
+});
+
+describe('Final Cut Pro FCPXML', () => {
+  const df = { fps: '30000/1001', origin: '01:00:00;00', dropFrame: true };
+  const rows = [
+    row({
+      authorName: 'Alice',
+      tag: 'Feedback',
+      content: 'Line one\nLine "two" <b>&amp;',
+      timestamp: 1001,
+      timestampEnd: 1002,
+    }),
+    row({
+      commentId: 'reply',
+      parentCommentId: 'parent',
+      authorName: 'Bob',
+      tag: '',
+      content: 'ok',
+      timestamp: 1001,
+    }),
+    row({ commentId: 'done', authorName: 'Cem', tag: '', timestamp: 1010, isResolved: true }),
+  ];
+
+  it('places markers on a gap clip at exact rational frame times from the DF origin', () => {
+    const { doc, format, sequence, gap, markers } = parseFcpxml(
+      buildNleComments(rows, 'Cut "A" <final>', 'fcpxml', df)
+    );
+    expect(doc.documentElement.getAttribute('version')).toBe('1.9');
+    expect(format).toEqual({
+      id: 'r1',
+      name: 'FFVideoFormat1080p2997',
+      frameDuration: '1001/30000s',
+      width: '1920',
+      height: '1080',
+    });
+    expect(sequence).toMatchObject({
+      format: 'r1',
+      tcStart: '107999892/30000s',
+      tcFormat: 'DF',
+      duration: '30301271/30000s',
+    });
+    expect(gap).toMatchObject({
+      offset: '107999892/30000s',
+      start: '107999892/30000s',
+      duration: '30301271/30000s',
+    });
+    expect(doc.querySelector('project')!.getAttribute('name')).toBe('Cut "A" <final>');
+    expect(markers).toEqual([
+      {
+        start: '138029892/30000s',
+        duration: '30030/30000s',
+        value: 'Alice: Line one (+1)',
+        completed: '0',
+        note: 'Alice [Feedback]: Line one\nLine "two" <b>&amp;\n↳ Bob: ok',
+      },
+      {
+        start: '138300162/30000s',
+        duration: '1001/30000s',
+        value: 'Cem: Hello',
+        completed: '1',
+        note: 'Cem (resolved): Hello',
+      },
+    ]);
+    expect(doc.querySelectorAll('b, marker > *')).toHaveLength(0);
+  });
+
+  it('marks a marker done only when every thread it opens is resolved at its root', () => {
+    const opts = { fps: '25', origin: '00:00:00:00', dropFrame: false };
+    const done = (input: ExportCommentRow[]) =>
+      parseFcpxml(buildNleComments(input, '', 'fcpxml', opts)).markers.map((m) => m.completed);
+    // Two threads on one frame: the first resolved, the second still open.
+    expect(
+      done([row({ isResolved: true }), row({ commentId: 'open', isResolved: false })])
+    ).toEqual(['0']);
+    // A reply on its own frame follows its resolved root, not its own flag.
+    expect(
+      done([
+        row({ isResolved: true }),
+        row({ commentId: 'late', parentCommentId: 'parent', timestamp: 3, isResolved: false }),
+      ])
+    ).toEqual(['1', '1']);
+    // A resolved reply under an open root leaves the thread open.
+    expect(
+      done([row(), row({ commentId: 'r', parentCommentId: 'parent', isResolved: true })])
+    ).toEqual(['0']);
+  });
+
+  it('writes whole-frame times at integer rates and leaves 48 fps unnamed', () => {
+    const { format, sequence, markers } = parseFcpxml(
+      buildNleComments([row()], '', 'fcpxml', {
+        fps: '48',
+        origin: '00:00:00:00',
+        dropFrame: false,
+      })
+    );
+    expect(format).not.toHaveProperty('name');
+    expect(format.frameDuration).toBe('1/48s');
+    expect(sequence).toMatchObject({ tcStart: '0s', tcFormat: 'NDF', duration: '49/48s' });
+    expect(markers[0]).toMatchObject({ start: '48/48s', duration: '1/48s' });
+  });
+
+  it.each([
+    ['24000/1001', 'FFVideoFormat1080p2398'],
+    ['24', 'FFVideoFormat1080p24'],
+    ['25', 'FFVideoFormat1080p25'],
+    ['30000/1001', 'FFVideoFormat1080p2997'],
+    ['30', 'FFVideoFormat1080p30'],
+    ['50', 'FFVideoFormat1080p50'],
+    ['60000/1001', 'FFVideoFormat1080p5994'],
+    ['60', 'FFVideoFormat1080p60'],
+  ])('names the %s fps format %s', (fps, name) => {
+    const { format } = parseFcpxml(
+      buildNleComments([row()], '', 'fcpxml', { fps, origin: '00:00:00:00', dropFrame: false })
+    );
+    expect(format.name).toBe(name);
+  });
+
+  it('writes NDF for 29.97 when drop frame is off', () => {
+    const { sequence } = parseFcpxml(
+      buildNleComments([row()], '', 'fcpxml', {
+        fps: '30000/1001',
+        origin: '00:00:00:00',
+        dropFrame: false,
+      })
+    );
+    expect(sequence.tcFormat).toBe('NDF');
+  });
+
+  it('keeps a tab inside a note instead of folding it to a space', () => {
+    const { markers } = parseFcpxml(
+      buildNleComments([row({ authorName: 'Ann', tag: '', content: 'a\tb' })], '', 'fcpxml', {
+        fps: '25',
+        origin: '00:00:00:00',
+        dropFrame: false,
+      })
+    );
+    expect(markers[0].note).toBe('Ann: a\tb');
   });
 });
 

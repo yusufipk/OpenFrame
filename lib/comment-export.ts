@@ -58,7 +58,7 @@ function csvCell(value: string | number | boolean | null): string {
   return `"${neutralized.replace(/"/g, '""')}"`;
 }
 
-function formatTimestamp(seconds: number): string {
+export function formatTimestamp(seconds: number): string {
   const totalSeconds = Math.floor(seconds);
   const hrs = Math.floor(totalSeconds / 3600);
   const mins = Math.floor((totalSeconds % 3600) / 60);
@@ -68,48 +68,6 @@ function formatTimestamp(seconds: number): string {
     return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
   return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function toPdfSafeAscii(value: string): string {
-  return value.replace(/[^\x20-\x7E]/g, '?');
-}
-
-function escapePdfText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-}
-
-function wrapLine(value: string, maxChars: number): string[] {
-  const text = value.trim();
-  if (!text) return [''];
-
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let current = '';
-
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= maxChars) {
-      current = next;
-      continue;
-    }
-
-    if (current) lines.push(current);
-
-    if (word.length <= maxChars) {
-      current = word;
-      continue;
-    }
-
-    let chunk = word;
-    while (chunk.length > maxChars) {
-      lines.push(chunk.slice(0, maxChars));
-      chunk = chunk.slice(maxChars);
-    }
-    current = chunk;
-  }
-
-  if (current) lines.push(current);
-  return lines;
 }
 
 function sanitizeFileSegment(input: string): string {
@@ -173,181 +131,98 @@ export function flattenCommentsForExport(comments: ExportComment[]): ExportComme
   return rows;
 }
 
-export function buildCommentsCsv(
-  rows: ExportCommentRow[],
-  meta: {
-    videoTitle: string;
-    versionNumber: number;
-    versionLabel: string | null;
-    mediaType?: 'VIDEO' | 'IMAGE';
-  }
-): string {
-  const header = [
-    meta.mediaType === 'IMAGE' ? 'image_title' : 'video_title',
-    'version_number',
-    'version_label',
-    'comment_id',
-    'parent_comment_id',
-    'thread_level',
-    'author_name',
-    'author_type',
-    'timestamp_seconds',
-    'timestamp_hhmmss',
-    'timestamp_end_seconds',
-    'is_resolved',
-    'tag',
-    'content',
-    'has_voice_note',
-    'voice_duration_seconds',
-    'has_image_attachment',
-    'has_annotation',
-    'created_at_iso',
-  ];
+export interface ExportMeta {
+  videoTitle: string;
+  versionNumber: number;
+  versionLabel: string | null;
+  mediaType?: 'VIDEO' | 'IMAGE';
+}
 
+// Always h:mm:ss, so a spreadsheet reads every cell as the same kind of duration and
+// sorts a video longer than an hour correctly ("1:23" alone would mean 1 h 23 min).
+export function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(total / 3600)}:${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+export function formatCommentTime(row: ExportCommentRow): string {
+  return row.timestampEnd === null
+    ? formatClock(row.timestamp)
+    : `${formatClock(row.timestamp)} - ${formatClock(row.timestampEnd)}`;
+}
+
+export function describeAttachments(row: ExportCommentRow): string {
+  return [
+    row.hasVoiceNote &&
+      (row.voiceDuration === null
+        ? 'Voice note'
+        : `Voice note (${formatTimestamp(row.voiceDuration)})`),
+    row.hasImageAttachment && 'Image',
+    row.hasAnnotation && 'Drawing',
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
+// "2026-10-02T14:34:47.877Z" -> "2026-10-02 14:34 UTC"
+export function formatCreatedAt(iso: string): string {
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}
+
+// The thread a row belongs to, repeated on its replies. A dotted "1.10" would be read
+// as the number 1.1 by a spreadsheet, so replies are told apart by "Reply to" instead.
+export function threadNumbers(rows: ExportCommentRow[]): string[] {
+  let thread = 0;
+  return rows.map((row) => String(row.level === 0 ? ++thread : Math.max(thread, 1)));
+}
+
+// A spreadsheet is the audience: readable headers, one row per comment, and a byte
+// order mark so Excel opens UTF-8 (Turkish letters, emoji) instead of guessing a
+// legacy code page. IDs stay in the last two columns for scripts.
+export function buildCommentsCsv(rows: ExportCommentRow[], meta: ExportMeta): string {
+  const isImage = meta.mediaType === 'IMAGE';
+  const authors = new Map(rows.map((row) => [row.commentId, row.authorName]));
+  // Only a thread's root can be resolved in the app, so a reply shows its thread's status.
+  const resolved = new Map(rows.map((row) => [row.commentId, row.isResolved]));
+  const numbers = threadNumbers(rows);
+  const header = [
+    '#',
+    ...(isImage ? [] : ['Time']),
+    'Author',
+    'Comment',
+    'Reply to',
+    'Tag',
+    'Status',
+    'Attachments',
+    'Created',
+    'Comment ID',
+    'Parent comment ID',
+  ];
   const lines = [header.map(csvCell).join(',')];
-  for (const row of rows) {
+  rows.forEach((row, index) => {
     lines.push(
       [
-        meta.videoTitle,
-        meta.versionNumber,
-        meta.versionLabel || '',
+        numbers[index],
+        ...(isImage ? [] : [formatCommentTime(row)]),
+        row.authorName,
+        row.content,
+        row.parentCommentId === null ? '' : (authors.get(row.parentCommentId) ?? ''),
+        row.tag,
+        (
+          row.parentCommentId === null
+            ? row.isResolved
+            : (resolved.get(row.parentCommentId) ?? row.isResolved)
+        )
+          ? 'Resolved'
+          : 'Open',
+        describeAttachments(row),
+        formatCreatedAt(row.createdAtIso),
         row.commentId,
         row.parentCommentId,
-        row.level,
-        row.authorName,
-        row.authorType,
-        meta.mediaType === 'IMAGE' ? '' : row.timestamp.toFixed(3),
-        meta.mediaType === 'IMAGE' ? '' : formatTimestamp(row.timestamp),
-        meta.mediaType === 'IMAGE' || row.timestampEnd === null ? '' : row.timestampEnd.toFixed(3),
-        row.isResolved,
-        row.tag,
-        row.content,
-        row.hasVoiceNote,
-        row.voiceDuration === null ? '' : row.voiceDuration.toFixed(3),
-        row.hasImageAttachment,
-        row.hasAnnotation,
-        row.createdAtIso,
       ]
         .map(csvCell)
         .join(',')
     );
-  }
-
-  return lines.join('\n');
-}
-
-export function buildCommentsPdf(
-  rows: ExportCommentRow[],
-  meta: {
-    videoTitle: string;
-    versionNumber: number;
-    versionLabel: string | null;
-    mediaType?: 'VIDEO' | 'IMAGE';
-  }
-): Buffer {
-  const lines: string[] = [];
-  const versionTitle = meta.versionLabel
-    ? `v${meta.versionNumber} (${meta.versionLabel})`
-    : `v${meta.versionNumber}`;
-
-  lines.push(`OpenFrame Comments Export`);
-  lines.push(`${meta.mediaType === 'IMAGE' ? 'Image' : 'Video'}: ${meta.videoTitle}`);
-  lines.push(`Version: ${versionTitle}`);
-  lines.push(`Generated At: ${new Date().toISOString()}`);
-  lines.push(`Total Entries: ${rows.length}`);
-  lines.push('');
-
-  rows.forEach((row, index) => {
-    const prefix = row.level === 1 ? '  Reply' : 'Comment';
-    const base = `${index + 1}. ${prefix}${meta.mediaType === 'IMAGE' ? '' : ` ${formatTimestamp(row.timestamp)}`} by ${row.authorName}`;
-    const details = [
-      `resolved=${row.isResolved ? 'yes' : 'no'}`,
-      `voice=${row.hasVoiceNote ? 'yes' : 'no'}`,
-      `image=${row.hasImageAttachment ? 'yes' : 'no'}`,
-      `annotation=${row.hasAnnotation ? 'yes' : 'no'}`,
-      row.tag ? `tag=${row.tag}` : null,
-    ]
-      .filter((item): item is string => item !== null)
-      .join(', ');
-
-    lines.push(base);
-    lines.push(`   ${details}`);
-    if (row.content) {
-      lines.push(...wrapLine(`   ${row.content}`, 96));
-    }
-    lines.push(`   created_at=${row.createdAtIso}`);
-    lines.push('');
   });
-
-  return buildSimplePdf(lines);
-}
-
-function buildSimplePdf(lines: string[]): Buffer {
-  const pageWidth = 612;
-  const pageHeight = 792;
-  const margin = 40;
-  const lineHeight = 14;
-  const maxLinesPerPage = Math.floor((pageHeight - margin * 2) / lineHeight);
-
-  const pages: string[][] = [];
-  let currentPage: string[] = [];
-
-  for (const line of lines) {
-    if (currentPage.length >= maxLinesPerPage) {
-      pages.push(currentPage);
-      currentPage = [];
-    }
-    currentPage.push(line);
-  }
-  if (currentPage.length > 0) pages.push(currentPage);
-  if (pages.length === 0) pages.push(['No comments']);
-
-  const objects: string[] = [];
-  const pageRefs: string[] = [];
-
-  objects[0] = '<< /Type /Catalog /Pages 2 0 R >>';
-  objects[1] = '';
-  objects[2] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
-
-  for (const pageLines of pages) {
-    const contentLines = ['BT', '/F1 11 Tf'];
-    pageLines.forEach((line, lineIndex) => {
-      const y = pageHeight - margin - lineIndex * lineHeight;
-      const safeLine = escapePdfText(toPdfSafeAscii(line));
-      contentLines.push(`1 0 0 1 ${margin} ${y} Tm (${safeLine}) Tj`);
-    });
-    contentLines.push('ET');
-
-    const stream = contentLines.join('\n');
-    const contentObject = `<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`;
-    const contentObjNumber = objects.length + 1;
-    objects.push(contentObject);
-
-    const pageObjNumber = objects.length + 1;
-    objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjNumber} 0 R >>`
-    );
-    pageRefs.push(`${pageObjNumber} 0 R`);
-  }
-
-  objects[1] = `<< /Type /Pages /Kids [${pageRefs.join(' ')}] /Count ${pageRefs.length} >>`;
-
-  let pdf = '%PDF-1.4\n';
-  const offsets: number[] = [0];
-
-  objects.forEach((obj, index) => {
-    offsets.push(Buffer.byteLength(pdf, 'utf8'));
-    const objNum = index + 1;
-    pdf += `${objNum} 0 obj\n${obj}\nendobj\n`;
-  });
-
-  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
-  pdf += `xref\n0 ${objects.length + 1}\n`;
-  pdf += '0000000000 65535 f \n';
-  for (let i = 1; i < offsets.length; i += 1) {
-    pdf += `${offsets[i].toString().padStart(10, '0')} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-  return Buffer.from(pdf, 'utf8');
+  return `﻿${lines.join('\r\n')}\r\n`;
 }

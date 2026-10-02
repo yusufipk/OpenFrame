@@ -14,24 +14,27 @@ function request(versionId: string, query: string) {
 }
 
 describe('NLE comment exports', () => {
-  it.each(['edl', 'xml'])('protects %s behind authentication and video access', async (format) => {
-    const scenario = await seedVersion();
-    const comment = await createComment({
-      versionId: scenario.version.id,
-      content: 'Private marker',
-    });
-    signedOut();
-    expect((await request(scenario.version.id, `format=${format}${settings}`)).status).toBe(401);
-    signedInAs(await createUser());
-    const denied = await request(scenario.version.id, `format=${format}${settings}`);
-    expect(denied.status).toBe(404);
-    expect(await denied.text()).not.toContain('Private marker');
-    expect(await db.comment.findUnique({ where: { id: comment.id } })).not.toBeNull();
-    signedInAs(scenario.owner);
-    const allowed = await request(scenario.version.id, `format=${format}${settings}`);
-    expect(allowed.status).toBe(200);
-    expect(await allowed.text()).toContain('Private marker');
-  });
+  it.each(['edl', 'xml', 'fcpxml'])(
+    'protects %s behind authentication and video access',
+    async (format) => {
+      const scenario = await seedVersion();
+      const comment = await createComment({
+        versionId: scenario.version.id,
+        content: 'Private marker',
+      });
+      signedOut();
+      expect((await request(scenario.version.id, `format=${format}${settings}`)).status).toBe(401);
+      signedInAs(await createUser());
+      const denied = await request(scenario.version.id, `format=${format}${settings}`);
+      expect(denied.status).toBe(404);
+      expect(await denied.text()).not.toContain('Private marker');
+      expect(await db.comment.findUnique({ where: { id: comment.id } })).not.toBeNull();
+      signedInAs(scenario.owner);
+      const allowed = await request(scenario.version.id, `format=${format}${settings}`);
+      expect(allowed.status).toBe(200);
+      expect(await allowed.text()).toContain('Private marker');
+    }
+  );
 
   it.each(['edl', 'xml'])(
     'downloads %s preserving same-frame comments, ranges, replies and the tag color',
