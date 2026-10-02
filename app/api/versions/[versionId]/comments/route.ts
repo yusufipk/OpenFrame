@@ -14,7 +14,7 @@ import {
   getGuestIdentityFromRequest,
   setGuestIdentityCookie,
 } from '@/lib/guest-identity';
-import { eventKey, recordEvent } from '@/lib/analytics/record';
+import { eventKey, recordAccountActivity, recordEvent } from '@/lib/analytics/record';
 import {
   extractImageFileNameFromProxyUrl,
   extractAudioFileNameFromProxyUrl,
@@ -574,6 +574,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         userId: project.workspace.ownerId,
       });
     }
+    // Every comment, from the owner, a member or a guest, counts as the account
+    // being used; the helper keeps it to one row a day.
+    await recordAccountActivity({
+      name: 'COMMENT_ADDED',
+      accountId: project.workspace.ownerId,
+      actorId: session?.user?.id ?? null,
+    });
 
     const viewerUserId = session?.user?.id ?? null;
     const viewerGuestIdentityId = viewerUserId

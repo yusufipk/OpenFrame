@@ -55,6 +55,7 @@ const REVIEWED_MIGRATIONS = [
   '20260929120000_project_delete_name_confirmation_preference',
   '20260929160000_project_client_branding',
   '20261002120000_version_uploader',
+  '20261003120000_account_activity_events',
   '20260930120000_api_tokens',
   '20261002120000_paid_acquisition_channel',
   '20260926130000_attachment_comment_annotations', // replayed: annotation-only comment check
