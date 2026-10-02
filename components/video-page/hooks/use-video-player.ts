@@ -557,11 +557,14 @@ export function useVideoPlayer({
             .then((text) => {
               if (destroyed || sourceMode !== 'original') return;
               setQualityOptions(
-                parseMasterPlaylistLevels(text).map((level, index) => ({
-                  level: index,
-                  label: formatBunnyQualityLabel(level, index),
-                  height: level.height && level.height > 0 ? level.height : undefined,
-                }))
+                parseMasterPlaylistLevels(text)
+                  .map((level, index) => ({
+                    level: index,
+                    label: formatBunnyQualityLabel(level, index),
+                    height: level.height && level.height > 0 ? level.height : undefined,
+                  }))
+                  // Bunny lists renditions out of order; hls.js sorts its own levels.
+                  .sort((a, b) => (a.height ?? 0) - (b.height ?? 0))
               );
             })
             .catch(() => {
