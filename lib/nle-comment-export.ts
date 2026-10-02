@@ -348,9 +348,9 @@ export function buildNleComments(
   const duration = Math.max(1, ...markers.map((marker) => marker.end));
   const markerXml = markers
     .map((marker) => {
-      // Premiere reads `pproColor`; other FCP7 XML readers read the RGB components.
-      const [red, green, blue] = hexRgb(marker.color).map((value) => value * 257);
-      return `<marker><name>${xmlText(xmlName(marker.entries))}</name><comment>${xmlText(xmlNote(marker.entries))}</comment><in>${marker.start}</in><out>${marker.end}</out><pproColor>${premiereMarkerColor(marker.color)}</pproColor><color><alpha>0</alpha><red>${red}</red><green>${green}</green><blue>${blue}</blue></color></marker>`;
+      // Only Premiere reads a marker color from XML; Resolve 20.3 shows every XML
+      // marker blue whatever the file says.
+      return `<marker><name>${xmlText(xmlName(marker.entries))}</name><comment>${xmlText(xmlNote(marker.entries))}</comment><in>${marker.start}</in><out>${marker.end}</out><pproColor>${premiereMarkerColor(marker.color)}</pproColor></marker>`;
     })
     .join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<xmeml version="5"><sequence id="openframe-comments"><name>${xmlText(title)}</name><duration>${duration}</duration>${rateXml}<timecode>${rateXml}<string>${options.origin}</string><frame>${rate.originFrames}</frame><displayformat>${rate.drop ? 'DF' : 'NDF'}</displayformat></timecode><media><video><format><samplecharacteristics>${rateXml}<width>1920</width><height>1080</height><anamorphic>FALSE</anamorphic><pixelaspectratio>square</pixelaspectratio><fielddominance>none</fielddominance></samplecharacteristics></format><track/></video><audio><track/></audio></media>${markerXml}</sequence></xmeml>\n`;

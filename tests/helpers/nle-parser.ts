@@ -14,9 +14,6 @@ export function parseMarkerXml(text: string) {
       name: marker.querySelector('name')!.textContent!,
       comment: marker.querySelector('comment')!.textContent!,
       pproColor: Number(marker.querySelector('pproColor')!.textContent),
-      rgb: ['red', 'green', 'blue'].map((channel) =>
-        Number(marker.querySelector(`color > ${channel}`)!.textContent)
-      ),
     })),
   };
 }

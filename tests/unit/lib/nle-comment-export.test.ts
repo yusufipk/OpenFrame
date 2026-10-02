@@ -293,11 +293,6 @@ describe('NLE marker colors', () => {
     ).toEqual(['Red', 'Green', 'Cyan']);
     const { markers } = parseMarkerXml(buildNleComments(colored, '', 'xml', options));
     expect(markers.map((marker) => marker.pproColor)).toEqual([4281740498, 4281828977, 4292277273]);
-    expect(markers.map((marker) => marker.rgb)).toEqual([
-      [61423, 17476, 17476],
-      [8738, 50629, 24158],
-      [8738, 54227, 61166],
-    ]);
   });
 });
 

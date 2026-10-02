@@ -32,7 +32,8 @@ the edit that produced that video. For example, a comment at one second with a
 - A marker takes the color of its first comment's tag, falling back to the colors
   the OpenFrame player uses (cyan, or green when resolved). Tag colors are matched by
   hue to Resolve's marker palette (EDL) and Premiere's (`pproColor` in XML), so a
-  custom tag color lands on the nearest named color.
+  custom tag color lands on the nearest named color. Resolve 20.3 ignores marker
+  colors in XML and shows those markers blue; import the EDL to get colors there.
 - NLE exports preserve every reply depth and actual parent ID; the resolved filter applies to the thread root. To bound memory, NLE exports enforce a 5,000-comment limit for the whole version before filtering. CSV/PDF retain their existing root/direct-reply layout and filtered limit. EDL also refuses more than 999 distinct
   marker frames. Use XML or CSV when an EDL would exceed that event limit.
 
