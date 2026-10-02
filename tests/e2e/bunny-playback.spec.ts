@@ -45,7 +45,7 @@ const MASTER_PLAYLIST = [
   '',
 ].join('\n');
 
-type OriginalKind = 'short' | 'long' | 'audio-only' | 'undecodable' | 'huge';
+type OriginalKind = 'short' | 'long' | 'audio-only' | 'undecodable' | 'huge' | 'forbidden';
 
 const ORIGINAL_BODIES: Record<OriginalKind, { body: Buffer; contentType: string }> = {
   short: { body: SHORT_ORIGINAL, contentType: 'video/mp4' },
@@ -54,6 +54,8 @@ const ORIGINAL_BODIES: Record<OriginalKind, { body: Buffer; contentType: string 
   undecodable: { body: UNDECODABLE_ORIGINAL, contentType: 'video/quicktime' },
   // Playable, but its HEAD reports 2 GB: a short 4K ProRes source as Safari would see it.
   huge: { body: SHORT_ORIGINAL, contentType: 'video/mp4' },
+  // Answered with 403, like a CDN token the pull zone no longer accepts.
+  forbidden: { body: SHORT_ORIGINAL, contentType: 'video/mp4' },
 };
 const HUGE_ORIGINAL_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -84,6 +86,10 @@ async function serveBunnyCdn(page: Page, providerVideoId: string, original: Orig
     }
     if (rest === 'original') {
       const { body, contentType } = ORIGINAL_BODIES[original];
+      if (original === 'forbidden') {
+        await route.fulfill({ status: 403, headers, body: '' });
+        return;
+      }
       if (method === 'HEAD') {
         const size = original === 'huge' ? HUGE_ORIGINAL_BYTES : body.length;
         await route.fulfill({
@@ -361,4 +367,24 @@ test('a remembered Original that will not decode falls back once and says why', 
   await expect(page.getByText("This browser can't play the original file")).toHaveCount(1);
   // Hls.js renditions are listed again once the original is out of the picture.
   await expect(qualityButton(page)).toHaveText('Quality Auto');
+});
+
+test('a refused Original falls back without blaming the browser', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('openframe:playback-quality', '{"mode":"original"}');
+  });
+  const seeded = await seed.bunnyVersion(seededUser, { duration: 120 });
+  const requests = await serveBunnyCdn(page, seeded.providerVideoId, 'forbidden');
+
+  await openVideo(page, seeded.project.id, seeded.videoId);
+
+  await expect.poll(() => firstSegmentRendition(requests)).toBe('1080p');
+  // A 403 before metadata carries the same media error code as an unplayable format;
+  // the player asks the CDN, and a refusal is not the browser's fault.
+  expect(requests).toContain('HEAD original');
+  await expect(page.getByText("This browser can't play the original file")).toHaveCount(0);
 });

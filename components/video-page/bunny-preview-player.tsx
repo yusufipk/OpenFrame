@@ -64,6 +64,9 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
     const hlsRef = useRef<Hls | null>(null);
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingHlsQualityRef = useRef<number | null>(null);
+    // The rendition picked from the menu. hls.js drops a manual level to Auto on the first
+    // fragment error, so a token reload cannot read the pick back from hls.js.
+    const manualHlsLevelRef = useRef<number | null>(null);
     const onReadyToPlayRef = useRef(onReadyToPlay);
     const hasNotifiedReadyRef = useRef(false);
     const playbackSpeedRef = useRef(1);
@@ -122,6 +125,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
       const videoEl = videoRef.current;
       const sourceKey = providerVideoId ?? null;
       const sourceChanged = previousProviderVideoIdRef.current !== sourceKey;
+      if (sourceChanged) manualHlsLevelRef.current = null;
       previousProviderVideoIdRef.current = sourceKey;
 
       if (!videoEl || !playlistUrl) {
@@ -231,7 +235,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
           if (destroyed) return;
           if (usingHlsJs && hlsInstance && sourceMode === 'hls') {
             // The reload goes back through MANIFEST_PARSED; keep a level picked by hand.
-            if (!hlsInstance.autoLevelEnabled) pendingHlsQualityRef.current = hlsInstance.loadLevel;
+            pendingHlsQualityRef.current = manualHlsLevelRef.current;
             retryHlsLoad();
           } else if (sourceMode === 'original') retryOriginalLoad();
           else retryNativeLoad();
@@ -577,6 +581,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
           };
         }
 
+        manualHlsLevelRef.current = level >= 0 ? level : null;
         if (level === -2) {
           pendingHlsQualityRef.current = null;
           setBunnySourcePreference('original');

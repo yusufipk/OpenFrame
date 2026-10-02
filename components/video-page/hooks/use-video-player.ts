@@ -542,7 +542,11 @@ export function useVideoPlayer({
             // hls.js re-attaches the media on loadSource and forgets any start
             // position passed alongside it, so the resume goes through the same
             // loadedmetadata path a manual source switch uses.
-            bunnySourceSwitchResumeRef.current = { time: resumeTime, wasPlaying };
+            // A source switch that failed before metadata still holds the viewer's
+            // position; the element itself is back at zero by then.
+            if (!bunnySourceSwitchResumeRef.current) {
+              bunnySourceSwitchResumeRef.current = { time: resumeTime, wasPlaying };
+            }
             if (usingHlsJs && sourceMode === 'hls') {
               retryHlsLoad();
               return;
@@ -718,17 +722,32 @@ export function useVideoPlayer({
           if (destroyed) return;
           if (usingHlsJs) return;
           if (sourceMode === 'original' && originalIsChosen) {
-            const networkError = videoEl.error?.code === MediaError.MEDIA_ERR_NETWORK;
-            // An expired token mid-playback is worth one fresh grant before giving up
-            // on the original.
-            if (
-              networkError &&
-              videoEl.readyState >= HTMLMediaElement.HAVE_METADATA &&
-              recoverWithFreshToken()
-            ) {
+            const code = videoEl.error?.code;
+            if (code === MediaError.MEDIA_ERR_DECODE) {
+              leaveOriginalForHls('decode');
               return;
             }
-            leaveOriginalForHls(networkError ? 'network' : 'decode');
+            if (code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+              // An expired token mid-playback is worth one fresh grant before giving up
+              // on the original.
+              if (recoverWithFreshToken()) return;
+              leaveOriginalForHls('network');
+              return;
+            }
+            // Before metadata, an HTTP failure (an expired token's 403, say) reports the
+            // same code as a format the browser cannot open, so ask the CDN which it was.
+            fetch(currentOriginalUrl(), { method: 'HEAD' })
+              .then((response) => response.ok)
+              .catch(() => false)
+              .then((reachable) => {
+                if (destroyed || sourceMode !== 'original' || !originalIsChosen) return;
+                if (reachable) {
+                  leaveOriginalForHls('decode');
+                  return;
+                }
+                if (recoverWithFreshToken()) return;
+                leaveOriginalForHls('network');
+              });
             return;
           }
           if (videoEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
