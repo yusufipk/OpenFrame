@@ -13,6 +13,7 @@
 import type { AcquisitionChannel } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getCachedStripeStats } from '@/lib/admin-stats';
+import { getUploaderCountsByAccount, uploaderWindowStart } from '@/lib/uploader-stats';
 
 /** What "using the product" means for a paying account. */
 export const VALUE_EVENT_NAMES = [
@@ -91,6 +92,11 @@ export interface PaidAccountRow {
   valueEvents7: number;
   valueEvents30: number;
   lastValueEventAt: Date | null;
+  /**
+   * Distinct people who uploaded into this account's workspaces in the last
+   * UPLOADER_WINDOW_DAYS, owner included. Above 1 means a team is working in it.
+   */
+  uploaders30: number;
   channel: AcquisitionChannel | null;
   selfReported: AcquisitionChannel | null;
 }
@@ -372,13 +378,21 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
   const channelWindowStart = new Date(now);
   channelWindowStart.setUTCDate(channelWindowStart.getUTCDate() - CHANNEL_WINDOW_DAYS);
 
-  const [weekRows, channelRows, referralRows, priorPaid, paidAccounts, stripeStats, cohorts] =
-    await Promise.all([
-      // COUNT(DISTINCT COALESCE(anonymous_id, id)) rather than COUNT(*): a landing
-      // view is deduped per visitor per day, so a visitor who came back on three
-      // days would otherwise be three weekly visitors. Rows with no anonymous id
-      // fall back to their own primary key and stay distinct.
-      db.$queryRaw<WeeklyQueryRow[]>`
+  const [
+    weekRows,
+    channelRows,
+    referralRows,
+    priorPaid,
+    paidAccounts,
+    stripeStats,
+    cohorts,
+    uploaders,
+  ] = await Promise.all([
+    // COUNT(DISTINCT COALESCE(anonymous_id, id)) rather than COUNT(*): a landing
+    // view is deduped per visitor per day, so a visitor who came back on three
+    // days would otherwise be three weekly visitors. Rows with no anonymous id
+    // fall back to their own primary key and stay distinct.
+    db.$queryRaw<WeeklyQueryRow[]>`
       SELECT date_trunc('week', occurred_at) AS week,
              name::text AS name,
              COUNT(DISTINCT COALESCE(anonymous_id, id))::int AS subjects
@@ -386,7 +400,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       WHERE occurred_at >= ${firstWeekStart}
       GROUP BY 1, 2
     `,
-      db.$queryRaw<ChannelQueryRow[]>`
+    db.$queryRaw<ChannelQueryRow[]>`
       SELECT COALESCE(ua.channel, e.channel) AS channel,
              e.name::text AS name,
              COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS subjects
@@ -395,9 +409,9 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       WHERE e.occurred_at >= ${channelWindowStart}
       GROUP BY 1, 2
     `,
-      // Same channel rule as the table above, so these rows add up to its REFERRAL
-      // visitors whenever there are no more than the limit.
-      db.$queryRaw<ReferralQueryRow[]>`
+    // Same channel rule as the table above, so these rows add up to its REFERRAL
+    // visitors whenever there are no more than the limit.
+    db.$queryRaw<ReferralQueryRow[]>`
       SELECT COALESCE(ua.referrer_host, t.referrer_host) AS referrer_host,
              COALESCE(ua.landing_path, t.landing_path) AS landing_path,
              COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS visitors
@@ -411,14 +425,14 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       ORDER BY 3 DESC, 1 ASC NULLS LAST, 2 ASC NULLS LAST
       LIMIT ${REFERRAL_ROW_LIMIT}
     `,
-      db.$queryRaw<Array<{ started: number; canceled: number }>>`
+    db.$queryRaw<Array<{ started: number; canceled: number }>>`
       SELECT
         COUNT(*) FILTER (WHERE name::text = 'SUBSCRIPTION_STARTED')::int AS started,
         COUNT(*) FILTER (WHERE name::text = 'SUBSCRIPTION_CANCELED')::int AS canceled
       FROM analytics_events
       WHERE occurred_at < ${firstWeekStart}
     `,
-      db.$queryRaw<PaidQueryRow[]>`
+    db.$queryRaw<PaidQueryRow[]>`
       SELECT u.id AS user_id,
              u.name,
              u.email,
@@ -449,9 +463,10 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       ORDER BY MAX(e.occurred_at) ASC NULLS FIRST
       LIMIT ${PAID_ACCOUNT_LIMIT + 1}
     `,
-      getCachedStripeStats(),
-      getCohortComparison(now),
-    ]);
+    getCachedStripeStats(),
+    getCohortComparison(now),
+    getUploaderCountsByAccount(uploaderWindowStart(now)),
+  ]);
 
   const byWeek = new Map<number, WeeklyRow>();
   for (let index = 0; index < weeks; index += 1) {
@@ -514,6 +529,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     valueEvents7: row.value_events_7,
     valueEvents30: row.value_events_30,
     lastValueEventAt: row.last_value_event_at,
+    uploaders30: uploaders[row.user_id] ?? 0,
   }));
 
   const silentBefore = new Date(now);
