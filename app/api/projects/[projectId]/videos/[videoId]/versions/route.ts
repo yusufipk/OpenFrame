@@ -16,6 +16,7 @@ import { readBunnyUploadGrant } from '@/lib/bunny-upload-token';
 import { finalizeR2VideoUpload } from '@/lib/r2-video-finalize';
 import { UPLOAD_RESERVATION_PURPOSES } from '@/lib/storage-quota';
 import { logError } from '@/lib/logger';
+import { recordAccountActivity } from '@/lib/analytics/record';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
@@ -327,6 +328,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         url: `${baseUrl}/watch/${video.id}`,
       }).catch((err) => logError('Notification failed:', err));
     }
+
+    await recordAccountActivity({
+      name: 'VERSION_ADDED',
+      accountId: video.project.workspace.ownerId,
+      actorId: session.user.id,
+    });
 
     const response = successResponse(withSignedThumbnail(version), 201);
     return withCacheControl(response, 'private, no-store');

@@ -1077,6 +1077,13 @@ enum AnalyticsEventName {
   SHARE_LINK_CREATED
   FIRST_GUEST_COMMENT
   APPROVAL_COMPLETED
+  // Ongoing use, recorded at most once per account per UTC day. They feed the
+  // scoreboard's silence check only, never the weekly funnel.
+  VERSION_ADDED
+  COMMENT_ADDED
+  LIVE_REVIEW_STARTED
+  LIVE_REVIEW_JOINED
+  APPROVAL_REQUESTED
   CHECKOUT_STARTED
   SUBSCRIPTION_STARTED
   SUBSCRIPTION_CANCELED

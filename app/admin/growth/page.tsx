@@ -355,7 +355,8 @@ export default async function AdminGrowthPage() {
         <CardHeader>
           <CardTitle className="text-base">Paid accounts</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Value events are videos, share links, outside feedback, approvals and projects. Rows
+            Value events are videos, versions, comments, live reviews, share links, approvals and
+            projects; versions, comments, live reviews and approval requests count once a day. Rows
             marked at risk have produced none for {AT_RISK_SILENT_DAYS} days. Uploaders counts the
             distinct people, owner included, who added a video or version in the last{' '}
             {UPLOADER_WINDOW_DAYS} days; uploads from before this was recorded are not counted.

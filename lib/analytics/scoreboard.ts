@@ -15,13 +15,29 @@ import { db } from '@/lib/db';
 import { getCachedStripeStats } from '@/lib/admin-stats';
 import { getUploaderCountsByAccount, uploaderWindowStart } from '@/lib/uploader-stats';
 
-/** What "using the product" means for a paying account. */
+/**
+ * What "using the product" means for a paying account.
+ *
+ * The second half is everyday use, written at most once per account per day, so
+ * an account that only pushes new versions or reviews live is not read as
+ * silent. None of it is in WEEK_COLUMN_BY_EVENT, which keeps the funnel as it
+ * was. Those events only exist from the day they shipped; earlier activity of
+ * that kind was never recorded and cannot be backfilled. They also raise the
+ * 7- and 30-day counts (up to five a day for a busy account), so those counts
+ * are not comparable with ones taken before the change; the silence check only
+ * reads the latest event and is unaffected.
+ */
 export const VALUE_EVENT_NAMES = [
   'VIDEO_ADDED',
   'SHARE_LINK_CREATED',
   'FIRST_GUEST_COMMENT',
   'APPROVAL_COMPLETED',
   'PROJECT_CREATED',
+  'VERSION_ADDED',
+  'COMMENT_ADDED',
+  'LIVE_REVIEW_STARTED',
+  'LIVE_REVIEW_JOINED',
+  'APPROVAL_REQUESTED',
 ] as const;
 
 /** A paid account that has produced nothing for this long is drifting away. */

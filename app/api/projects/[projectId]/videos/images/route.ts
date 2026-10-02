@@ -23,7 +23,7 @@ import {
 } from '@/lib/storage-quota';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { notifyProjectOwner } from '@/lib/notifications';
-import { eventKey, recordEvent } from '@/lib/analytics/record';
+import { eventKey, recordAccountActivity, recordEvent } from '@/lib/analytics/record';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 20_000_000;
@@ -288,6 +288,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           name: 'VIDEO_ADDED',
           dedupeKey: eventKey('VIDEO_ADDED', result.id),
           userId: project.ownerId,
+          actorId: session.user.id,
+        });
+      }
+      if (targetVideoId) {
+        await recordAccountActivity({
+          name: 'VERSION_ADDED',
+          accountId: reservedOwnerId,
           actorId: session.user.id,
         });
       }
