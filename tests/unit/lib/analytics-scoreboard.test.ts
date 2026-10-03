@@ -4,6 +4,7 @@ import {
   cohortWindows,
   conversionRates,
   getCardlessTrialCutover,
+  mergePaidCampaigns,
 } from '@/lib/analytics/scoreboard';
 
 const WEEK = {
@@ -95,5 +96,50 @@ describe('cohortWindows', () => {
     expect(windows.windowDays).toBe(0);
     expect(windows.afterEnd.toISOString()).toBe(windows.afterStart.toISOString());
     expect(windows.beforeStart.toISOString()).toBe(windows.beforeEnd.toISOString());
+  });
+});
+
+describe('mergePaidCampaigns', () => {
+  it('joins the three sources into one row per keyword', () => {
+    const rows = mergePaidCampaigns(
+      [
+        { campaign: 'video review tool', subjects: 5 },
+        { campaign: 'frame io alternative', subjects: 9 },
+      ],
+      [{ campaign: 'video review tool', subjects: 2 }],
+      [
+        { campaign: 'video review tool', name: 'TRIAL_STARTED', subjects: 1 },
+        { campaign: 'frame io alternative', name: 'SUBSCRIPTION_STARTED', subjects: 1 },
+        // Only trials and subscriptions are columns here.
+        { campaign: 'video review tool', name: 'SIGNUP_COMPLETED', subjects: 7 },
+      ]
+    );
+
+    expect(rows).toEqual([
+      { campaign: 'frame io alternative', visitors: 9, signups: 0, trials: 0, paid: 1 },
+      { campaign: 'video review tool', visitors: 5, signups: 2, trials: 1, paid: 0 },
+    ]);
+  });
+
+  it('files a missing campaign under one "(no keyword)" row', () => {
+    const rows = mergePaidCampaigns(
+      [{ campaign: null, subjects: 3 }],
+      [{ campaign: null, subjects: 1 }],
+      [{ campaign: null, name: 'TRIAL_STARTED', subjects: 1 }]
+    );
+
+    expect(rows).toEqual([
+      { campaign: '(no keyword)', visitors: 3, signups: 1, trials: 1, paid: 0 },
+    ]);
+  });
+
+  it('keeps a keyword that only has signups, sorted below ones with visitors', () => {
+    const rows = mergePaidCampaigns(
+      [{ campaign: 'b', subjects: 1 }],
+      [{ campaign: 'a', subjects: 1 }],
+      []
+    );
+
+    expect(rows.map((row) => row.campaign)).toEqual(['b', 'a']);
   });
 });

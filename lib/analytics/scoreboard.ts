@@ -49,6 +49,12 @@ const CHANNEL_WINDOW_DAYS = 28;
 const REFERRAL_ROW_LIMIT = 25;
 
 /**
+ * The row a PAID visitor with no utm_campaign is filed under. sanitizeTag never
+ * stores parentheses, so no real keyword can collide with it.
+ */
+export const NO_KEYWORD_LABEL = '(no keyword)';
+
+/**
  * How many paid accounts the per-account table carries.
  *
  * The list is ordered quietest first, so the cap drops the accounts that are
@@ -99,6 +105,21 @@ export interface ReferralRow {
   referrerHost: string | null;
   landingPath: string | null;
   visitors: number;
+}
+
+/**
+ * One keyword of the paid search campaign, read from utm_campaign.
+ *
+ * Visitors are first touches and signups are accounts created in the window, so
+ * both are counted where they started. Trials and paid follow the channels rows:
+ * events in the window, read through the account's first touch.
+ */
+export interface PaidCampaignRow {
+  campaign: string;
+  visitors: number;
+  signups: number;
+  trials: number;
+  paid: number;
 }
 
 export interface PaidAccountRow {
@@ -152,6 +173,8 @@ export interface Scoreboard {
   channelWindowDays: number;
   /** The busiest REFERRAL host and landing path pairs over the channel window. */
   referrals: ReferralRow[];
+  /** The PAID channel per utm_campaign over the channel window, busiest first. */
+  paidCampaigns: PaidCampaignRow[];
   paidAccounts: PaidAccountRow[];
   /** True when there are more paid accounts than the table shows. */
   paidAccountsTruncated: boolean;
@@ -180,6 +203,15 @@ interface ReferralQueryRow {
   referrer_host: string | null;
   landing_path: string | null;
   visitors: number;
+}
+
+export interface CampaignCountRow {
+  campaign: string | null;
+  subjects: number;
+}
+
+export interface CampaignEventRow extends CampaignCountRow {
+  name: string;
 }
 
 interface PaidQueryRow {
@@ -272,6 +304,39 @@ export function conversionRates(row: {
     shareToFeedback: ratio(row.externalFeedback, row.shareLinks),
     trialToPaid: ratio(row.newPaid, row.trials),
   };
+}
+
+/**
+ * Folds the three per-campaign counts into one row per keyword.
+ *
+ * Each source groups on its own, so a keyword can appear in any of them alone: a
+ * signup whose first touch is older than the window still gets its row.
+ */
+export function mergePaidCampaigns(
+  visitorRows: CampaignCountRow[],
+  signupRows: CampaignCountRow[],
+  eventRows: CampaignEventRow[]
+): PaidCampaignRow[] {
+  const byCampaign = new Map<string, PaidCampaignRow>();
+  const bucket = (campaign: string | null) => {
+    const label = campaign ?? NO_KEYWORD_LABEL;
+    const existing = byCampaign.get(label);
+    if (existing) return existing;
+    const row = { campaign: label, visitors: 0, signups: 0, trials: 0, paid: 0 };
+    byCampaign.set(label, row);
+    return row;
+  };
+
+  for (const row of visitorRows) bucket(row.campaign).visitors += row.subjects;
+  for (const row of signupRows) bucket(row.campaign).signups += row.subjects;
+  for (const row of eventRows) {
+    if (row.name === 'TRIAL_STARTED') bucket(row.campaign).trials += row.subjects;
+    if (row.name === 'SUBSCRIPTION_STARTED') bucket(row.campaign).paid += row.subjects;
+  }
+
+  return [...byCampaign.values()].sort(
+    (a, b) => b.visitors - a.visitors || a.campaign.localeCompare(b.campaign)
+  );
 }
 
 /**
@@ -400,6 +465,9 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     weekRows,
     channelRows,
     referralRows,
+    campaignVisitorRows,
+    campaignSignupRows,
+    campaignEventRows,
     priorPaid,
     paidAccounts,
     stripeStats,
@@ -445,6 +513,46 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       GROUP BY 1, 2
       ORDER BY 3 DESC, 1 ASC NULLS LAST, 2 ASC NULLS LAST
       LIMIT ${REFERRAL_ROW_LIMIT}
+    `,
+    // A touch left by a browser that later signed up to an excluded account is
+    // dropped, the same rule countedEventSql applies to the channels' visitors.
+    db.$queryRaw<CampaignCountRow[]>`
+      SELECT t.utm_campaign AS campaign, COUNT(*)::int AS subjects
+      FROM acquisition_touches t
+      WHERE t.channel::text = 'PAID'
+        AND t.created_at >= ${channelWindowStart}
+        AND NOT EXISTS (
+          SELECT 1 FROM user_acquisitions excluded_visit
+          JOIN users excluded ON excluded.id = excluded_visit.user_id
+          WHERE excluded_visit.anonymous_id = t.anonymous_id AND excluded."excludedFromStats"
+        )
+      GROUP BY 1
+    `,
+    db.$queryRaw<CampaignCountRow[]>`
+      SELECT ua.utm_campaign AS campaign, COUNT(*)::int AS subjects
+      FROM user_acquisitions ua
+      JOIN users u ON u.id = ua.user_id
+      WHERE ua.channel::text = 'PAID'
+        AND ua.created_at >= ${channelWindowStart}
+        AND NOT u."excludedFromStats"
+      GROUP BY 1
+    `,
+    // The channel rule of the channels table. The keyword comes from the account
+    // when there is one, even a null one, so it always agrees with the channel
+    // it was read beside; only an event with no account falls back to the touch.
+    db.$queryRaw<CampaignEventRow[]>`
+      SELECT CASE WHEN ua.user_id IS NOT NULL THEN ua.utm_campaign ELSE t.utm_campaign END
+               AS campaign,
+             e.name::text AS name,
+             COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS subjects
+      FROM analytics_events e
+      LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
+      LEFT JOIN acquisition_touches t ON t.anonymous_id = e.anonymous_id
+      WHERE e.occurred_at >= ${channelWindowStart}
+        AND e.name::text IN ('TRIAL_STARTED', 'SUBSCRIPTION_STARTED')
+        AND COALESCE(ua.channel, e.channel)::text = 'PAID'
+        AND ${countedEventSql('e')}
+      GROUP BY 1, 2
     `,
     db.$queryRaw<Array<{ started: number; canceled: number }>>`
       SELECT
@@ -567,6 +675,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       landingPath: row.landing_path,
       visitors: row.visitors,
     })),
+    paidCampaigns: mergePaidCampaigns(campaignVisitorRows, campaignSignupRows, campaignEventRows),
     paidAccounts: accounts,
     paidAccountsTruncated,
     paidAccountLimit: PAID_ACCOUNT_LIMIT,
