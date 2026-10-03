@@ -5,7 +5,8 @@ import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
-import { hasBillingAccess } from '@/lib/billing';
+import { buildBillingAccessWhereInput, hasBillingAccess } from '@/lib/billing';
+import { listEditedAccountOwnerIds } from '@/lib/account-editors';
 import { API_TOKEN_SCOPES, isApiTokenScope } from '@/lib/api-token-scopes';
 import {
   generateApiToken,
@@ -26,6 +27,37 @@ const tokenSelect = {
   createdAt: true,
 } as const;
 
+/**
+ * Minting a token needs billing access: the caller's own (a paid plan or a running
+ * trial), or that of an account the caller is an editor on, so an editor on a Studio
+ * team can create one without a plan of their own. The owner's plan is not checked:
+ * a non-founding Solo account has no editor but its owner, so in practice this is
+ * Studio, founding and trial accounts. Being a reviewer somewhere counts for nothing.
+ * This gates minting only; every call a token makes still runs the workspace owner's
+ * billing check. Tokens already held can always be listed and revoked.
+ */
+async function canCreateApiToken(userId: string): Promise<boolean> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      subscriptionStatus: true,
+      trialEndsAt: true,
+      stripeCurrentPeriodEnd: true,
+      billingAccessEndedAt: true,
+    },
+  });
+  if (!user) return false;
+  if (hasBillingAccess(user)) return true;
+
+  const ownerIds = (await listEditedAccountOwnerIds(userId)).filter((id) => id !== userId);
+  if (ownerIds.length === 0) return false;
+  const payingOwner = await db.user.findFirst({
+    where: { id: { in: ownerIds }, ...buildBillingAccessWhereInput() },
+    select: { id: true },
+  });
+  return payingOwner !== null;
+}
+
 // GET /api/settings/api-tokens: the signed-in user's tokens, without their secrets
 export async function GET() {
   try {
@@ -34,13 +66,16 @@ export async function GET() {
       return apiErrors.unauthorized();
     }
 
-    const tokens = await db.apiToken.findMany({
-      where: { userId: session.user.id },
-      orderBy: { createdAt: 'desc' },
-      select: tokenSelect,
-    });
+    const [tokens, canCreate] = await Promise.all([
+      db.apiToken.findMany({
+        where: { userId: session.user.id },
+        orderBy: { createdAt: 'desc' },
+        select: tokenSelect,
+      }),
+      canCreateApiToken(session.user.id),
+    ]);
 
-    return withCacheControl(successResponse({ tokens }), 'private, no-store');
+    return withCacheControl(successResponse({ tokens, canCreate }), 'private, no-store');
   } catch (error) {
     logError('Error listing API tokens:', error);
     return apiErrors.internalError('Failed to list API tokens');
@@ -63,19 +98,10 @@ export async function POST(request: NextRequest) {
     }
     const userId = session.user.id;
 
-    // Minting a token needs billing access (a paid plan or a running trial), so a lapsed
-    // account cannot create one. Tokens it already holds can still be listed and revoked.
-    const billing = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        subscriptionStatus: true,
-        trialEndsAt: true,
-        stripeCurrentPeriodEnd: true,
-        billingAccessEndedAt: true,
-      },
-    });
-    if (!billing || !hasBillingAccess(billing)) {
-      return apiErrors.forbidden('Your plan has ended. Renew it to create an API token.');
+    if (!(await canCreateApiToken(userId))) {
+      return apiErrors.forbidden(
+        'Creating an API token needs an active plan of your own or on an account you edit.'
+      );
     }
 
     const body = (await request.json().catch(() => null)) as {

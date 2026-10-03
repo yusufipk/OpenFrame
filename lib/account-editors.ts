@@ -118,3 +118,49 @@ export async function demoteAccountEditors(client: Client, ownerId: string, user
     });
   }
 }
+
+/**
+ * The owners of every account this user is an editor on, by the same rules as
+ * `listAccountEditorIds`. A user who owns a workspace is always an editor of
+ * their own account, so their id comes back too when they own one.
+ */
+export async function listEditedAccountOwnerIds(userId: string, client: Client = db) {
+  const rows = await client.$queryRaw<Array<{ uid: string }>>`
+    SELECT DISTINCT uid FROM (
+      SELECT w."ownerId" AS uid
+      FROM workspaces w
+      WHERE w."ownerId" = ${userId}
+      UNION
+      SELECT w."ownerId"
+      FROM workspace_members wm
+      JOIN workspaces w ON w.id = wm."workspaceId"
+      WHERE wm."userId" = ${userId} AND wm.role = 'ADMIN'
+      UNION
+      SELECT w."ownerId"
+      FROM project_members pm
+      JOIN projects p ON p.id = pm."projectId"
+      JOIN workspaces w ON w.id = p."workspaceId"
+      WHERE pm."userId" = ${userId} AND pm.role = 'ADMIN'
+      UNION
+      SELECT w."ownerId"
+      FROM projects p
+      JOIN workspaces w ON w.id = p."workspaceId"
+      WHERE p."ownerId" = ${userId}
+      UNION
+      SELECT w."ownerId"
+      FROM project_folder_members fm
+      JOIN project_folders f ON f.id = fm."folderId"
+      JOIN projects p ON p.id = f."projectId"
+      JOIN workspaces w ON w.id = p."workspaceId"
+      WHERE fm."userId" = ${userId} AND fm.role = 'ADMIN'
+      UNION
+      SELECT w."ownerId"
+      FROM video_members vm
+      JOIN videos v ON v.id = vm."videoId"
+      JOIN projects p ON p.id = v."projectId"
+      JOIN workspaces w ON w.id = p."workspaceId"
+      WHERE vm."userId" = ${userId} AND vm.role = 'ADMIN'
+    ) owners
+  `;
+  return rows.map((row) => row.uid);
+}

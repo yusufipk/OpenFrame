@@ -31,13 +31,14 @@ function formatDate(value: string | null): string {
 }
 
 /**
- * `canCreate` is false for an account with no paid plan and no running trial. The card then stays hidden
- * unless the account still holds tokens from before, which it can list and revoke.
- * Undefined (billing failed to load) shows the form, and the server's own check has the
- * last word.
+ * The list response says whether this account may create tokens: it may with a plan or
+ * trial of its own, or as an editor on an account that has one. Without that the card
+ * stays hidden unless the account still holds tokens from before, which it can list and
+ * revoke. A failed load shows the form, and the server's own check has the last word.
  */
-export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
+export function ApiTokensCard() {
   const [tokens, setTokens] = useState<ApiTokenRow[]>([]);
+  const [canCreate, setCanCreate] = useState<boolean | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [name, setName] = useState('');
@@ -54,6 +55,7 @@ export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
       const payload = await res.json().catch(() => null);
       if (!res.ok) throw new Error(payload?.error || 'Failed to load API tokens');
       setTokens(payload.data.tokens);
+      setCanCreate(payload.data.canCreate !== false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load API tokens');
       setLoadFailed(true);
@@ -135,8 +137,9 @@ export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
     }
   };
 
-  if (canCreate === false && (!loaded || (tokens.length === 0 && !newToken && !loadFailed)))
-    return null;
+  // Nothing until the list arrives, so an account that cannot create never sees the form flash up.
+  if (!loaded) return null;
+  if (canCreate === false && tokens.length === 0 && !newToken && !loadFailed) return null;
 
   return (
     <Card className="mb-6">
@@ -161,7 +164,8 @@ export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
       <CardContent className="space-y-4">
         {canCreate === false ? (
           <p className="text-sm text-muted-foreground">
-            Renew your plan to create API tokens. You can still revoke the ones below.
+            Creating API tokens needs an active plan of your own or on an account you edit. You can
+            still revoke the ones below.
           </p>
         ) : (
           <form onSubmit={handleCreate} className="space-y-3">
@@ -229,9 +233,7 @@ export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {loadFailed ? null : !loaded ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : tokens.length === 0 ? (
+        {loadFailed ? null : tokens.length === 0 ? (
           <p className="text-sm text-muted-foreground">No tokens yet.</p>
         ) : (
           <ul className="divide-y rounded-md border">
