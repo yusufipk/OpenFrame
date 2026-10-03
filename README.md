@@ -4,28 +4,44 @@ OpenFrame is a fair source video review and approval platform for teams that nee
 
 Prefer not to self-host? You can try OpenFrame at [open-frame.net](https://open-frame.net) with a 7-day free trial that needs no card, then continue on the hosted plan starting at $10.
 
-## Product Screenshot
+## Screenshots
 
-![OpenFrame product screenshot](public/github-readme.jpeg)
+<table>
+  <tr>
+    <td><img src="public/readme/review-rectangle.webp" alt="Timestamped comments with a frame annotation on the video player"></td>
+    <td><img src="public/readme/review-arrow.webp" alt="Drawing an arrow annotation on a frame"></td>
+  </tr>
+  <tr>
+    <td><img src="public/readme/guest-review.webp" alt="A client reviewing through a share link as a guest"></td>
+    <td><img src="public/readme/version-compare.webp" alt="Side-by-side version compare"></td>
+  </tr>
+  <tr>
+    <td><img src="public/readme/project.webp" alt="Project view with videos and versions"></td>
+    <td><img src="public/readme/mobile.webp" alt="Reviewing on a phone"></td>
+  </tr>
+</table>
 
 ## What OpenFrame Covers
 
 OpenFrame is built for video teams that want one system for review, revision, approval, and delivery feedback.
 
 - Timestamped comments directly on the video timeline
-- Voice notes, image attachments, and frame annotations
+- Voice notes, image attachments, and frame annotations with pen, rectangle, ellipse, line and arrow tools
+- [Live review](docs/live-review.md) rooms where everyone watches in sync and draws on the same frame
+- Still image reviews alongside videos
 - Version history with side-by-side compare and per-version subtitle tracks
 - Approval requests and sign-off tracking
 - Share links for client review with optional guest commenting
-- Workspaces, projects, member roles, and invitation flows
+- Workspaces, projects with [nested folders](docs/project-folders.md) and client branding, member roles, and invitation flows
 - Comment tags, resolved states, and CSV/PDF exports
 - Video-linked assets for supporting media and references
 - Email and Telegram notifications
-- URL-based YouTube video intake plus optional direct uploads (Bunny Stream or self-hosted S3)
+- URL-based YouTube video intake, [Google Drive import](docs/google-drive-import.md), and optional direct uploads (Bunny Stream or self-hosted S3)
+- A review page that works on phones
 
 ## Core Workflow
 
-1. Add a video to a project from a YouTube URL or direct upload flow.
+1. Add a video to a project from a YouTube URL, Google Drive, or direct upload flow.
 2. Share a review link with internal collaborators or external stakeholders.
 3. Collect timestamped feedback with text, voice, images, and annotations.
 4. Compare versions, resolve comments, and request approvals.
@@ -36,7 +52,8 @@ OpenFrame is built for video teams that want one system for review, revision, ap
 ### Review Without Guesswork
 
 - Timestamped comments anchor every note to an exact moment in the cut.
-- Reviewers can leave text, voice notes, image attachments, and drawn annotations.
+- Reviewers can leave text, voice notes, image attachments, and drawn annotations, and can discuss and annotate attachments too.
+- Live review rooms keep playback in sync for everyone and share annotations as they are drawn.
 - Comment threads support replies, resolution states, and project-specific tags.
 
 ### Versioning And Comparison
@@ -49,6 +66,7 @@ OpenFrame is built for video teams that want one system for review, revision, ap
 
 - Share links can be configured for view or comment access.
 - Guest review is supported for external stakeholders.
+- Projects can carry a client's color, banner, and logo.
 - Workspaces and projects support member roles, invitations, and scoped access.
 
 ### Approval And Reporting
