@@ -1,6 +1,6 @@
 # The OpenFrame API
 
-A personal API token lets a script, a render machine or an AI agent (Claude Code, Codex and the like) work in OpenFrame without a browser: upload new versions, read and resolve comments, request approvals, share, download. Create one under **Settings → API Tokens** and tick the permissions it needs. It is shown once; store it like a password.
+A personal API token lets a script, a render machine or an AI agent (Claude Code, Codex and the like) work in OpenFrame without a browser: upload new versions, read and resolve comments, request approvals, share, download. On a paid plan or a trial, create one under **Settings → API Tokens** and tick the permissions it needs. It is shown once; store it like a password.
 
 Send it on every call:
 

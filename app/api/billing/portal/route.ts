@@ -48,6 +48,10 @@ async function createPortalSession(
     }
   }
 
+  // The plan, interval and storage changes live in /api/billing/plan and
+  // /api/billing/storage, which ask for the confirmations they need. The Stripe portal
+  // configuration must not allow switching subscription prices: a Studio to Solo switch
+  // made there would land without the editor demotion the in-app flow requires.
   return stripe.billingPortal.sessions.create({
     customer,
     return_url: returnUrl,

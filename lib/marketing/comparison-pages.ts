@@ -5,9 +5,14 @@ import type {
 } from '@/lib/marketing/comparison-types';
 import { competitorProfiles, openFrameProfile } from '@/lib/marketing/comparison-sources';
 
+// The hosted plans as every comparison states them: a flat price per account, never
+// per seat. Reviewers and clients are free on both plans.
+const OPENFRAME_PLAN_PRICING =
+  'Studio $29/mo for unlimited editors, Solo $10/mo for one. No per-seat or guest fees';
+
 const commonOpenFrameWins = [
-  '$10/month flat hosted pricing — no per-member or per-guest fees',
-  '7-day free trial with no credit card, then unlimited collaborators on one plan',
+  'Unlimited editors for $29/month on Studio, one bill for the whole team, no per-seat fees',
+  '7-day free trial with no credit card, and reviewers and clients are always free',
   'Self-host for free with Docker when you need full data control',
   'Voice notes and drawn annotations on the timeline',
   'Formal approval requests with per-reviewer status',
@@ -133,7 +138,7 @@ function competitorPricingRows(competitorId: string): PricingRow[] {
   return [
     {
       label: 'Per-member or guest fees',
-      openframe: '$10/mo flat — no per-seat or guest charges',
+      openframe: OPENFRAME_PLAN_PRICING,
       competitor: profile.pricingSummary,
     },
     {
@@ -201,14 +206,14 @@ export const comparisonPages: ComparisonPageDefinition[] = [
   competitorPage('frame-io-alternative', 'frame-io', {
     title: 'Frame.io Alternative for Small Teams',
     metaDescription:
-      'Compare OpenFrame vs Frame.io for freelancers and small teams. Get timestamped review, approvals, guest links, and self-hosting without per-seat enterprise pricing.',
+      'Compare OpenFrame vs Frame.io for teams and freelancers. Unlimited editors for $29/month, free client reviewers, timestamped review, approvals and self-hosting, without per-seat pricing.',
     keywords: ['frame.io alternative', 'frame io alternative', 'fair source frame.io alternative'],
     headline: 'Frame.io power without the enterprise bill',
     subheadline:
-      'Frame.io is the industry standard for large post teams. OpenFrame gives freelancers and small studios the review workflow they actually need: one link, one timeline, clear approvals, and optional self-hosting.',
+      'Unlimited editors for $29/month, not per seat. OpenFrame gives small studios and freelancers the review workflow they actually need: one link, one timeline, clear approvals, and optional self-hosting.',
     solutionTitle: 'Built for small teams, not studio overhead',
     solutionNarrative:
-      'OpenFrame keeps the parts that save approval time—timestamped comments, voice notes, annotations, version compare, and sign-off tracking—without tying you to per-member pricing or a full creative-ops platform.',
+      'OpenFrame keeps the parts that save approval time (timestamped comments, voice notes, annotations, version compare, and sign-off tracking) without tying you to per-member pricing or a full creative-ops platform. Your whole team uploads on one Studio bill, and clients review for free.',
     openframeWins: [...commonOpenFrameWins, 'Fair-source codebase you can inspect and self-host'],
     competitorWins: [
       'Deep Adobe Premiere, Final Cut, and enterprise media workflows',
@@ -220,6 +225,11 @@ export const comparisonPages: ComparisonPageDefinition[] = [
         question: 'Do clients need a Frame.io account?',
         answer:
           'Not for share-link review. Frame.io supports external reviewers via links without accounts, but internal project management still uses paid member seats.',
+      },
+      {
+        question: 'How much does OpenFrame cost for a team?',
+        answer:
+          'Studio is $29/month ($290/year) for unlimited editors and 1 TB of storage. Solo is $10/month ($96/year) if you are the only one uploading. Reviewers and clients are free on both plans, and you never pay per seat.',
       },
       {
         question: 'Why switch from Frame.io to OpenFrame?',
@@ -303,7 +313,7 @@ export const comparisonPages: ComparisonPageDefinition[] = [
       { label: 'Self-hosted software cost', openframe: 'Free', competitor: 'Not available' },
       {
         label: 'Per-member or guest fees',
-        openframe: '$10/mo flat — no per-seat or guest charges',
+        openframe: OPENFRAME_PLAN_PRICING,
         competitor: 'From $15/member/mo for team seats',
       },
       {
@@ -387,7 +397,7 @@ export const comparisonPages: ComparisonPageDefinition[] = [
     pricingRows: [
       {
         label: 'Per-member or guest fees',
-        openframe: '$10/mo flat — no per-seat or guest charges',
+        openframe: OPENFRAME_PLAN_PRICING,
         competitor: 'Often per-seat or bundled with hosting',
       },
       { label: 'Self-hosted', openframe: 'Free', competitor: 'Rare' },
@@ -464,7 +474,7 @@ export const comparisonPages: ComparisonPageDefinition[] = [
     pricingRows: [
       {
         label: 'Per-member or guest fees',
-        openframe: '$10/mo flat — no per-seat or guest charges',
+        openframe: OPENFRAME_PLAN_PRICING,
         competitor: 'Varies by platform',
       },
       { label: 'Self-hosted', openframe: 'Free', competitor: 'Rare' },
@@ -637,7 +647,6 @@ export const comparisonPages: ComparisonPageDefinition[] = [
       ...commonOpenFrameWins,
       'Formal approval requests and status tracking',
       'Self-host or use managed hosting',
-      '$10/mo flat for the whole team — not per seat',
     ],
     competitorWins: [
       'Best-in-class spoken feedback that auto-structures into notes',
@@ -648,7 +657,7 @@ export const comparisonPages: ComparisonPageDefinition[] = [
     pricingRows: [
       {
         label: 'Team pricing',
-        openframe: '$10/mo flat — unlimited members and guests',
+        openframe: 'Studio $29/mo: unlimited editors and guests',
         competitor: 'Free (1 asset) · Pro $15/user/mo (yearly) · Enterprise from 15 seats',
       },
       {

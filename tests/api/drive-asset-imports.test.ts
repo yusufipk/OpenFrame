@@ -350,6 +350,30 @@ describe('POST /api/videos/[videoId]/assets/drive-import: images', () => {
     expect(await db.videoAsset.count()).toBe(0);
   });
 
+  it('points a member of a full workspace at its owner', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'true');
+    const owner = await createUser();
+    const { project } = await seedProject({ ownerUser: owner });
+    const video = await createVideo({ projectId: project.id });
+    await createUploadReservation({
+      billedUserId: owner.id,
+      sizeBytes: BigInt(3) * BigInt(1024) * BigInt(MIB) - BigInt(1024),
+    });
+    const admin = await createUser();
+    await addProjectMember({ projectId: project.id, userId: admin.id, role: 'ADMIN' });
+    signedInAs(admin);
+
+    const response = await importRequest(video.id, {
+      fileIds: [FILE_ID],
+      accessToken: TOKEN,
+    });
+
+    expect(response.status).toBe(507);
+    expect((await response.json()).code).toBe('STORAGE_LIMIT_EXCEEDED_ASK_OWNER');
+    expect(downloads()).toHaveLength(0);
+    expect(await db.videoAsset.count()).toBe(0);
+  });
+
   it('attaches the files it can and reports the ones it cannot', async () => {
     metadata = (fileId) =>
       fileId === OTHER_FILE_ID

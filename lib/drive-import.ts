@@ -222,7 +222,8 @@ export async function startDriveImport(
     billedUserId,
     declared.sizeBytes,
     UPLOAD_RESERVATION_PURPOSES.DRIVE_IMPORT,
-    DRIVE_IMPORT_RESERVATION_TTL_MS
+    DRIVE_IMPORT_RESERVATION_TTL_MS,
+    input.userId
   );
   if ('error' in reserved) {
     return { ok: false, error: 'Not enough storage left for this file', response: reserved.error };

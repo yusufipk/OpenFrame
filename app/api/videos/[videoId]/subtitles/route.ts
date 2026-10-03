@@ -196,7 +196,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const reserveResult = await reserveStorageQuota(
       billedUserId,
       sizeBytes,
-      UPLOAD_RESERVATION_PURPOSES.SUBTITLE
+      UPLOAD_RESERVATION_PURPOSES.SUBTITLE,
+      undefined,
+      context.viewerUserId
     );
     if ('error' in reserveResult) return reserveResult.error;
     reservationId = reserveResult.reservationId;

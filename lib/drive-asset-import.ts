@@ -195,7 +195,13 @@ export async function importDriveAttachment(
 
   const purpose =
     kind === 'IMAGE' ? UPLOAD_RESERVATION_PURPOSES.IMAGE : UPLOAD_RESERVATION_PURPOSES.AUDIO;
-  const reserved = await reserveStorageQuota(billedUserId, file.sizeBytes, purpose);
+  const reserved = await reserveStorageQuota(
+    billedUserId,
+    file.sizeBytes,
+    purpose,
+    undefined,
+    input.userId
+  );
   if ('error' in reserved) {
     return { ok: false, error: 'Not enough storage left for this file', response: reserved.error };
   }

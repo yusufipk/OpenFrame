@@ -9,6 +9,7 @@ import { POST } from '@/app/api/projects/[projectId]/drive-imports/route';
 import { apiRequest, callRoute, readData, readError } from '../helpers/request';
 import { signedInAs } from '../helpers/session';
 import {
+  addProjectMember,
   createSubscribedUser,
   createUploadReservation,
   createUser,
@@ -258,6 +259,26 @@ describe('POST /api/projects/[projectId]/drive-imports: images become image revi
     const response = await start(project.id, { fileIds: [IMAGE_ID], accessToken: TOKEN });
 
     expect(response.status).toBe(507);
+    expect(r2Send).not.toHaveBeenCalled();
+    expect(await db.video.count()).toBe(0);
+  });
+
+  it('points a member of a full workspace at its owner', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'true');
+    const owner = await createUser();
+    const { project } = await seedProject({ ownerUser: owner });
+    await createUploadReservation({
+      billedUserId: owner.id,
+      sizeBytes: BigInt(3) * BigInt(1024) * BigInt(MIB) - BigInt(10),
+    });
+    const admin = await createUser();
+    await addProjectMember({ projectId: project.id, userId: admin.id, role: 'ADMIN' });
+    signedInAs(admin);
+
+    const response = await start(project.id, { fileIds: [IMAGE_ID], accessToken: TOKEN });
+
+    expect(response.status).toBe(507);
+    expect((await response.json()).code).toBe('STORAGE_LIMIT_EXCEEDED_ASK_OWNER');
     expect(r2Send).not.toHaveBeenCalled();
     expect(await db.video.count()).toBe(0);
   });

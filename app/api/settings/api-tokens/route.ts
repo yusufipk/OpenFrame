@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
+import { hasBillingAccess } from '@/lib/billing';
 import { API_TOKEN_SCOPES, isApiTokenScope } from '@/lib/api-token-scopes';
 import {
   generateApiToken,
@@ -61,6 +62,21 @@ export async function POST(request: NextRequest) {
       return apiErrors.unauthorized();
     }
     const userId = session.user.id;
+
+    // Minting a token needs billing access (a paid plan or a running trial), so a lapsed
+    // account cannot create one. Tokens it already holds can still be listed and revoked.
+    const billing = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        stripeCurrentPeriodEnd: true,
+        billingAccessEndedAt: true,
+      },
+    });
+    if (!billing || !hasBillingAccess(billing)) {
+      return apiErrors.forbidden('Your plan has ended. Renew it to create an API token.');
+    }
 
     const body = (await request.json().catch(() => null)) as {
       name?: unknown;

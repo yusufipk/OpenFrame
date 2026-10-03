@@ -469,6 +469,26 @@ describe('POST /api/projects/[projectId]/drive-imports: batches, billing and des
     expect(bunnyFetchCalls()).toHaveLength(0);
   });
 
+  it('points a member of a full workspace at its owner', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'true');
+    const owner = await createUser();
+    const { project } = await seedProject({ ownerUser: owner });
+    await createUploadReservation({
+      billedUserId: owner.id,
+      sizeBytes: BigInt(3) * BigInt(1024) * BigInt(MIB) - BigInt(MIB / 2),
+    });
+    const admin = await createUser();
+    await addProjectMember({ projectId: project.id, userId: admin.id, role: 'ADMIN' });
+    signedInAs(admin);
+
+    const response = await startRequest(project.id, { fileIds: [FILE_ID], accessToken: TOKEN });
+
+    expect(response.status).toBe(507);
+    expect((await response.json()).code).toBe('STORAGE_LIMIT_EXCEEDED_ASK_OWNER');
+    expect(await db.driveImport.count()).toBe(0);
+    expect(bunnyFetchCalls()).toHaveLength(0);
+  });
+
   it('imports the files it can and reports the ones it cannot', async () => {
     const OTHER = '2ZyXwVuTsRqPoNmLkJiHgFeDc';
     stubs.driveMetadata = (fileId) =>

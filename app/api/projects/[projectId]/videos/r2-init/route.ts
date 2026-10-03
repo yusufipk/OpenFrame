@@ -138,7 +138,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const quotaError = await enforceStorageQuota(
       project.workspace.ownerId,
-      sizeBytes + THUMBNAIL_RESERVE_BYTES
+      sizeBytes + THUMBNAIL_RESERVE_BYTES,
+      session.user.id
     );
     if (quotaError) return quotaError;
 
@@ -146,7 +147,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       project.workspace.ownerId,
       sizeBytes + THUMBNAIL_RESERVE_BYTES,
       UPLOAD_RESERVATION_PURPOSES.R2_VIDEO,
-      VIDEO_RESERVATION_TTL_MS
+      VIDEO_RESERVATION_TTL_MS,
+      session.user.id
     );
     if ('error' in reserveResult) return reserveResult.error;
 

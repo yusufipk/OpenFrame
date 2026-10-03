@@ -140,7 +140,9 @@ async function handlePost(request: NextRequest) {
     const reserveResult = await reserveStorageQuota(
       workspaceOwnerId,
       BigInt(file.size),
-      UPLOAD_RESERVATION_PURPOSES.AUDIO
+      UPLOAD_RESERVATION_PURPOSES.AUDIO,
+      undefined,
+      session?.user?.id ?? null
     );
     if ('error' in reserveResult) return reserveResult.error;
     const reservationId = reserveResult.reservationId;

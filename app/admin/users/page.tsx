@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
-import { Prisma, BillingSubscriptionStatus } from '@prisma/client';
+import { Prisma, BillingSubscriptionStatus, BillingInterval, BillingPlan } from '@prisma/client';
+import { PLAN_DEFINITIONS, isFoundingAccount } from '@/lib/billing-plans';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { isBunnyUploadsFeatureEnabled, isStripeBillingEnabled } from '@/lib/feature-flags';
@@ -10,6 +11,7 @@ import {
   getBillingStatusLabel,
   getEffectiveBillingStatus,
   hasBillingAccess,
+  isPaidTier,
 } from '@/lib/billing';
 import { redirect } from 'next/navigation';
 import {
@@ -292,6 +294,30 @@ function getUsersOrderBy(
   return [createdAtTieBreaker];
 }
 
+/** Plan and quota as the admin list shows them: base plus add-on blocks. */
+function describePlan(
+  user: {
+    subscriptionStatus: BillingSubscriptionStatus;
+    stripeCurrentPeriodEnd: Date | null;
+    billingAccessEndedAt: Date | null;
+    billingPlan: BillingPlan;
+    billingInterval: BillingInterval;
+    storageBlocks: number;
+    stripeSubscriptionId: string | null;
+    foundingSubscriptionId: string | null;
+  },
+  now: Date
+) {
+  if (!isPaidTier(user, now)) return { label: '-', quota: '3 GB (trial)' };
+  const founding = isFoundingAccount(user);
+  const name = founding ? 'Founding' : PLAN_DEFINITIONS[user.billingPlan].label;
+  const base = user.billingPlan === 'STUDIO' ? '1 TB' : '200 GB';
+  return {
+    label: `${name}${user.billingInterval === 'YEAR' ? ' (yearly)' : ''}`,
+    quota: user.storageBlocks > 0 ? `${base} + ${user.storageBlocks} x 100 GB` : base,
+  };
+}
+
 export default async function AdminUsersPage({
   searchParams,
 }: {
@@ -398,6 +424,11 @@ export default async function AdminUsersPage({
     stripeCancelAtPeriodEnd: true,
     stripeCancelAt: true,
     billingAccessEndedAt: true,
+    billingPlan: true,
+    billingInterval: true,
+    storageBlocks: true,
+    stripeSubscriptionId: true,
+    foundingSubscriptionId: true,
     ownedWorkspaces: {
       select: {
         _count: {
@@ -428,6 +459,11 @@ export default async function AdminUsersPage({
     stripeCancelAtPeriodEnd: boolean;
     stripeCancelAt: Date | null;
     billingAccessEndedAt: Date | null;
+    billingPlan: BillingPlan;
+    billingInterval: BillingInterval;
+    storageBlocks: number;
+    stripeSubscriptionId: string | null;
+    foundingSubscriptionId: string | null;
     ownedWorkspaces: Array<{ _count: { members: number } }>;
     _count: { ownedWorkspaces: number; projects: number; comments: number };
     invitedMembersCount: number;
@@ -688,6 +724,8 @@ export default async function AdminUsersPage({
                       </Link>
                     </TableHead>
                   )}
+                  {stripeBillingEnabled && <TableHead>Plan</TableHead>}
+                  {stripeBillingEnabled && <TableHead>Quota</TableHead>}
                   <TableHead>
                     <Link
                       href={buildSortHref('joinedDate')}
@@ -794,7 +832,7 @@ export default async function AdminUsersPage({
                 {paginatedUsers.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={stripeBillingEnabled ? 11 : 10}
+                      colSpan={stripeBillingEnabled ? 13 : 10}
                       className="h-24 text-center"
                     >
                       {hasActiveFilters ? 'No users match these filters.' : 'No users found.'}
@@ -837,6 +875,20 @@ export default async function AdminUsersPage({
                                 )}
                               </div>
                             </TableCell>
+                          );
+                        })()}
+                      {stripeBillingEnabled &&
+                        (() => {
+                          const plan = describePlan(user, now);
+                          return (
+                            <>
+                              <TableCell className="text-sm whitespace-nowrap">
+                                {plan.label}
+                              </TableCell>
+                              <TableCell className="text-sm whitespace-nowrap">
+                                {plan.quota}
+                              </TableCell>
+                            </>
                           );
                         })()}
                       <TableCell>{format(new Date(user.createdAt), 'MMM dd, yyyy')}</TableCell>

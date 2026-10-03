@@ -106,7 +106,7 @@ export class Seed {
 
   /**
    * A user whose trial ran out and who has no subscription, so
-   * hasBillingAccess() is false and /settings offers `Upgrade with Stripe`.
+   * hasBillingAccess() is false and /settings offers the plans.
    * `billingTrialConsumedAt` is set because the trial is once per account and
    * this one has had it.
    */

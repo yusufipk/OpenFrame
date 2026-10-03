@@ -96,7 +96,9 @@ export async function storeImageReview(
     const reservation = await reserveStorageQuota(
       reservedOwnerId,
       BigInt(bytes.length + thumbnailBytes.length),
-      UPLOAD_RESERVATION_PURPOSES.IMAGE
+      UPLOAD_RESERVATION_PURPOSES.IMAGE,
+      undefined,
+      input.userId
     );
     if ('error' in reservation) return { response: reservation.error };
     reservationId = reservation.reservationId;

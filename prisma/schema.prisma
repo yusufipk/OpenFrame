@@ -32,6 +32,24 @@ model User {
   stripeCancelAt DateTime?
   billingAccessEndedAt DateTime?
   subscriptionStatus BillingSubscriptionStatus @default(FREE)
+  // Mirrored from the plan and storage items of the authoritative Stripe subscription.
+  billingPlan BillingPlan @default(SOLO)
+  billingInterval BillingInterval @default(MONTH)
+  storageBlocks Int @default(0)
+  // The next phase of the subscription's Stripe schedule, applied by Stripe at the period end.
+  pendingBillingPlan BillingPlan?
+  pendingBillingInterval BillingInterval?
+  pendingStorageBlocks Int?
+  pendingChangeAt DateTime?
+  // Who the owner was shown when agreeing to Solo's one-editor limit; display only.
+  // The limit itself is enforced by the Stripe sync on every active Solo subscription.
+  pendingEditorDemotions String[] @default([])
+  // Set on subscriptions that predate the two plans. Holds only while that same
+  // subscription is the one being synced and it stays on Solo.
+  foundingSubscriptionId String?
+  // While set and in the future, a plan, storage or cancellation change is being made for
+  // this account; a second one is turned away rather than built on a stale read.
+  billingChangeLockedUntil DateTime?
   // When false, deleting a project asks for a plain confirmation instead of the typed name.
   requireProjectDeleteNameConfirmation Boolean @default(true)
 
@@ -88,6 +106,16 @@ model ApiToken {
 
   @@index([userId])
   @@map("api_tokens")
+}
+
+enum BillingPlan {
+  SOLO
+  STUDIO
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
 }
 
 enum BillingSubscriptionStatus {

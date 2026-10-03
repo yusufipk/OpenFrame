@@ -5,6 +5,7 @@ import { acceptInvitationTokenForUser, getInvitationPreviewByToken } from '@/lib
 import { isInvitationPreviewAllowed } from '@/lib/invitation-preview-limit';
 import {
   InvitationAccountMismatch,
+  InvitationEditorLimit,
   InvitationLanding,
   InvitationRateLimited,
 } from './invitation-landing';
@@ -91,6 +92,10 @@ export default async function InvitationAcceptPage({ searchParams }: InvitationA
         signedInEmail={userEmail}
       />
     );
+  }
+
+  if (result === 'editor_limit') {
+    return <InvitationEditorLimit />;
   }
 
   if (result === 'not_found' && invitation?.status === 'ACCEPTED') {

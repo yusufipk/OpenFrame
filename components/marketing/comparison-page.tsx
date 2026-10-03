@@ -39,8 +39,9 @@ export function ComparisonPage({ page, isLoggedIn }: ComparisonPageProps) {
                 {page.subheadline}
               </p>
               <p className="mt-4 max-w-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground/90 md:text-base">
-                <span className="font-medium text-primary">No per-member or guest fees.</span> One
-                $10/month hosted plan covers your whole team and every client reviewer link.
+                <span className="font-medium text-primary">Unlimited editors for $29/month.</span>{' '}
+                Studio covers your whole team on one bill, and Solo is $10/month if you edit alone.
+                Reviewers and clients never pay.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <CtaLink
@@ -144,9 +145,9 @@ export function ComparisonPage({ page, isLoggedIn }: ComparisonPageProps) {
                 Pricing comparison
               </h2>
               <p className="mt-3 max-w-3xl text-sm text-muted-foreground md:text-base">
-                OpenFrame is $10/month flat with a 7-day free trial that never asks for a card. You
-                do not pay per team member, collaborator, or guest reviewer. Self-hosting is free
-                with Docker.
+                Studio is $29/month for unlimited editors and Solo is $10/month for one, both after
+                a 7-day free trial that never asks for a card. You do not pay per seat, and
+                reviewers and guests are always free. Self-hosting is free with Docker.
               </p>
             </div>
             <PricingComparison
