@@ -7,6 +7,7 @@ import { buildCardlessTrialWhereInput } from '@/lib/billing';
 import { getPlanPriceId, getStoragePriceId } from '@/lib/billing-plans';
 import { getStripe } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
+import { COUNTED_USER } from '@/lib/stats-exclusion';
 
 const BUNNY_API_BASE = 'https://video.bunnycdn.com';
 const STORAGE_CACHE_SECONDS = 120;
@@ -547,6 +548,8 @@ export interface StripeStats {
 }
 
 const STRIPE_STATS_CACHE_SECONDS = 300;
+/** Expired when an account is excluded or included, so the change shows at once. */
+export const STRIPE_STATS_CACHE_TAG = 'admin-stripe-stats';
 
 export const getCachedStripeStats = unstable_cache(
   async (): Promise<StripeStats | null> => {
@@ -560,9 +563,10 @@ export const getCachedStripeStats = unstable_cache(
       const [statusCounts, cardlessTrialUsers] = await Promise.all([
         db.user.groupBy({
           by: ['subscriptionStatus'],
+          where: COUNTED_USER,
           _count: { id: true },
         }),
-        db.user.count({ where: buildCardlessTrialWhereInput(now) }),
+        db.user.count({ where: { AND: [COUNTED_USER, buildCardlessTrialWhereInput(now)] } }),
       ]);
 
       const counts: Record<string, number> = {};
@@ -593,7 +597,7 @@ export const getCachedStripeStats = unstable_cache(
       try {
         const activeRows = await db.user.groupBy({
           by: ['billingPlan', 'billingInterval'],
-          where: { subscriptionStatus: 'ACTIVE' },
+          where: { ...COUNTED_USER, subscriptionStatus: 'ACTIVE' },
           _count: { id: true },
           _sum: { storageBlocks: true },
         });
@@ -641,5 +645,5 @@ export const getCachedStripeStats = unstable_cache(
     }
   },
   ['admin-stripe-stats'],
-  { revalidate: STRIPE_STATS_CACHE_SECONDS }
+  { revalidate: STRIPE_STATS_CACHE_SECONDS, tags: [STRIPE_STATS_CACHE_TAG] }
 );

@@ -52,6 +52,9 @@ model User {
   billingChangeLockedUntil DateTime?
   // When false, deleting a project asks for a plain confirmation instead of the typed name.
   requireProjectDeleteNameConfirmation Boolean @default(true)
+  // Set by an admin for internal and test accounts. The account works as usual but is left
+  // out of the admin dashboard, the growth scoreboard and the cancellation answers.
+  excludedFromStats Boolean @default(false)
 
   // Relations
   accounts           Account[]
