@@ -856,8 +856,9 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
       )}
 
       {/* Outside the billing-only gate: someone whose plan lapsed still has to be
-          able to revoke a token, which would work again the day they resubscribe. */}
-      <ApiTokensCard canCreate={billing?.subscription.isPaid} />
+          able to revoke a token, which would work again the day they resubscribe.
+          Waits for billing so an unpaid account never sees the form flash up. */}
+      {!billingLoading && <ApiTokensCard canCreate={billing?.subscription.hasBillingAccess} />}
 
       {!billingOnly && (
         <>

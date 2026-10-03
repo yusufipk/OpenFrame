@@ -31,9 +31,10 @@ function formatDate(value: string | null): string {
 }
 
 /**
- * `canCreate` is false for an account without a paid plan, which may still list and
- * revoke the tokens it has. Undefined (billing still loading or failed to load) shows the
- * form, and the server's own check has the last word.
+ * `canCreate` is false for an account with no paid plan and no running trial. The card then stays hidden
+ * unless the account still holds tokens from before, which it can list and revoke.
+ * Undefined (billing failed to load) shows the form, and the server's own check has the
+ * last word.
  */
 export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
   const [tokens, setTokens] = useState<ApiTokenRow[]>([]);
@@ -134,6 +135,9 @@ export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
     }
   };
 
+  if (canCreate === false && (!loaded || (tokens.length === 0 && !newToken && !loadFailed)))
+    return null;
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -157,7 +161,7 @@ export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
       <CardContent className="space-y-4">
         {canCreate === false ? (
           <p className="text-sm text-muted-foreground">
-            API tokens are part of a paid plan. Choose a plan to create one.
+            Renew your plan to create API tokens. You can still revoke the ones below.
           </p>
         ) : (
           <form onSubmit={handleCreate} className="space-y-3">
