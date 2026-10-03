@@ -88,6 +88,109 @@ function followPendingPayment(result: ApiOutcome) {
   return false;
 }
 
+/** What a change made now will cost, from CHARGE_CONFIRMATION_REQUIRED. */
+interface ChargeOffer {
+  amountDueCents: number;
+  currency: string;
+  prorationDate: number;
+  renewsAt: string | null;
+}
+
+function readChargeOffer(result: ApiOutcome): ChargeOffer | null {
+  if (result.code !== 'CHARGE_CONFIRMATION_REQUIRED' || !result.details) return null;
+  const amountDueCents = Number(result.details.amountDueCents?.[0]);
+  const prorationDate = Number(result.details.prorationDate?.[0]);
+  if (!Number.isSafeInteger(amountDueCents) || !Number.isSafeInteger(prorationDate)) return null;
+  return {
+    amountDueCents,
+    currency: result.details.currency?.[0] || 'usd',
+    prorationDate,
+    renewsAt: result.details.renewsAt?.[0] ?? null,
+  };
+}
+
+// A fixed locale, so the amount reads like the list prices beside it ($29/mo).
+function formatMoney(cents: number, currency: string) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
+}
+
+/** The part of an offer the server needs back to go ahead. */
+function confirmationOf(offer: ChargeOffer) {
+  return { amountDueCents: offer.amountDueCents, prorationDate: offer.prorationDate };
+}
+
+/**
+ * Shows what a change made now will charge, before anything is charged. The server
+ * refuses the change until the request echoes this exact amount back.
+ */
+function ChargeConfirmDialog({
+  offer,
+  notice,
+  summary,
+  renewal,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  offer: ChargeOffer | null;
+  /** Why the amount is being asked for again, when it is. */
+  notice: string | null;
+  summary: string;
+  renewal: string | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const amount = offer ? formatMoney(offer.amountDueCents, offer.currency) : '';
+  return (
+    // Not closable while the payment is under way: closing would look like a cancel.
+    <Dialog open={offer !== null} onOpenChange={(open) => !open && !busy && onCancel()}>
+      <DialogContent showCloseButton={!busy}>
+        <DialogHeader>
+          <DialogTitle>Confirm payment</DialogTitle>
+          <DialogDescription>{summary}</DialogDescription>
+        </DialogHeader>
+        {offer ? (
+          <div className="space-y-2 text-sm">
+            {notice ? <p className="text-amber-700 dark:text-amber-400">{notice}</p> : null}
+            <p>
+              {offer.amountDueCents > 0 ? (
+                <>
+                  <span className="font-semibold">{amount}</span> will be charged to your card on
+                  file now. It is prorated: the rest of the current period, minus credit for the
+                  unused time on what you have today.
+                </>
+              ) : (
+                'Nothing is charged now: your credit or discount covers it.'
+              )}
+            </p>
+            {offer.renewsAt && renewal ? (
+              <p className="text-muted-foreground">
+                After that it renews on {new Date(offer.renewsAt).toLocaleDateString()} at {renewal}
+                , before any discount.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} disabled={busy}>
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : offer && offer.amountDueCents > 0 ? (
+              `Pay ${amount}`
+            ) : (
+              'Confirm'
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const PLAN_LABEL: Record<PlanName, string> = { SOLO: 'Solo', STUDIO: 'Studio' };
 const PLAN_HEADLINE: Record<PlanName, string> = {
   SOLO: 'You edit, your clients review',
@@ -290,6 +393,13 @@ export function PlanChangePanel({
     interval: IntervalName;
   } | null>(null);
   const [foundingConfirm, setFoundingConfirm] = useState<IntervalName | null>(null);
+  const [charge, setCharge] = useState<{
+    offer: ChargeOffer;
+    notice: string | null;
+    plan: PlanName;
+    interval: IntervalName;
+    extra: { acknowledgeFoundingLoss?: boolean };
+  } | null>(null);
 
   const submit = useCallback(
     async (
@@ -299,6 +409,7 @@ export function PlanChangePanel({
         confirmDemotions?: string[];
         acknowledgeFoundingLoss?: boolean;
         confirmBelowUsage?: boolean;
+        confirmCharge?: { amountDueCents: number; prorationDate: number };
       } = {}
     ) => {
       setBusy(true);
@@ -318,6 +429,7 @@ export function PlanChangePanel({
       if (result.ok) {
         setDemotion(null);
         setFoundingConfirm(null);
+        setCharge(null);
         onMessage(
           'success',
           result.data?.effective === 'period_end' && result.data.effectiveAt
@@ -340,6 +452,20 @@ export function PlanChangePanel({
         setFoundingConfirm(interval);
         return;
       }
+      const offer = readChargeOffer(result);
+      if (offer) {
+        setFoundingConfirm(null);
+        setCharge({
+          offer,
+          // A confirmed request asked again: say why rather than just changing the number.
+          notice: extra.confirmCharge ? (result.error ?? null) : null,
+          plan,
+          interval,
+          extra: { acknowledgeFoundingLoss: extra.acknowledgeFoundingLoss },
+        });
+        return;
+      }
+      setCharge(null);
       if (result.code === 'STORAGE_BELOW_USAGE') return;
       if (followPendingPayment(result)) return;
       onMessage('error', result.error || 'Failed to change the plan');
@@ -531,6 +657,35 @@ export function PlanChangePanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ChargeConfirmDialog
+        offer={charge?.offer ?? null}
+        notice={charge?.notice ?? null}
+        summary={
+          charge
+            ? charge.plan === plan
+              ? `Switch to ${PLAN_LABEL[plan]}, billed ${charge.interval === 'YEAR' ? 'yearly' : 'monthly'}.`
+              : `Upgrade to ${PLAN_LABEL[charge.plan]}, billed ${charge.interval === 'YEAR' ? 'yearly' : 'monthly'}.`
+            : ''
+        }
+        renewal={
+          charge
+            ? `${formatDollars(
+                overview.prices[charge.plan][charge.interval] +
+                  overview.storageBlocks * overview.prices.storage[charge.interval]
+              )}/${per(charge.interval)}`
+            : null
+        }
+        busy={busy}
+        onCancel={() => setCharge(null)}
+        onConfirm={() =>
+          charge &&
+          submit(charge.plan, charge.interval, {
+            ...charge.extra,
+            confirmCharge: confirmationOf(charge.offer),
+          })
+        }
+      />
     </div>
   );
 }
@@ -555,6 +710,8 @@ export function ExtraStorageRow({
   const [blocks, setBlocks] = useState(current);
   const [busy, setBusy] = useState(false);
   const [belowUsage, setBelowUsage] = useState(false);
+  const [charge, setCharge] = useState<ChargeOffer | null>(null);
+  const [chargeNotice, setChargeNotice] = useState<string | null>(null);
 
   const blockBytes = Number(overview.storageBlockBytes);
   const baseBytes = Number(overview.baseStorageBytes);
@@ -567,13 +724,19 @@ export function ExtraStorageRow({
   const wouldBeBelowUsage = usedBytes !== null && Number(usedBytes) >= newLimit;
 
   const apply = useCallback(
-    async (confirmBelowUsage = false) => {
+    async (confirmBelowUsage = false, confirmed: ChargeOffer | null = null) => {
       setBusy(true);
       const result = await callBilling('/api/billing/storage', 'POST', {
         blocks,
         confirmBelowUsage,
+        ...(confirmed ? { confirmCharge: confirmationOf(confirmed) } : {}),
       });
       setBusy(false);
+      const offer = readChargeOffer(result);
+      setCharge(offer);
+      // A confirmed request asked again: say why rather than just changing the number.
+      setChargeNotice(offer && confirmed ? (result.error ?? null) : null);
+      if (offer) return;
       if (result.ok) {
         setBelowUsage(false);
         onMessage(
@@ -696,6 +859,17 @@ export function ExtraStorageRow({
           </Button>
         </div>
       ) : null}
+      <ChargeConfirmDialog
+        offer={charge}
+        notice={chargeNotice}
+        summary={`Add ${blocks - overview.storageBlocks} × 100 GB of storage, for a total quota of ${formatGigabytes(newLimit)}.`}
+        renewal={`${formatDollars(
+          overview.prices[overview.plan][overview.interval] + blocks * blockPrice
+        )}/${per(overview.interval)} for your plan and extra storage`}
+        busy={busy}
+        onCancel={() => setCharge(null)}
+        onConfirm={() => apply(false, charge)}
+      />
     </div>
   );
 }

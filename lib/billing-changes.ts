@@ -3,7 +3,10 @@
 // Anything that gives the customer more (a block added, Solo to Studio, monthly to
 // yearly) is applied to the subscription immediately and invoiced on the spot with
 // proration; if that payment fails or needs the bank's confirmation, the update waits
-// on an open invoice and nothing is granted until it is paid. Anything that gives less (fewer blocks, Studio to Solo, yearly to monthly)
+// on an open invoice and nothing is granted until it is paid. Nothing is charged until
+// the customer has seen the amount: the first request only previews the invoice and
+// answers CHARGE_CONFIRMATION_REQUIRED, and the confirmed request repeats the preview
+// at the same proration time and goes ahead only when the amount is still the same. Anything that gives less (fewer blocks, Studio to Solo, yearly to monthly)
 // waits for the end of the paid period, expressed as the next phase of a Stripe
 // subscription schedule. Stripe applies it, the webhook syncs it, and the account
 // keeps what it paid for until then.
@@ -50,6 +53,14 @@ export type BillingChangeError =
       editors: Array<{ id: string; name: string | null; email: string | null }>;
     }
   | { code: 'FOUNDING_ACKNOWLEDGEMENT_REQUIRED'; message: string }
+  | {
+      code: 'CHARGE_CONFIRMATION_REQUIRED';
+      message: string;
+      amountDueCents: number;
+      currency: string;
+      prorationDate: number;
+      renewsAt: Date | null;
+    }
   | { code: 'PAYMENT_FAILED'; message: string }
   | { code: 'PAYMENT_ACTION_REQUIRED'; message: string; invoiceUrl: string | null };
 
@@ -73,6 +84,13 @@ const ACCOUNT_SELECT = {
 } as const;
 
 type Target = { plan: BillingPlan; interval: BillingInterval; storageBlocks: number };
+
+/** What the customer agreed to pay, as shown to them by CHARGE_CONFIRMATION_REQUIRED. */
+export type ChargeConfirmation = { amountDueCents: number; prorationDate: number };
+
+// A confirmation older than this is previewed again rather than honoured, so a stale
+// page cannot pick a proration time from long ago.
+const CHARGE_CONFIRMATION_MAX_AGE_SECONDS = 15 * 60;
 
 function fail(error: BillingChangeError): BillingChangeResult {
   return { ok: false, error };
@@ -162,11 +180,15 @@ function itemsFor(target: Target): Array<{ price: string; quantity: number }> | 
   return items;
 }
 
-/** Applies a change now, invoicing the prorated difference immediately. */
+/**
+ * Applies a change now, invoicing the prorated difference immediately. Without a
+ * matching `charge` it only previews that invoice and asks for confirmation.
+ */
 async function applyNow(
   subscription: Stripe.Subscription,
   current: NonNullable<ReturnType<typeof readSubscriptionPlanItems>>,
-  target: Target
+  target: Target,
+  charge: ChargeConfirmation | undefined
 ): Promise<BillingChangeResult> {
   const planPrice = getPlanPriceId(target.plan, target.interval);
   const storagePrice = target.storageBlocks > 0 ? getStoragePriceId(target.interval) : null;
@@ -193,6 +215,63 @@ async function applyNow(
     return fail({ code: 'INVALID', message: 'Nothing to change.' });
   }
 
+  const now = Math.floor(Date.now() / 1000);
+  // A confirmation is honoured only at a time inside the period that is running now,
+  // so a renewal in between cannot price it across two periods.
+  const periodStart = Math.max(
+    0,
+    ...subscription.items.data.map((item) => item.current_period_start ?? 0)
+  );
+  let confirmedAt =
+    charge &&
+    charge.prorationDate <= now &&
+    // A period start ahead of this clock is Stripe's clock running ahead; Stripe then
+    // refuses the preview itself, which is handled below.
+    (periodStart > now || charge.prorationDate >= periodStart) &&
+    now - charge.prorationDate <= CHARGE_CONFIRMATION_MAX_AGE_SECONDS
+      ? charge.prorationDate
+      : null;
+  const previewAt = (prorationDate: number) =>
+    getStripe().invoices.createPreview({
+      customer:
+        typeof subscription.customer === 'string'
+          ? subscription.customer
+          : subscription.customer.id,
+      subscription: subscription.id,
+      subscription_details: {
+        items,
+        proration_behavior: 'always_invoice',
+        proration_date: prorationDate,
+      },
+    });
+  let preview: Stripe.Invoice;
+  try {
+    preview = await previewAt(confirmedAt ?? now);
+  } catch (error) {
+    // Stripe can refuse a confirmed time that no longer suits the subscription; the
+    // customer is shown the price as of now instead of an error.
+    if (confirmedAt === null || !isStripeInvalidRequest(error)) throw error;
+    confirmedAt = null;
+    preview = await previewAt(now);
+  }
+  if (confirmedAt === null || preview.amount_due !== charge!.amountDueCents) {
+    // The latest period end among the invoice lines is when the changed subscription
+    // renews: the end of the current period, or a new one when the interval grows.
+    const renewsAt = Math.max(0, ...preview.lines.data.map((line) => line.period?.end ?? 0));
+    return fail({
+      code: 'CHARGE_CONFIRMATION_REQUIRED',
+      message: !charge
+        ? 'Confirm the amount that will be charged now.'
+        : confirmedAt === null
+          ? 'That confirmation has expired. Check the amount and confirm again.'
+          : 'The amount for this change has changed. Check it and confirm again.',
+      amountDueCents: preview.amount_due,
+      currency: preview.currency,
+      prorationDate: confirmedAt ?? now,
+      renewsAt: renewsAt ? new Date(renewsAt * 1000) : null,
+    });
+  }
+
   // A schedule left attached after its last change landed would write its stored items
   // back over this one at its next phase boundary, so it is let go first. Callers
   // refuse an immediate change while a change is still pending, so nothing is lost.
@@ -204,6 +283,8 @@ async function applyNow(
     updated = await getStripe().subscriptions.update(subscription.id, {
       items,
       proration_behavior: 'always_invoice',
+      // The time the confirmed preview was priced at, so the invoice matches it.
+      proration_date: confirmedAt,
       // Nothing changes until the prorated invoice is paid. A charge that fails or
       // needs the bank's confirmation (3D Secure) leaves the update pending on an open
       // invoice the customer can pay, rather than granting it unpaid or refusing it
@@ -255,13 +336,7 @@ async function refuseIfChangedMeanwhile(
   error: unknown,
   { withSchedule }: { withSchedule: boolean }
 ): Promise<BillingChangeResult> {
-  if (
-    typeof error !== 'object' ||
-    error === null ||
-    (error as { type?: string }).type !== 'StripeInvalidRequestError'
-  ) {
-    throw error;
-  }
+  if (!isStripeInvalidRequest(error)) throw error;
   const fresh = await getStripe().subscriptions.retrieve(subscription.id);
   if (itemsSignature(fresh, withSchedule) === itemsSignature(subscription, withSchedule)) {
     throw error;
@@ -271,6 +346,14 @@ async function refuseIfChangedMeanwhile(
     message: 'Another change to this subscription was just made. Refresh the page to see it.',
     pendingChangeAt: null,
   });
+}
+
+function isStripeInvalidRequest(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { type?: string }).type === 'StripeInvalidRequestError'
+  );
 }
 
 function isStripeCardError(error: unknown) {
@@ -512,7 +595,7 @@ async function syncAfter(customerId: string, result: BillingChangeResult) {
 export async function changeStorageBlocks(
   userId: string,
   requestedBlocks: number,
-  options: { confirmBelowUsage?: boolean } = {}
+  options: { confirmBelowUsage?: boolean; confirmCharge?: ChargeConfirmation } = {}
 ): Promise<BillingChangeResult> {
   if (!Number.isSafeInteger(requestedBlocks) || requestedBlocks < 0) {
     return fail({ code: 'INVALID', message: 'Choose a whole number of storage blocks.' });
@@ -528,7 +611,7 @@ export async function changeStorageBlocks(
 async function changeStorageBlocksLocked(
   userId: string,
   requestedBlocks: number,
-  options: { confirmBelowUsage?: boolean }
+  options: { confirmBelowUsage?: boolean; confirmCharge?: ChargeConfirmation }
 ): Promise<BillingChangeResult> {
   const loaded = await loadChangeable(userId);
   if ('error' in loaded) return fail(loaded.error!);
@@ -554,7 +637,12 @@ async function changeStorageBlocksLocked(
     if (pending) return pendingRefusal(subscription);
     return syncAfter(
       user.stripeCustomerId!,
-      await applyNow(subscription, items, { ...base, storageBlocks: requestedBlocks })
+      await applyNow(
+        subscription,
+        items,
+        { ...base, storageBlocks: requestedBlocks },
+        options.confirmCharge
+      )
     );
   }
 
@@ -615,6 +703,7 @@ type PlanChangeRequest = {
   confirmDemotions?: string[];
   acknowledgeFoundingLoss?: boolean;
   confirmBelowUsage?: boolean;
+  confirmCharge?: ChargeConfirmation;
 };
 
 async function changePlanLocked(
@@ -658,7 +747,7 @@ async function changePlanLocked(
 
   if (immediate) {
     if (pending) return pendingRefusal(subscription);
-    const result = await applyNow(subscription, items, target);
+    const result = await applyNow(subscription, items, target, request.confirmCharge);
     if (result.ok) {
       await db.user.update({
         where: { id: userId },

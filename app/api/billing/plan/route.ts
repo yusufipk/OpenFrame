@@ -8,7 +8,7 @@ import { isStripeConfigured } from '@/lib/stripe';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
 import { cancelPendingChange, changePlan } from '@/lib/billing-changes';
-import { billingChangeResponse } from '@/lib/billing-change-response';
+import { billingChangeResponse, readChargeConfirmation } from '@/lib/billing-change-response';
 
 async function guard(request: NextRequest) {
   const limited = await rateLimit(request, 'mutate');
@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
       confirmDemotions: body.confirmDemotions,
       acknowledgeFoundingLoss: body.acknowledgeFoundingLoss === true,
       confirmBelowUsage: body.confirmBelowUsage === true,
+      confirmCharge: readChargeConfirmation(body.confirmCharge),
     });
     return billingChangeResponse(result);
   } catch (error) {

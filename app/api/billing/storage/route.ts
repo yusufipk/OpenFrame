@@ -7,7 +7,7 @@ import { isStripeConfigured } from '@/lib/stripe';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
 import { changeStorageBlocks } from '@/lib/billing-changes';
-import { billingChangeResponse } from '@/lib/billing-change-response';
+import { billingChangeResponse, readChargeConfirmation } from '@/lib/billing-change-response';
 
 // POST /api/billing/storage - Set the number of 100 GB storage blocks
 export async function POST(request: NextRequest) {
@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
 
     const result = await changeStorageBlocks(session.user.id, blocks, {
       confirmBelowUsage: body?.confirmBelowUsage === true,
+      confirmCharge: readChargeConfirmation(body?.confirmCharge),
     });
     return billingChangeResponse(result);
   } catch (error) {
