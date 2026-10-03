@@ -249,4 +249,14 @@ describe('withCacheControl', () => {
 
     expect(response.headers.get('Cache-Control')).toBe('public, max-age=300');
   });
+
+  it('copies a response whose headers are immutable instead of throwing', () => {
+    const response = Response.redirect('https://example.com/login', 302);
+
+    const returned = withCacheControl(response, 'private, no-store');
+
+    expect(returned.status).toBe(302);
+    expect(returned.headers.get('Location')).toBe('https://example.com/login');
+    expect(returned.headers.get('Cache-Control')).toBe('private, no-store');
+  });
 });

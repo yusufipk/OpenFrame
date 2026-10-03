@@ -39,6 +39,14 @@ const ERROR_MESSAGES: Record<string, string> = {
     'Your OAuth account email is not verified. Please verify it with your provider and try again.',
   InvalidVerificationToken: 'The verification link is invalid or has expired.',
   VerificationFailed: 'Email verification failed. Please try again.',
+  // Mostly a browser that did not send back the sign-in cookie on the way back
+  // from Google or GitHub, which Auth.js reports under this name.
+  Configuration:
+    "Sign-in couldn't be completed. Please try again in this same window. If it keeps happening, clear this site's cookies or try a private window.",
+  CredentialsSignin: 'Invalid email or password.',
+  MissingCSRF: 'Your sign-in form expired. Please reload the page and try again.',
+  AccessDenied: 'Sign-in was denied. Please try a different method or contact support.',
+  Verification: 'The sign-in link is invalid or has expired.',
   Default: 'Something went wrong. Please try again.',
 };
 
@@ -70,7 +78,12 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
     }
     const errorCode = searchParams.get('error');
     if (errorCode) {
-      setError(ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default);
+      // hasOwn, so `?error=__proto__` cannot hand React an object to render.
+      setError(
+        Object.hasOwn(ERROR_MESSAGES, errorCode)
+          ? ERROR_MESSAGES[errorCode]
+          : ERROR_MESSAGES.Default
+      );
     }
   }, [searchParams]);
 
