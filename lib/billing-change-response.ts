@@ -6,7 +6,20 @@ import {
   successResponse,
   withCacheControl,
 } from '@/lib/api-response';
-import type { BillingChangeResult } from '@/lib/billing-changes';
+import type { BillingChangeResult, ChargeConfirmation } from '@/lib/billing-changes';
+
+/**
+ * Reads the `confirmCharge` a client echoes back from CHARGE_CONFIRMATION_REQUIRED.
+ * Anything malformed reads as no confirmation, which only previews again.
+ */
+export function readChargeConfirmation(value: unknown): ChargeConfirmation | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { amountDueCents, prorationDate } = value as Record<string, unknown>;
+  if (!Number.isSafeInteger(amountDueCents) || !Number.isSafeInteger(prorationDate)) {
+    return undefined;
+  }
+  return { amountDueCents: amountDueCents as number, prorationDate: prorationDate as number };
+}
 
 /** Turns a billing change result into the response the settings page acts on. */
 export function billingChangeResponse(result: BillingChangeResult) {
@@ -58,6 +71,18 @@ export function billingChangeResponse(result: BillingChangeResult) {
         error.message,
         HttpStatus.CONFLICT,
         ErrorCode.FOUNDING_ACKNOWLEDGEMENT_REQUIRED
+      );
+    case 'CHARGE_CONFIRMATION_REQUIRED':
+      return errorResponse(
+        error.message,
+        HttpStatus.CONFLICT,
+        ErrorCode.CHARGE_CONFIRMATION_REQUIRED,
+        {
+          amountDueCents: [String(error.amountDueCents)],
+          currency: [error.currency],
+          prorationDate: [String(error.prorationDate)],
+          renewsAt: error.renewsAt ? [error.renewsAt.toISOString()] : [],
+        }
       );
     case 'PAYMENT_ACTION_REQUIRED':
       return errorResponse(

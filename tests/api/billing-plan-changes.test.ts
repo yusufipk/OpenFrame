@@ -113,6 +113,10 @@ function fakeStripe(
     beforeNextWrite: null as null | (() => void),
     /** How long each write takes, so concurrent requests can interleave around it. */
     writeDelayMs: 0,
+    /** What the next invoice preview says the change costs. */
+    previewAmountCents: 1234,
+    /** Stripe refuses previews priced before this time, as it does across a renewal. */
+    refusePreviewBefore: 0,
   };
   const slowWrite = () =>
     state.writeDelayMs ? new Promise((resolve) => setTimeout(resolve, state.writeDelayMs)) : null;
@@ -142,6 +146,11 @@ function fakeStripe(
     runBeforeNextWrite();
     if (params.payment_behavior !== 'pending_if_incomplete') {
       throw new Error(`payment_behavior ${params.payment_behavior} could grant the change unpaid`);
+    }
+    // An item change is invoiced on the spot, so it must be priced at the moment a
+    // preview the customer confirmed was priced at.
+    if (params.items && !previews.some((p) => p.proration_date === params.proration_date)) {
+      throw new Error('Items changed without a previewed proration_date');
     }
     // With pending_if_incomplete Stripe neither throws on a decline nor applies the
     // update: it leaves the update pending on an open invoice, for a decline and for a
@@ -260,6 +269,35 @@ function fakeStripe(
     return {};
   });
   const checkoutCreate = vi.fn(async () => ({ id: 'cs_test', url: 'https://stripe.test/c' }));
+  const previews: Array<{ proration_date?: number }> = [];
+  const createPreview = vi.fn(async (params: Stripe.InvoiceCreatePreviewParams) => {
+    if (params.subscription !== state.subscription.id) {
+      throw new Error('Preview of the wrong subscription');
+    }
+    if (params.subscription_details?.proration_behavior !== 'always_invoice') {
+      throw new Error('Preview must prorate the way the update does');
+    }
+    const at = params.subscription_details.proration_date ?? unix(0);
+    if (at < state.refusePreviewBefore) {
+      throw invalidRequest('proration_date must be within the current period');
+    }
+    previews.push({ proration_date: params.subscription_details.proration_date });
+    // Credit for the unused part of the current period, then the new items; a move to a
+    // yearly price starts a new period that runs a year from the change.
+    const yearly = (params.subscription_details.items ?? []).some((item) =>
+      [SOLO_YEAR, STUDIO_YEAR, STORAGE_YEAR].includes(item.price as string)
+    );
+    return {
+      amount_due: state.previewAmountCents,
+      currency: 'usd',
+      lines: {
+        data: [
+          { period: { start: at, end: period.end } },
+          { period: { start: at, end: yearly ? at + 365 * DAY : period.end } },
+        ],
+      },
+    } as unknown as Stripe.Invoice;
+  });
 
   vi.mocked(getStripe as unknown as () => unknown).mockReturnValue({
     customers: { create: vi.fn(async () => ({ id: user.stripeCustomerId })) },
@@ -270,6 +308,7 @@ function fakeStripe(
       release: scheduleRelease,
     },
     checkout: { sessions: { create: checkoutCreate } },
+    invoices: { createPreview },
   });
 
   /**
@@ -295,6 +334,7 @@ function fakeStripe(
     scheduleUpdate,
     scheduleRelease,
     checkoutCreate,
+    createPreview,
     reachPeriodEnd,
   };
 }
@@ -328,12 +368,41 @@ function stripeItems(plan: 'SOLO' | 'STUDIO', blocks: number) {
   ];
 }
 
-function setBlocks(body: unknown) {
+function setBlocksOnce(body: unknown) {
   return callRoute(storageRoute, apiRequest('/api/billing/storage', { headers: ORIGIN, body }));
 }
 
-function changePlan(body: unknown) {
+function changePlanOnce(body: unknown) {
   return callRoute(planRoute, apiRequest('/api/billing/plan', { headers: ORIGIN, body }));
+}
+
+/**
+ * Sends a change the way the settings page does: when the server answers with the
+ * amount it would charge now, the request is sent again confirming that amount.
+ */
+async function withChargeConfirmed(send: (body: unknown) => Promise<Response>, body: unknown) {
+  const first = await send(body);
+  if (first.status !== 409) return first;
+  const error = (await first.clone().json()) as {
+    code?: string;
+    details?: { amountDueCents?: string[]; prorationDate?: string[] };
+  };
+  if (error.code !== 'CHARGE_CONFIRMATION_REQUIRED') return first;
+  return send({
+    ...(body as object),
+    confirmCharge: {
+      amountDueCents: Number(error.details?.amountDueCents?.[0]),
+      prorationDate: Number(error.details?.prorationDate?.[0]),
+    },
+  });
+}
+
+function setBlocks(body: unknown) {
+  return withChargeConfirmed(setBlocksOnce, body);
+}
+
+function changePlan(body: unknown) {
+  return withChargeConfirmed(changePlanOnce, body);
 }
 
 beforeEach(() => {
@@ -602,13 +671,21 @@ describe('POST /api/billing/storage', () => {
     ).toEqual(theirs);
   });
 
-  it('takes a double click on +1 block as one block and one charge, turning the second away at once', async () => {
+  it('takes a double click on Pay for +1 block as one block and one charge, turning the second away at once', async () => {
     const user = await account();
     const stripe = fakeStripe(user, stripeItems('SOLO', 0));
     signedInAs(user);
+    const offer = (await (await setBlocksOnce({ blocks: 1 })).json()).details;
+    const confirmed = {
+      blocks: 1,
+      confirmCharge: {
+        amountDueCents: Number(offer.amountDueCents[0]),
+        prorationDate: Number(offer.prorationDate[0]),
+      },
+    };
     stripe.state.writeDelayMs = 40;
 
-    const responses = await Promise.all([setBlocks({ blocks: 1 }), setBlocks({ blocks: 1 })]);
+    const responses = await Promise.all([setBlocksOnce(confirmed), setBlocksOnce(confirmed)]);
 
     expect(responses.map((res) => res.status).sort()).toEqual([200, 409]);
     const busy = responses.find((res) => res.status === 409)!;
@@ -1596,5 +1673,292 @@ describe('POST /api/billing/checkout', () => {
 
     expect(response.status).toBe(400);
     expect(stripe.checkoutCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirming the charge for a change made now', () => {
+  async function chargeOffer(response: Response) {
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.code).toBe('CHARGE_CONFIRMATION_REQUIRED');
+    return {
+      amountDueCents: Number(body.details.amountDueCents[0]),
+      currency: body.details.currency[0],
+      prorationDate: Number(body.details.prorationDate[0]),
+      renewsAt: body.details.renewsAt[0],
+    };
+  }
+
+  it('shows the amount for a new block and charges nothing until it is confirmed', async () => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    stripe.state.previewAmountCents = 417;
+    signedInAs(user);
+
+    const offer = await chargeOffer(await setBlocksOnce({ blocks: 1 }));
+
+    expect(offer.amountDueCents).toBe(417);
+    expect(offer.currency).toBe('usd');
+    expect(offer.renewsAt).toBe(new Date(stripe.period.end * 1000).toISOString());
+    expect(Math.abs(offer.prorationDate - unix(0))).toBeLessThanOrEqual(5);
+    expect(stripe.createPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscription: user.stripeSubscriptionId,
+        subscription_details: expect.objectContaining({
+          items: [{ price: STORAGE_MONTH, quantity: 1 }],
+          proration_date: offer.prorationDate,
+        }),
+      })
+    );
+    expect(stripe.update).not.toHaveBeenCalled();
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).storageBlocks).toBe(0);
+
+    const confirmed = await setBlocksOnce({
+      blocks: 1,
+      confirmCharge: { amountDueCents: 417, prorationDate: offer.prorationDate },
+    });
+
+    expect(confirmed.status).toBe(200);
+    expect(stripe.update).toHaveBeenCalledTimes(1);
+    expect(stripe.update).toHaveBeenCalledWith(
+      user.stripeSubscriptionId,
+      expect.objectContaining({ proration_date: offer.prorationDate })
+    );
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).storageBlocks).toBe(1);
+  });
+
+  it('shows the amount for a move to yearly and charges nothing until it is confirmed', async () => {
+    const user = await account({ founding: true });
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+
+    await chargeOffer(await changePlanOnce({ plan: 'SOLO', interval: 'YEAR' }));
+
+    expect(stripe.update).not.toHaveBeenCalled();
+    expect(stripe.state.subscription.items.data.map((item) => item.price.id)).toEqual([SOLO_MONTH]);
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).billingInterval).toBe(
+      'MONTH'
+    );
+  });
+
+  it('asks again, charging nothing, when the amount changed after it was shown', async () => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+    const offer = await chargeOffer(await changePlanOnce({ plan: 'STUDIO', interval: 'MONTH' }));
+    stripe.state.previewAmountCents = offer.amountDueCents + 1;
+
+    const again = await chargeOffer(
+      await changePlanOnce({
+        plan: 'STUDIO',
+        interval: 'MONTH',
+        confirmCharge: { amountDueCents: offer.amountDueCents, prorationDate: offer.prorationDate },
+      })
+    );
+
+    expect(again.amountDueCents).toBe(offer.amountDueCents + 1);
+    expect(stripe.update).not.toHaveBeenCalled();
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).billingPlan).toBe('SOLO');
+  });
+
+  it.each([
+    ['older than 15 minutes', -16 * 60],
+    ['in the future', 120],
+  ])('re-prices a confirmation dated %s instead of charging at that time', async (_l, offset) => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+
+    const offer = await chargeOffer(
+      await setBlocksOnce({
+        blocks: 1,
+        confirmCharge: { amountDueCents: 1234, prorationDate: unix(offset) },
+      })
+    );
+
+    expect(Math.abs(offer.prorationDate - unix(0))).toBeLessThanOrEqual(5);
+    expect(stripe.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['amount as text', { amountDueCents: '1234', prorationDate: unix(0) }],
+    ['no date', { amountDueCents: 1234 }],
+    ['a plain true', true],
+  ])('treats a malformed confirmation (%s) as none', async (_l, confirmCharge) => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+
+    await chargeOffer(await setBlocksOnce({ blocks: 1, confirmCharge }));
+
+    expect(stripe.update).not.toHaveBeenCalled();
+  });
+
+  it('takes a founding account through the founding warning and then the charge', async () => {
+    const user = await account({ founding: true });
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+
+    const first = await changePlanOnce({ plan: 'STUDIO', interval: 'MONTH' });
+    expect((await first.json()).code).toBe('FOUNDING_ACKNOWLEDGEMENT_REQUIRED');
+    expect(stripe.createPreview).not.toHaveBeenCalled();
+
+    const offer = await chargeOffer(
+      await changePlanOnce({ plan: 'STUDIO', interval: 'MONTH', acknowledgeFoundingLoss: true })
+    );
+    expect(stripe.update).not.toHaveBeenCalled();
+
+    const done = await changePlanOnce({
+      plan: 'STUDIO',
+      interval: 'MONTH',
+      acknowledgeFoundingLoss: true,
+      confirmCharge: { amountDueCents: offer.amountDueCents, prorationDate: offer.prorationDate },
+    });
+    expect(done.status).toBe(200);
+    expect(stripe.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks no charge confirmation for changes that wait for the period end', async () => {
+    const user = await account({ blocks: 2 });
+    const stripe = fakeStripe(user, stripeItems('SOLO', 2));
+    signedInAs(user);
+
+    const fewer = await setBlocksOnce({ blocks: 1 });
+
+    expect(fewer.status).toBe(200);
+    expect(stripe.createPreview).not.toHaveBeenCalled();
+  });
+});
+
+describe('what the charge confirmation previews', () => {
+  async function offerOf(response: Response) {
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.code).toBe('CHARGE_CONFIRMATION_REQUIRED');
+    return { ...body.details, message: body.error } as Record<string, string[]> & {
+      message: string;
+    };
+  }
+
+  it('previews a move to yearly with the yearly prices and its new renewal a year out', async () => {
+    const user = await account({ founding: true, blocks: 2 });
+    const stripe = fakeStripe(user, stripeItems('SOLO', 2));
+    signedInAs(user);
+
+    const offer = await offerOf(await changePlanOnce({ plan: 'SOLO', interval: 'YEAR' }));
+
+    const sent = stripe.createPreview.mock.calls[0][0].subscription_details!.items!;
+    expect(sent.map((item) => [item.price, item.quantity ?? 1]).sort()).toEqual(
+      [
+        [SOLO_YEAR, 1],
+        [STORAGE_YEAR, 2],
+      ].sort()
+    );
+    expect(offer.renewsAt[0]).toBe(
+      new Date((Number(offer.prorationDate[0]) + 365 * DAY) * 1000).toISOString()
+    );
+  });
+
+  it('previews Solo to Studio with the blocks kept on the monthly storage price', async () => {
+    const user = await account({ blocks: 2 });
+    const stripe = fakeStripe(user, stripeItems('SOLO', 2));
+    signedInAs(user);
+
+    await offerOf(await changePlanOnce({ plan: 'STUDIO', interval: 'MONTH' }));
+
+    const sent = stripe.createPreview.mock.calls[0][0].subscription_details!.items!;
+    expect(sent.map((item) => [item.price, item.quantity ?? 1]).sort()).toEqual(
+      [
+        [STUDIO_MONTH, 1],
+        [STORAGE_MONTH, 2],
+      ].sort()
+    );
+    expect(stripe.update).not.toHaveBeenCalled();
+  });
+
+  it('does not honour a confirmation dated before the period that is running now', async () => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+    // The subscription renewed a minute ago; the confirmation was priced before that.
+    for (const item of stripe.state.subscription.items.data) {
+      item.current_period_start = unix(-60);
+    }
+
+    const offer = await offerOf(
+      await setBlocksOnce({
+        blocks: 1,
+        confirmCharge: { amountDueCents: 1234, prorationDate: unix(-120) },
+      })
+    );
+
+    expect(Math.abs(Number(offer.prorationDate[0]) - unix(0))).toBeLessThanOrEqual(5);
+    expect(offer.message).toBe(
+      'That confirmation has expired. Check the amount and confirm again.'
+    );
+    expect(stripe.update).not.toHaveBeenCalled();
+  });
+
+  it('prices again at now when Stripe refuses the confirmed time, rather than failing', async () => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+    const first = await offerOf(await setBlocksOnce({ blocks: 1 }));
+    stripe.state.refusePreviewBefore = Number(first.prorationDate[0]) + 1;
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    const offer = await offerOf(
+      await setBlocksOnce({
+        blocks: 1,
+        confirmCharge: {
+          amountDueCents: Number(first.amountDueCents[0]),
+          prorationDate: Number(first.prorationDate[0]),
+        },
+      })
+    );
+
+    expect(Number(offer.prorationDate[0])).toBeGreaterThan(Number(first.prorationDate[0]));
+    expect(offer.message).toBe(
+      'That confirmation has expired. Check the amount and confirm again.'
+    );
+    expect(stripe.update).not.toHaveBeenCalled();
+  });
+
+  it('says the amount changed only when it did', async () => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+    const first = await offerOf(await setBlocksOnce({ blocks: 1 }));
+    stripe.state.previewAmountCents = 999;
+
+    const offer = await offerOf(
+      await setBlocksOnce({
+        blocks: 1,
+        confirmCharge: {
+          amountDueCents: Number(first.amountDueCents[0]),
+          prorationDate: Number(first.prorationDate[0]),
+        },
+      })
+    );
+
+    expect(offer.message).toBe(
+      'The amount for this change has changed. Check it and confirm again.'
+    );
+    expect(offer.amountDueCents).toEqual(['999']);
+  });
+
+  it('turns a double click on the + button into two previews and no charge', async () => {
+    const user = await account();
+    const stripe = fakeStripe(user, stripeItems('SOLO', 0));
+    signedInAs(user);
+
+    const responses = await Promise.all([
+      setBlocksOnce({ blocks: 1 }),
+      setBlocksOnce({ blocks: 1 }),
+    ]);
+
+    expect(responses.map((res) => res.status)).toEqual([409, 409]);
+    expect(stripe.update).not.toHaveBeenCalled();
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).storageBlocks).toBe(0);
   });
 });

@@ -91,6 +91,7 @@ export const ErrorCode = {
   DEMOTION_CONFIRMATION_REQUIRED: 'DEMOTION_CONFIRMATION_REQUIRED',
   /** A founding account moving to Studio must acknowledge losing its terms. */
   FOUNDING_ACKNOWLEDGEMENT_REQUIRED: 'FOUNDING_ACKNOWLEDGEMENT_REQUIRED',
+  CHARGE_CONFIRMATION_REQUIRED: 'CHARGE_CONFIRMATION_REQUIRED',
   /** A period-end change is already scheduled and has to be cancelled first. */
   BILLING_CHANGE_PENDING: 'BILLING_CHANGE_PENDING',
   PAYMENT_FAILED: 'PAYMENT_FAILED',
