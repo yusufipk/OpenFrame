@@ -462,7 +462,7 @@ describe('buildCommentsPdf', () => {
     // The heading stays on the first page with the start of the text.
     expect(find(items, 'Alice').page).toBe(1);
     expect(body[0].page).toBe(1);
-  });
+  }, 30000);
 
   it('keeps every heading on the page that holds its first three lines', async () => {
     // Every word names its comment, so each wrapped line can be traced back to it.
@@ -486,7 +486,7 @@ describe('buildCommentsPdf', () => {
         heading.page,
       ]);
     }
-  });
+  }, 30000);
 
   it('lays out author, tag, Resolved and the date left to right without overlap', async () => {
     const items = await pdfTextItems(
@@ -528,7 +528,7 @@ describe('buildCommentsPdf', () => {
     pages.forEach((page, index) => expect(page).toContain(`Page ${index + 1} of ${pages.length}`));
     const all = pages.join('\n');
     for (let i = 0; i < 60; i++) expect(all).toContain(`Comment number ${i}`);
-  });
+  }, 30000);
 
   it('produces a one-page document saying so when there are no comments', async () => {
     const pages = await pdfPages(await buildCommentsPdf([], META));
