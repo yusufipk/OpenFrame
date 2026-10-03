@@ -88,6 +88,10 @@ export async function POST(request: NextRequest) {
           return apiErrors.conflict(
             'Your subscription is already set to end at the close of this period'
           );
+        case 'BUSY':
+          return apiErrors.conflict(
+            'Another change to this subscription is still being made. Try again in a moment.'
+          );
         case 'STRIPE_REJECTED':
           return apiErrors.conflict(
             'Stripe could not find this subscription. Open Manage Subscription to see its current state.'

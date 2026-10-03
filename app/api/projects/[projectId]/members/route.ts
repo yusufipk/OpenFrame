@@ -12,6 +12,7 @@ import {
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
 import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
+import { checkEditorAddition, editorLimitResponse, getWorkspaceOwnerId } from '@/lib/editor-limit';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -154,6 +155,18 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
       if (existingMember) {
         return apiErrors.conflict('User is already a member of this project');
+      }
+    }
+
+    if (memberRole === 'ADMIN') {
+      const ownerId = await getWorkspaceOwnerId({ projectId });
+      if (ownerId) {
+        const allowed = await checkEditorAddition({
+          ownerId,
+          actorUserId: session.user.id,
+          candidate: userToInvite ? { userId: userToInvite.id } : { email: normalizedEmail },
+        });
+        if (!allowed.ok) return editorLimitResponse(allowed);
       }
     }
 

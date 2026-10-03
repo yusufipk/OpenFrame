@@ -208,10 +208,13 @@ describe('buildComparisonJsonLd', () => {
     });
   });
 
-  it('advertises the hosted price on the SoftwareApplication node', () => {
+  it('advertises both hosted plans on the SoftwareApplication node', () => {
     const [, app] = buildComparisonJsonLd(input);
 
-    expect(app.offers).toMatchObject({ '@type': 'Offer', price: '10', priceCurrency: 'USD' });
+    expect(app.offers).toMatchObject([
+      { '@type': 'Offer', name: 'Solo', price: '10', priceCurrency: 'USD' },
+      { '@type': 'Offer', name: 'Studio', price: '29', priceCurrency: 'USD' },
+    ]);
     expect(app.applicationCategory).toBe('MultimediaApplication');
   });
 

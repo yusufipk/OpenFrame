@@ -38,6 +38,8 @@ import {
 const dbMock = vi.hoisted(() => ({
   $transaction: vi.fn(),
   $executeRaw: vi.fn(),
+  // The Solo editor scan in the sync; these suites cover no editors, so it finds none.
+  $queryRaw: vi.fn().mockResolvedValue([]),
   user: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   workspace: { count: vi.fn() },
   workspaceMember: { count: vi.fn() },
@@ -1930,6 +1932,7 @@ describe('database backed billing helpers', () => {
         customer: 'cus_1',
         status: 'all',
         limit: 100,
+        expand: ['data.schedule'],
       });
     });
 

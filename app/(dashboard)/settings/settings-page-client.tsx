@@ -34,6 +34,15 @@ import { cn } from '@/lib/utils';
 import { CancelSubscriptionDialog } from '@/components/settings/cancel-subscription-dialog';
 import { ApiTokensCard } from '@/components/settings/api-tokens-card';
 import type { CancellationReason } from '@/lib/cancellation-reasons';
+import {
+  ExtraStorageRow,
+  PlanChangePanel,
+  PlanPicker,
+  formatDollars,
+  type IntervalName,
+  type PlanName,
+  type PlanOverview,
+} from '@/components/settings/plan-controls';
 
 /** Convert Stripe API units separately from the currency's display precision. */
 function formatInvoiceAmount(amountInMinorUnits: number, currency: string) {
@@ -106,6 +115,7 @@ interface BillingOverview {
     ownedWorkspaceCount: number;
     invitedWorkspaceCount: number;
   };
+  plan: PlanOverview;
 }
 
 interface StorageInfo {
@@ -332,28 +342,47 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
     [telegramChatId, showMessage]
   );
 
+  const refreshBilling = useCallback(async () => {
+    const [billingRes, storageRes] = await Promise.all([
+      fetch('/api/billing'),
+      fetch('/api/settings/storage', { cache: 'no-store' }),
+    ]);
+    if (billingRes.ok) setBilling((await billingRes.json()).data);
+    if (storageRes.ok) setStorageInfo((await storageRes.json()).data);
+  }, []);
+
   const handleBillingRedirect = useCallback(
     async (
       endpoint: '/api/billing/checkout' | '/api/billing/portal',
-      flow?: 'payment_method_update'
-    ) => {
+      options?: {
+        flow?: 'payment_method_update';
+        plan?: PlanName;
+        interval?: IntervalName;
+        confirmDemotions?: string[];
+      }
+    ): Promise<{ code?: string; details?: Record<string, string[]> } | null> => {
       setBillingAction(endpoint.endsWith('checkout') ? 'checkout' : 'portal');
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(flow ? { flow } : {}),
+          body: JSON.stringify(options ?? {}),
         });
         const data = await res.json();
 
         if (!res.ok) {
-          showMessage('error', data.error || 'Failed to open billing flow');
-          return;
+          // The plan picker asks who becomes a reviewer and resubmits; nothing to show here.
+          if (data.code !== 'DEMOTION_CONFIRMATION_REQUIRED') {
+            showMessage('error', data.error || 'Failed to open billing flow');
+          }
+          return data;
         }
 
         window.location.href = data.data.url;
+        return null;
       } catch {
         showMessage('error', 'Failed to open billing flow');
+        return null;
       } finally {
         setBillingAction(null);
       }
@@ -557,6 +586,15 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 </Badge>
               </div>
 
+              {billing.subscription.status === 'ACTIVE' && !hasScheduledCancellation ? (
+                <PlanChangePanel
+                  overview={billing.plan}
+                  periodEnd={billing.subscription.currentPeriodEnd}
+                  onChanged={refreshBilling}
+                  onMessage={showMessage}
+                />
+              ) : null}
+
               {billing.subscription.hasRecoverableSubscription &&
               !billing.subscription.hasActiveSubscription ? (
                 <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
@@ -649,13 +687,29 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 </div>
               ) : null}
 
+              {billing.checkoutAvailable &&
+              !(billing.subscription.hasRecoverableSubscription && billing.portalAvailable) ? (
+                <PlanPicker
+                  overview={billing.plan}
+                  disabled={billingAction !== null}
+                  busy={billingAction === 'checkout'}
+                  onChoose={(plan, interval, confirmDemotions) =>
+                    handleBillingRedirect('/api/billing/checkout', {
+                      plan,
+                      interval,
+                      confirmDemotions,
+                    })
+                  }
+                />
+              ) : null}
+
               <div className="flex flex-col sm:flex-row gap-3">
                 {billing.subscription.hasRecoverableSubscription && billing.portalAvailable ? (
                   <Button
                     onClick={() =>
                       handleBillingRedirect(
                         '/api/billing/portal',
-                        billing.needsPaymentFix ? 'payment_method_update' : undefined
+                        billing.needsPaymentFix ? { flow: 'payment_method_update' } : undefined
                       )
                     }
                     disabled={billingAction !== null}
@@ -700,20 +754,6 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                         )}
                       </Button>
                     ) : null}
-                    <Button
-                      variant={billing.workspaceCreation.canStartTrial ? 'outline' : 'default'}
-                      onClick={() => handleBillingRedirect('/api/billing/checkout')}
-                      disabled={!billing.checkoutAvailable || billingAction !== null}
-                    >
-                      {billingAction === 'checkout' ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Redirecting...
-                        </>
-                      ) : (
-                        'Upgrade with Stripe'
-                      )}
-                    </Button>
                   </>
                 )}
               </div>
@@ -734,7 +774,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
       ) : null}
 
       {billing?.subscription.hasBillingAccess && (
-        <Card className="mb-6">
+        <Card className="mb-6" id="storage">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5" />
@@ -782,10 +822,14 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                         : ''
                   }
                 />
-                {storageInfo.percentage >= 90 &&
+                {storageInfo.percentage >= 80 &&
                   (storageInfo.isPaid ? (
                     <p className="text-xs text-destructive">
-                      Storage is almost full. Delete unused files or contact support.
+                      You have used {Math.floor(storageInfo.percentage)}% of your storage. When it
+                      is full, uploads stop.
+                      {billing.plan.storageBlocks < billing.plan.maxStorageBlocks
+                        ? ` Add 100 GB for ${formatDollars(billing.plan.prices.storage[billing.plan.interval])}/${billing.plan.interval === 'YEAR' ? 'yr' : 'mo'} below, or delete files you no longer need.`
+                        : ' Delete files you no longer need.'}
                     </p>
                   ) : (
                     <p className="text-xs text-destructive">
@@ -795,6 +839,18 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                   ))}
               </>
             )}
+            {billing.subscription.status === 'ACTIVE' &&
+            !hasScheduledCancellation &&
+            (billing.plan.available.storage[billing.plan.interval] ||
+              billing.plan.storageBlocks > 0) ? (
+              <ExtraStorageRow
+                key={`${billing.plan.storageBlocks}-${billing.plan.pending?.storageBlocks ?? ''}`}
+                overview={billing.plan}
+                usedBytes={storageInfo?.usedBytes ?? null}
+                onChanged={refreshBilling}
+                onMessage={showMessage}
+              />
+            ) : null}
           </CardContent>
         </Card>
       )}

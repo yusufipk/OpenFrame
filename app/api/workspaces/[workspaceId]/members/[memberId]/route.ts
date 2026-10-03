@@ -6,6 +6,7 @@ import { WorkspaceMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
+import { checkEditorAddition, editorLimitResponse } from '@/lib/editor-limit';
 
 type RouteParams = { params: Promise<{ workspaceId: string; memberId: string }> };
 
@@ -53,11 +54,20 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const member = await db.workspaceMember.findFirst({
       where: { id: memberId, workspaceId },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
 
     if (!member) {
       return apiErrors.notFound('Member');
+    }
+
+    if (role === WorkspaceMemberRole.ADMIN) {
+      const allowed = await checkEditorAddition({
+        ownerId: workspace.ownerId,
+        actorUserId: session.user.id,
+        candidate: { userId: member.userId },
+      });
+      if (!allowed.ok) return editorLimitResponse(allowed);
     }
 
     const updatedMember = await db.workspaceMember.update({

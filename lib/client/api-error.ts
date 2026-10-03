@@ -11,6 +11,10 @@ import { toast } from 'sonner';
 export const API_ERROR_CODES = {
   /** Out of room because the account has not subscribed, not because the plan is full. */
   TRIAL_STORAGE_LIMIT_EXCEEDED: 'TRIAL_STORAGE_LIMIT_EXCEEDED',
+  /** A paying account is full; the add-on lives in the storage card in settings. */
+  STORAGE_LIMIT_EXCEEDED: 'STORAGE_LIMIT_EXCEEDED',
+  /** Someone else's account is full; the uploader's own settings cannot help. */
+  STORAGE_LIMIT_EXCEEDED_ASK_OWNER: 'STORAGE_LIMIT_EXCEEDED_ASK_OWNER',
 } as const;
 
 export interface ApiErrorPayload {
@@ -48,6 +52,14 @@ export function apiRequestError(
  */
 export function isTrialStorageError(source: unknown): boolean {
   return codeOf(source) === API_ERROR_CODES.TRIAL_STORAGE_LIMIT_EXCEEDED;
+}
+
+/**
+ * Whether this failure is a paying account that is full, where the storage settings
+ * hold the way out. Not true for an uploader on someone else's account.
+ */
+export function isPaidStorageError(source: unknown): boolean {
+  return codeOf(source) === API_ERROR_CODES.STORAGE_LIMIT_EXCEEDED;
 }
 
 function codeOf(source: unknown): string | null {
@@ -101,6 +113,22 @@ export function toastApiError(
         label: 'Upgrade',
         onClick: () => {
           window.location.href = '/settings';
+        },
+      },
+    });
+    return;
+  }
+
+  // The message names the remedy (add 100 GB, move up a plan, or neither when the
+  // subscription is ending), and the button goes straight to the storage controls
+  // instead of the top of the settings page.
+  if (codeOf(source) === API_ERROR_CODES.STORAGE_LIMIT_EXCEEDED) {
+    toast.error(text, {
+      duration: 12000,
+      action: {
+        label: 'Storage settings',
+        onClick: () => {
+          window.location.href = '/settings#storage';
         },
       },
     });

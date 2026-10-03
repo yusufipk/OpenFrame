@@ -94,6 +94,31 @@ export function InvitationAccountMismatch({
   );
 }
 
+export function InvitationEditorLimit() {
+  return (
+    <Shell>
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="flex items-center justify-center gap-2">
+            <MailWarning className="h-5 w-5 text-amber-500" />
+            No room for another editor
+          </CardTitle>
+          <CardDescription>
+            This invitation is for an editor, and the inviting account&apos;s plan has no room for
+            another one right now. Ask the person who invited you to upgrade, or to invite you as a
+            reviewer. The invitation stays valid until it expires.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild variant="outline" className="w-full">
+            <Link href="/dashboard">Back to dashboard</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </Shell>
+  );
+}
+
 export function InvitationLanding({ token, preview }: InvitationLandingProps) {
   const acceptPath = `/invitations/accept?token=${encodeURIComponent(token)}`;
   const loginHref = `/login?callbackUrl=${encodeURIComponent(acceptPath)}`;

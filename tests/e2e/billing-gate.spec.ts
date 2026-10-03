@@ -27,9 +27,11 @@ test('a user whose trial has ended is pushed to settings and cannot open a proje
   await expect(page.getByText('Manage your billing access')).toBeVisible();
   await expect(page.getByText('Billing access has ended.')).toBeVisible();
 
-  // The trial was consumed, so the offer is an upgrade rather than a new trial.
-  // Offered, not clicked.
-  await expect(page.getByRole('button', { name: 'Upgrade with Stripe' })).toBeEnabled();
+  // The trial was consumed, so the offer is a plan rather than a new trial.
+  // Offered, not clicked. Only STRIPE_PRICE_ID (Solo monthly) is set for this suite,
+  // so Studio is shown but cannot be chosen.
+  await expect(page.getByRole('button', { name: 'Choose Solo' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Studio' })).toBeDisabled();
 
   // Their own project is closed to them too: computeProjectAccess() gates on the
   // workspace owner's billing, and they are that owner.

@@ -8,11 +8,21 @@ import {
 } from '@/lib/feature-flags';
 import { getUserBunnyStorageBytes } from '@/lib/admin-stats';
 import { isPaidTier } from '@/lib/billing';
-import { getStorageLimitBytes } from '@/lib/trial-limits';
+import {
+  PLAN_DEFINITIONS,
+  STORAGE_BLOCK_PRICE_CENTS,
+  formatPriceCents,
+  getMaxStorageBlocks,
+  getStorageCeilingOffer,
+  getStorageLimitBytesForPlan,
+  getStoragePriceId,
+  isFoundingAccount,
+} from '@/lib/billing-plans';
 import { formatSizeLimit } from '@/lib/upload-size';
+import type { BillingInterval, BillingPlan } from '@prisma/client';
 
-// 200 GB expressed in bytes
-export const PLAN_STORAGE_LIMIT_BYTES = BigInt(200) * BigInt(1024) * BigInt(1024) * BigInt(1024);
+/** Solo's base storage, which is also what every account had before the two plans. */
+export const PLAN_STORAGE_LIMIT_BYTES = PLAN_DEFINITIONS.SOLO.baseStorageBytes;
 
 /**
  * The ceiling this particular account is held to.
@@ -31,6 +41,13 @@ export interface StorageContext {
   limitBytes: bigint;
   /** Whether that ceiling is the plan's or the trial's. */
   isPaid: boolean;
+  plan: BillingPlan;
+  interval: BillingInterval;
+  storageBlocks: number;
+  maxStorageBlocks: number;
+  isFounding: boolean;
+  /** Whether the subscription can take a plan or storage change right now. */
+  canChangeBilling: boolean;
 }
 
 /**
@@ -43,11 +60,46 @@ export interface StorageContext {
 export async function getStorageContextForUser(userId: string): Promise<StorageContext> {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { subscriptionStatus: true, stripeCurrentPeriodEnd: true, billingAccessEndedAt: true },
+    select: {
+      subscriptionStatus: true,
+      stripeCurrentPeriodEnd: true,
+      billingAccessEndedAt: true,
+      billingPlan: true,
+      billingInterval: true,
+      storageBlocks: true,
+      stripeSubscriptionId: true,
+      foundingSubscriptionId: true,
+      stripeCancelAtPeriodEnd: true,
+      stripeCancelAt: true,
+      pendingChangeAt: true,
+    },
   });
 
   const isPaid = user ? isPaidTier(user) : false;
-  return { limitBytes: getStorageLimitBytes(isPaid, PLAN_STORAGE_LIMIT_BYTES), isPaid };
+  const plan = user?.billingPlan ?? 'SOLO';
+  const isFounding = user ? isFoundingAccount(user) : false;
+  const storageBlocks = isPaid ? (user?.storageBlocks ?? 0) : 0;
+  return {
+    limitBytes: getStorageLimitBytesForPlan({
+      isPaid,
+      billingPlan: plan,
+      storageBlocks,
+      isFounding,
+    }),
+    isPaid,
+    plan,
+    interval: user?.billingInterval ?? 'MONTH',
+    storageBlocks,
+    maxStorageBlocks: getMaxStorageBlocks({ isPaid, billingPlan: plan, isFounding }),
+    isFounding,
+    // Mirrors what the change routes accept: an active subscription that is not set to
+    // end and has no change already waiting for the period end.
+    canChangeBilling:
+      user?.subscriptionStatus === 'ACTIVE' &&
+      !user.stripeCancelAtPeriodEnd &&
+      user.stripeCancelAt === null &&
+      user.pendingChangeAt === null,
+  };
 }
 
 /**
@@ -96,15 +148,58 @@ export async function getMaxVideoUploadBytesForUser(userId: string): Promise<big
  * subscription, and the response says so under its own error code rather than
  * leaving the client to guess from the number.
  */
-export function storageExceededResponse(context: StorageContext): NextResponse {
+export function storageExceededResponse(
+  context: StorageContext,
+  { uploaderIsBilled = true }: { uploaderIsBilled?: boolean } = {}
+): NextResponse {
+  // Upgrading or buying a block is the owner's move, and the uploader's own settings
+  // cannot do it, so anyone else is pointed at the owner instead.
+  if (!uploaderIsBilled) {
+    return apiErrors.storageExceededAskOwner(
+      'This workspace is out of storage. Ask its owner to free up space or add more.'
+    ) as NextResponse;
+  }
   if (context.isPaid) {
-    return apiErrors.storageExceeded() as NextResponse;
+    return apiErrors.storageExceeded(paidStorageExceededMessage(context)) as NextResponse;
   }
 
   return apiErrors.trialStorageExceeded(
     `Your free trial includes ${formatSizeLimit(context.limitBytes)} of storage. ` +
       `Upgrade to get ${formatSizeLimit(PLAN_STORAGE_LIMIT_BYTES)}.`
   ) as NextResponse;
+}
+
+/**
+ * A paying account that is full can buy more room directly, so the refusal names
+ * the add-on and its price. Past the block ceiling it points at Studio, or for a
+ * founding or Studio account at a conversation, because another block is not on offer.
+ */
+export function paidStorageExceededMessage(
+  context: Pick<
+    StorageContext,
+    | 'plan'
+    | 'interval'
+    | 'storageBlocks'
+    | 'maxStorageBlocks'
+    | 'isFounding'
+    | 'isPaid'
+    | 'canChangeBilling'
+  >
+): string {
+  const base = 'Storage limit reached. Delete files you no longer need';
+  // A subscription that is ending, behind on payment or waiting on a change cannot take a
+  // block or a new plan; the billing settings are where that state is sorted out.
+  if (!context.canChangeBilling) return `${base}, or check your billing settings.`;
+  if (context.storageBlocks < context.maxStorageBlocks && getStoragePriceId(context.interval)) {
+    const price = formatPriceCents(STORAGE_BLOCK_PRICE_CENTS[context.interval]);
+    const per = context.interval === 'YEAR' ? 'yr' : 'mo';
+    return `${base}, or add 100 GB for ${price}/${per} in billing settings.`;
+  }
+  if (getStorageCeilingOffer({ ...context, billingPlan: context.plan }) === 'studio') {
+    const studio = formatPriceCents(PLAN_DEFINITIONS.STUDIO.priceCents.MONTH);
+    return `${base}, or move to Studio: 1 TB of storage for ${studio}/mo.`;
+  }
+  return `${base}. Need more? Let's talk: info@open-frame.net.`;
 }
 
 // TTL for upload reservations: 30 minutes is enough for R2 image/audio uploads
@@ -220,7 +315,9 @@ export async function getUserStorageInfo(userId: string): Promise<{
  */
 export async function enforceStorageQuota(
   userId: string,
-  incomingSizeBytes: bigint
+  incomingSizeBytes: bigint,
+  /** Who is uploading, when it may be someone other than the billed user; null for a guest. */
+  actorUserId?: string | null
 ): Promise<NextResponse | null> {
   if (!isStripeFeatureEnabled()) {
     return null;
@@ -232,7 +329,9 @@ export async function enforceStorageQuota(
   ]);
 
   if (usedBytes + incomingSizeBytes >= storage.limitBytes) {
-    return storageExceededResponse(storage);
+    return storageExceededResponse(storage, {
+      uploaderIsBilled: actorUserId === undefined || actorUserId === userId,
+    });
   }
 
   return null;
@@ -255,7 +354,9 @@ export async function reserveStorageQuota(
   userId: string,
   incomingSizeBytes: bigint,
   purpose: UploadReservationPurpose,
-  reservationTtlMs: number = RESERVATION_TTL_MS
+  reservationTtlMs: number = RESERVATION_TTL_MS,
+  /** Who is uploading, when it may be someone other than the billed user; null for a guest. */
+  actorUserId?: string | null
 ): Promise<{ reservationId: string | null } | { error: NextResponse }> {
   if (!isStripeFeatureEnabled()) {
     return { reservationId: null };
@@ -335,7 +436,11 @@ export async function reserveStorageQuota(
     return { reservationId };
   } catch (e) {
     if (e instanceof QuotaExceededError) {
-      return { error: storageExceededResponse(storage) };
+      return {
+        error: storageExceededResponse(storage, {
+          uploaderIsBilled: actorUserId === undefined || actorUserId === userId,
+        }),
+      };
     }
     throw e;
   }

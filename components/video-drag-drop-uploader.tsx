@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { isTrialStorageError, toastApiError } from '@/lib/client/api-error';
+import { isPaidStorageError, isTrialStorageError, toastApiError } from '@/lib/client/api-error';
 import {
   isImageFile,
   isUploadableMediaFile,
@@ -53,6 +53,8 @@ type QueueItem = {
   error?: string;
   /** The failure was the trial ceiling, so the row shows the way out. */
   errorIsTrialLimit?: boolean;
+  /** The failure was a full paid plan, so the row links to the storage settings. */
+  errorIsStorageLimit?: boolean;
 };
 
 interface VideoDragDropUploaderProps {
@@ -343,10 +345,17 @@ export function VideoDragDropUploader({
 
           const message = error instanceof Error ? error.message : 'Failed to upload file';
           const isTrialLimit = isTrialStorageError(error);
+          const isStorageLimit = isPaidStorageError(error);
           setQueue((prev) =>
             prev.map((entry) =>
               entry.id === item.id
-                ? { ...entry, status: 'error', error: message, errorIsTrialLimit: isTrialLimit }
+                ? {
+                    ...entry,
+                    status: 'error',
+                    error: message,
+                    errorIsTrialLimit: isTrialLimit,
+                    errorIsStorageLimit: isStorageLimit,
+                  }
                 : entry
             )
           );
@@ -561,6 +570,16 @@ export function VideoDragDropUploader({
                               className="ml-1 align-middle font-medium underline underline-offset-2"
                             >
                               Upgrade
+                            </Link>
+                          )}
+                          {/* The upload dialog is modal, so the toast's own button cannot be
+                              reached while it is open; the way out sits in the row too. */}
+                          {item.errorIsStorageLimit && (
+                            <Link
+                              href="/settings#storage"
+                              className="ml-1 align-middle font-medium underline underline-offset-2"
+                            >
+                              Storage settings
                             </Link>
                           )}
                         </p>

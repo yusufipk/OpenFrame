@@ -638,6 +638,25 @@ describe('repeated and concurrent cancellation reasons', () => {
     );
   });
 
+  it('tells a cancellation made while another billing change runs to try again, not that it is ending', async () => {
+    const user = await createSubscribedUser();
+    await db.user.update({
+      where: { id: user.id },
+      data: { billingChangeLockedUntil: new Date(Date.now() + 60_000) },
+    });
+    signedInAs(user);
+    const stripe = stubStripe([subscription(user)]);
+
+    const response = await callRoute(cancelRoute, cancelRequest({ reason: 'OTHER' }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      'Another change to this subscription is still being made. Try again in a moment.'
+    );
+    expect(stripe.update).not.toHaveBeenCalled();
+    expect(await db.subscriptionCancellation.count({ where: { userId: user.id } })).toBe(0);
+  });
+
   it('records only one reason when concurrent requests cancel a nonmirrored paid subscription', async () => {
     const user = await createSubscribedUser({ stripeCancelAtPeriodEnd: true });
     signedInAs(user);
@@ -649,33 +668,25 @@ describe('repeated and concurrent cancellation reasons', () => {
     });
     const stripe = stubStripe([scheduled, other]);
     const update = stripe.update.getMockImplementation()!;
-    let entered = 0;
-    let release!: () => void;
-    const barrier = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const timeout = setTimeout(release, 1000);
+    // A slow Stripe call: without serialization both requests would be inside it at once.
     stripe.update.mockImplementation(async (id, params) => {
-      entered += 1;
-      if (entered === 2) release();
-      await barrier;
+      await new Promise((resolve) => setTimeout(resolve, 50));
       return update(id, params);
     });
-    try {
-      const responses = await Promise.all([
-        callRoute(cancelRoute, cancelRequest({ reason: 'NOT_USING' })),
-        callRoute(cancelRoute, cancelRequest({ reason: 'OTHER' })),
-      ]);
-      expect(entered).toBe(2);
-      expect(responses.map((response) => response.status)).toEqual([200, 200]);
-      expect(
-        await db.subscriptionCancellation.count({
-          where: { userId: user.id, stripeSubscriptionId: other.id },
-        })
-      ).toBe(1);
-    } finally {
-      clearTimeout(timeout);
-    }
+
+    const responses = await Promise.all([
+      callRoute(cancelRoute, cancelRequest({ reason: 'NOT_USING' })),
+      callRoute(cancelRoute, cancelRequest({ reason: 'OTHER' })),
+    ]);
+
+    // Cancellations run one at a time per account, so the second is turned away while the first runs.
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(stripe.update).toHaveBeenCalledTimes(1);
+    expect(
+      await db.subscriptionCancellation.count({
+        where: { userId: user.id, stripeSubscriptionId: other.id },
+      })
+    ).toBe(1);
   });
 });
 

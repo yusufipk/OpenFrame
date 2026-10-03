@@ -106,7 +106,12 @@ describe('billing entitlement and retention after subscription sync', () => {
 
     await syncStripeCustomerSubscriptions(CUSTOMER_ID);
 
-    expect(list).toHaveBeenCalledWith({ customer: CUSTOMER_ID, status: 'all', limit: 100 });
+    expect(list).toHaveBeenCalledWith({
+      customer: CUSTOMER_ID,
+      status: 'all',
+      limit: 100,
+      expand: ['data.schedule'],
+    });
     const stored = await db.user.findUniqueOrThrow({ where: { id: userId } });
     expect(stored.subscriptionStatus).toBe('CANCELED');
     expect(stored.stripeCurrentPeriodEnd).toEqual(REPORTED_PERIOD_END);

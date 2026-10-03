@@ -341,7 +341,7 @@ describe('what the storage refusal says', () => {
     expect(response.status).toBe(507);
     const body = (await response.json()) as { error: string; code: string };
     expect(body.code).toBe('STORAGE_LIMIT_EXCEEDED');
-    expect(body.error).toContain('delete some files');
+    expect(body.error).toContain('Delete files you no longer need');
   });
 });
 

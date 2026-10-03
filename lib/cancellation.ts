@@ -10,6 +10,7 @@ import {
   voidOpenSubscriptionInvoices,
 } from '@/lib/billing';
 import { logError } from '@/lib/logger';
+import { releaseSubscriptionSchedule, withBillingChangeLock } from '@/lib/billing-changes';
 import { recordSubscriptionCancellation } from '@/lib/analytics/billing-events';
 
 export {
@@ -44,7 +45,7 @@ export type CancelSubscriptionResult =
       status: Stripe.Subscription.Status;
       cancelAt: Date | null;
     }
-  | { ok: false; code: 'NO_SUBSCRIPTION' | 'ALREADY_CANCELING' | 'STRIPE_REJECTED' };
+  | { ok: false; code: 'NO_SUBSCRIPTION' | 'ALREADY_CANCELING' | 'STRIPE_REJECTED' | 'BUSY' };
 
 function isStripeInvalidRequest(error: unknown): boolean {
   return (
@@ -85,11 +86,28 @@ async function expireSubscriptionCheckout(customerId: string, subscriptionId: st
  * Record the reason before invoice cleanup so a failed cleanup can be retried
  * on the canceled subscription without losing or duplicating the answer.
  */
-export async function cancelSubscription(params: {
+export async function cancelSubscription(
+  params: CancelSubscriptionParams
+): Promise<CancelSubscriptionResult> {
+  // Serialized with plan and storage changes: a schedule written by a concurrent change
+  // after the release below would make Stripe refuse the cancellation.
+  return withBillingChangeLock(
+    params.userId,
+    () => cancelSubscriptionLocked(params),
+    // A cancellation or a plan or storage change is running for this account right now.
+    () => ({ ok: false, code: 'BUSY' })
+  );
+}
+
+type CancelSubscriptionParams = {
   userId: string;
   reason: CancellationReason | null;
   note: string | null;
-}): Promise<CancelSubscriptionResult> {
+};
+
+async function cancelSubscriptionLocked(
+  params: CancelSubscriptionParams
+): Promise<CancelSubscriptionResult> {
   const requestStartedAt = new Date();
   const user = await db.user.findUnique({
     where: { id: params.userId },
@@ -140,6 +158,15 @@ export async function cancelSubscription(params: {
     const cancellationDetails = params.reason ? { feedback: STRIPE_FEEDBACK[params.reason] } : {};
     if (!cleanupRetry) {
       if (!canceledImmediately) {
+        // Stripe refuses to schedule a cancellation on a subscription that a schedule
+        // manages, so a pending plan or storage change is called off first.
+        if (await releaseSubscriptionSchedule(original)) {
+          // The demotions confirmed for that change no longer apply.
+          await db.user.update({
+            where: { id: params.userId },
+            data: { pendingEditorDemotions: [] },
+          });
+        }
         subscription = await stripe.subscriptions.update(subscriptionId, {
           cancel_at_period_end: true,
           cancellation_details: cancellationDetails,
@@ -166,6 +193,13 @@ export async function cancelSubscription(params: {
         where: { id: params.userId, stripeSubscriptionId: subscriptionId },
         data: { stripeCancelAtPeriodEnd: false },
       });
+    }
+    // A pending plan or storage change may already have been called off above, so the
+    // mirror is brought back in line with Stripe before the failure is reported.
+    try {
+      await syncStripeCustomerSubscriptions(customerId);
+    } catch (syncError) {
+      logError('billing.cancel.sync_after_failure', syncError);
     }
     if (isStripeInvalidRequest(error)) {
       logError('billing.cancel.rejected', error);
