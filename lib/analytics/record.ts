@@ -24,6 +24,14 @@ export interface RecordEventInput {
    */
   dedupeKey: string;
   userId?: string | null;
+  /**
+   * Who did it, when that can differ from `userId`. The scoreboard counts events
+   * per account through `userId`; this keeps the team member who acted on that
+   * account's behalf without moving the event to them. Set by VIDEO_ADDED and the
+   * account activity events below; NULL on any other event means "not recorded",
+   * not "the owner". On an activity event it is NULL for a guest.
+   */
+  actorId?: string | null;
   anonymousId?: string | null;
   /**
    * Only set for events that happen before there is an account. Once a user
@@ -61,6 +69,7 @@ export async function recordEvent(input: RecordEventInput): Promise<void> {
           name: input.name,
           dedupeKey: input.dedupeKey,
           userId: input.userId ?? null,
+          actorId: input.actorId ?? null,
           anonymousId: input.anonymousId ?? null,
           channel: input.channel ?? null,
           ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
@@ -70,6 +79,62 @@ export async function recordEvent(input: RecordEventInput): Promise<void> {
     });
   } catch (error) {
     logError('Failed to record analytics event:', error);
+  }
+}
+
+/** Repeated, everyday use of an account's content: the scoreboard's silence check. */
+export type AccountActivityEventName =
+  | 'VERSION_ADDED'
+  | 'COMMENT_ADDED'
+  | 'LIVE_REVIEW_STARTED'
+  | 'LIVE_REVIEW_JOINED'
+  | 'APPROVAL_REQUESTED';
+
+/**
+ * Records that an account's content was used today.
+ *
+ * Kept to one row per account, event and UTC day, because the question it
+ * answers is "did anything happen in the last two weeks", not "how much". The
+ * actor stored is whoever did it first that day; later actors on the same day
+ * collide on the dedupe key and are dropped.
+ *
+ * `accountId` is the workspace owner, the account that is billed, so a team
+ * member's work keeps the paying account off the silent list.
+ */
+export async function recordAccountActivity(params: {
+  name: AccountActivityEventName;
+  accountId: string;
+  actorId?: string | null;
+}): Promise<void> {
+  await recordEvent({
+    name: params.name,
+    dedupeKey: dailyEventKey(params.name, params.accountId),
+    userId: params.accountId,
+    actorId: params.actorId ?? null,
+  });
+}
+
+/** `recordAccountActivity` for a call site that only has the video in hand. */
+export async function recordVideoActivity(params: {
+  name: AccountActivityEventName;
+  videoId: string;
+  actorId?: string | null;
+}): Promise<void> {
+  if (!isProductAnalyticsEnabled()) return;
+
+  try {
+    const video = await db.video.findUnique({
+      where: { id: params.videoId },
+      select: { project: { select: { workspace: { select: { ownerId: true } } } } },
+    });
+    if (!video) return;
+    await recordAccountActivity({
+      name: params.name,
+      accountId: video.project.workspace.ownerId,
+      actorId: params.actorId,
+    });
+  } catch (error) {
+    logError('Failed to record account activity:', error);
   }
 }
 

@@ -38,6 +38,9 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           orderBy: { versionNumber: 'desc' },
           ...(includeComments
             ? {
+                // Every scalar comes back in this branch, and who uploaded a
+                // version is not something guests or public viewers need.
+                omit: { uploadedById: true },
                 include: {
                   comments: {
                     orderBy: { timestamp: 'asc' },

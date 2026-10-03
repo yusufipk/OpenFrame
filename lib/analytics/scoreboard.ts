@@ -13,14 +13,31 @@
 import type { AcquisitionChannel } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getCachedStripeStats } from '@/lib/admin-stats';
+import { getUploaderCountsByAccount, uploaderWindowStart } from '@/lib/uploader-stats';
 
-/** What "using the product" means for a paying account. */
+/**
+ * What "using the product" means for a paying account.
+ *
+ * The second half is everyday use, written at most once per account per day, so
+ * an account that only pushes new versions or reviews live is not read as
+ * silent. None of it is in WEEK_COLUMN_BY_EVENT, which keeps the funnel as it
+ * was. Those events only exist from the day they shipped; earlier activity of
+ * that kind was never recorded and cannot be backfilled. They also raise the
+ * 7- and 30-day counts (up to five a day for a busy account), so those counts
+ * are not comparable with ones taken before the change; the silence check only
+ * reads the latest event and is unaffected.
+ */
 export const VALUE_EVENT_NAMES = [
   'VIDEO_ADDED',
   'SHARE_LINK_CREATED',
   'FIRST_GUEST_COMMENT',
   'APPROVAL_COMPLETED',
   'PROJECT_CREATED',
+  'VERSION_ADDED',
+  'COMMENT_ADDED',
+  'LIVE_REVIEW_STARTED',
+  'LIVE_REVIEW_JOINED',
+  'APPROVAL_REQUESTED',
 ] as const;
 
 /** A paid account that has produced nothing for this long is drifting away. */
@@ -28,6 +45,7 @@ export const AT_RISK_SILENT_DAYS = 14;
 
 const DEFAULT_WEEKS = 12;
 const CHANNEL_WINDOW_DAYS = 28;
+const REFERRAL_ROW_LIMIT = 25;
 
 /**
  * How many paid accounts the per-account table carries.
@@ -65,6 +83,23 @@ export interface ChannelRow {
   paid: number;
 }
 
+/**
+ * Where the REFERRAL channel's visitors came from and where they landed.
+ *
+ * REFERRAL is the catch-all for a site no list recognises, so its total says
+ * nothing until it is broken down: one forum thread, a spam referrer and our own
+ * pages filed by mistake all look the same as a single number.
+ *
+ * Touches recorded before the proxy compared referrers against the public host
+ * can still show our own domain here; they age out of the window, they are not
+ * rewritten.
+ */
+export interface ReferralRow {
+  referrerHost: string | null;
+  landingPath: string | null;
+  visitors: number;
+}
+
 export interface PaidAccountRow {
   userId: string;
   name: string | null;
@@ -73,6 +108,11 @@ export interface PaidAccountRow {
   valueEvents7: number;
   valueEvents30: number;
   lastValueEventAt: Date | null;
+  /**
+   * Distinct people who uploaded into this account's workspaces in the last
+   * UPLOADER_WINDOW_DAYS, owner included. Above 1 means a team is working in it.
+   */
+  uploaders30: number;
   channel: AcquisitionChannel | null;
   selfReported: AcquisitionChannel | null;
 }
@@ -109,6 +149,8 @@ export interface Scoreboard {
   weeks: WeeklyRow[];
   channels: ChannelRow[];
   channelWindowDays: number;
+  /** The busiest REFERRAL host and landing path pairs over the channel window. */
+  referrals: ReferralRow[];
   paidAccounts: PaidAccountRow[];
   /** True when there are more paid accounts than the table shows. */
   paidAccountsTruncated: boolean;
@@ -131,6 +173,12 @@ interface ChannelQueryRow {
   channel: AcquisitionChannel | null;
   name: string;
   subjects: number;
+}
+
+interface ReferralQueryRow {
+  referrer_host: string | null;
+  landing_path: string | null;
+  visitors: number;
 }
 
 interface PaidQueryRow {
@@ -346,7 +394,16 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
   const channelWindowStart = new Date(now);
   channelWindowStart.setUTCDate(channelWindowStart.getUTCDate() - CHANNEL_WINDOW_DAYS);
 
-  const [weekRows, channelRows, priorPaid, paidAccounts, stripeStats, cohorts] = await Promise.all([
+  const [
+    weekRows,
+    channelRows,
+    referralRows,
+    priorPaid,
+    paidAccounts,
+    stripeStats,
+    cohorts,
+    uploaders,
+  ] = await Promise.all([
     // COUNT(DISTINCT COALESCE(anonymous_id, id)) rather than COUNT(*): a landing
     // view is deduped per visitor per day, so a visitor who came back on three
     // days would otherwise be three weekly visitors. Rows with no anonymous id
@@ -367,6 +424,22 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
       WHERE e.occurred_at >= ${channelWindowStart}
       GROUP BY 1, 2
+    `,
+    // Same channel rule as the table above, so these rows add up to its REFERRAL
+    // visitors whenever there are no more than the limit.
+    db.$queryRaw<ReferralQueryRow[]>`
+      SELECT COALESCE(ua.referrer_host, t.referrer_host) AS referrer_host,
+             COALESCE(ua.landing_path, t.landing_path) AS landing_path,
+             COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS visitors
+      FROM analytics_events e
+      LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
+      LEFT JOIN acquisition_touches t ON t.anonymous_id = e.anonymous_id
+      WHERE e.occurred_at >= ${channelWindowStart}
+        AND e.name::text = 'LANDING_VIEW'
+        AND COALESCE(ua.channel, e.channel)::text = 'REFERRAL'
+      GROUP BY 1, 2
+      ORDER BY 3 DESC, 1 ASC NULLS LAST, 2 ASC NULLS LAST
+      LIMIT ${REFERRAL_ROW_LIMIT}
     `,
     db.$queryRaw<Array<{ started: number; canceled: number }>>`
       SELECT
@@ -408,6 +481,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     `,
     getCachedStripeStats(),
     getCohortComparison(now),
+    getUploaderCountsByAccount(uploaderWindowStart(now)),
   ]);
 
   const byWeek = new Map<number, WeeklyRow>();
@@ -471,6 +545,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     valueEvents7: row.value_events_7,
     valueEvents30: row.value_events_30,
     lastValueEventAt: row.last_value_event_at,
+    uploaders30: uploaders[row.user_id] ?? 0,
   }));
 
   const silentBefore = new Date(now);
@@ -480,6 +555,11 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     weeks: orderedWeeks,
     channels: [...channelBuckets.values()].sort((a, b) => b.visitors - a.visitors),
     channelWindowDays: CHANNEL_WINDOW_DAYS,
+    referrals: referralRows.map((row) => ({
+      referrerHost: row.referrer_host,
+      landingPath: row.landing_path,
+      visitors: row.visitors,
+    })),
     paidAccounts: accounts,
     paidAccountsTruncated,
     paidAccountLimit: PAID_ACCOUNT_LIMIT,

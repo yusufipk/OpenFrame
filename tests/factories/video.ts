@@ -44,6 +44,8 @@ export interface CreateVersionInput {
   duration?: number | null;
   sizeBytes?: bigint;
   isActive?: boolean;
+  uploadedById?: string | null;
+  createdAt?: Date;
 }
 
 export async function createVersion(input: CreateVersionInput): Promise<VideoVersion> {
@@ -62,6 +64,8 @@ export async function createVersion(input: CreateVersionInput): Promise<VideoVer
       duration: input.duration ?? 120,
       sizeBytes: input.sizeBytes ?? BigInt(0),
       isActive: input.isActive ?? true,
+      uploadedById: input.uploadedById ?? null,
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     },
   });
 }

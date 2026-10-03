@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyChannel,
   extractReferrerHost,
+  hasAdClickId,
+  isOwnReferrer,
   normalizeHost,
   sanitizeLandingPath,
   sanitizeTag,
@@ -40,6 +42,16 @@ describe('normalizeHost', () => {
   it('rejects a value that is not a host', () => {
     expect(normalizeHost('not a host')).toBeNull();
     expect(normalizeHost('https://github.com')).toBeNull();
+  });
+});
+
+describe('isOwnReferrer', () => {
+  it('is true only for a referrer on our own host', () => {
+    expect(isOwnReferrer('https://www.open-frame.net/pricing', 'open-frame.net')).toBe(true);
+    expect(isOwnReferrer('https://open-frame.net.evil.example/', 'open-frame.net')).toBe(false);
+    expect(isOwnReferrer('https://github.com/', 'open-frame.net')).toBe(false);
+    expect(isOwnReferrer(null, 'open-frame.net')).toBe(false);
+    expect(isOwnReferrer('https://open-frame.net/', null)).toBe(false);
   });
 });
 
@@ -148,5 +160,51 @@ describe('classifyChannel', () => {
 
   it('ignores a source that fails sanitizing and falls back to the referrer', () => {
     expect(classifyChannel({ utmSource: '<script>', referrerHost: 'youtube.com' })).toBe('YOUTUBE');
+  });
+
+  it('files a paid medium as PAID, even when the source names a search engine', () => {
+    expect(classifyChannel({ utmSource: 'google', utmMedium: 'cpc' })).toBe('PAID');
+    expect(classifyChannel({ utmSource: 'google', utmMedium: 'ppc' })).toBe('PAID');
+    expect(classifyChannel({ utmSource: 'google', utmMedium: 'sem' })).toBe('PAID');
+    expect(classifyChannel({ utmSource: 'google', utmMedium: 'paid' })).toBe('PAID');
+    expect(classifyChannel({ utmSource: 'bing', utmMedium: 'paid_search' })).toBe('PAID');
+    expect(classifyChannel({ utmSource: 'youtube', utmMedium: 'paid-social' })).toBe('PAID');
+    expect(classifyChannel({ utmSource: 'youtube', utmMedium: 'cpm' })).toBe('PAID');
+  });
+
+  it('files an ad click id as PAID ahead of the source and the search referrer', () => {
+    expect(classifyChannel({ adClickId: true, referrerHost: 'google.com' })).toBe('PAID');
+    expect(classifyChannel({ adClickId: true, utmSource: 'github' })).toBe('PAID');
+  });
+
+  it('lets a recognised medium beat an ad click id copied into a tagged link', () => {
+    expect(classifyChannel({ adClickId: true, utmSource: 'github', utmMedium: 'email' })).toBe(
+      'OUTBOUND'
+    );
+  });
+
+  it('keeps an untagged Google visit organic', () => {
+    expect(classifyChannel({ utmSource: 'google' })).toBe('GOOGLE');
+    expect(classifyChannel({ adClickId: false, referrerHost: 'google.com.tr' })).toBe('GOOGLE');
+  });
+});
+
+describe('hasAdClickId', () => {
+  it('sees the click ids Google and Microsoft ads append', () => {
+    expect(hasAdClickId(new URLSearchParams('gclid=Cj0KCQ'))).toBe(true);
+    expect(hasAdClickId(new URLSearchParams('wbraid=x'))).toBe(true);
+    expect(hasAdClickId(new URLSearchParams('gbraid=x'))).toBe(true);
+    expect(hasAdClickId(new URLSearchParams('dclid=x'))).toBe(true);
+    expect(hasAdClickId(new URLSearchParams('msclkid=x'))).toBe(true);
+  });
+
+  it('does not count fbclid, which Facebook appends to organic links too', () => {
+    expect(hasAdClickId(new URLSearchParams('fbclid=IwAR0'))).toBe(false);
+  });
+
+  it('does not count an empty click id or a page with none', () => {
+    expect(hasAdClickId(new URLSearchParams('gclid='))).toBe(false);
+    expect(hasAdClickId(new URLSearchParams('gclid=%20%20'))).toBe(false);
+    expect(hasAdClickId(new URLSearchParams('utm_source=google'))).toBe(false);
   });
 });

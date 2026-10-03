@@ -169,8 +169,16 @@ export function successResponse<T>(
 }
 
 export function withCacheControl(response: Response, value: string): Response {
-  response.headers.set('Cache-Control', value);
-  return response;
+  try {
+    response.headers.set('Cache-Control', value);
+    return response;
+  } catch {
+    // Response.redirect() and fetched responses have immutable headers, so the
+    // header goes on a copy instead.
+    const copy = new Response(response.body, response);
+    copy.headers.set('Cache-Control', value);
+    return copy;
+  }
 }
 
 /**
