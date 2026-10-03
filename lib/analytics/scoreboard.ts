@@ -14,6 +14,7 @@ import type { AcquisitionChannel } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getCachedStripeStats } from '@/lib/admin-stats';
 import { getUploaderCountsByAccount, uploaderWindowStart } from '@/lib/uploader-stats';
+import { countedEventSql } from '@/lib/stats-exclusion';
 
 /**
  * What "using the product" means for a paying account.
@@ -359,8 +360,9 @@ export async function getCohortComparison(
         AND e.name::text = 'SUBSCRIPTION_STARTED'
         AND e.occurred_at <= u."createdAt" + ${observationInterval}::interval
     ) p ON TRUE
-    WHERE (u."createdAt" >= ${beforeStart} AND u."createdAt" < ${beforeEnd})
-       OR (u."createdAt" >= ${afterStart} AND u."createdAt" < ${afterEnd})
+    WHERE ((u."createdAt" >= ${beforeStart} AND u."createdAt" < ${beforeEnd})
+       OR (u."createdAt" >= ${afterStart} AND u."createdAt" < ${afterEnd}))
+      AND NOT u."excludedFromStats"
     GROUP BY 1
   `;
 
@@ -414,6 +416,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
              COUNT(DISTINCT COALESCE(anonymous_id, id))::int AS subjects
       FROM analytics_events
       WHERE occurred_at >= ${firstWeekStart}
+        AND ${countedEventSql('analytics_events')}
       GROUP BY 1, 2
     `,
     db.$queryRaw<ChannelQueryRow[]>`
@@ -423,6 +426,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       FROM analytics_events e
       LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
       WHERE e.occurred_at >= ${channelWindowStart}
+        AND ${countedEventSql('e')}
       GROUP BY 1, 2
     `,
     // Same channel rule as the table above, so these rows add up to its REFERRAL
@@ -437,6 +441,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       WHERE e.occurred_at >= ${channelWindowStart}
         AND e.name::text = 'LANDING_VIEW'
         AND COALESCE(ua.channel, e.channel)::text = 'REFERRAL'
+        AND ${countedEventSql('e')}
       GROUP BY 1, 2
       ORDER BY 3 DESC, 1 ASC NULLS LAST, 2 ASC NULLS LAST
       LIMIT ${REFERRAL_ROW_LIMIT}
@@ -447,6 +452,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
         COUNT(*) FILTER (WHERE name::text = 'SUBSCRIPTION_CANCELED')::int AS canceled
       FROM analytics_events
       WHERE occurred_at < ${firstWeekStart}
+        AND ${countedEventSql('analytics_events')}
     `,
     db.$queryRaw<PaidQueryRow[]>`
       SELECT u.id AS user_id,
@@ -472,8 +478,9 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       LEFT JOIN analytics_events e
         ON e.user_id = u.id
        AND e.name::text = ANY(${[...VALUE_EVENT_NAMES]}::text[])
-      WHERE u."subscriptionStatus"::text IN ('ACTIVE', 'TRIALING')
-         OR (u."subscriptionStatus"::text = 'FREE' AND u."trialEndsAt" > NOW())
+      WHERE (u."subscriptionStatus"::text IN ('ACTIVE', 'TRIALING')
+         OR (u."subscriptionStatus"::text = 'FREE' AND u."trialEndsAt" > NOW()))
+        AND NOT u."excludedFromStats"
       GROUP BY u.id, u.name, u.email, u."subscriptionStatus", u."trialEndsAt", ua.channel,
                ua.self_reported
       ORDER BY MAX(e.occurred_at) ASC NULLS FIRST

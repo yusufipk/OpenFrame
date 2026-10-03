@@ -52,6 +52,7 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, 'prisma', 'migrations');
  */
 const REVIEWED_MIGRATIONS = [
   '20261003190000_drive_imports',
+  '20261003200000_exclude_from_stats',
   '20260926140000_attachment_comment_timestamps', // replayed: finite timestamp range check
   '20260929120000_project_delete_name_confirmation_preference',
   '20260929160000_project_client_branding',

@@ -307,6 +307,60 @@ describe('getScoreboard', () => {
     expect(ids).not.toContain(expired.id);
     expect(scoreboard.paidAccounts[0]?.status).toBe('TRIALING');
   });
+
+  it('leaves an account an admin excluded out of every table', async () => {
+    const thisWeek = startOfThisWeek();
+    const counted = await createUser({ subscriptionStatus: 'ACTIVE' });
+    const excluded = await createUser({ subscriptionStatus: 'ACTIVE' });
+    await db.user.update({ where: { id: excluded.id }, data: { excludedFromStats: true } });
+    await db.userAcquisition.create({
+      data: { userId: excluded.id, channel: 'REFERRAL', anonymousId: 'tester' },
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'tester',
+        channel: 'REFERRAL',
+        referrerHost: 'test.example',
+        landingPath: '/',
+      },
+    });
+
+    for (const user of [counted, excluded]) {
+      await seedEvent({ name: 'SIGNUP_COMPLETED', occurredAt: thisWeek, userId: user.id });
+      await seedEvent({ name: 'SUBSCRIPTION_STARTED', occurredAt: thisWeek, userId: user.id });
+    }
+    // Before the window, so only the running total can pick it up.
+    await seedEvent({
+      name: 'SUBSCRIPTION_STARTED',
+      occurredAt: daysAgo(120),
+      userId: excluded.id,
+    });
+    // Signed-out visits carry only the visitor cookie the account signed up with: one
+    // tied to the account at signup, and one made later after signing out.
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: thisWeek,
+      anonymousId: 'tester',
+      userId: excluded.id,
+      channel: 'REFERRAL',
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: thisWeek,
+      anonymousId: 'tester',
+      channel: 'REFERRAL',
+    });
+    // A stranger's visit still counts.
+    await seedEvent({ name: 'LANDING_VIEW', occurredAt: thisWeek, anonymousId: 'stranger' });
+
+    const scoreboard = await getScoreboard({ weeks: 2 });
+    const last = scoreboard.weeks[scoreboard.weeks.length - 1];
+
+    expect(last).toMatchObject({ visitors: 1, signups: 1, newPaid: 1, activePaid: 1 });
+    expect(scoreboard.channels.find((row) => row.channel === 'REFERRAL')).toBeUndefined();
+    expect(scoreboard.referrals).toEqual([]);
+    expect(scoreboard.paidAccounts.map((row) => row.userId)).toEqual([counted.id]);
+  });
 });
 
 // The cohort comparison is another block of raw SQL, and the part most easily
@@ -385,6 +439,26 @@ describe('getCohortComparison', () => {
       expect.objectContaining({ cohort: 'CARD_FIRST', signups: 2, trials: 0, paid: 1 }),
       expect.objectContaining({ cohort: 'CARDLESS', signups: 2, trials: 2, paid: 1 }),
     ]);
+  });
+
+  it('leaves an account an admin excluded out of its cohort', async () => {
+    vi.stubEnv('OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT', CUTOVER);
+    await seedAccount({ createdAt: '2026-03-10T00:00:00.000Z' });
+    const excluded = await seedAccount({
+      createdAt: '2026-03-11T00:00:00.000Z',
+      trialAt: '2026-03-11T00:00:00.000Z',
+      paidAt: '2026-03-12T00:00:00.000Z',
+    });
+    await db.user.update({ where: { id: excluded.id }, data: { excludedFromStats: true } });
+
+    const comparison = await getCohortComparison(NOW);
+
+    expect(comparison?.rows[1]).toMatchObject({
+      cohort: 'CARDLESS',
+      signups: 1,
+      trials: 0,
+      paid: 0,
+    });
   });
 
   it('reports both cohorts as empty rows rather than omitting them', async () => {

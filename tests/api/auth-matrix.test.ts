@@ -50,6 +50,7 @@ import {
 import * as adminFeedbackRoute from '@/app/api/admin/feedback/[feedbackId]/route';
 import * as adminGrowthRoute from '@/app/api/admin/growth/route';
 import * as adminRefreshR2Route from '@/app/api/admin/stats/refresh-r2/route';
+import * as adminUserRoute from '@/app/api/admin/users/[userId]/route';
 import * as approvalCancelRoute from '@/app/api/approvals/[requestId]/cancel/route';
 import * as approvalDecisionRoute from '@/app/api/approvals/[requestId]/decision/route';
 import * as billingCancelRoute from '@/app/api/billing/cancel/route';
@@ -168,7 +169,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 85;
+const EXPECTED_ROUTE_MODULE_COUNT = 86;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -448,6 +449,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     file: 'admin/stats/refresh-r2/route.ts',
     module: adminRefreshR2Route,
     url: () => '/api/admin/stats/refresh-r2',
+  },
+  {
+    file: 'admin/users/[userId]/route.ts',
+    module: adminUserRoute,
+    url: (f) => `/api/admin/users/${f.userId}`,
+    params: (f) => ({ userId: f.userId }),
+    body: { excludedFromStats: true },
   },
   {
     file: 'approvals/[requestId]/cancel/route.ts',
@@ -1251,6 +1259,63 @@ describe('auth matrix', () => {
 
       expect(response.status).toBe(200);
       expect(await db.userFeedback.count({ where: { id: fixtures.feedbackId } })).toBe(0);
+    });
+
+    it('refuses PATCH /api/admin/users/[userId] to a non-admin and leaves the account counted', async () => {
+      signedInAs({ id: fixtures.userId, isAdmin: false });
+
+      const response = await callRoute(
+        adminUserRoute.PATCH as unknown as RouteHandler<ParamRecord>,
+        apiRequest(`/api/admin/users/${fixtures.userId}`, {
+          method: 'PATCH',
+          body: { excludedFromStats: true },
+        }),
+        { userId: fixtures.userId }
+      );
+
+      expect(response.status).toBe(403);
+      const user = await db.user.findUniqueOrThrow({ where: { id: fixtures.userId } });
+      expect(user.excludedFromStats).toBe(false);
+    });
+
+    it('lets an admin PATCH /api/admin/users/[userId] to exclude an account and count it again', async () => {
+      signedInAs({ id: fixtures.userId, isAdmin: true });
+      const patch = (excludedFromStats: unknown) =>
+        callRoute(
+          adminUserRoute.PATCH as unknown as RouteHandler<ParamRecord>,
+          apiRequest(`/api/admin/users/${fixtures.userId}`, {
+            method: 'PATCH',
+            body: { excludedFromStats },
+          }),
+          { userId: fixtures.userId }
+        );
+      const excluded = async () =>
+        (await db.user.findUniqueOrThrow({ where: { id: fixtures.userId } })).excludedFromStats;
+
+      expect((await patch(true)).status).toBe(200);
+      expect(await excluded()).toBe(true);
+
+      // Anything but a boolean is refused rather than read as truthy or falsy.
+      expect((await patch('false')).status).toBe(400);
+      expect(await excluded()).toBe(true);
+
+      expect((await patch(false)).status).toBe(200);
+      expect(await excluded()).toBe(false);
+    });
+
+    it('answers 404 to an admin for an account that does not exist', async () => {
+      signedInAs({ id: fixtures.userId, isAdmin: true });
+
+      const response = await callRoute(
+        adminUserRoute.PATCH as unknown as RouteHandler<ParamRecord>,
+        apiRequest('/api/admin/users/no-such-user', {
+          method: 'PATCH',
+          body: { excludedFromStats: true },
+        }),
+        { userId: 'no-such-user' }
+      );
+
+      expect(response.status).toBe(404);
     });
 
     it('refuses POST /api/admin/stats/refresh-r2 to a non-admin', async () => {

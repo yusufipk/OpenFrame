@@ -29,6 +29,7 @@ import { Film, HardDrive } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { StatsExclusionButton } from '@/components/admin/stats-exclusion-button';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -428,6 +429,7 @@ export default async function AdminUsersPage({
     billingInterval: true,
     storageBlocks: true,
     stripeSubscriptionId: true,
+    excludedFromStats: true,
     foundingSubscriptionId: true,
     ownedWorkspaces: {
       select: {
@@ -464,6 +466,7 @@ export default async function AdminUsersPage({
     storageBlocks: number;
     stripeSubscriptionId: string | null;
     foundingSubscriptionId: string | null;
+    excludedFromStats: boolean;
     ownedWorkspaces: Array<{ _count: { members: number } }>;
     _count: { ownedWorkspaces: number; projects: number; comments: number };
     invitedMembersCount: number;
@@ -843,8 +846,19 @@ export default async function AdminUsersPage({
                     <TableRow key={user.id}>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="font-medium">{user.name || 'Anonymous'}</span>
+                          <span className="font-medium">
+                            {user.name || 'Anonymous'}
+                            {user.excludedFromStats ? (
+                              <Badge variant="outline" className="ml-2 align-middle">
+                                Not in stats
+                              </Badge>
+                            ) : null}
+                          </span>
                           <span className="text-xs text-muted-foreground">{user.email}</span>
+                          <StatsExclusionButton
+                            userId={user.id}
+                            excluded={user.excludedFromStats}
+                          />
                         </div>
                       </TableCell>
                       {stripeBillingEnabled &&

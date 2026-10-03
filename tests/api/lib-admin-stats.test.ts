@@ -889,6 +889,31 @@ describe('getCachedStripeStats', () => {
     expect(stripe.retrievedPriceIds).toEqual(['price_admin_stats_test']);
   });
 
+  it('leaves an account an admin excluded out of every count and out of the MRR', async () => {
+    await createUser({ subscriptionStatus: 'ACTIVE' });
+    // An owner's or tester's accounts: one paying, one on a cardless trial, one free.
+    for (const data of [
+      { subscriptionStatus: 'ACTIVE' as const },
+      { subscriptionStatus: 'FREE' as const, trialEndsAt: new Date(Date.now() + 60_000) },
+      { subscriptionStatus: 'FREE' as const, trialEndsAt: null },
+    ]) {
+      const user = await createUser(data);
+      await db.user.update({ where: { id: user.id }, data: { excludedFromStats: true } });
+    }
+    stubStripePrice({ unit_amount: 1900, currency: 'usd' });
+
+    expect(await getCachedStripeStats()).toEqual({
+      activeSubscribers: 1,
+      trialingUsers: 0,
+      pastDueUsers: 0,
+      canceledUsers: 0,
+      freeUsers: 0,
+      otherStatusUsers: 0,
+      mrrCents: 1900,
+      currency: 'usd',
+    });
+  });
+
   // The cardless trial writes only trialEndsAt, so the account sits at FREE with no
   // Stripe subscription behind it. Counting the status column alone reported every
   // one of them as a free user and left "On Trial" at zero on the dashboard.
