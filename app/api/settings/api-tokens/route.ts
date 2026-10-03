@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
+import { isPaidTier } from '@/lib/billing';
 import { API_TOKEN_SCOPES, isApiTokenScope } from '@/lib/api-token-scopes';
 import {
   generateApiToken,
@@ -61,6 +62,22 @@ export async function POST(request: NextRequest) {
       return apiErrors.unauthorized();
     }
     const userId = session.user.id;
+
+    // Tokens are a paid feature: a cardless trial or a lapsed account cannot mint one. Tokens it
+    // already holds can still be listed and revoked.
+    const billing = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        subscriptionStatus: true,
+        stripeCurrentPeriodEnd: true,
+        billingAccessEndedAt: true,
+      },
+    });
+    if (!billing || !isPaidTier(billing)) {
+      return apiErrors.forbidden(
+        'API tokens are available on a paid plan. Subscribe to create one.'
+      );
+    }
 
     const body = (await request.json().catch(() => null)) as {
       name?: unknown;
