@@ -153,8 +153,8 @@ describe('POST /api/settings/api-tokens', () => {
     expect(await db.apiToken.count()).toBe(0);
   });
 
-  it('refuses an account on a free trial', async () => {
-    const user = await createUser();
+  it('lets an account on a free trial create a token', async () => {
+    const user = await createUser({ trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) });
     signedInAs(user);
 
     const response = await callRoute(
@@ -165,9 +165,8 @@ describe('POST /api/settings/api-tokens', () => {
       })
     );
 
-    expect(response.status).toBe(403);
-    expect(await readError(response)).toMatch(/paid plan/);
-    expect(await db.apiToken.count()).toBe(0);
+    expect(response.status).toBe(201);
+    expect(await db.apiToken.count({ where: { userId: user.id } })).toBe(1);
   });
 
   it('refuses a subscription whose first payment never went through', async () => {
