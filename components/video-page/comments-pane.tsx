@@ -1,8 +1,11 @@
 'use client';
 
+import type { CommentExportFormat, NleExportOptions, NleFormat } from '@/lib/nle-comment-export';
+
 import { memo, useState, type ReactNode, type RefObject } from 'react';
 import {
   ArrowUpRight,
+  Clapperboard,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -23,6 +26,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { NleExportDialog } from '@/components/video-page/nle-export-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -63,7 +67,8 @@ interface CommentsPaneProps {
   isGuest: boolean;
   isExportingCsv: boolean;
   isExportingPdf: boolean;
-  handleExportComments: (format: 'csv' | 'pdf') => void;
+  isExportingNle?: boolean;
+  handleExportComments: (format: CommentExportFormat, options?: NleExportOptions) => void;
   canResolveComments: boolean;
   handleResolveComment: (commentId: string, currentlyResolved: boolean) => void;
   handleSeekToTimestamp: (
@@ -166,6 +171,7 @@ export const CommentsPane = memo(function CommentsPane({
   isGuest,
   isExportingCsv,
   isExportingPdf,
+  isExportingNle = false,
   handleExportComments,
   canResolveComments,
   handleResolveComment,
@@ -234,6 +240,7 @@ export const CommentsPane = memo(function CommentsPane({
   setActivePane,
   assetsPane,
 }: CommentsPaneProps) {
+  const [nleFormat, setNleFormat] = useState<NleFormat | null>(null);
   const [isPaneDraggingOver, setIsPaneDraggingOver] = useState(false);
   const formatCommentRange = (timestamp: number, timestampEnd: number | null) => {
     if (timestampEnd === null) return formatTime(timestamp);
@@ -334,11 +341,11 @@ export const CommentsPane = memo(function CommentsPane({
                     variant="outline"
                     size="sm"
                     className="h-8 px-2"
-                    disabled={!activeVersion || isExportingCsv || isExportingPdf}
+                    disabled={!activeVersion || isExportingCsv || isExportingPdf || isExportingNle}
                     aria-label="Download comments"
                     title="Download comments"
                   >
-                    {isExportingCsv || isExportingPdf ? (
+                    {isExportingCsv || isExportingPdf || isExportingNle ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Download className="h-4 w-4" />
@@ -348,7 +355,13 @@ export const CommentsPane = memo(function CommentsPane({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <DropdownMenuItem
-                    disabled={!activeVersion || isGuest || isExportingCsv || isExportingPdf}
+                    disabled={
+                      !activeVersion ||
+                      isGuest ||
+                      isExportingCsv ||
+                      isExportingPdf ||
+                      isExportingNle
+                    }
                     onClick={(e) => {
                       e.stopPropagation();
                       handleExportComments('csv');
@@ -363,7 +376,7 @@ export const CommentsPane = memo(function CommentsPane({
                     Download CSV
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={!activeVersion || isExportingCsv || isExportingPdf}
+                    disabled={!activeVersion || isExportingCsv || isExportingPdf || isExportingNle}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleExportComments('pdf');
@@ -373,8 +386,39 @@ export const CommentsPane = memo(function CommentsPane({
                     <FileText className="h-4 w-4 mr-2" />
                     Download PDF
                   </DropdownMenuItem>
+                  {!isImage && !isGuest && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={!activeVersion || isExportingNle}
+                        onSelect={() => setNleFormat('edl')}
+                      >
+                        <Clapperboard className="h-4 w-4 mr-2" />
+                        DaVinci Resolve (EDL)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!activeVersion || isExportingNle}
+                        onSelect={() => setNleFormat('xml')}
+                      >
+                        <Clapperboard className="h-4 w-4 mr-2" />
+                        Adobe Premiere (XML)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!activeVersion || isExportingNle}
+                        onSelect={() => setNleFormat('fcpxml')}
+                      >
+                        <Clapperboard className="h-4 w-4 mr-2" />
+                        Final Cut Pro (FCPXML)
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
+              <NleExportDialog
+                format={nleFormat}
+                onClose={() => setNleFormat(null)}
+                onExport={handleExportComments}
+              />
             </div>
           )}
         </div>

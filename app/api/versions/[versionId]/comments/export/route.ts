@@ -4,10 +4,18 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import {
   buildCommentsCsv,
-  buildCommentsPdf,
   buildExportFileBaseName,
   flattenCommentsForExport,
 } from '@/lib/comment-export';
+import { buildCommentsPdf } from '@/lib/comment-export-pdf';
+import {
+  buildNleComments,
+  NLE_FORMATS,
+  NleExportError,
+  parseNleOptions,
+  selectNleThreads,
+  type NleExportOptions,
+} from '@/lib/nle-comment-export';
 import { apiErrors, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { logError } from '@/lib/logger';
@@ -30,8 +38,24 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(request.url);
 
     const format = (searchParams.get('format') || 'csv').toLowerCase();
-    if (format !== 'csv' && format !== 'pdf') {
-      return apiErrors.badRequest('Invalid format. Use "csv" or "pdf"');
+    if (!['csv', 'pdf', ...NLE_FORMATS].includes(format)) {
+      return apiErrors.badRequest('Invalid format. Use "csv", "pdf", "edl", "xml" or "fcpxml"');
+    }
+    const nleFormat = NLE_FORMATS.find((candidate) => candidate === format);
+
+    let nleOptions: NleExportOptions | undefined;
+    if (nleFormat) {
+      if (!['true', 'false'].includes(searchParams.get('dropFrame') ?? '')) {
+        return apiErrors.badRequest(
+          'Explicit fps, origin and dropFrame options are required for NLE exports.'
+        );
+      }
+      nleOptions = {
+        fps: searchParams.get('fps') ?? '',
+        origin: searchParams.get('origin') ?? '',
+        dropFrame: searchParams.get('dropFrame') === 'true',
+      };
+      parseNleOptions(nleOptions);
     }
 
     const includeResolved = searchParams.get('includeResolved') !== 'false';
@@ -70,24 +94,32 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Version');
     }
 
-    const totalComments = await db.comment.count({
-      where: {
-        versionId,
-        ...(includeResolved ? {} : { isResolved: false }),
-      },
-    });
+    if (nleOptions && version.video.mediaType !== 'VIDEO') {
+      return apiErrors.badRequest('NLE exports require a video. Use CSV or PDF for images.');
+    }
+
+    // Count the same scope we emit: roots selected by the resolved filter and all
+    // their direct replies. Resolved replies still belong to included threads.
+    const rootFilter = { parentId: null, ...(includeResolved ? {} : { isResolved: false }) };
+    const exportWhere = {
+      versionId,
+      OR: [rootFilter, { parent: { versionId, ...rootFilter } }],
+    };
+    // NLE must preserve arbitrary reply depth. Bound the whole version before
+    // reading/filtering its parent graph; legacy CSV/PDF keep direct replies.
+    const readWhere = nleOptions ? { versionId } : exportWhere;
+    const totalComments = await db.comment.count({ where: readWhere });
     if (totalComments > MAX_EXPORT_COMMENTS) {
       return apiErrors.badRequest(
         `Too many comments to export (${totalComments}). Maximum allowed is ${MAX_EXPORT_COMMENTS}.`
       );
     }
 
-    const comments = await db.comment.findMany({
-      where: {
-        versionId,
-        parentId: null,
-        ...(includeResolved ? {} : { isResolved: false }),
-      },
+    // A single bounded query also covers comments inserted after the count. A
+    // nested take would bound each thread separately, not the whole export.
+    const records = await db.comment.findMany({
+      where: readWhere,
+      take: MAX_EXPORT_COMMENTS + 1,
       orderBy: [{ timestamp: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
@@ -103,30 +135,48 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         createdAt: true,
         author: { select: { name: true } },
         guestName: true,
-        tag: { select: { name: true } },
-        replies: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            parentId: true,
-            content: true,
-            timestamp: true,
-            timestampEnd: true,
-            isResolved: true,
-            voiceUrl: true,
-            voiceDuration: true,
-            imageUrl: true,
-            annotationData: true,
-            createdAt: true,
-            author: { select: { name: true } },
-            guestName: true,
-            tag: { select: { name: true } },
-          },
-        },
+        tag: { select: { name: true, color: true } },
       },
     });
+    if (records.length > MAX_EXPORT_COMMENTS) {
+      return apiErrors.badRequest(
+        `Too many comments to export. Maximum allowed is ${MAX_EXPORT_COMMENTS}, including replies.`
+      );
+    }
+    const repliesByParent = new Map<string, typeof records>();
+    for (const record of records) {
+      if (record.parentId !== null) {
+        const replies = repliesByParent.get(record.parentId) ?? [];
+        replies.push(record);
+        repliesByParent.set(record.parentId, replies);
+      }
+    }
+    const comments = records
+      .filter((record) => record.parentId === null)
+      .map((record) => ({
+        ...record,
+        replies: (repliesByParent.get(record.id) ?? []).sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
+        ),
+      }));
 
-    const rows = flattenCommentsForExport(comments);
+    const rows = nleOptions
+      ? selectNleThreads(
+          flattenCommentsForExport(records.map((record) => ({ ...record, replies: [] }))).map(
+            (row, index) => ({
+              ...row,
+              parentCommentId: records[index].parentId,
+              level: records[index].parentId === null ? 0 : 1,
+            })
+          ),
+          includeResolved
+        )
+      : flattenCommentsForExport(comments);
+    if (rows.length > MAX_EXPORT_COMMENTS) {
+      return apiErrors.badRequest(
+        `Too many comments to export. Maximum allowed is ${MAX_EXPORT_COMMENTS}, including replies.`
+      );
+    }
     const fileBaseName = buildExportFileBaseName(version.video.title, version.versionNumber);
     const versionMeta = {
       videoTitle: version.video.title,
@@ -134,6 +184,20 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       versionNumber: version.versionNumber,
       versionLabel: version.versionLabel,
     };
+
+    if (nleFormat && nleOptions) {
+      return withCacheControl(
+        new Response(buildNleComments(rows, version.video.title, nleFormat, nleOptions), {
+          headers: {
+            'Content-Type':
+              nleFormat === 'edl' ? 'text/plain; charset=utf-8' : 'application/xml; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${fileBaseName}.${format}"`,
+            'X-Content-Type-Options': 'nosniff',
+          },
+        }),
+        'private, no-store'
+      );
+    }
 
     if (format === 'csv') {
       const csv = buildCommentsCsv(rows, versionMeta);
@@ -148,9 +212,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       return withCacheControl(response, 'private, no-store');
     }
 
-    const pdf = buildCommentsPdf(rows, versionMeta);
-    const pdfBytes = Uint8Array.from(pdf);
-    const response = new Response(pdfBytes, {
+    const pdfBytes = await buildCommentsPdf(rows, versionMeta);
+    const response = new Response(Buffer.from(pdfBytes), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
@@ -160,6 +223,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
+    if (error instanceof NleExportError) return apiErrors.badRequest(error.message);
     logError('Error exporting comments:', error);
     return apiErrors.internalError('Failed to export comments');
   }

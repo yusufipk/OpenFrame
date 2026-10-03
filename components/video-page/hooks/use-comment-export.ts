@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import type { CommentExportFormat, NleExportOptions } from '@/lib/nle-comment-export';
 import { toast } from 'sonner';
 
 interface UseCommentExportParams {
@@ -10,21 +11,27 @@ interface UseCommentExportParams {
 
 export function useCommentExport({ activeVersionId, showResolved }: UseCommentExportParams) {
   const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [isExportingNle, setIsExportingNle] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const exportComments = useCallback(
-    async (format: 'csv' | 'pdf') => {
+    async (format: CommentExportFormat, options?: NleExportOptions) => {
       if (!activeVersionId) return;
 
       if (format === 'csv') {
         setIsExportingCsv(true);
-      } else {
+      } else if (format === 'pdf') {
         setIsExportingPdf(true);
+      } else {
+        setIsExportingNle(true);
       }
 
       try {
+        const extra = options
+          ? `&${new URLSearchParams({ fps: options.fps, origin: options.origin, dropFrame: String(options.dropFrame) })}`
+          : '';
         const response = await fetch(
-          `/api/versions/${activeVersionId}/comments/export?format=${format}&includeResolved=${showResolved}`
+          `/api/versions/${activeVersionId}/comments/export?format=${format}&includeResolved=${showResolved}${extra}`
         );
 
         if (!response.ok) {
@@ -62,8 +69,10 @@ export function useCommentExport({ activeVersionId, showResolved }: UseCommentEx
       } finally {
         if (format === 'csv') {
           setIsExportingCsv(false);
-        } else {
+        } else if (format === 'pdf') {
           setIsExportingPdf(false);
+        } else {
+          setIsExportingNle(false);
         }
       }
     },
@@ -71,6 +80,7 @@ export function useCommentExport({ activeVersionId, showResolved }: UseCommentEx
   );
 
   return {
+    isExportingNle,
     isExportingCsv,
     isExportingPdf,
     exportComments,
