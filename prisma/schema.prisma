@@ -58,7 +58,9 @@ model User {
   approvalDecisions         ApprovalDecision[]
   sentInvitations           Invitation[] @relation("InvitationsSentBy")
   acquisition               UserAcquisition?
-  analyticsEvents           AnalyticsEvent[]
+  analyticsEvents           AnalyticsEvent[]   @relation("AnalyticsEventUser")
+  analyticsEventsActed      AnalyticsEvent[]   @relation("AnalyticsEventActor")
+  uploadedVersions          VideoVersion[]     @relation("VideoVersionUploader")
   subscriptionCancellations SubscriptionCancellation[]
   managedLiveReviews LiveReviewSession[]
   liveReviewParticipants LiveReviewParticipant[]
@@ -480,6 +482,12 @@ model VideoVersion {
   
   // Status
   isActive        Boolean  @default(true) // Currently displayed version
+
+  // Who created this version, as opposed to the workspace owner it is billed to.
+  // Null on rows created before this was recorded, and after the uploader's
+  // account is deleted.
+  uploadedById    String?  @map("uploaded_by_id")
+  uploadedBy      User?    @relation("VideoVersionUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   
   // Parent video
   videoParentId   String
@@ -498,6 +506,7 @@ model VideoVersion {
   @@unique([videoParentId, versionNumber])
   @@index([videoParentId])
   @@index([videoParentId, isActive])
+  @@index([uploadedById])
   @@map("video_versions")
 }
 
@@ -1103,7 +1112,14 @@ enum AcquisitionChannel {
   DIRECT
   GITHUB
   YOUTUBE
+  // Organic search only. A paid click on a search ad is PAID.
   GOOGLE
+  // Any paid ad click: an ad network's click id on the landing URL, or a paid
+  // utm_medium such as cpc. utm_source and utm_campaign say which network.
+  // First touch still applies: a visitor who already holds a first-touch cookie
+  // from an earlier visit keeps that channel when they later click an ad, so
+  // this bucket undercounts ad clicks from people who had been here before.
+  PAID
   REVIEW_LINK
   REFERRAL
   OUTBOUND
@@ -1124,6 +1140,13 @@ enum AnalyticsEventName {
   SHARE_LINK_CREATED
   FIRST_GUEST_COMMENT
   APPROVAL_COMPLETED
+  // Ongoing use, recorded at most once per account per UTC day. They feed the
+  // scoreboard's silence check only, never the weekly funnel.
+  VERSION_ADDED
+  COMMENT_ADDED
+  LIVE_REVIEW_STARTED
+  LIVE_REVIEW_JOINED
+  APPROVAL_REQUESTED
   CHECKOUT_STARTED
   SUBSCRIPTION_STARTED
   SUBSCRIPTION_CANCELED
@@ -1184,7 +1207,11 @@ model AnalyticsEvent {
   id          String              @id @default(cuid())
   name        AnalyticsEventName
   userId      String?             @map("user_id")
-  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user        User?               @relation("AnalyticsEventUser", fields: [userId], references: [id], onDelete: SetNull)
+  // The person who acted, when that is not the account the event is counted
+  // against (a team member adding a video to the owner's project).
+  actorId     String?             @map("actor_id")
+  actor       User?               @relation("AnalyticsEventActor", fields: [actorId], references: [id], onDelete: SetNull)
   anonymousId String?             @map("anonymous_id")
   channel     AcquisitionChannel?
   dedupeKey   String              @unique @map("dedupe_key")
@@ -1194,6 +1221,7 @@ model AnalyticsEvent {
   @@index([userId, occurredAt])
   @@index([channel, name, occurredAt])
   @@index([anonymousId])
+  @@index([actorId])
   @@map("analytics_events")
 }
 

@@ -22,7 +22,7 @@ import {
   UPLOAD_RESERVATION_PURPOSES,
 } from '@/lib/storage-quota';
 import { notifyProjectOwner } from '@/lib/notifications';
-import { eventKey, recordEvent } from '@/lib/analytics/record';
+import { eventKey, recordAccountActivity, recordEvent } from '@/lib/analytics/record';
 
 export const MAX_IMAGE_REVIEW_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 20_000_000;
@@ -185,6 +185,7 @@ export async function storeImageReview(
           sizeBytes: BigInt(bytes.length),
           thumbnailSizeBytes: BigInt(thumbnailBytes.length),
           isActive: true,
+          uploadedById: input.userId,
         },
       });
       if (targetVideoId) {
@@ -246,6 +247,14 @@ export async function storeImageReview(
           name: 'VIDEO_ADDED',
           dedupeKey: eventKey('VIDEO_ADDED', result.id),
           userId: project.ownerId,
+          actorId: input.userId,
+        });
+      }
+      if (targetVideoId) {
+        await recordAccountActivity({
+          name: 'VERSION_ADDED',
+          accountId: reservedOwnerId,
+          actorId: input.userId,
         });
       }
     } catch (error) {

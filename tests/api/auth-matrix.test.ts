@@ -101,7 +101,9 @@ import * as versionApprovalsRoute from '@/app/api/versions/[versionId]/approvals
 import * as commentsExportRoute from '@/app/api/versions/[versionId]/comments/export/route';
 import * as versionCommentsRoute from '@/app/api/versions/[versionId]/comments/route';
 import * as versionDownloadRoute from '@/app/api/versions/[versionId]/download/route';
+import * as versionPlaybackRoute from '@/app/api/versions/[versionId]/playback/route';
 import * as assetDownloadRoute from '@/app/api/videos/[videoId]/assets/[assetId]/download/route';
+import * as assetPlaybackRoute from '@/app/api/videos/[videoId]/assets/[assetId]/playback/route';
 import * as assetRoute from '@/app/api/videos/[videoId]/assets/[assetId]/route';
 import * as attachmentCommentsRoute from '@/app/api/videos/[videoId]/attachment-comments/route';
 import * as attachmentCommentRoute from '@/app/api/videos/[videoId]/attachment-comments/[attachmentCommentId]/route';
@@ -164,7 +166,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 81;
+const EXPECTED_ROUTE_MODULE_COUNT = 83;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -782,6 +784,12 @@ const ROUTE_CASES: readonly RouteCase[] = [
     params: (f) => ({ versionId: f.versionId }),
   },
   {
+    file: 'versions/[versionId]/playback/route.ts',
+    module: versionPlaybackRoute,
+    url: (f) => `/api/versions/${f.versionId}/playback`,
+    params: (f) => ({ versionId: f.versionId }),
+  },
+  {
     file: 'videos/[videoId]/attachment-comments/route.ts',
     module: attachmentCommentsRoute,
     url: (f) =>
@@ -803,6 +811,12 @@ const ROUTE_CASES: readonly RouteCase[] = [
     file: 'videos/[videoId]/assets/[assetId]/download/route.ts',
     module: assetDownloadRoute,
     url: (f) => `/api/videos/${f.videoId}/assets/${f.assetId}/download`,
+    params: (f) => ({ videoId: f.videoId, assetId: f.assetId }),
+  },
+  {
+    file: 'videos/[videoId]/assets/[assetId]/playback/route.ts',
+    module: assetPlaybackRoute,
+    url: (f) => `/api/videos/${f.videoId}/assets/${f.assetId}/playback`,
     params: (f) => ({ videoId: f.videoId, assetId: f.assetId }),
   },
   {
@@ -1010,6 +1024,15 @@ const NOT_FOUND_IS_THE_GUARD = new Map<string, string>([
   ],
   [
     'GET videos/[videoId]/assets/[assetId]/download/route.ts',
+    'hides whether the video id exists from a caller with no relationship to it',
+  ],
+  // The signed playback routes follow the download routes for the same reason.
+  [
+    'GET versions/[versionId]/playback/route.ts',
+    'hides whether the version id exists from a caller with no relationship to it',
+  ],
+  [
+    'GET videos/[videoId]/assets/[assetId]/playback/route.ts',
     'hides whether the video id exists from a caller with no relationship to it',
   ],
 ]);

@@ -25,11 +25,11 @@ import type { DriveImport, DriveImportBackend, DriveImportStatus } from '@prisma
 import type { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { runWithConcurrency } from '@/lib/async-pool';
-import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
+import { canonicalBunnyThumbnailUrl } from '@/lib/bunny-cdn-token';
 import { cleanupBunnyStreamVideosBestEffort } from '@/lib/bunny-stream-cleanup';
 import { checkFolderAccess, checkVideoAccess } from '@/lib/content-access';
 import { ContentError, contentTransaction } from '@/lib/content-mutations';
-import { eventKey, recordEvent } from '@/lib/analytics/record';
+import { eventKey, recordAccountActivity, recordEvent } from '@/lib/analytics/record';
 import { getR2MultipartPartSizeBytes } from '@/lib/feature-flags';
 import { driveDownloadUrl, isGoogleThumbnailUrl, type DriveFileMetadata } from '@/lib/google-drive';
 import { logError } from '@/lib/logger';
@@ -678,12 +678,11 @@ function mediaForImport(row: DriveImport): {
   if (row.backend === 'BUNNY') {
     const config = getBunnyConfig();
     if (!config || !row.bunnyVideoId) throw new Error('Bunny import has no video to attach');
-    const cdnHostname = resolveServerBunnyCdnHostname();
     return {
       providerId: 'bunny',
       videoId: row.bunnyVideoId,
       originalUrl: `https://iframe.mediadelivery.net/embed/${config.libraryId}/${row.bunnyVideoId}`,
-      thumbnailUrl: cdnHostname ? `https://${cdnHostname}/${row.bunnyVideoId}/thumbnail.jpg` : null,
+      thumbnailUrl: canonicalBunnyThumbnailUrl(row.bunnyVideoId),
     };
   }
 
@@ -779,6 +778,7 @@ export async function finalizeDriveImport(importId: string): Promise<void> {
             sizeBytes: current.sizeBytes,
             isActive: true,
             videoParentId: current.targetVideoId,
+            uploadedById: current.userId,
           },
           select: { id: true },
         });
@@ -819,6 +819,7 @@ export async function finalizeDriveImport(importId: string): Promise<void> {
                 thumbnailUrl: media.thumbnailUrl,
                 sizeBytes: current.sizeBytes,
                 isActive: true,
+                uploadedById: current.userId,
               },
             },
           },
@@ -895,6 +896,13 @@ async function announceImport(row: DriveImport, created: FinalizedImport): Promi
       name: 'VIDEO_ADDED',
       dedupeKey: eventKey('VIDEO_ADDED', created.videoId),
       userId: project.ownerId,
+      actorId: row.userId,
+    });
+  } else {
+    await recordAccountActivity({
+      name: 'VERSION_ADDED',
+      accountId: row.billedUserId,
+      actorId: row.userId,
     });
   }
 

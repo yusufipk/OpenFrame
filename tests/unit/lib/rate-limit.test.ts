@@ -192,6 +192,17 @@ describe('RATE_LIMIT_CONFIGS', () => {
     expect(RATE_LIMIT_CONFIGS.api).toEqual({ windowMs: 60_000, maxRequests: 100 });
   });
 
+  // "Download all" paces itself to 100 asset requests per 61 s and a project download
+  // sends one version request per video. Single-digit limits here stopped both part way.
+  it('pins the download buckets at the sizes a bulk download was tuned for', () => {
+    expect(RATE_LIMIT_CONFIGS['asset-download']).toEqual({ windowMs: 60_000, maxRequests: 120 });
+    expect(RATE_LIMIT_CONFIGS['video-download']).toEqual({ windowMs: 60_000, maxRequests: 60 });
+    expect(RATE_LIMIT_CONFIGS['video-download-prepare']).toEqual({
+      windowMs: 60_000,
+      maxRequests: 30,
+    });
+  });
+
   it('keeps auth actions stricter per minute than the general api bucket', () => {
     const perMinute = (action: string) =>
       (RATE_LIMIT_CONFIGS[action].maxRequests / RATE_LIMIT_CONFIGS[action].windowMs) * 60_000;

@@ -173,10 +173,6 @@ function makeFile(name = 'my clip.mp4') {
 beforeEach(() => {
   tusUploads.length = 0;
   tusFailure = null;
-  // The runtime resolver reads BUNNY_CDN_URL first, so pin it rather than
-  // inheriting the value a developer has in .env.
-  vi.stubEnv('BUNNY_CDN_URL', undefined);
-  vi.stubEnv('NEXT_PUBLIC_BUNNY_CDN_URL', 'https://cdn.example.test');
   fetchMock = vi.fn((url: string) => {
     if (url === BUNNY_INIT_URL) {
       return Promise.resolve(
@@ -453,7 +449,9 @@ describe('useVersionActions uploading a file to Bunny', () => {
     });
   });
 
-  it('registers the version against the Bunny embed and CDN thumbnail', async () => {
+  // The server derives a Bunny thumbnail from the video id and signs it per viewer,
+  // so the client sends none: a signed URL echoed back would expire in the database.
+  it('registers the version against the Bunny embed and leaves the thumbnail to the server', async () => {
     const harness = renderVersionActions({ directUploadsEnabled: true });
 
     await createFromFile(harness);
@@ -466,19 +464,10 @@ describe('useVersionActions uploading a file to Bunny', () => {
       objectKey: null,
       reservationId: null,
       versionLabel: null,
-      thumbnailUrl: 'https://cdn.example.test/bunny-vid/thumbnail.jpg',
+      thumbnailUrl: null,
       duration: null,
       setActive: true,
     });
-  });
-
-  it('sends no thumbnail when no CDN hostname is configured', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BUNNY_CDN_URL', '');
-    const harness = renderVersionActions({ directUploadsEnabled: true });
-
-    await createFromFile(harness);
-
-    expect(bodyOf(callsTo(VERSIONS_URL, 'POST')[0])).toMatchObject({ thumbnailUrl: null });
   });
 
   it('reports upload progress and then resets it', async () => {

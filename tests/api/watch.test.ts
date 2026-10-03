@@ -237,6 +237,26 @@ describe('GET /api/watch/[videoId]', () => {
     }
   });
 
+  it('does not tell an anonymous viewer who uploaded a version', async () => {
+    const scenario = await seedVersion({ visibility: 'PUBLIC' });
+    await db.videoVersion.update({
+      where: { id: scenario.version.id },
+      data: { uploadedById: scenario.owner.id },
+    });
+    signedOut();
+
+    const payload = await readData<{ versions: Array<Record<string, unknown>> }>(
+      await callRoute(
+        watchVideo,
+        apiRequest(`/api/watch/${scenario.video.id}?includeComments=true`),
+        { videoId: scenario.video.id }
+      )
+    );
+
+    expect(payload.versions[0]).toHaveProperty('comments');
+    expect(payload.versions[0]).not.toHaveProperty('uploadedById');
+  });
+
   it('omits comments entirely unless includeComments=true', async () => {
     const scenario = await seedVersion();
     await createComment({ versionId: scenario.version.id, authorId: scenario.owner.id });

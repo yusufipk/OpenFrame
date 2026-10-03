@@ -8,6 +8,11 @@ import { rateLimit } from '@/lib/rate-limit';
 import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { readBunnyUploadGrant } from '@/lib/bunny-upload-token';
+import {
+  canonicalBunnyThumbnailUrl,
+  isBunnyCdnUrl,
+  withSignedThumbnail,
+} from '@/lib/bunny-cdn-token';
 import { finalizeR2VideoUpload } from '@/lib/r2-video-finalize';
 import { UPLOAD_RESERVATION_PURPOSES } from '@/lib/storage-quota';
 import { logError } from '@/lib/logger';
@@ -52,6 +57,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           select: {
             id: true,
             thumbnailUrl: true,
+            providerId: true,
+            videoId: true,
             duration: true,
             versionNumber: true,
             _count: { select: { comments: true } },
@@ -61,7 +68,12 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    const response = successResponse({ videos });
+    const response = successResponse({
+      videos: videos.map((video) => ({
+        ...video,
+        versions: video.versions.map((version) => withSignedThumbnail(version)),
+      })),
+    });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching videos:', error);
@@ -146,6 +158,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const thumbnailUrlError = validateOptionalUrlOrAppPath(thumbnailUrl, 'Thumbnail URL');
     if (thumbnailUrlError) {
       return apiErrors.badRequest(thumbnailUrlError);
+    }
+    // Only a Bunny row may point at the pull zone, and the server writes that URL
+    // itself. Anything else there would be a path for the thumbnail signer to sign.
+    if (normalizedProviderIdEarly !== 'bunny' && isBunnyCdnUrl(thumbnailUrl)) {
+      return apiErrors.badRequest('Thumbnail URL must not point at the video CDN');
     }
 
     const normalizedProviderId =
@@ -298,13 +315,19 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
               videoId: persistedVideoId,
               originalUrl: videoUrl,
               title: title.trim(),
+              // A Bunny thumbnail is derived here rather than taken from the client,
+              // so the stored URL is always the unsigned canonical one.
               thumbnailUrl:
                 normalizedProviderId === 'r2'
                   ? (finalizedR2Session?.thumbnailProxyUrl ?? '/placeholder-video-thumbnail.png')
-                  : thumbnailUrl || null,
+                  : normalizedProviderId === 'bunny'
+                    ? canonicalBunnyThumbnailUrl(persistedVideoId)
+                    : thumbnailUrl || null,
               duration: duration || null,
               sizeBytes: versionSizeBytes,
               isActive: true,
+              // The caller, or the owner of the API token the request came in on.
+              uploadedById: session.user.id,
             },
           },
         },
@@ -330,10 +353,15 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     await recordEvent({
       name: 'VIDEO_ADDED',
       dedupeKey: eventKey('VIDEO_ADDED', video.id),
+      // userId stays the account the scoreboard counts; actorId is who added it.
       userId: project.ownerId,
+      actorId: session.user.id,
     });
 
-    const response = successResponse(video, 201);
+    const response = successResponse(
+      { ...video, versions: video.versions.map((version) => withSignedThumbnail(version)) },
+      201
+    );
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     if (error instanceof ContentError) return apiErrors.forbidden(error.message);

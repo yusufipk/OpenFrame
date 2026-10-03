@@ -22,7 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { isTrialStorageError, toastApiError } from '@/lib/client/api-error';
 import {
   isImageFile,
@@ -119,7 +118,6 @@ export function VideoDragDropUploader({
   const hasLoadedProjectsRef = useRef(false);
 
   const needsProjectSelection = !fixedProjectId;
-  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
 
   const projectsById = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project.name]));
@@ -307,7 +305,6 @@ export function VideoDragDropUploader({
             await uploadProjectVideo(projectId, item.file, {
               provider: directUploadProvider,
               folderId,
-              bunnyCdnHostname,
               onProgress: (progress) => {
                 setUploadProgress(progress);
                 setQueue((prev) =>
@@ -385,15 +382,7 @@ export function VideoDragDropUploader({
         toast.error('All uploads failed');
       }
     },
-    [
-      bunnyCdnHostname,
-      directUploadProvider,
-      folderId,
-      fixedProjectId,
-      projectsById,
-      resetUploadState,
-      router,
-    ]
+    [directUploadProvider, folderId, fixedProjectId, projectsById, resetUploadState, router]
   );
 
   const handleDropFiles = useCallback(

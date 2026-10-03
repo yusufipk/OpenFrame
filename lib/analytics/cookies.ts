@@ -48,6 +48,7 @@ const CHANNELS: readonly AcquisitionChannel[] = [
   'GITHUB',
   'YOUTUBE',
   'GOOGLE',
+  'PAID',
   'REVIEW_LINK',
   'REFERRAL',
   'OUTBOUND',

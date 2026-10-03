@@ -17,8 +17,9 @@ import {
   enterPreviewFullscreen,
   PreviewPlayerControls,
 } from '@/components/video-page/preview-player-controls';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
+import { useBunnyPlaybackSource } from '@/components/video-page/hooks/use-bunny-playback-source';
 import type { BunnyPlaybackState, BunnyQualityOption } from '@/components/video-page/types';
+import { findTopLevel, shouldUseHlsJs } from '@/components/video-page/hooks/quality-preference';
 
 import {
   AttachmentVideoAnnotationContext,
@@ -27,6 +28,8 @@ import {
 
 interface BunnyPreviewPlayerProps {
   providerVideoId: string | null;
+  /** Route that issues the signed CDN directory for this video. */
+  playbackEndpoint: string | null;
   isProcessing: boolean;
   onReadyToPlay?: () => void;
 }
@@ -51,13 +54,19 @@ function formatBunnyQualityLabel(
 }
 
 export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPreviewPlayerProps>(
-  function BunnyPreviewPlayer({ providerVideoId, isProcessing, onReadyToPlay }, ref) {
+  function BunnyPreviewPlayer(
+    { providerVideoId, playbackEndpoint, isProcessing, onReadyToPlay },
+    ref
+  ) {
     const annotation = useContext(AttachmentVideoAnnotationContext);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const hlsRef = useRef<Hls | null>(null);
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingHlsQualityRef = useRef<number | null>(null);
+    // The rendition picked from the menu. hls.js drops a manual level to Auto on the first
+    // fragment error, so a token reload cannot read the pick back from hls.js.
+    const manualHlsLevelRef = useRef<number | null>(null);
     const onReadyToPlayRef = useRef(onReadyToPlay);
     const hasNotifiedReadyRef = useRef(false);
     const playbackSpeedRef = useRef(1);
@@ -74,16 +83,22 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
     const [selectedQualityLevel, setSelectedQualityLevel] = useState<number>(-1);
     const [bunnySourcePreference, setBunnySourcePreference] = useState<'auto' | 'original'>('auto');
     const [bunnyPlaybackState, setBunnyPlaybackState] = useState<BunnyPlaybackState>('none');
-    const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
+    const bunnyPlayback = useBunnyPlaybackSource(providerVideoId ? playbackEndpoint : null);
+    const bunnyPlaybackRef = useRef(bunnyPlayback);
+    useEffect(() => {
+      bunnyPlaybackRef.current = bunnyPlayback;
+    }, [bunnyPlayback]);
+    const playbackBaseUrl = bunnyPlayback.baseUrl;
+    const bunnyPlaybackFailed = bunnyPlayback.failed;
 
-    const playlistUrl = useMemo(() => {
-      if (!providerVideoId || !bunnyCdnHostname) return null;
-      return `https://${bunnyCdnHostname}/${providerVideoId}/playlist.m3u8`;
-    }, [bunnyCdnHostname, providerVideoId]);
-    const originalUrl = useMemo(() => {
-      if (!providerVideoId || !bunnyCdnHostname) return null;
-      return `https://${bunnyCdnHostname}/${providerVideoId}/original`;
-    }, [bunnyCdnHostname, providerVideoId]);
+    const playlistUrl = useMemo(
+      () => (playbackBaseUrl ? `${playbackBaseUrl}playlist.m3u8` : null),
+      [playbackBaseUrl]
+    );
+    const originalUrl = useMemo(
+      () => (playbackBaseUrl ? `${playbackBaseUrl}original` : null),
+      [playbackBaseUrl]
+    );
 
     useEffect(() => {
       onReadyToPlayRef.current = onReadyToPlay;
@@ -110,6 +125,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
       const videoEl = videoRef.current;
       const sourceKey = providerVideoId ?? null;
       const sourceChanged = previousProviderVideoIdRef.current !== sourceKey;
+      if (sourceChanged) manualHlsLevelRef.current = null;
       previousProviderVideoIdRef.current = sourceKey;
 
       if (!videoEl || !playlistUrl) {
@@ -120,7 +136,10 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         setDuration(0);
         setQualityOptions((prev) => (sourceChanged ? [] : prev));
         setSelectedQualityLevel(-1);
-        setBunnyPlaybackState('error');
+        // Still waiting for the signed grant is not an error; this effect runs
+        // again once it arrives.
+        const awaitingGrant = !!providerVideoId && !!playbackEndpoint && !bunnyPlaybackFailed;
+        setBunnyPlaybackState(awaitingGrant ? 'none' : 'error');
         return;
       }
 
@@ -164,27 +183,67 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         return `${baseUrl}${separator}retry=${Date.now()}-${retryAttempt}`;
       };
 
+      // Retries read the newest signed base, so a refreshed grant is picked up.
+      const latestBase = () => bunnyPlaybackRef.current.getLatestBaseUrl();
+      const currentPlaylistUrl = () => {
+        const base = latestBase();
+        return base ? `${base}playlist.m3u8` : playlistUrl;
+      };
+      const currentOriginalUrl = () => {
+        const base = latestBase();
+        return base ? `${base}original` : originalUrl;
+      };
+
       const retryNativeLoad = () => {
-        videoEl.src = getRetryUrl(playlistUrl);
+        videoEl.src = getRetryUrl(currentPlaylistUrl());
         videoEl.load();
       };
 
       const retryOriginalLoad = () => {
-        if (!originalUrl) return;
-        videoEl.src = getRetryUrl(originalUrl);
+        const url = currentOriginalUrl();
+        if (!url) return;
+        videoEl.src = getRetryUrl(url);
         videoEl.load();
       };
 
       const retryHlsLoad = () => {
         if (destroyed || !hlsInstance) return;
-        const retryUrl = getRetryUrl(playlistUrl);
+        const retryUrl = getRetryUrl(currentPlaylistUrl());
         try {
           hlsInstance.stopLoad();
         } catch {
           // ignore stop-load failures and continue with a fresh loadSource
         }
+        // Loading starts from MANIFEST_PARSED, once the start level is known.
         hlsInstance.loadSource(retryUrl);
-        hlsInstance.startLoad(-1);
+      };
+
+      // A token that expires while the preview is open fails the next request after
+      // playback has started. Fetch a fresh grant at most once a minute and reload
+      // the same source where it stopped; loadedmetadata applies the resume.
+      let lastTokenRecoveryAt = 0;
+      const recoverWithFreshToken = (): boolean => {
+        const now = Date.now();
+        if (now - lastTokenRecoveryAt < 60 * 1000) return false;
+        lastTokenRecoveryAt = now;
+        // A source switch that failed before metadata still holds the viewer's position.
+        if (!sourceSwitchResumeRef.current) {
+          sourceSwitchResumeRef.current = {
+            time: videoEl.currentTime || 0,
+            wasPlaying: !videoEl.paused,
+          };
+        }
+        setBunnyPlaybackState('processing');
+        void bunnyPlaybackRef.current.refresh().then(() => {
+          if (destroyed) return;
+          if (usingHlsJs && hlsInstance && sourceMode === 'hls') {
+            // The reload goes back through MANIFEST_PARSED; keep a level picked by hand.
+            pendingHlsQualityRef.current = manualHlsLevelRef.current;
+            retryHlsLoad();
+          } else if (sourceMode === 'original') retryOriginalLoad();
+          else retryNativeLoad();
+        });
+        return true;
       };
 
       const activateOriginalFallback = (): boolean => {
@@ -302,6 +361,9 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         if (destroyed) return;
         if (usingHlsJs) return;
         if (videoEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          // Only a network failure can be an expired token; decode errors are final.
+          if (videoEl.error?.code === MediaError.MEDIA_ERR_NETWORK && recoverWithFreshToken())
+            return;
           setBunnyPlaybackState('error');
           return;
         }
@@ -326,24 +388,17 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         );
         const pendingQuality = pendingHlsQualityRef.current;
         pendingHlsQualityRef.current = null;
+        const manualLevel =
+          pendingQuality !== null && pendingQuality >= 0 && pendingQuality < levels.length
+            ? pendingQuality
+            : -1;
 
-        if (pendingQuality === null || pendingQuality === -1) {
-          if (hlsInstance) {
-            hlsInstance.currentLevel = -1;
-            hlsInstance.nextLevel = -1;
-          }
-          setSelectedQualityLevel(-1);
-          return;
-        }
-
-        if (pendingQuality >= 0 && pendingQuality < levels.length && hlsInstance) {
-          hlsInstance.currentLevel = pendingQuality;
-          hlsInstance.nextLevel = pendingQuality;
-          setSelectedQualityLevel(pendingQuality);
-          return;
-        }
-
-        setSelectedQualityLevel(-1);
+        setSelectedQualityLevel(manualLevel);
+        if (!hlsInstance) return;
+        // Nothing is buffered yet, so loadLevel pins the level without currentLevel's flush.
+        hlsInstance.startLevel = manualLevel >= 0 ? manualLevel : Math.max(0, findTopLevel(levels));
+        hlsInstance.loadLevel = manualLevel;
+        hlsInstance.startLoad(-1);
       };
 
       videoEl.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -356,21 +411,21 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
 
       if (sourceMode === 'original' && originalUrl) {
         retryOriginalLoad();
-      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        sourceMode = 'hls';
-        videoEl.src = playlistUrl;
-        videoEl.load();
-      } else if (Hls.isSupported()) {
+      } else if (shouldUseHlsJs(Hls.isSupported(), videoEl, navigator)) {
+        // hls.js on Chromium, whose native HLS player opens on the lowest rendition;
+        // Safari keeps its native player and AirPlay.
         sourceMode = 'hls';
         usingHlsJs = true;
-        const hls = new Hls();
+        // Loading waits for MANIFEST_PARSED so Auto can open on the best rendition.
+        const hls = new Hls({ autoStartLoad: false });
         hlsInstance = hls;
         hlsRef.current = hls;
         hls.attachMedia(videoEl);
 
         hls.on(Hls.Events.MEDIA_ATTACHED, () => {
           if (!destroyed) {
-            hls.loadSource(playlistUrl);
+            // A re-attach after a token refresh lands here too, so read the latest.
+            hls.loadSource(currentPlaylistUrl() ?? playlistUrl);
           }
         });
 
@@ -411,6 +466,9 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
             isNetworkPreMetadataProcessing ||
             isUnknownPreMetadataProcessing
           ) {
+            // Either still encoding or a grant that expired before playback started;
+            // the hook throttles the refresh and the retries pick it up.
+            if (responseCode === 403) void bunnyPlaybackRef.current.refresh();
             if (activateOriginalFallback()) {
               return;
             }
@@ -420,11 +478,24 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
             return;
           }
 
+          if (
+            data.fatal &&
+            data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+            responseCode === 403 &&
+            recoverWithFreshToken()
+          ) {
+            return;
+          }
+
           if (data.fatal) {
             setBunnyPlaybackState('error');
             console.error('Fatal Bunny preview HLS error:', data);
           }
         });
+      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        sourceMode = 'hls';
+        videoEl.src = currentPlaylistUrl() ?? playlistUrl;
+        videoEl.load();
       } else {
         setBunnyPlaybackState('error');
         console.error('HLS is not supported in this browser.');
@@ -451,7 +522,15 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
         videoEl.removeAttribute('src');
         videoEl.load();
       };
-    }, [notifyReadyToPlay, originalUrl, playlistUrl, bunnySourcePreference, providerVideoId]);
+    }, [
+      notifyReadyToPlay,
+      originalUrl,
+      playlistUrl,
+      bunnySourcePreference,
+      providerVideoId,
+      playbackEndpoint,
+      bunnyPlaybackFailed,
+    ]);
 
     const seekTo = (seconds: number) => {
       const video = videoRef.current;
@@ -505,6 +584,7 @@ export const BunnyPreviewPlayer = forwardRef<BunnyPreviewPlayerHandle, BunnyPrev
           };
         }
 
+        manualHlsLevelRef.current = level >= 0 ? level : null;
         if (level === -2) {
           pendingHlsQualityRef.current = null;
           setBunnySourcePreference('original');

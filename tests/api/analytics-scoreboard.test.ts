@@ -142,6 +142,106 @@ describe('getScoreboard', () => {
     expect(scoreboard.channels.find((row) => row.channel === 'GITHUB')).toBeUndefined();
   });
 
+  it('breaks the REFERRAL channel down by referring host and landing path', async () => {
+    const touches = [
+      { anonymousId: 'ref-a', referrerHost: 'blog.example', landingPath: '/' },
+      { anonymousId: 'ref-b', referrerHost: 'blog.example', landingPath: '/' },
+      { anonymousId: 'ref-c', referrerHost: 'spam.example', landingPath: '/vs/frameio' },
+    ];
+    for (const touch of touches) {
+      await db.acquisitionTouch.create({ data: { ...touch, channel: 'REFERRAL' } });
+      await seedEvent({
+        name: 'LANDING_VIEW',
+        occurredAt: daysAgo(3),
+        anonymousId: touch.anonymousId,
+        channel: 'REFERRAL',
+      });
+    }
+    // The same visitor on a second day is still one visitor.
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(4),
+      anonymousId: 'ref-a',
+      channel: 'REFERRAL',
+    });
+    // Another channel, and a referral older than the window: neither belongs here.
+    await db.acquisitionTouch.create({
+      data: { anonymousId: 'gh', channel: 'GITHUB', referrerHost: 'github.com', landingPath: '/' },
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(3),
+      anonymousId: 'gh',
+      channel: 'GITHUB',
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'old',
+        channel: 'REFERRAL',
+        referrerHost: 'old.example',
+        landingPath: '/',
+      },
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(40),
+      anonymousId: 'old',
+      channel: 'REFERRAL',
+    });
+
+    // Only landing views count as visitors, so another REFERRAL event adds no row.
+    await seedEvent({
+      name: 'SIGNUP_STARTED',
+      occurredAt: daysAgo(3),
+      anonymousId: 'ref-x',
+      channel: 'REFERRAL',
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'ref-x',
+        channel: 'REFERRAL',
+        referrerHost: 'x.example',
+        landingPath: '/',
+      },
+    });
+    // A signed-up visitor is read through the account, as the channels table does:
+    // the event and touch say GITHUB, the account says REFERRAL from forum.example.
+    const user = await createUser();
+    await db.userAcquisition.create({
+      data: {
+        userId: user.id,
+        anonymousId: 'ref-u',
+        channel: 'REFERRAL',
+        referrerHost: 'forum.example',
+        landingPath: '/pricing',
+      },
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'ref-u',
+        channel: 'GITHUB',
+        referrerHost: 'github.com',
+        landingPath: '/',
+      },
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(3),
+      anonymousId: 'ref-u',
+      userId: user.id,
+      channel: 'GITHUB',
+    });
+
+    const scoreboard = await getScoreboard({ weeks: 2 });
+
+    expect(scoreboard.referrals).toEqual([
+      { referrerHost: 'blog.example', landingPath: '/', visitors: 2 },
+      { referrerHost: 'forum.example', landingPath: '/pricing', visitors: 1 },
+      { referrerHost: 'spam.example', landingPath: '/vs/frameio', visitors: 1 },
+    ]);
+    expect(scoreboard.channels.find((row) => row.channel === 'REFERRAL')?.visitors).toBe(4);
+  });
+
   it('carries subscriptions started before the window into the running total', async () => {
     // The pair has to land in the week the assertions read, which is this one.
     const thisWeek = startOfThisWeek();

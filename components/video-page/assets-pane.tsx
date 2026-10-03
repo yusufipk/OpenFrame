@@ -2,6 +2,7 @@
 
 import { DriveAssetImportButton } from '@/components/drive-import/drive-import-button';
 import { DriveAssetImportIndicator } from '@/components/drive-import/drive-imports-panel';
+import { withRetryParam } from '@/lib/client/video-thumbnail';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as tus from 'tus-js-client';
 import { toast } from 'sonner';
@@ -32,6 +33,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AttachmentVideoFrame } from '@/components/video-page/attachment-video-frame';
 import { MediaPreviewDialog } from '@/components/video-page/media-preview-dialog';
+import { assetPlaybackEndpoint } from '@/components/video-page/hooks/use-bunny-playback-source';
 import {
   BunnyPreviewPlayer,
   type BunnyPreviewPlayerHandle,
@@ -49,7 +51,6 @@ import {
 } from '@/components/video-page/image-upload-utils';
 import { useCommentMedia } from '@/components/video-page/hooks/use-comment-media';
 import { withWebmDuration } from '@/lib/webm-duration';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { cn } from '@/lib/utils';
 
 const MAX_AUDIO_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB
@@ -176,7 +177,6 @@ export const AssetsPane = memo(function AssetsPane({
     Record<string, boolean>
   >({});
   const [selectedAsset, setSelectedAsset] = useState<VideoAsset | null>(null);
-  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
   const [focusedAssetId, setFocusedAssetId] = useState<string | null>(null);
   const bunnyPreviewPlayerRef = useRef<BunnyPreviewPlayerHandle | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -612,15 +612,11 @@ export const AssetsPane = memo(function AssetsPane({
         });
 
         const sourceUrl = `https://iframe.mediadelivery.net/embed/${initData.libraryId}/${initData.videoId}`;
-        const thumbnailUrl = bunnyCdnHostname
-          ? `https://${bunnyCdnHostname}/${initData.videoId}/thumbnail.jpg`
-          : undefined;
         const createdAsset = await createAsset({
           provider: 'BUNNY',
           sourceUrl,
           providerVideoId: initData.videoId,
           uploadToken: initData.uploadToken,
-          thumbnailUrl,
           displayName: bunnyTitle.trim() || file.name,
         });
         if (!createdAsset) {
@@ -646,7 +642,7 @@ export const AssetsPane = memo(function AssetsPane({
         setBunnyUploadLabel('');
       }
     },
-    [videoId, bunnyTitle, bunnyCdnHostname, createAsset]
+    [videoId, bunnyTitle, createAsset]
   );
 
   const handleR2FileUpload = useCallback(
@@ -1117,9 +1113,7 @@ export const AssetsPane = memo(function AssetsPane({
     const isProcessing = !!bunnyProcessingByAssetId[asset.id];
     const isReadyToPlay = !!bunnyReadyByAssetId[asset.id];
     const hasThumbnailLoadError = !!bunnyThumbnailLoadErrorByAssetId[asset.id];
-    const thumbnailSrc = asset.thumbnailUrl
-      ? `${asset.thumbnailUrl}${retryKey ? `?t=${retryKey}` : ''}`
-      : null;
+    const thumbnailSrc = asset.thumbnailUrl ? withRetryParam(asset.thumbnailUrl, retryKey) : null;
     const showThumbnailImage = !!thumbnailSrc && !hasThumbnailLoadError;
 
     return (
@@ -1722,6 +1716,7 @@ export const AssetsPane = memo(function AssetsPane({
             <BunnyPreviewPlayer
               ref={bunnyPreviewPlayerRef}
               providerVideoId={selectedAsset.providerVideoId}
+              playbackEndpoint={assetPlaybackEndpoint(videoId, selectedAsset.id)}
               isProcessing={isSelectedBunnyProcessing}
               onReadyToPlay={() => {
                 if (!selectedBunnyAssetId) return;

@@ -748,6 +748,48 @@ describe('GET /api/projects/[projectId]/drive-imports: finishing a Bunny import'
     expect(await db.video.count()).toBe(1);
   });
 
+  it('credits a new video to the member who imported it and its event to the owner', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+    stubs.bunnyVideo = () => json({ guid: BUNNY_GUID, status: 3 });
+    const { owner, project } = await seedProject();
+    const admin = await createUser();
+    await addProjectMember({ projectId: project.id, userId: admin.id, role: 'ADMIN' });
+    await createImportRow(admin, project.id, { billedUserId: owner.id });
+    signedInAs(admin);
+
+    await listRequest(project.id);
+
+    const version = await db.videoVersion.findFirstOrThrow();
+    expect(version.uploadedById).toBe(admin.id);
+    // The event is recorded after the poll answers, so wait for it.
+    const event = await vi.waitFor(() =>
+      db.analyticsEvent.findFirstOrThrow({ where: { name: 'VIDEO_ADDED' } })
+    );
+    expect(event).toMatchObject({ userId: owner.id, actorId: admin.id });
+  });
+
+  it('credits a new version to the member who imported it and its activity to the owner', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_ANALYTICS', 'true');
+    stubs.bunnyVideo = () => json({ guid: BUNNY_GUID, status: 3 });
+    const { owner, project } = await seedProject();
+    const admin = await createUser();
+    await addProjectMember({ projectId: project.id, userId: admin.id, role: 'ADMIN' });
+    const video = await createVideo({ projectId: project.id });
+    await createVersion({ videoParentId: video.id });
+    await createImportRow(admin, project.id, { targetVideoId: video.id, billedUserId: owner.id });
+    signedInAs(admin);
+
+    await listRequest(project.id);
+
+    const version = await db.videoVersion.findFirstOrThrow({ where: { videoId: BUNNY_GUID } });
+    expect(version.uploadedById).toBe(admin.id);
+    const event = await vi.waitFor(() =>
+      db.analyticsEvent.findFirstOrThrow({ where: { name: 'VERSION_ADDED' } })
+    );
+    expect(event).toMatchObject({ userId: owner.id, actorId: admin.id });
+    expect(await db.analyticsEvent.count({ where: { name: 'VIDEO_ADDED' } })).toBe(0);
+  });
+
   it('shows a caller only their own imports', async () => {
     const { owner, project } = await seedProject();
     const colleague = await createUser();

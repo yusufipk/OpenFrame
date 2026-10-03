@@ -8,6 +8,7 @@ import { notifyUsers } from '@/lib/notifications';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
+import { recordVideoActivity } from '@/lib/analytics/record';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 
@@ -188,6 +189,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       url: requestUrl,
     }).catch((error) => {
       logError('Approval request notification failed:', error);
+    });
+
+    await recordVideoActivity({
+      name: 'APPROVAL_REQUESTED',
+      videoId: version.video.id,
+      actorId: session.user.id,
     });
 
     const response = successResponse({ request: created }, 201);

@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
 import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
+import { signBunnyVideoFileUrl } from '@/lib/bunny-cdn-token';
 import { NextRequest } from 'next/server';
 import { DownloadEgressSource } from '@prisma/client';
 import { logError } from '@/lib/logger';
@@ -37,9 +38,7 @@ function resolveBunnyCdnHostname(): string | null {
 }
 
 function buildBunnyOriginalUrl(videoId: string): string {
-  const hostname = resolveBunnyCdnHostname();
-  if (!hostname) return '';
-  return `https://${hostname}/${videoId}/original`;
+  return signBunnyVideoFileUrl(videoId, 'original') ?? '';
 }
 
 function buildBunnySourceCacheKey(
@@ -114,7 +113,7 @@ async function isRemoteFileAvailable(url: string): Promise<boolean> {
 async function resolveHighestBunnyMp4Url(videoId: string): Promise<string> {
   const hostname = resolveBunnyCdnHostname();
   if (!hostname) return '';
-  const playlistUrl = `https://${hostname}/${videoId}/playlist.m3u8`;
+  const playlistUrl = signBunnyVideoFileUrl(videoId, 'playlist.m3u8') ?? '';
 
   let playlistHeights: number[] = [];
   try {
@@ -134,7 +133,7 @@ async function resolveHighestBunnyMp4Url(videoId: string): Promise<string> {
   const candidateHeights = [...new Set([...playlistHeights, ...BUNNY_DOWNLOAD_FALLBACK_HEIGHTS])];
 
   for (const height of candidateHeights) {
-    const candidateUrl = `https://${hostname}/${videoId}/play_${height}p.mp4`;
+    const candidateUrl = signBunnyVideoFileUrl(videoId, `play_${height}p.mp4`) ?? '';
     if (await isRemoteFileAvailable(candidateUrl)) return candidateUrl;
   }
 
@@ -173,7 +172,7 @@ async function resolveBunnyCompressedSource(
     Number.isFinite(requestedQuality) &&
     requestedQuality > 0
   ) {
-    const requestedUrl = `https://${hostname}/${videoId}/play_${requestedQuality}p.mp4`;
+    const requestedUrl = signBunnyVideoFileUrl(videoId, `play_${requestedQuality}p.mp4`) ?? '';
     if (await isRemoteFileAvailable(requestedUrl)) {
       return {
         sourceType: 'compressed',
@@ -238,7 +237,8 @@ async function resolveBunnyDownloadSource(
 }
 
 function extractHeightFromBunnyMp4Url(url: string): number | null {
-  const match = url.match(/\/play_(\d+)p\.mp4$/);
+  // Signed URLs carry the token in a query string after the file name.
+  const match = url.match(/\/play_(\d+)p\.mp4(?:\?|$)/);
   if (!match?.[1]) return null;
   const parsed = Number(match[1]);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;

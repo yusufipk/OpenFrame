@@ -56,7 +56,10 @@ import {
   useSubtitleAppearance,
 } from '@/components/video-page/hooks/subtitle-appearance';
 import { readStoredSubtitleLanguage } from '@/components/video-page/hooks/subtitle-preference';
-import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
+import {
+  useBunnyPlaybackSource,
+  versionPlaybackEndpoint,
+} from '@/components/video-page/hooks/use-bunny-playback-source';
 import { getSpeedOptionsForProvider } from '@/components/video-page/hooks/video-player-utils';
 import type { AttachmentCommentTarget } from '@/lib/attachment-comment-target';
 import type { CommentImage } from '@/components/video-page/types';
@@ -382,7 +385,10 @@ export function VideoPageContent({
     ]
   );
   const activeVersionDuration = activeVersion?.duration;
-  const bunnyCdnHostname = useMemo(() => resolvePublicBunnyCdnHostname(), []);
+  const bunnyPlayback = useBunnyPlaybackSource(
+    activeVersion?.providerId === 'bunny' ? versionPlaybackEndpoint(activeVersion.id) : null
+  );
+  const bunnyPlaybackBaseUrl = bunnyPlayback.baseUrl;
   const embedUrl = useMemo(() => {
     if (!activeVersion) return '';
     if (activeVersion.providerId === 'youtube') {
@@ -392,8 +398,7 @@ export function VideoPageContent({
       return `${base}&origin=${encodeURIComponent(origin)}`;
     }
     if (activeVersion.providerId === 'bunny') {
-      if (!bunnyCdnHostname) return '';
-      return `https://${bunnyCdnHostname}/${activeVersion.videoId}/playlist.m3u8`;
+      return bunnyPlaybackBaseUrl ? `${bunnyPlaybackBaseUrl}playlist.m3u8` : '';
     }
     if (activeVersion.providerId === 'r2') {
       return resolveR2PlaybackUrl(activeVersion);
@@ -407,7 +412,7 @@ export function VideoPageContent({
     } catch {
       return '';
     }
-  }, [activeVersion, bunnyCdnHostname]);
+  }, [activeVersion, bunnyPlaybackBaseUrl]);
 
   const {
     isReady,
@@ -425,6 +430,7 @@ export function VideoPageContent({
     playbackSpeed,
     qualityOptions,
     selectedQualityLevel,
+    autoPlaysOriginal,
     isBunnyPortraitSource,
     bunnyPortraitFrameWidth,
     cursorIdle,
@@ -465,6 +471,8 @@ export function VideoPageContent({
     setViewingAnnotation,
     toggleCaptionsRef,
     playbackLocked: liveReview.playbackLocked,
+    autoOriginalAllowed: !!video?.canDownload,
+    bunnySource: bunnyPlayback,
   });
 
   const { isJoined: isLiveReviewJoined, selectComment: selectLiveComment } = liveReview;
@@ -596,9 +604,9 @@ export function VideoPageContent({
 
   const selectedQualityLabel = useMemo(() => {
     if (selectedQualityLevel === -2) return 'Original';
-    if (selectedQualityLevel === -1) return 'Auto';
+    if (selectedQualityLevel === -1) return autoPlaysOriginal ? 'Auto (Original)' : 'Auto';
     return qualityOptions.find((option) => option.level === selectedQualityLevel)?.label ?? 'Auto';
-  }, [qualityOptions, selectedQualityLevel]);
+  }, [autoPlaysOriginal, qualityOptions, selectedQualityLevel]);
 
   useEffect(() => {
     if (!activeVersionId || mode !== 'dashboard') return;
@@ -808,7 +816,9 @@ export function VideoPageContent({
   const showBunnyProcessingOverlay =
     isBunnyVersion && bunnyPlaybackState === 'processing' && !isReady;
   const isR2Version = activeVersion?.providerId === 'r2';
-  const showBunnyErrorOverlay = (isBunnyVersion || isR2Version) && bunnyPlaybackState === 'error';
+  const showBunnyErrorOverlay =
+    ((isBunnyVersion || isR2Version) && bunnyPlaybackState === 'error') ||
+    (isBunnyVersion && bunnyPlayback.failed);
 
   const confirmGuestName = useCallback(() => {
     if (!guestName.trim()) return;
