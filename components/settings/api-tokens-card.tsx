@@ -30,7 +30,12 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export function ApiTokensCard() {
+/**
+ * `canCreate` is false for an account without a paid plan, which may still list and
+ * revoke the tokens it has. Undefined (billing still loading or failed to load) shows the
+ * form, and the server's own check has the last word.
+ */
+export function ApiTokensCard({ canCreate }: { canCreate?: boolean }) {
   const [tokens, setTokens] = useState<ApiTokenRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -150,46 +155,52 @@ export function ApiTokensCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <form onSubmit={handleCreate} className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Token name, e.g. Render machine"
-              maxLength={MAX_API_TOKEN_NAME_LENGTH}
-              aria-label="Token name"
-            />
-            <Button type="submit" disabled={creating || !name.trim() || scopes.length === 0}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
-            </Button>
-          </div>
-          <fieldset className="grid gap-2 sm:grid-cols-2">
-            <legend className="mb-2 text-sm font-medium">Permissions</legend>
-            {API_TOKEN_SCOPES.map((scope) => (
-              <label
-                key={scope}
-                className="flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={scopes.includes(scope)}
-                  onChange={() => toggleScope(scope)}
-                />
-                <span>
-                  <span className="font-medium">{API_TOKEN_SCOPE_DETAILS[scope].label}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {API_TOKEN_SCOPE_DETAILS[scope].description}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          <p className="text-xs text-muted-foreground">
-            A token never goes beyond what you can do yourself, and it never reaches billing,
-            settings or other tokens.
+        {canCreate === false ? (
+          <p className="text-sm text-muted-foreground">
+            API tokens are part of a paid plan. Choose a plan to create one.
           </p>
-        </form>
+        ) : (
+          <form onSubmit={handleCreate} className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Token name, e.g. Render machine"
+                maxLength={MAX_API_TOKEN_NAME_LENGTH}
+                aria-label="Token name"
+              />
+              <Button type="submit" disabled={creating || !name.trim() || scopes.length === 0}>
+                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
+              </Button>
+            </div>
+            <fieldset className="grid gap-2 sm:grid-cols-2">
+              <legend className="mb-2 text-sm font-medium">Permissions</legend>
+              {API_TOKEN_SCOPES.map((scope) => (
+                <label
+                  key={scope}
+                  className="flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={scopes.includes(scope)}
+                    onChange={() => toggleScope(scope)}
+                  />
+                  <span>
+                    <span className="font-medium">{API_TOKEN_SCOPE_DETAILS[scope].label}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {API_TOKEN_SCOPE_DETAILS[scope].description}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <p className="text-xs text-muted-foreground">
+              A token never goes beyond what you can do yourself, and it never reaches billing,
+              settings or other tokens.
+            </p>
+          </form>
+        )}
 
         {newToken && (
           <div className="rounded-md border border-primary/40 bg-primary/5 p-3 space-y-2">
