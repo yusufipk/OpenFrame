@@ -214,6 +214,10 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   const hasScheduledCancellation = Boolean(
     billing?.subscription.cancelAtPeriodEnd || billing?.subscription.cancelAt
   );
+  // A scheduled cancellation ends the subscription at `cancelAt` when Stripe set one.
+  const periodEndsAt =
+    (hasScheduledCancellation && billing?.subscription.cancelAt) ||
+    billing?.subscription.currentPeriodEnd;
 
   useEffect(() => {
     async function fetchSettings() {
@@ -578,6 +582,17 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                           ? 'Workspace access remains available while you resolve your payment.'
                           : 'Billing access has ended.'}
                   </p>
+                  {/* Deliberately not conditioned on `billingAccessEndedAt`: an account that
+                      only ever had the cardless trial never gets one written, and it is exactly
+                      that account which most needs to be told its work is still recoverable. */}
+                  {!billing.subscription.hasBillingAccess &&
+                  billing.subscription.storageCleanupEligibleAt ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                      Nothing is deleted yet. Your projects and media are kept until{' '}
+                      {new Date(billing.subscription.storageCleanupEligibleAt).toLocaleDateString()}
+                      .
+                    </p>
+                  ) : null}
                 </div>
                 <Badge
                   variant={billing.subscription.hasActiveSubscription ? 'default' : 'secondary'}
@@ -611,31 +626,14 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 </p>
               ) : null}
 
-              {billing.subscription.currentPeriodEnd ? (
+              {/* Shown only while there is still access to lose: after that the date is
+                  either past or, for a past-due subscription, a period that grants nothing. */}
+              {billing.subscription.hasBillingAccess && periodEndsAt ? (
                 <p className="text-sm text-muted-foreground">
                   {hasScheduledCancellation
                     ? 'Your subscription ends on '
                     : 'Current billing period ends on '}
-                  {new Date(billing.subscription.currentPeriodEnd).toLocaleDateString()}.
-                </p>
-              ) : null}
-
-              {hasScheduledCancellation && billing.subscription.cancelAt ? (
-                <p className="text-sm text-muted-foreground">
-                  Cancellation takes effect on{' '}
-                  {new Date(billing.subscription.cancelAt).toLocaleDateString()}.
-                </p>
-              ) : null}
-
-              {/* Deliberately not conditioned on `billingAccessEndedAt`: an account that
-                  only ever had the cardless trial never gets one written, and it is exactly
-                  that account which most needs to be told its work is still recoverable. */}
-              {!billing.subscription.hasBillingAccess &&
-              billing.subscription.storageCleanupEligibleAt ? (
-                <p className="text-sm text-amber-700 dark:text-amber-400">
-                  Nothing has been deleted. Your projects and media are kept until{' '}
-                  {new Date(billing.subscription.storageCleanupEligibleAt).toLocaleDateString()};
-                  subscribe before then and everything is where you left it.
+                  {new Date(periodEndsAt).toLocaleDateString()}.
                 </p>
               ) : null}
 
