@@ -54,3 +54,27 @@ test('a fresh user creates a workspace and a project and lands on the dashboard'
   await page.goto('/onboarding');
   await expect(page).toHaveURL(/\/dashboard$/);
 });
+
+// Skipping the workspace step leaves an account with nothing to put a project in.
+// The empty dashboard has to send it to workspace creation instead of a dead end.
+test('an account without a workspace is sent from the empty dashboard to create one', async ({
+  page,
+  seed,
+}) => {
+  const user = await seed.user({ name: 'No Workspace Person' });
+  const workspaceName = `First Workspace ${Date.now()}`;
+
+  await signInPage(page, user.email ?? '');
+  await page.goto('/dashboard');
+
+  await expect(page.getByRole('heading', { name: 'No projects yet' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Create Project' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Create Workspace' }).click();
+
+  await expect(page).toHaveURL(/\/workspaces\/new$/);
+  await page.getByLabel('Workspace Name').fill(workspaceName);
+  await page.getByRole('button', { name: 'Create Workspace' }).click();
+
+  await expect(page).toHaveURL(/\/workspaces\/(?!new$)[^/]+$/);
+  await expect(page.getByRole('link', { name: 'Create Project' })).toBeVisible();
+});

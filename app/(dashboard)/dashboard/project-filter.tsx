@@ -220,17 +220,29 @@ export function ProjectFilter({
               {selectedWorkspace === 'all' ? 'No projects yet' : 'No projects in this workspace'}
             </h3>
             <p className="text-muted-foreground text-center mb-4">
-              {selectedWorkspace === 'all'
-                ? 'Create your first project to start collecting video feedback'
-                : 'Create a project in this workspace to get started'}
+              {selectedWorkspace !== 'all'
+                ? 'Create a project in this workspace to get started'
+                : canCreateProjects
+                  ? 'Create your first project to start collecting video feedback'
+                  : 'Projects live in a workspace you own or manage. Create a workspace, then add your first project to it.'}
             </p>
-            {canCreateProjects && (
+            {canCreateProjects ? (
               <Button asChild>
                 <Link href="/projects/new">
                   <Plus className="h-4 w-4 mr-2" />
                   Create Project
                 </Link>
               </Button>
+            ) : (
+              selectedWorkspace === 'all' && (
+                // /workspaces/new explains a trial or plan limit itself when one applies.
+                <Button asChild>
+                  <Link href="/workspaces/new">
+                    <Building2 className="h-4 w-4 mr-2" />
+                    Create Workspace
+                  </Link>
+                </Button>
+              )
             )}
           </CardContent>
         </Card>
