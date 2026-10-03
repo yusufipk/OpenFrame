@@ -351,6 +351,50 @@ export default async function AdminGrowthPage() {
         </CardContent>
       </Card>
 
+      {scoreboard.paidCampaigns.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Paid search by keyword</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              The paid channel split by utm_campaign, over the same {scoreboard.channelWindowDays}{' '}
+              days. Visitors are first touches and signups are accounts created in the window, so a
+              row can differ from the paid row above, which counts landing views and signup events.
+            </p>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 pr-4 font-medium">Keyword</th>
+                  <th className="py-2 pr-4 text-right font-medium">Visitors</th>
+                  <th className="py-2 pr-4 text-right font-medium">Signup</th>
+                  <th className="py-2 pr-4 text-right font-medium">Trial</th>
+                  <th className="py-2 pr-4 text-right font-medium">Paid</th>
+                  <th className="py-2 pr-4 text-right font-medium">Visitor to signup</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scoreboard.paidCampaigns.map((row) => (
+                  <tr key={row.campaign} className="border-b last:border-0">
+                    <td className="py-2 pr-4">{row.campaign}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.visitors}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.signups}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.trials}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.paid}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      <Rate
+                        rate={row.visitors > 0 ? row.signups / row.visitors : null}
+                        of={row.visitors}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Paid accounts</CardTitle>

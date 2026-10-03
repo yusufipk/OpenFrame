@@ -242,6 +242,75 @@ describe('getScoreboard', () => {
     expect(scoreboard.channels.find((row) => row.channel === 'REFERRAL')?.visitors).toBe(4);
   });
 
+  it('splits the PAID channel by keyword over the channel window', async () => {
+    const touch = (anonymousId: string, utmCampaign: string | null, createdAt: Date) =>
+      db.acquisitionTouch.create({
+        data: { anonymousId, channel: 'PAID', utmCampaign, landingPath: '/', createdAt },
+      });
+    await touch('kw-a1', 'video review tool', daysAgo(2));
+    await touch('kw-a2', 'video review tool', daysAgo(3));
+    await touch('kw-b1', 'frame io alternative', daysAgo(2));
+    await touch('kw-none', null, daysAgo(2));
+    // Outside the window, and another channel: neither is counted.
+    await touch('kw-old', 'video review tool', daysAgo(40));
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'kw-gh',
+        channel: 'GITHUB',
+        utmCampaign: 'video review tool',
+        landingPath: '/',
+      },
+    });
+
+    const signup = async (
+      anonymousId: string,
+      utmCampaign: string | null,
+      options: { createdAt?: Date; excluded?: boolean } = {}
+    ) => {
+      const user = await createUser();
+      if (options.excluded) {
+        await db.user.update({ where: { id: user.id }, data: { excludedFromStats: true } });
+      }
+      await db.userAcquisition.create({
+        data: {
+          userId: user.id,
+          anonymousId,
+          channel: 'PAID',
+          utmCampaign,
+          createdAt: options.createdAt ?? daysAgo(2),
+        },
+      });
+      return user;
+    };
+    const counted = await signup('kw-a1', 'video review tool');
+    await signup('kw-none', null);
+    await signup('kw-old', 'video review tool', { createdAt: daysAgo(40) });
+    // An excluded account is left out of signups, and the touch its browser
+    // left is left out of visitors.
+    const excluded = await signup('kw-b1', 'frame io alternative', { excluded: true });
+
+    await seedEvent({ name: 'TRIAL_STARTED', occurredAt: daysAgo(1), userId: counted.id });
+    await seedEvent({ name: 'SUBSCRIPTION_STARTED', occurredAt: daysAgo(1), userId: counted.id });
+    await seedEvent({ name: 'TRIAL_STARTED', occurredAt: daysAgo(1), userId: excluded.id });
+    // An event with no account reads its keyword from the touch, and the same
+    // visitor twice is still one trial.
+    for (const day of [1, 2]) {
+      await seedEvent({
+        name: 'TRIAL_STARTED',
+        occurredAt: daysAgo(day),
+        anonymousId: 'kw-a2',
+        channel: 'PAID',
+      });
+    }
+
+    const scoreboard = await getScoreboard({ weeks: 2 });
+
+    expect(scoreboard.paidCampaigns).toEqual([
+      { campaign: 'video review tool', visitors: 2, signups: 1, trials: 2, paid: 1 },
+      { campaign: '(no keyword)', visitors: 1, signups: 1, trials: 0, paid: 0 },
+    ]);
+  });
+
   it('carries subscriptions started before the window into the running total', async () => {
     // The pair has to land in the week the assertions read, which is this one.
     const thisWeek = startOfThisWeek();
@@ -516,6 +585,9 @@ describe('GET /api/admin/growth', () => {
 
     const paying = await createUser({ subscriptionStatus: 'ACTIVE' });
     await seedEvent({ name: 'SIGNUP_COMPLETED', occurredAt: daysAgo(1), userId: paying.id });
+    await db.acquisitionTouch.create({
+      data: { anonymousId: 'kw-api', channel: 'PAID', utmCampaign: 'review app', landingPath: '/' },
+    });
 
     const response = await growthRequest({ authorization: `Bearer ${TOKEN}` });
     expect(response.status).toBe(200);
@@ -527,6 +599,10 @@ describe('GET /api/admin/growth', () => {
     // Rates ride along with each week; the digest reads them rather than
     // recomputing the denominators.
     expect(scoreboard.weeks.at(-1)).toHaveProperty('rates');
+    // The keyword rows sit beside the existing fields rather than replacing any.
+    expect(scoreboard.paidCampaigns).toEqual([
+      { campaign: 'review app', visitors: 1, signups: 0, trials: 0, paid: 0 },
+    ]);
   });
 
   it('still refuses the token when analytics are off, without saying so', async () => {
