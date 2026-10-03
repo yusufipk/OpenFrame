@@ -1,0 +1,50 @@
+# Google Drive import
+
+Editors can pick videos in Google Drive and import them into a project, as new videos or as a new version of an existing one, without downloading and re-uploading. Project members can also attach Drive videos, images and audio to a video as assets. The file is copied into the host's own video storage; OpenFrame does not play from Drive, because the Drive player offers no frame-accurate control and requires a public file.
+
+## How it works
+
+The browser asks Google Identity Services for an access token with the `drive.file` scope and opens the Google Picker. That scope reaches only the files the user picks, which is why Google treats it as non-sensitive and does not require the annual CASA security assessment that `drive.readonly` would. The token is separate from Google sign-in, so users who sign in with a password or GitHub can import too. It lives for about an hour, is held in the browser's memory, and is sent to the server once per import. The server never stores it. The picker opens on My Drive as a folder tree, with Shared with me and Shared drives beside it; it lists folders and the file types the current button accepts, and search covers all of them.
+
+`POST /api/projects/[projectId]/drive-imports` checks upload access first, then asks Google's tokeninfo endpoint whether the token was issued to this app's OAuth client, carries `drive.file` and has at least five minutes left. The client sends Drive file ids only; the server builds every Google url itself. For each file it reads Drive's metadata, refuses anything that is not `video/*`, and reserves quota against the size Drive reports, which is stronger than the size a browser upload declares. It then writes a `DriveImport` row and starts the copy. The video or version row is written only after the bytes land, so a failed import leaves nothing in the project.
+
+The copy follows the host's direct upload backend:
+
+- **Bunny** (hosted): Bunny Stream's fetch endpoint pulls `files/{id}?alt=media` from the Drive API with the token in an `Authorization` header. No bytes pass through the app server. Bunny's published schema does not promise the new video's id in the response; the code reads `id` when present and otherwise finds the video by a marker in its title.
+- **S3** (self-hosted): the app server streams the file from Drive into a multipart upload, in parts of `OPENFRAME_R2_MULTIPART_PART_SIZE_BYTES` (R2 requires equal parts). At most two copies run at once per process; the rest wait. The first bytes must look like a video container, and a download larger than Drive's reported size is aborted.
+
+There is no job queue, so `GET /api/projects/[projectId]/drive-imports` does the follow-up work. The project page polls it while the uploader has imports in flight, and the video page does the same for a new version. It lists only the caller's own imports, so a folder or video editor who cannot open the project root can still finish theirs; finalizing re-checks access to the destination. It turns a Bunny video whose status left "created" into a video or version, fails an import Bunny rejected, and fails an S3 copy whose heartbeat stopped. A single claim on the row keeps two polls from writing two videos. Failing an import releases its reservation and deletes whatever it had put in storage.
+
+An import that has not become a video within 24 hours is failed and cleaned up rather than attached. The quota reservation lives 25 hours, so the bytes count against the account for as long as the import can still turn into a video that counts them itself.
+
+### Images on "Add file"
+
+The "Add file" page's picker also lists PNG, JPEG and WebP images. `POST /api/projects/[projectId]/drive-imports` turns each picked image into an image review within the request and returns it in `images`, next to the video `imports`. An image review has to be decoded in full to check it and draw its thumbnail, so the server downloads it into memory, up to the same 20 MB a browser image upload takes, and stores it through the same code (`lib/image-review-upload.ts`). Images of one pick download in parallel but are stored one at a time, since each takes the next position in the project. A new version only takes a video; an image review's new version is still uploaded from the computer.
+
+### Assets
+
+The assets pane has one Drive button. Its picker lists videos, images and audio together, and `POST /api/videos/[videoId]/assets/drive-import` takes the file ids and the token and attaches each file as the kind its Drive MIME type names, so one pick can mix them. Files of one pick are attached concurrently; a Serializable conflict between two of them is retried. It requires a signed-in member with access to the video, which is the same rule as a browser asset upload minus share-link visitors: an import runs under the uploader's account after the request, and finalizing re-checks membership. The workspace owner is billed.
+
+- **Video** assets are ordinary Drive imports with `assetVideoId` set. They copy through Bunny or S3 as above and are finalized into a `BUNNY` or `R2_VIDEO` asset instead of a video. The assets pane polls the project's imports while one is in flight.
+- **Image** and **audio** assets are capped at 50 MB, more than the 10 MB of a browser upload because they are streamed rather than buffered. The server copies them within the request: it reserves quota on Drive's size, reads the first 512 bytes to check the type (images are typed by their bytes, audio must match its declared format), then streams the rest from Drive into `images/` or `voice/` in R2 with Drive's size as the declared length, and creates the asset in the transaction that consumes the reservation. A body shorter or longer than Drive reported aborts the upload and deletes the object. Drive's `audio/x-m4a` is accepted as `audio/mp4`. Only files Drive types as `audio/*` are offered, so a voice note Drive types as `video/webm` has to be uploaded from the computer. A batch of up to ten files is copied three at a time within one request, each allowed three minutes; a proxy that times the request out leaves the files already attached, and the pane reloads its list. These use the server's bandwidth on hosted instances too, since images and audio always live in R2.
+
+## Setup
+
+In the Google Cloud project that holds the sign-in OAuth client, enable the Google Drive API and the Google Picker API, create a browser API key restricted to your domain and to the Picker API, and add `https://www.googleapis.com/auth/drive.file` to the OAuth consent screen. Set `GOOGLE_PICKER_API_KEY` and `GOOGLE_CLOUD_PROJECT_NUMBER`. The OAuth client defaults to `GOOGLE_CLIENT_ID`; set `GOOGLE_DRIVE_CLIENT_ID` to use a different one (type "Web application", in the same Cloud project as the Picker key). Add the app's origin to that client's authorized JavaScript origins; the picker gets its token through a popup, so it needs no redirect URI. `OPENFRAME_ENABLE_DRIVE_IMPORT=false` turns the feature off. The button appears only when the Google settings are complete and a direct upload backend is enabled. The CSP gains the Google origins only in that case.
+
+Before a public launch, submit the consent screen for Google's brand verification. The `drive.file` scope needs no security assessment, but an unverified app shows a warning on the consent screen.
+
+## Limits and caveats
+
+- The user's Drive token is handed to Bunny for the fetch. It is limited to the picked files and expires within the hour, but it does leave the app. The privacy policy has to say that selected Drive files are sent to the video hosting provider, which Google's Limited Use policy requires.
+- Bunny cannot refresh the token. A fetch that has not started within the token's life fails. Imports still at Bunny's "created" status after two hours are marked failed and the user is asked to pick the file again.
+- Bunny reports no failure for a fetch. A fetch Google refused shows up only as a video that never leaves "created", so it is caught by the two-hour deadline, not immediately.
+- Imports are finalized only when the uploader's browser polls. A finished Bunny import whose uploader never returns within 24 hours is not attached; its quota stays held until then, and its Bunny video is left for the orphan cleanup script, whose seven-day grace period is longer than any import can stay open. An S3 copy that dies with its process leaves an incomplete multipart upload until the uploader polls again, as a browser upload that dies would.
+- Deleting a project or user deletes its import rows with it. A quota hold of an import in flight then lasts until it expires, up to 25 hours.
+- The thumbnail an S3 import copies from Drive (at most 2 MB) is not counted against the account's storage.
+- Bunny downloads whatever Drive serves at fetch time. If the file is replaced with a larger revision between the pick and the fetch, the account is charged Drive's earlier size until Bunny reports the real one, as with direct Bunny uploads. The S3 copy refuses a file larger than reported.
+- A self-hosted copy that waits in the server's queue can outlive the Google token. The browser asks for a fresh token when the cached one has less than 45 minutes left, and a copy whose token expired fails with a message asking to pick the file again.
+- The S3 copy runs inside the app process. A restart loses copies in progress; the next poll marks them failed after three minutes without a heartbeat. The copy uses the server's bandwidth and up to two parts of memory per running copy.
+- Images and audio are imported only as assets, not as image reviews. Folder sync is not supported: the picker takes files, not folders.
+- The assets pane shows the Drive button to any signed-in viewer who may upload assets. One who reached the video only through a share link sees it too and gets a 403 when importing.
+- The test suite stubs Bunny and Google. The Bunny fetch path was checked by hand against a live Bunny library and a real Drive file on 30.09.2026; Bunny's response was accepted and the video was created. Repeat that check on staging after changing the fetch code.

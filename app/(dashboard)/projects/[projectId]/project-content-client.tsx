@@ -6,6 +6,7 @@ import {
   type FolderEntry,
 } from '@/components/project-folder-browser';
 import { ContentAccessControls } from '@/components/content-access-controls';
+import { DriveImportsPanel } from '@/components/drive-import/drive-imports-panel';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -537,6 +538,8 @@ export function ProjectContentClient({
         canSeeRoot={canSeeRoot}
         all={all}
       />
+
+      {canEdit && <DriveImportsPanel projectId={projectId} />}
 
       {all && (
         <p className="mb-5 text-sm text-muted-foreground">

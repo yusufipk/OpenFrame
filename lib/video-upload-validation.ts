@@ -30,6 +30,10 @@ export function getVideoExtensionFromMime(mime: string): string | null {
   return VIDEO_MIME_TO_EXT[mime] ?? null;
 }
 
+export function getVideoMimeFromExtension(ext: string): string | null {
+  return EXT_TO_MIME[ext] ?? null;
+}
+
 export function getVideoExtensionFromFileName(fileName: string): string | null {
   const ext = fileName.split('.').pop()?.toLowerCase();
   if (!ext || !ALLOWED_VIDEO_EXTENSIONS.has(ext)) return null;

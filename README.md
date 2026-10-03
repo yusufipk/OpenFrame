@@ -196,7 +196,7 @@ These integrations remain optional for self-hosted deployments and can be enable
 - SMTP for invitation and notification delivery
 - Telegram notifications
 - External S3-compatible storage such as Cloudflare R2 or another compatible provider instead of bundled MinIO
-- Google and GitHub OAuth
+- Google and GitHub OAuth, and Google Drive import (`docs/google-drive-import.md`)
 
 ## Development
 
