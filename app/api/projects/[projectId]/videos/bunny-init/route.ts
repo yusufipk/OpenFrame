@@ -109,14 +109,19 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest(declaredSize.error);
     }
 
-    const quotaError = await enforceStorageQuota(billedUserId, declaredSize.sizeBytes);
+    const quotaError = await enforceStorageQuota(
+      billedUserId,
+      declaredSize.sizeBytes,
+      session.user.id
+    );
     if (quotaError) return quotaError;
 
     const reserveResult = await reserveStorageQuota(
       billedUserId,
       declaredSize.sizeBytes,
       UPLOAD_RESERVATION_PURPOSES.BUNNY,
-      BUNNY_RESERVATION_TTL_MS
+      BUNNY_RESERVATION_TTL_MS,
+      session.user.id
     );
     if ('error' in reserveResult) return reserveResult.error;
     const { reservationId } = reserveResult;

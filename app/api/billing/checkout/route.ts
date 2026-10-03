@@ -8,7 +8,12 @@ import {
 } from '@/lib/billing';
 import { rateLimit } from '@/lib/rate-limit';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
-import { getStripe, getStripePriceId, isStripeConfigured } from '@/lib/stripe';
+import { BillingInterval, BillingPlan } from '@prisma/client';
+import { getStripe, isStripeConfigured } from '@/lib/stripe';
+import { getPlanPriceId } from '@/lib/billing-plans';
+import { checkDemotionConfirmation } from '@/lib/billing-changes';
+import { billingChangeResponse } from '@/lib/billing-change-response';
+import { db } from '@/lib/db';
 import { isTrustedSameOriginRequest } from '@/lib/request-origin';
 import { logError } from '@/lib/logger';
 import { eventKey, recordEvent } from '@/lib/analytics/record';
@@ -58,8 +63,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Older clients send no body; they get the original plan, Solo monthly.
+    const body = await request.json().catch(() => null);
+    const plan = body?.plan ?? BillingPlan.SOLO;
+    const interval = body?.interval ?? BillingInterval.MONTH;
+    if (
+      !Object.values(BillingPlan).includes(plan) ||
+      !Object.values(BillingInterval).includes(interval)
+    ) {
+      return apiErrors.badRequest('Choose a plan and a billing interval');
+    }
+    const priceId = getPlanPriceId(plan, interval);
+    if (!priceId) {
+      return apiErrors.badRequest('This plan is not available right now');
+    }
+
+    // A trial has no editor limit, so an account can arrive here with a whole team
+    // uploading. Choosing Solo means everybody but the owner becomes a reviewer once the
+    // subscription is paid; the owner is shown who and confirms, as on a move from
+    // Studio. The sync applies it when it sees an active Solo subscription, to whoever
+    // edits at that moment. A Studio checkout leaves an earlier confirmation alone, so
+    // opening a second checkout session cannot undo the one that ends up paid.
+    const confirmDemotions = body?.confirmDemotions;
+    if (
+      confirmDemotions !== undefined &&
+      !(
+        Array.isArray(confirmDemotions) &&
+        confirmDemotions.length <= 500 &&
+        confirmDemotions.every((id: unknown) => typeof id === 'string')
+      )
+    ) {
+      return apiErrors.badRequest('confirmDemotions must be a list of user ids');
+    }
+    let demotions: string[] | null = null;
+    if (plan === BillingPlan.SOLO) {
+      const confirmation = await checkDemotionConfirmation(session.user.id, confirmDemotions);
+      if (!confirmation.ok) return billingChangeResponse(confirmation);
+      demotions = confirmation.ids;
+    }
+
     const stripe = getStripe();
-    const priceId = getStripePriceId();
     const customerId = await getOrCreateStripeCustomerId(session.user.id);
 
     // The guard above reads the local mirror, which can be stale or cleared: the incident
@@ -70,6 +113,13 @@ export async function POST(request: NextRequest) {
       return apiErrors.badRequest(
         'A subscription already exists for this account. Manage it from the billing portal.'
       );
+    }
+
+    if (demotions) {
+      await db.user.update({
+        where: { id: session.user.id },
+        data: { pendingEditorDemotions: demotions },
+      });
     }
 
     const appOrigin = getAppOrigin(request);

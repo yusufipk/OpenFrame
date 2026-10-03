@@ -328,6 +328,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   // Carried out of the try so the quota refusal in the catch can be worded for
   // the account it is refusing, rather than telling a trial to delete files.
   let storageForRefusal: StorageContext | null = null;
+  let refusalUploaderIsBilled = true;
   let finalizedR2AssetSession: {
     sessionId: string;
     reservationId: string | null;
@@ -395,7 +396,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         const reserveResult = await reserveStorageQuota(
           billedUserId,
           assetSizeBytes,
-          UPLOAD_RESERVATION_PURPOSES.IMAGE
+          UPLOAD_RESERVATION_PURPOSES.IMAGE,
+          undefined,
+          context.viewerUserId ?? null
         );
         if ('error' in reserveResult) return reserveResult.error;
         reservationId = reserveResult.reservationId;
@@ -424,7 +427,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         const reserveResult = await reserveStorageQuota(
           billedUserId,
           assetSizeBytes,
-          UPLOAD_RESERVATION_PURPOSES.AUDIO
+          UPLOAD_RESERVATION_PURPOSES.AUDIO,
+          undefined,
+          context.viewerUserId ?? null
         );
         if ('error' in reserveResult) return reserveResult.error;
         reservationId = reserveResult.reservationId;
@@ -589,7 +594,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       thumbnailUrl = canonicalBunnyThumbnailUrl(providerVideoId);
       kind = 'VIDEO';
 
-      const quotaError = await enforceStorageQuota(billedUserId, assetSizeBytes);
+      const quotaError = await enforceStorageQuota(
+        billedUserId,
+        assetSizeBytes,
+        context.viewerUserId ?? null
+      );
       if (quotaError) return quotaError;
     }
 
@@ -609,6 +618,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // measured against the paid ceiling even on a trial worth 3 GiB.
     const storage = await getStorageContextForUser(billedUserId);
     storageForRefusal = storage;
+    refusalUploaderIsBilled = context.viewerUserId === billedUserId;
 
     // Create the VideoAsset and atomically consume the upload reservation (if any)
     // so the spot is never double-counted.
@@ -735,7 +745,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (error instanceof ContentError) return apiErrors.forbidden(error.message);
     if (error instanceof QuotaExceededInTxError) {
       return storageForRefusal
-        ? storageExceededResponse(storageForRefusal)
+        ? storageExceededResponse(storageForRefusal, {
+            uploaderIsBilled: refusalUploaderIsBilled,
+          })
         : (apiErrors.storageExceeded() as NextResponse);
     }
     await releaseStorageReservation(

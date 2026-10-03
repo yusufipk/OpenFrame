@@ -77,13 +77,24 @@ export function buildComparisonJsonLd({
       name: seoConfig.name,
       applicationCategory: 'MultimediaApplication',
       operatingSystem: 'Web',
-      offers: {
-        '@type': 'Offer',
-        price: '10',
-        priceCurrency: 'USD',
-        description:
-          '7-day free trial with no credit card, then $10/month hosted plan. Self-hosted option is free.',
-      },
+      offers: [
+        {
+          '@type': 'Offer',
+          name: 'Solo',
+          price: '10',
+          priceCurrency: 'USD',
+          description:
+            'One editor, 200 GB of storage and unlimited free reviewers, after a 7-day free trial with no credit card.',
+        },
+        {
+          '@type': 'Offer',
+          name: 'Studio',
+          price: '29',
+          priceCurrency: 'USD',
+          description:
+            'Unlimited editors, 1 TB of storage and unlimited free reviewers, after a 7-day free trial with no credit card.',
+        },
+      ],
       url: seoConfig.url,
     },
   ];

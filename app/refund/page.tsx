@@ -30,7 +30,7 @@ export default function RefundPolicyPage() {
 
       <main className="mx-auto max-w-[900px] px-4 py-12 sm:px-6 lg:px-8">
         <h1 className="text-3xl font-semibold tracking-tight mb-2">Refund Policy</h1>
-        <p className="text-sm text-muted-foreground mb-10">Last updated: July 30, 2026</p>
+        <p className="text-sm text-muted-foreground mb-10">Last updated: October 3, 2026</p>
 
         <div className="prose prose-sm prose-invert max-w-none space-y-8 text-sm leading-relaxed text-foreground/80">
           <section>
@@ -76,6 +76,13 @@ export default function RefundPolicyPage() {
               Canceling your subscription stops future billing but does not entitle you to a refund
               for the current billing period. You will continue to have access to the Service until
               the end of your current paid period.
+            </p>
+            <p className="mt-3">
+              Plan changes are not refunds either. Moving to a larger plan, to annual billing or to
+              more storage takes effect immediately, and the unused part of what you already paid
+              for the current period is credited against the new charge. Moving to a smaller plan,
+              to monthly billing or to less storage takes effect at the end of the paid period, so
+              nothing is left over to refund.
             </p>
             <p className="mt-3">
               This no-refund rule does not apply if we terminate your account for a reason other

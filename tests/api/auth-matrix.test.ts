@@ -56,6 +56,8 @@ import * as billingCancelRoute from '@/app/api/billing/cancel/route';
 import * as billingCheckoutRoute from '@/app/api/billing/checkout/route';
 import * as billingPortalRoute from '@/app/api/billing/portal/route';
 import * as billingTrialRoute from '@/app/api/billing/trial/route';
+import * as billingPlanRoute from '@/app/api/billing/plan/route';
+import * as billingStorageRoute from '@/app/api/billing/storage/route';
 import * as billingRoute from '@/app/api/billing/route';
 import * as commentRoute from '@/app/api/comments/[commentId]/route';
 import * as feedbackRoute from '@/app/api/feedback/route';
@@ -164,7 +166,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 81;
+const EXPECTED_ROUTE_MODULE_COUNT = 83;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -477,6 +479,20 @@ const ROUTE_CASES: readonly RouteCase[] = [
     headers: { origin: 'http://localhost:3000' },
   },
   { file: 'billing/route.ts', module: billingRoute, url: () => '/api/billing' },
+  {
+    file: 'billing/plan/route.ts',
+    module: billingPlanRoute,
+    url: () => '/api/billing/plan',
+    headers: { origin: 'http://localhost:3000' },
+    body: { plan: 'STUDIO', interval: 'MONTH' },
+  },
+  {
+    file: 'billing/storage/route.ts',
+    module: billingStorageRoute,
+    url: () => '/api/billing/storage',
+    headers: { origin: 'http://localhost:3000' },
+    body: { blocks: 1 },
+  },
   {
     file: 'billing/trial/route.ts',
     module: billingTrialRoute,

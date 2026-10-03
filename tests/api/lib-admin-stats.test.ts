@@ -1005,6 +1005,43 @@ describe('getCachedStripeStats', () => {
     expect(stats?.currency).toBe('usd');
   });
 
+  // Each plan and interval is priced from its own Stripe price, a yearly price
+  // counts a twelfth, and storage blocks are priced at their interval's price.
+  it('prices each plan and its storage blocks per month', async () => {
+    vi.stubEnv('STRIPE_PRICE_ID_STUDIO_YEARLY', 'price_admin_studio_year');
+    vi.stubEnv('STRIPE_PRICE_ID_STORAGE_YEARLY', 'price_admin_storage_year');
+    const studio = await createUser({ subscriptionStatus: 'ACTIVE' });
+    await db.user.update({
+      where: { id: studio.id },
+      data: { billingPlan: 'STUDIO', billingInterval: 'YEAR', storageBlocks: 2 },
+    });
+    await createUser({ subscriptionStatus: 'ACTIVE' });
+    // A different amount per price, so swapping the plan and block prices, or a
+    // monthly and a yearly one, changes the total.
+    const amounts: Record<string, number> = {
+      price_admin_stats_test: 1000,
+      price_admin_studio_year: 29000,
+      price_admin_storage_year: 5000,
+    };
+    const retrieved: string[] = [];
+    vi.mocked(getStripe as unknown as () => unknown).mockReturnValue({
+      prices: {
+        retrieve: vi.fn(async (priceId: string) => {
+          retrieved.push(priceId);
+          return { unit_amount: amounts[priceId], currency: 'usd' };
+        }),
+      },
+    });
+
+    const stats = await getCachedStripeStats();
+
+    // Solo monthly 1000, plus (29000 Studio yearly + 2 x 5000 storage yearly) / 12 = 3250.
+    expect(stats?.mrrCents).toBe(4250);
+    expect([...retrieved].sort()).toEqual(
+      ['price_admin_stats_test', 'price_admin_storage_year', 'price_admin_studio_year'].sort()
+    );
+  });
+
   it('treats a price with no unit amount as free rather than as NaN', async () => {
     await createUser({ subscriptionStatus: 'ACTIVE' });
     stubStripePrice({ unit_amount: null, currency: 'gbp' });

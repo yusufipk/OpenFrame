@@ -17,6 +17,7 @@ import {
   emailRow,
 } from '@/lib/email-brand';
 import { logError } from '@/lib/logger';
+import { checkEditorAddition } from '@/lib/editor-limit';
 
 const INVITATION_TTL_DAYS = 7;
 const MAX_INVITATION_RETRIES = 3;
@@ -306,6 +307,48 @@ async function acceptInvitation(tx: Prisma.TransactionClient, invitationId: stri
   });
 }
 
+/** The account an invitation's membership would be billed to. */
+async function getInvitationAccountOwnerId(
+  tx: Prisma.TransactionClient,
+  invitation: {
+    scope: InvitationScope;
+    workspaceId: string | null;
+    projectId: string | null;
+    folderId?: string | null;
+    videoId?: string | null;
+  }
+): Promise<string | null> {
+  if (invitation.scope === InvitationScope.WORKSPACE) {
+    if (!invitation.workspaceId) return null;
+    const workspace = await tx.workspace.findUnique({
+      where: { id: invitation.workspaceId },
+      select: { ownerId: true },
+    });
+    return workspace?.ownerId ?? null;
+  }
+  const projectWorkspaceOwner = { workspace: { select: { ownerId: true } } } as const;
+  if (invitation.scope === InvitationScope.FOLDER && invitation.folderId) {
+    const folder = await tx.projectFolder.findUnique({
+      where: { id: invitation.folderId },
+      select: { project: { select: projectWorkspaceOwner } },
+    });
+    return folder?.project.workspace.ownerId ?? null;
+  }
+  if (invitation.scope === InvitationScope.VIDEO && invitation.videoId) {
+    const video = await tx.video.findUnique({
+      where: { id: invitation.videoId },
+      select: { project: { select: projectWorkspaceOwner } },
+    });
+    return video?.project.workspace.ownerId ?? null;
+  }
+  if (!invitation.projectId) return null;
+  const project = await tx.project.findUnique({
+    where: { id: invitation.projectId },
+    select: projectWorkspaceOwner,
+  });
+  return project?.workspace.ownerId ?? null;
+}
+
 /**
  * Applies the invited membership and marks the invitation accepted.
  *
@@ -317,6 +360,11 @@ async function acceptInvitation(tx: Prisma.TransactionClient, invitationId: stri
  * An existing membership is never downgraded. Applying the invited role unconditionally
  * turned an invitation into a privilege-change primitive: re-invite a sitting ADMIN as a
  * COMMENTATOR, get them to click the link once, and they are demoted.
+ *
+ * An ADMIN invitation is checked against the editor limit again here, not only when it
+ * was sent: it may have been created on a trial or on Studio and be accepted after the
+ * account moved to Solo. A refused one is left PENDING, so it can still be accepted once
+ * the owner upgrades.
  */
 async function applyInvitationMembership(
   tx: Prisma.TransactionClient,
@@ -330,22 +378,34 @@ async function applyInvitationMembership(
     videoId?: string | null;
   },
   userId: string
-): Promise<boolean> {
+): Promise<'applied' | 'not_found' | 'editor_limit'> {
   const invitedAsAdmin = invitation.role === InvitationRole.ADMIN;
+  if (invitedAsAdmin) {
+    const ownerId = await getInvitationAccountOwnerId(tx, invitation);
+    if (ownerId) {
+      const allowed = await checkEditorAddition({
+        ownerId,
+        actorUserId: userId,
+        candidate: { userId },
+        client: tx,
+      });
+      if (!allowed.ok) return 'editor_limit';
+    }
+  }
   if (invitation.scope === 'FOLDER' || invitation.scope === 'VIDEO') {
     // Atomically claim a pending invitation before granting access; cancellation wins if already committed.
     const claimed = await tx.invitation.updateMany({
       where: { id: invitation.id, status: 'PENDING', expiresAt: { gt: new Date() } },
       data: { status: 'ACCEPTED', acceptedAt: new Date() },
     });
-    if (claimed.count !== 1) return false;
+    if (claimed.count !== 1) return 'not_found';
     if (invitation.scope === 'FOLDER' && invitation.folderId) {
       await tx.projectFolderMember.upsert({
         where: { folderId_userId: { folderId: invitation.folderId, userId } },
         create: { folderId: invitation.folderId, userId, role: invitation.role },
         update: invitedAsAdmin ? { role: 'ADMIN' } : {},
       });
-      return true;
+      return 'applied';
     }
     if (invitation.scope === 'VIDEO' && invitation.videoId) {
       await tx.videoMember.upsert({
@@ -353,19 +413,19 @@ async function applyInvitationMembership(
         create: { videoId: invitation.videoId, userId, role: invitation.role },
         update: invitedAsAdmin ? { role: 'ADMIN' } : {},
       });
-      return true;
+      return 'applied';
     }
     throw new Error('Invitation target is missing');
   }
 
   if (invitation.scope === InvitationScope.WORKSPACE) {
-    if (!invitation.workspaceId) return false;
+    if (!invitation.workspaceId) return 'not_found';
 
     const workspace = await tx.workspace.findUnique({
       where: { id: invitation.workspaceId },
       select: { ownerId: true },
     });
-    if (!workspace) return false;
+    if (!workspace) return 'not_found';
 
     if (workspace.ownerId !== userId) {
       await tx.workspaceMember.upsert({
@@ -386,17 +446,17 @@ async function applyInvitationMembership(
     }
 
     await acceptInvitation(tx, invitation.id);
-    return true;
+    return 'applied';
   }
 
   if (invitation.scope === InvitationScope.PROJECT) {
-    if (!invitation.projectId) return false;
+    if (!invitation.projectId) return 'not_found';
 
     const project = await tx.project.findUnique({
       where: { id: invitation.projectId },
       select: { ownerId: true },
     });
-    if (!project) return false;
+    if (!project) return 'not_found';
 
     if (project.ownerId !== userId) {
       await tx.projectMember.upsert({
@@ -416,17 +476,17 @@ async function applyInvitationMembership(
     }
 
     await acceptInvitation(tx, invitation.id);
-    return true;
+    return 'applied';
   }
 
-  return false;
+  return 'not_found';
 }
 
 export async function acceptInvitationTokenForUser(input: {
   token: string;
   userId: string;
   email: string;
-}): Promise<'accepted' | 'not_found' | 'forbidden' | 'expired'> {
+}): Promise<'accepted' | 'not_found' | 'forbidden' | 'expired' | 'editor_limit'> {
   const normalizedEmail = input.email.toLowerCase().trim();
   const now = new Date();
 
@@ -449,7 +509,8 @@ export async function acceptInvitationTokenForUser(input: {
     const applied = await applyInvitationMembership(tx, invitation, input.userId);
     // A scoped invitation pointing at nothing grants no membership. Reporting 'accepted'
     // for it showed a success screen for a no-op and left the row PENDING for good.
-    return applied ? 'accepted' : 'not_found';
+    if (applied === 'editor_limit') return 'editor_limit';
+    return applied === 'applied' ? 'accepted' : 'not_found';
   });
 }
 

@@ -138,7 +138,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const reservation = await reserveStorageQuota(
       reservedOwnerId,
       BigInt(bytes.length + thumbnailBytes.length),
-      UPLOAD_RESERVATION_PURPOSES.IMAGE
+      UPLOAD_RESERVATION_PURPOSES.IMAGE,
+      undefined,
+      session.user.id
     );
     if ('error' in reservation) return reservation.error;
     reservationId = reservation.reservationId;

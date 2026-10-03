@@ -73,6 +73,29 @@ export const ErrorCode = {
    * actual remedy here and is no help at all on the paid ceiling.
    */
   TRIAL_STORAGE_LIMIT_EXCEEDED: 'TRIAL_STORAGE_LIMIT_EXCEEDED',
+  /** Out of room on someone else's account: only its owner can free or buy space. */
+  STORAGE_LIMIT_EXCEEDED_ASK_OWNER: 'STORAGE_LIMIT_EXCEEDED_ASK_OWNER',
+
+  // Plan limits
+  /** The account's plan allows no more editors; the caller owns it and can upgrade. */
+  EDITOR_LIMIT_REACHED: 'EDITOR_LIMIT_REACHED',
+  /** Same limit, hit by someone who is not the account owner and cannot upgrade it. */
+  EDITOR_LIMIT_REACHED_ASK_OWNER: 'EDITOR_LIMIT_REACHED_ASK_OWNER',
+  /** No more storage blocks on this plan; Studio is the way to more room. */
+  STORAGE_BLOCK_LIMIT_UPGRADE: 'STORAGE_BLOCK_LIMIT_UPGRADE',
+  /** No more storage blocks on this plan, and no larger plan to move to. */
+  STORAGE_BLOCK_LIMIT_CONTACT: 'STORAGE_BLOCK_LIMIT_CONTACT',
+  /** The new quota would sit below current usage; resend with confirmation. */
+  STORAGE_BELOW_USAGE: 'STORAGE_BELOW_USAGE',
+  /** Moving to Solo demotes editors; resend with their ids confirmed. */
+  DEMOTION_CONFIRMATION_REQUIRED: 'DEMOTION_CONFIRMATION_REQUIRED',
+  /** A founding account moving to Studio must acknowledge losing its terms. */
+  FOUNDING_ACKNOWLEDGEMENT_REQUIRED: 'FOUNDING_ACKNOWLEDGEMENT_REQUIRED',
+  /** A period-end change is already scheduled and has to be cancelled first. */
+  BILLING_CHANGE_PENDING: 'BILLING_CHANGE_PENDING',
+  PAYMENT_FAILED: 'PAYMENT_FAILED',
+  /** The change waits on an invoice the customer has to pay or authenticate. */
+  PAYMENT_ACTION_REQUIRED: 'PAYMENT_ACTION_REQUIRED',
 } as const;
 
 /**
@@ -190,4 +213,19 @@ export const apiErrors = {
    */
   trialStorageExceeded: (message: string) =>
     errorResponse(message, HttpStatus.INSUFFICIENT_STORAGE, ErrorCode.TRIAL_STORAGE_LIMIT_EXCEEDED),
+
+  /** The same 507, for an uploader whose upload is billed to another person's account. */
+  storageExceededAskOwner: (message: string) =>
+    errorResponse(
+      message,
+      HttpStatus.INSUFFICIENT_STORAGE,
+      ErrorCode.STORAGE_LIMIT_EXCEEDED_ASK_OWNER
+    ),
+
+  editorLimitReached: (message: string, askOwner: boolean) =>
+    errorResponse(
+      message,
+      HttpStatus.FORBIDDEN,
+      askOwner ? ErrorCode.EDITOR_LIMIT_REACHED_ASK_OWNER : ErrorCode.EDITOR_LIMIT_REACHED
+    ),
 };

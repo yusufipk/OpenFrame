@@ -419,7 +419,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       const reserveResult = await reserveStorageQuota(
         project.workspace.ownerId,
         totalAttachmentBytes,
-        UPLOAD_RESERVATION_PURPOSES.ATTACHMENT
+        UPLOAD_RESERVATION_PURPOSES.ATTACHMENT,
+        undefined,
+        userId ?? null
       );
       if ('error' in reserveResult) return reserveResult.error;
       attachmentReservationId = reserveResult.reservationId;

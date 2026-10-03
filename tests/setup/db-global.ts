@@ -55,6 +55,7 @@ const REVIEWED_MIGRATIONS = [
   '20260929120000_project_delete_name_confirmation_preference',
   '20260929160000_project_client_branding',
   '20260930120000_api_tokens',
+  '20261003120000_two_plan_pricing', // columns and enums only; the UPDATE backfills existing rows
   '20260926130000_attachment_comment_annotations', // replayed: annotation-only comment check
   '20260926120000_attachment_comments', // replayed: target and content checks
   '20260925120000_add_video_media_type', // replayed: image object key uniqueness
