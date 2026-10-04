@@ -17,7 +17,8 @@ import {
 export type EditorPlugin = 'premiere' | 'resolve';
 
 // Whether this user may create an API token (a plan or trial of their own, or editor
-// rights on a team with one), as the token settings report it. null while unknown.
+// rights on a team with one), as the token settings report it. null while loading and
+// when the check fails, so a passing error never reads as a refusal.
 export function useCanCreateApiToken(enabled: boolean): boolean | null {
   const [canCreate, setCanCreate] = useState<boolean | null>(null);
   useEffect(() => {
@@ -26,10 +27,11 @@ export function useCanCreateApiToken(enabled: boolean): boolean | null {
     fetch('/api/settings/api-tokens')
       .then((res) => (res.ok ? res.json() : null))
       .then((payload) => {
-        if (!cancelled) setCanCreate(payload?.data?.canCreate === true);
+        const value = payload?.data?.canCreate;
+        if (!cancelled && typeof value === 'boolean') setCanCreate(value);
       })
       .catch(() => {
-        if (!cancelled) setCanCreate(false);
+        // Unknown, not refused.
       });
     return () => {
       cancelled = true;

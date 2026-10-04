@@ -255,8 +255,10 @@ export const CommentsPane = memo(function CommentsPane({
   const showEditorPlugins = !isImage && !isGuest && !!editorTarget;
   const canCreateToken = useCanCreateApiToken(showEditorPlugins);
   // The plugins need a token and put the review into the cut, so they follow the
-  // token rule and the media download rule together.
-  const editorPluginsAllowed = !!editorTarget?.canDownload && canCreateToken === true;
+  // token rule and the media download rule together. Only a definite "no" from the
+  // token check greys them out; while it loads or if it fails, the server still
+  // enforces both rules.
+  const editorPluginsAllowed = !!editorTarget?.canDownload && canCreateToken !== false;
   const editorPluginOptions = [
     { id: 'premiere' as const, app: 'Premiere Pro', Icon: PremiereProIcon },
     { id: 'resolve' as const, app: 'DaVinci Resolve', Icon: DavinciResolveIcon },

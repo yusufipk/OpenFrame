@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
 import { GET } from '@/app/api/versions/[versionId]/comments/export/route';
 import { addProjectMember, createComment, createUser, seedVersion } from '../factories';
 import { apiRequest, callRoute } from '../helpers/request';
-import { signedInAs } from '../helpers/session';
+import { signedInAs, signedOut } from '../helpers/session';
 import { parseCsv, pdfPages } from '../helpers/export-readers';
 
 function request(versionId: string, query: string) {
@@ -170,6 +171,54 @@ describe('comment export formats through the route', () => {
     });
     signedInAs(scenario.owner);
     expect((await request(scenario.version.id, 'format=markers&fps=25')).status).toBe(200);
+  });
+
+  it('gives markers to a video-level admin even with downloads off', async () => {
+    const { scenario } = await seedThread();
+    const editor = await createUser();
+    await db.videoMember.create({
+      data: { videoId: scenario.video.id, userId: editor.id, role: 'ADMIN' },
+    });
+    await db.project.update({
+      where: { id: scenario.project.id },
+      data: { allowDownloads: false },
+    });
+    signedInAs(editor);
+    expect((await request(scenario.version.id, 'format=markers&fps=25')).status).toBe(200);
+  });
+
+  it('applies the download rule to the plugin token path too', async () => {
+    const { scenario } = await seedThread();
+    const reviewer = await createUser();
+    await addProjectMember({ projectId: scenario.project.id, userId: reviewer.id });
+    await db.project.update({
+      where: { id: scenario.project.id },
+      data: { allowDownloads: false },
+    });
+    const token = `of_pat_${'r'.repeat(43)}`;
+    await db.apiToken.create({
+      data: {
+        userId: reviewer.id,
+        name: 'Premiere panel',
+        tokenHash: createHash('sha256').update(token, 'utf8').digest('hex'),
+        prefix: token.slice(0, 13),
+        scopes: ['read', 'comments:read'],
+      },
+    });
+    signedOut();
+    const call = () =>
+      callRoute(
+        GET,
+        apiRequest(`/api/versions/${scenario.version.id}/comments/export?format=markers&fps=25`, {
+          headers: { authorization: `Bearer ${token}` },
+        }),
+        { versionId: scenario.version.id }
+      );
+    expect((await call()).status).toBe(403);
+    await db.project.update({ where: { id: scenario.project.id }, data: { allowDownloads: true } });
+    const allowed = await call();
+    expect(allowed.status).toBe(200);
+    expect((await allowed.json()).data.markers).toHaveLength(1);
   });
 
   it('refuses markers for an image', async () => {

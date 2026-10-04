@@ -1202,8 +1202,12 @@ export function VideoPageContent({
           handleToggleShowResolved={handleToggleShowResolved}
           activeVersion={activeVersion}
           isGuest={isGuest}
+          // Only the project page: a watch page's download right can come from a share
+          // link, which the plugins' API calls do not carry.
           editorTarget={
-            projectId ? { projectId, videoId, canDownload: !!video?.canDownload } : undefined
+            mode === 'dashboard' && projectId
+              ? { projectId, videoId, canDownload: !!video?.canDownload }
+              : undefined
           }
           isExportingCsv={isExportingCsv}
           isExportingPdf={isExportingPdf}
