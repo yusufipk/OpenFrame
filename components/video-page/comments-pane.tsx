@@ -6,7 +6,6 @@ import { memo, useState, type ReactNode, type RefObject } from 'react';
 import {
   ArrowUpRight,
   Clapperboard,
-  MonitorPlay,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -29,6 +28,7 @@ import {
 } from 'lucide-react';
 import { NleExportDialog } from '@/components/video-page/nle-export-dialog';
 import { EditorSyncDialog, type EditorPlugin } from '@/components/video-page/editor-sync-dialog';
+import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -399,14 +399,14 @@ export const CommentsPane = memo(function CommentsPane({
                         disabled={!activeVersion}
                         onSelect={() => setEditorPlugin('premiere')}
                       >
-                        <MonitorPlay className="h-4 w-4 mr-2" />
+                        <PremiereProIcon className="h-4 w-4 mr-2" />
                         Premiere Pro: add to timeline
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         disabled={!activeVersion}
                         onSelect={() => setEditorPlugin('resolve')}
                       >
-                        <MonitorPlay className="h-4 w-4 mr-2" />
+                        <DavinciResolveIcon className="h-4 w-4 mr-2" />
                         DaVinci Resolve: add to timeline
                       </DropdownMenuItem>
                     </>

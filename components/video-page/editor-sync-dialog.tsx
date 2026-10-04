@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import Link from 'next/link';
 import { Check, Copy, Download, KeyRound, Loader2 } from 'lucide-react';
+import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -27,6 +28,7 @@ const COPY: Record<
     tokenName: string;
     open: string;
     guide: string;
+    Icon: ComponentType<SVGProps<SVGSVGElement>>;
   }
 > = {
   premiere: {
@@ -36,6 +38,7 @@ const COPY: Record<
     tokenName: 'Premiere panel',
     open: 'Window → UXP Plugins → OpenFrame Comments',
     guide: '/guides/editor-markers#premiere',
+    Icon: PremiereProIcon,
   },
   resolve: {
     app: 'DaVinci Resolve',
@@ -44,6 +47,7 @@ const COPY: Record<
     tokenName: 'Resolve script',
     open: 'Workspace → Scripts → OpenFrame Comments',
     guide: '/guides/editor-markers#resolve',
+    Icon: DavinciResolveIcon,
   },
 };
 
@@ -142,7 +146,10 @@ export function EditorSyncDialog({
       {copy && (
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add comments to {copy.app}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <copy.Icon className="h-6 w-6 shrink-0" />
+              Add comments to {copy.app}
+            </DialogTitle>
             <DialogDescription>
               They appear as colored markers on the timeline you are editing.
             </DialogDescription>
@@ -152,8 +159,9 @@ export function EditorSyncDialog({
             <Step number={1} title={`Install the ${copy.plugin} (first time only)`}>
               <Button asChild variant="outline" size="sm">
                 <a href={copy.downloadHref} download>
-                  <Download className="h-4 w-4 mr-2" />
-                  Download
+                  <copy.Icon className="h-4 w-4 mr-2" />
+                  Download for {copy.app}
+                  <Download className="h-4 w-4 ml-2 opacity-60" />
                 </a>
               </Button>
             </Step>

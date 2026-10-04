@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Video } from 'lucide-react';
+import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 
 export const metadata: Metadata = {
   title: 'Comments as timeline markers in Premiere Pro and DaVinci Resolve | OpenFrame',
@@ -90,7 +91,10 @@ export default function EditorMarkersGuidePage() {
           </section>
 
           <section id="premiere" className="space-y-4 scroll-mt-8">
-            <h2 className="text-xl font-semibold text-foreground">Premiere Pro</h2>
+            <h2 className="flex items-center gap-2 text-xl font-semibold text-foreground">
+              <PremiereProIcon className="h-7 w-7" />
+              Premiere Pro
+            </h2>
             <p>Works with Premiere Pro 25.6 or later, installed through Creative Cloud.</p>
             <ol className="space-y-8">
               <Step title="1. Install the panel">
@@ -210,7 +214,10 @@ export default function EditorMarkersGuidePage() {
           </section>
 
           <section id="resolve" className="space-y-4 scroll-mt-8">
-            <h2 className="text-xl font-semibold text-foreground">DaVinci Resolve</h2>
+            <h2 className="flex items-center gap-2 text-xl font-semibold text-foreground">
+              <DavinciResolveIcon className="h-7 w-7" />
+              DaVinci Resolve
+            </h2>
             <ol className="space-y-8">
               <Step title="1. Install the script">
                 <p>
