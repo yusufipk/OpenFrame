@@ -1,0 +1,21 @@
+{
+  "manifestVersion": 5,
+  "id": "net.openframe.premiere.markers",
+  "name": "OpenFrame Comments",
+  "version": "0.1.0",
+  "main": "index.html",
+  "host": { "app": "premierepro", "minVersion": "25.6.0" },
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "openframe-comments",
+      "label": { "default": "OpenFrame Comments" },
+      "minimumSize": { "width": 280, "height": 440 },
+      "preferredDockedSize": { "width": 340, "height": 520 },
+      "preferredFloatingSize": { "width": 380, "height": 560 }
+    }
+  ],
+  "requiredPermissions": {
+    "network": { "domains": "all" }
+  }
+}

@@ -10,13 +10,14 @@ import {
 import { buildCommentsPdf } from '@/lib/comment-export-pdf';
 import {
   buildNleComments,
+  buildPanelMarkers,
   NLE_FORMATS,
   NleExportError,
   parseNleOptions,
   selectNleThreads,
   type NleExportOptions,
 } from '@/lib/nle-comment-export';
-import { apiErrors, withCacheControl } from '@/lib/api-response';
+import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
 import { logError } from '@/lib/logger';
 
@@ -24,6 +25,7 @@ type RouteParams = { params: Promise<{ versionId: string }> };
 const MAX_EXPORT_COMMENTS = 5000;
 
 // GET /api/versions/[versionId]/comments/export?format=csv|pdf&includeResolved=true|false
+// format=markers&fps=... returns JSON markers for the editor plugins.
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const limited = await rateLimit(request, 'comment-export');
@@ -38,13 +40,20 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(request.url);
 
     const format = (searchParams.get('format') || 'csv').toLowerCase();
-    if (!['csv', 'pdf', ...NLE_FORMATS].includes(format)) {
-      return apiErrors.badRequest('Invalid format. Use "csv", "pdf", "edl", "xml" or "fcpxml"');
+    if (!['csv', 'pdf', 'markers', ...NLE_FORMATS].includes(format)) {
+      return apiErrors.badRequest(
+        'Invalid format. Use "csv", "pdf", "edl", "xml", "fcpxml" or "markers"'
+      );
     }
     const nleFormat = NLE_FORMATS.find((candidate) => candidate === format);
 
     let nleOptions: NleExportOptions | undefined;
-    if (nleFormat) {
+    if (format === 'markers') {
+      // A plugin places markers by frame from the start of the timeline, so only the
+      // rate matters; the origin and drop-frame labels never reach it.
+      nleOptions = { fps: searchParams.get('fps') ?? '', origin: '00:00:00:00', dropFrame: false };
+      parseNleOptions(nleOptions);
+    } else if (nleFormat) {
       if (!['true', 'false'].includes(searchParams.get('dropFrame') ?? '')) {
         return apiErrors.badRequest(
           'Explicit fps, origin and dropFrame options are required for NLE exports.'
@@ -184,6 +193,19 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       versionNumber: version.versionNumber,
       versionLabel: version.versionLabel,
     };
+
+    if (format === 'markers' && nleOptions) {
+      return withCacheControl(
+        successResponse({
+          videoTitle: version.video.title,
+          versionNumber: version.versionNumber,
+          versionLabel: version.versionLabel,
+          fps: nleOptions.fps,
+          markers: buildPanelMarkers(rows, nleOptions.fps),
+        }),
+        'private, no-store'
+      );
+    }
 
     if (nleFormat && nleOptions) {
       return withCacheControl(

@@ -27,6 +27,13 @@ const eslintConfig = defineConfig([
   ]),
   prettier,
   {
+    // The Premiere panel runs in Adobe's UXP runtime, which loads CommonJS modules
+    // and host APIs with require().
+    files: ['integrations/premiere-panel/**/*.js'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     // Tests are allowed liberties that production code is not: `any` when
     // shaping a fixture, and imports that reach past the `@/` aliases into
     // test helpers. `--max-warnings=0` still applies to everything else.

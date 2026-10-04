@@ -3,7 +3,9 @@ import {
   buildNleComments,
   nleTimecode,
   parseNleOptions,
+  buildPanelMarkers,
   premiereMarkerColor,
+  premierePanelColor,
   resolveMarkerColor,
   secondsToNleFrames,
   selectNleThreads,
@@ -573,5 +575,103 @@ describe('NLE nested threads', () => {
         true
       )
     ).toThrow('cyclic');
+  });
+});
+
+describe('editor panel markers', () => {
+  it.each([
+    ['#3B82F6', 'BLUE'],
+    ['#EF4444', 'RED'],
+    ['#E11D48', 'RED'],
+    ['#8B5CF6', 'MAGENTA'],
+    ['#EC4899', 'MAGENTA'],
+    ['#22C55E', 'GREEN'],
+    ['#F59E0B', 'YELLOW'],
+    ['#F97316', 'ORANGE'],
+    ['#22D3EE', 'CYAN'],
+    ['#6B7280', null],
+    ['#F3F4F6', null],
+  ])('maps tag color %s to the Premiere UXP color %s', (hex, name) => {
+    expect(premierePanelColor(hex)).toBe(name);
+  });
+
+  it('puts every hue in the same band for the XML color and the panel color', () => {
+    const names: Record<number, string> = {
+      4281740498: 'RED',
+      4280578025: 'ORANGE',
+      4281049552: 'YELLOW',
+      4281828977: 'GREEN',
+      4292277273: 'CYAN',
+      4294741314: 'BLUE',
+      4289825711: 'MAGENTA',
+    };
+    const hex = (hue: number) => {
+      const channel = (n: number) => {
+        const k = (n + hue / 30) % 12;
+        const value = 0.5 - 0.5 * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+        return Math.round(value * 255)
+          .toString(16)
+          .padStart(2, '0');
+      };
+      return `#${channel(0)}${channel(8)}${channel(4)}`;
+    };
+    for (let hue = 0; hue < 360; hue++) {
+      expect([hue, premierePanelColor(hex(hue))]).toEqual([
+        hue,
+        names[premiereMarkerColor(hex(hue))],
+      ]);
+    }
+  });
+
+  it('groups by frame and carries the same text, color and done state as the files', () => {
+    const markers = buildPanelMarkers(
+      [
+        row({ authorName: 'Ann', tag: 'Fix', tagColor: '#EF4444', timestamp: 1, timestampEnd: 2 }),
+        row({
+          commentId: 'reply',
+          parentCommentId: 'parent',
+          authorName: 'Bo',
+          tag: '',
+          content: 'ok',
+        }),
+        row({
+          commentId: 'late',
+          authorName: 'Cem',
+          tag: '',
+          tagColor: null,
+          timestamp: 10.01,
+          isResolved: true,
+        }),
+      ],
+      '25'
+    );
+    expect(markers).toEqual([
+      {
+        startFrame: 25,
+        durationFrames: 25,
+        name: 'Ann: Hello (+1)',
+        comments: 'Ann [Fix]: Hello\n↳ Bo: ok',
+        color: '#EF4444',
+        premiereColor: 'RED',
+        done: false,
+        commentIds: ['parent', 'reply'],
+      },
+      {
+        startFrame: 250,
+        durationFrames: 1,
+        name: 'Cem: Hello',
+        comments: 'Cem (resolved): Hello',
+        color: '#22C55E',
+        premiereColor: 'GREEN',
+        done: true,
+        commentIds: ['late'],
+      },
+    ]);
+  });
+
+  it('counts frames at exact NTSC ratios and rejects an unsupported rate', () => {
+    // 3600 s at 30000/1001 is 107892.1 frames, not 108000.
+    expect(buildPanelMarkers([row({ timestamp: 3600 })], '30000/1001')[0].startFrame).toBe(107892);
+    expect(() => buildPanelMarkers([row()], '29.97')).toThrow('supported frame rate');
   });
 });

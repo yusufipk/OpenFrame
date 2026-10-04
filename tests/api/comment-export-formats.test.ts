@@ -101,6 +101,63 @@ describe('comment export formats through the route', () => {
     expect(pages[0]).not.toContain('Resolved');
   });
 
+  it('returns JSON markers in frames for the editor plugins', async () => {
+    const { scenario, parent } = await seedThread();
+    const response = await request(scenario.version.id, 'format=markers&fps=25');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    const { data } = await response.json();
+    expect(data).toMatchObject({ versionNumber: scenario.version.versionNumber, fps: '25' });
+    expect(data.markers).toHaveLength(1);
+    expect(data.markers[0]).toMatchObject({
+      startFrame: 300,
+      durationFrames: 75,
+      name: 'Ayşe Çelik: Ses burada patlıyor, şöyle düzeltelim (+1)',
+      premiereColor: 'RED',
+      done: false,
+    });
+    expect(data.markers[0].commentIds).toHaveLength(2);
+    expect(data.markers[0].commentIds[0]).toBe(parent.id);
+    expect(data.markers[0].comments).toBe(
+      'Ayşe Çelik [Teknik]: Ses burada patlıyor, şöyle düzeltelim\n↳ İsmail (resolved): Tamam, düzeltiyorum'
+    );
+  });
+
+  it('leaves resolved threads out of the markers when asked', async () => {
+    const { scenario } = await seedThread();
+    await createComment({
+      versionId: scenario.version.id,
+      guestName: 'Done',
+      content: 'Already fixed',
+      timestamp: 40,
+      isResolved: true,
+    });
+    const names = async (query: string) => {
+      const response = await request(scenario.version.id, `format=markers&fps=25${query}`);
+      expect(response.status).toBe(200);
+      return (await response.json()).data.markers.map((marker: { name: string }) => marker.name);
+    };
+    expect(await names('')).toHaveLength(2);
+    expect(await names('&includeResolved=false')).toEqual([
+      'Ayşe Çelik: Ses burada patlıyor, şöyle düzeltelim (+1)',
+    ]);
+  });
+
+  it('refuses markers for an image', async () => {
+    const { scenario } = await seedThread();
+    await db.video.update({ where: { id: scenario.video.id }, data: { mediaType: 'IMAGE' } });
+    const response = await request(scenario.version.id, 'format=markers&fps=25');
+    expect(response.status).toBe(400);
+  });
+
+  it('refuses markers without a supported frame rate', async () => {
+    const { scenario } = await seedThread();
+    for (const query of ['format=markers', 'format=markers&fps=29.97']) {
+      const response = await request(scenario.version.id, query);
+      expect(response.status).toBe(400);
+    }
+  });
+
   it('downloads an FCPXML project with a to-do marker per thread', async () => {
     const { scenario } = await seedThread();
     const response = await request(

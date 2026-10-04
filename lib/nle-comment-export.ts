@@ -117,16 +117,18 @@ const RESOLVE_HUES: [number, string][] = [
   [360, 'Red'],
 ];
 
-// Premiere's marker palette as packed 0xAABBGGRR integers, the form `pproColor` takes.
-const PREMIERE_HUES: [number, number][] = [
-  [15, 4281740498], // red
-  [33, 4280578025], // orange
-  [70, 4281049552], // yellow
-  [160, 4281828977], // green
-  [200, 4292277273], // cyan
-  [250, 4294741314], // blue
-  [345, 4289825711], // violet
-  [360, 4281740498], // red
+// Premiere's marker palette: packed 0xAABBGGRR integers, the form XML `pproColor`
+// takes, and the name in the UXP `Constants.MarkerColor` an editor plugin sets. UXP
+// has no violet, so that band is magenta there.
+const PREMIERE_HUES: [number, [number, string]][] = [
+  [15, [4281740498, 'RED']],
+  [33, [4280578025, 'ORANGE']],
+  [70, [4281049552, 'YELLOW']],
+  [160, [4281828977, 'GREEN']],
+  [200, [4292277273, 'CYAN']],
+  [250, [4294741314, 'BLUE']],
+  [345, [4289825711, 'MAGENTA']],
+  [360, [4281740498, 'RED']],
 ];
 const PREMIERE_WHITE = 4294967295;
 
@@ -165,7 +167,13 @@ export function resolveMarkerColor(hex: string): string {
 
 export function premiereMarkerColor(hex: string): number {
   const { hue, saturation } = hsl(hex);
-  return saturation < 0.15 ? PREMIERE_WHITE : band(hue, PREMIERE_HUES);
+  return saturation < 0.15 ? PREMIERE_WHITE : band(hue, PREMIERE_HUES)[0];
+}
+
+// The UXP palette lists no white, so a neutral tag keeps the marker's default color.
+export function premierePanelColor(hex: string): string | null {
+  const { hue, saturation } = hsl(hex);
+  return saturation < 0.15 ? null : band(hue, PREMIERE_HUES)[1];
 }
 
 interface MarkerEntry {
@@ -337,13 +345,9 @@ function buildFcpxml(
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.9"><resources>${format}</resources><library><event name="OpenFrame comments"><project name="${xmlAttribute(title)}"><sequence format="r1" duration="${time(duration)}" tcStart="${time(origin)}" tcFormat="${rate.drop ? 'DF' : 'NDF'}"><spine><gap name="OpenFrame comments" offset="${time(origin)}" start="${time(origin)}" duration="${time(duration)}">\n${markerXml}\n</gap></spine></sequence></project></event></library></fcpxml>\n`;
 }
 
-export function buildNleComments(
-  rows: ExportCommentRow[],
-  title: string,
-  format: NleFormat,
-  options: NleExportOptions
-): string {
-  const rate = parseNleOptions(options);
+// Comments grouped by the frame they start on, in timeline order, with the text
+// order, color and done state every format shares.
+function groupMarkers(rows: ExportCommentRow[], rate: Rate) {
   const groups = new Map<number, { start: number; end: number; rows: ExportCommentRow[] }>();
   for (const row of rows) {
     const start = secondsToNleFrames(row.timestamp, rate);
@@ -372,7 +376,7 @@ export function buildNleComments(
     }
     return current.isResolved;
   };
-  const markers = [...groups.values()]
+  return [...groups.values()]
     .sort((a, b) => a.start - b.start)
     .map((marker) => {
       const entries = threadOrder(marker.rows, authors);
@@ -382,6 +386,44 @@ export function buildNleComments(
       const done = entries.every((entry) => entry.depth > 0 || rootResolved(entry.row));
       return { ...marker, entries, color, done };
     });
+}
+
+export interface PanelMarker {
+  // Frames from the start of the video, at the requested rate.
+  startFrame: number;
+  durationFrames: number;
+  name: string;
+  comments: string;
+  color: string;
+  premiereColor: string | null;
+  done: boolean;
+  commentIds: string[];
+}
+
+// Markers for an editor plugin that writes them into an open timeline itself, so
+// it needs frames rather than timecode and no file format around them.
+export function buildPanelMarkers(rows: ExportCommentRow[], fps: string): PanelMarker[] {
+  const rate = parseNleOptions({ fps, origin: '00:00:00:00', dropFrame: false });
+  return groupMarkers(rows, rate).map((marker) => ({
+    startFrame: marker.start,
+    durationFrames: marker.end - marker.start,
+    name: xmlName(marker.entries),
+    comments: xmlNote(marker.entries),
+    color: marker.color,
+    premiereColor: premierePanelColor(marker.color),
+    done: marker.done,
+    commentIds: marker.entries.map((entry) => entry.row.commentId),
+  }));
+}
+
+export function buildNleComments(
+  rows: ExportCommentRow[],
+  title: string,
+  format: NleFormat,
+  options: NleExportOptions
+): string {
+  const rate = parseNleOptions(options);
+  const markers = groupMarkers(rows, rate);
   if (format === 'edl') {
     if (markers.length > 999)
       throw new NleExportError(

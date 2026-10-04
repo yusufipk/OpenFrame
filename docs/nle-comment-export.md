@@ -66,6 +66,38 @@ Premiere copy-paste route above. Before relying on a file for a live edit, impor
 a copy and check marker positions, colors and text. This feature exports from OpenFrame
 for import into editors; it does not import editor files back into OpenFrame.
 
+### Premiere panel
+
+`integrations/premiere-panel/` is a UXP panel for Premiere 25.6 or later that writes the
+markers straight into the open sequence, at the sequence's own frame rate, with no
+file and no separate sequence. Package it by zipping the folder's contents into a
+`.ccx` file (`zip -r openframe-comments.ccx .` inside the folder); double-clicking that
+opens Creative Cloud, which installs it after a warning about unverified plugins. It
+then sits under **Window → UXP Plugins → OpenFrame Comments**.
+
+Paste a video page address and an API token with the **Read** and **Read comments**
+permissions, load the versions, pick one and add the comments. Running it again for the
+same version replaces the markers it wrote before and leaves every other marker alone;
+it recognizes its own by the `[OpenFrame <version id>]` line at the end of the marker
+comment. Colors use Premiere's seven named marker colors: violet and pink tags become
+magenta, and gray tags keep Premiere's default color, which can look like the green of
+a resolved comment. New markers are added before the old ones are removed, so a step
+Premiere refuses never leaves fewer markers than before. Each step is its own undo:
+a first sync of up to 50 markers undoes in two (add, color), a later one in three
+(add, remove the old ones, color).
+
+The panel may reach any server, since OpenFrame can be self-hosted, so the token is
+bound to one: it is kept in UXP secure storage under the server's origin and filled in
+only for a link to that same server. Plain `http` links are accepted only for localhost
+and private network addresses.
+
+Checked by hand in Premiere 26.0 on Windows with a 23.976 fps sequence: eight markers
+landed on the expected frames and durations with the expected colors (magenta shows as
+Premiere's lilac), thread text and Turkish letters came through, a second sync replaced
+them instead of doubling them, a marker added by hand survived it, and in a sequence
+starting at `01:00:00:00` the markers counted from that start. Other frame rates and
+macOS have not been tried.
+
 References:
 
 - [Apple FCP7 XML element catalog](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Elements/Elements.html)
@@ -75,7 +107,7 @@ References:
 
 ## API
 
-`GET /api/versions/{versionId}/comments/export` takes `format=csv|pdf|edl|xml|fcpxml`.
+`GET /api/versions/{versionId}/comments/export` takes `format=csv|pdf|edl|xml|fcpxml|markers`.
 The CSV columns are `#, Time, Author, Comment, Reply to, Tag, Status, Attachments,
 Created, Comment ID, Parent comment ID` (no `Time` for images); a reply's `Status` is
 its thread's, since only a root can be resolved. UTF-8 with a byte order
@@ -84,6 +116,10 @@ mark and CRLF line endings. NLE formats require all three timing parameters:
 ```text
 ?format=edl&fps=30000%2F1001&origin=01%3A00%3A00%3B00&dropFrame=true&includeResolved=false
 ```
+
+`format=markers&fps=...` returns JSON for editor plugins: one entry per marker with
+`startFrame`, `durationFrames`, `name`, `comments`, `color`, `premiereColor`, `done` and
+`commentIds`, counted from the start of the video at that rate.
 
 Invalid options or unsupported image exports return 400. Session authentication,
 `comments:read` token scope, video access checks, the export rate limit and private
