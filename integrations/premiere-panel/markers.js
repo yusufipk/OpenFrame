@@ -1,6 +1,31 @@
 // Pure helpers for the Premiere panel. No Premiere or network calls here, so the
 // unit tests can load this file directly.
 
+// This panel's release; keep it equal to "version" in manifest.json.
+const PANEL_VERSION = '0.1.0';
+
+// Whether a dotted version such as 0.2.0 is newer than another. Anything that is
+// not a version reads as not newer, so a bad reply never nags the editor.
+function isNewerVersion(latest, current) {
+  const parse = (value) =>
+    typeof value === 'string' && /^\d+(\.\d+)*$/.test(value) ? value.split('.').map(Number) : null;
+  const a = parse(latest);
+  const b = parse(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] || 0) - (b[i] || 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
+}
+
+// The line the panel adds after a sync when the server knows a newer panel.
+function updateNotice(pluginVersions) {
+  const latest = pluginVersions && pluginVersions.premiere;
+  if (!isNewerVersion(latest, PANEL_VERSION)) return null;
+  return `A new version of this panel (${latest}) is out. Download it again from the comments menu in OpenFrame and install it.`;
+}
+
 // Premiere measures time in ticks: 254,016,000,000 per second.
 const TICKS_PER_SECOND = 254016000000;
 
@@ -118,6 +143,9 @@ function chunks(items, size) {
 }
 
 module.exports = {
+  PANEL_VERSION,
+  isNewerVersion,
+  updateNotice,
   TICKS_PER_SECOND,
   rateFromTimebase,
   ticksPerFrame,
