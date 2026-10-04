@@ -10,6 +10,7 @@ const {
   parseVideoLink,
   rateFromTimebase,
   tokenKey,
+  updateNotice,
   versionName,
 } = require('./markers.js');
 
@@ -189,6 +190,8 @@ async function syncMarkers() {
         `Could not find ${colorByKey.size - coloring.length} new marker(s) again to color them.`
       );
     }
+    const notice = updateNotice(data.pluginVersions);
+    if (notice) lines.push(notice);
     setStatus(lines.join('\n'), coloring.length < colorByKey.size);
   } catch (error) {
     setStatus(error.message, true);

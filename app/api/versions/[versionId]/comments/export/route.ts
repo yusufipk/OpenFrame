@@ -21,6 +21,7 @@ import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response
 import { rateLimit } from '@/lib/rate-limit';
 import { canDownloadProjectMedia } from '@/lib/project-download';
 import { logError } from '@/lib/logger';
+import { EDITOR_PLUGIN_VERSIONS } from '@/lib/editor-plugin-versions';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
 const MAX_EXPORT_COMMENTS = 5000;
@@ -209,6 +210,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           versionLabel: version.versionLabel,
           fps: nleOptions.fps,
           markers: buildPanelMarkers(rows, nleOptions.fps),
+          pluginVersions: EDITOR_PLUGIN_VERSIONS,
         }),
         'private, no-store'
       );
