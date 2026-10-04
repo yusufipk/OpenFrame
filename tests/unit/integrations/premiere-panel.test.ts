@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import panel from '@/integrations/premiere-panel/markers.js';
+import { EDITOR_PLUGIN_VERSIONS } from '@/lib/editor-plugin-versions';
 
 describe('Premiere panel helpers', () => {
   it.each([
@@ -106,5 +109,44 @@ describe('Premiere panel helpers', () => {
   it('splits work into batches of the given size', () => {
     expect(panel.chunks([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(panel.chunks([], 50)).toEqual([]);
+  });
+
+  it('carries the version its manifest declares and the server announces', () => {
+    const manifest = JSON.parse(
+      readFileSync(
+        path.join(process.cwd(), 'integrations', 'premiere-panel', 'manifest.json'),
+        'utf8'
+      )
+    );
+    expect(panel.PANEL_VERSION).toBe(manifest.version);
+    expect(EDITOR_PLUGIN_VERSIONS.premiere).toBe(manifest.version);
+  });
+
+  it.each([
+    ['0.2.0', '0.1.0', true],
+    ['0.10.0', '0.9.0', true],
+    ['1.0', '0.9.9', true],
+    ['0.1.1', '0.1', true],
+    ['0.1.0', '0.1.0', false],
+    ['0.1', '0.1.0', false],
+    ['0.1.0', '0.2.0', false],
+    ['0.9.0', '0.10.0', false],
+    ['', '0.1.0', false],
+    ['1.x', '0.1.0', false],
+    ['1..0', '0.1.0', false],
+    [undefined, '0.1.0', false],
+    [2, '0.1.0', false],
+  ])('reads %s as newer than %s: %s', (latest, current, newer) => {
+    expect(panel.isNewerVersion(latest, current)).toBe(newer);
+  });
+
+  it('asks for an update only when the server knows a newer panel', () => {
+    expect(panel.updateNotice({ premiere: '9.0.0', resolve: '0.0.1' })).toBe(
+      'A new version of this panel (9.0.0) is out. Download it again from the comments menu in OpenFrame and install it.'
+    );
+    // The Resolve entry is not this panel's.
+    expect(panel.updateNotice({ premiere: '0.0.1', resolve: '9.0.0' })).toBeNull();
+    expect(panel.updateNotice({ premiere: '0.1.0' })).toBeNull();
+    expect(panel.updateNotice(undefined)).toBeNull();
   });
 });

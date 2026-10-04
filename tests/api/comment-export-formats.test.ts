@@ -108,11 +108,12 @@ describe('comment export formats through the route', () => {
     expect(response.headers.get('cache-control')).toContain('no-store');
     const { data } = await response.json();
     expect(data).toMatchObject({ versionNumber: scenario.version.versionNumber, fps: '25' });
+    expect(data.pluginVersions).toEqual({ premiere: '0.1.0', resolve: '0.1.0' });
     expect(data.markers).toHaveLength(1);
     expect(data.markers[0]).toMatchObject({
       startFrame: 300,
       durationFrames: 75,
-      name: 'Ayşe Çelik: Ses burada patlıyor, şöyle düzeltelim (+1)',
+      name: 'Marker 1',
       premiereColor: 'RED',
       resolveColor: 'Red',
       done: false,
@@ -133,14 +134,16 @@ describe('comment export formats through the route', () => {
       timestamp: 40,
       isResolved: true,
     });
-    const names = async (query: string) => {
+    const firstLines = async (query: string) => {
       const response = await request(scenario.version.id, `format=markers&fps=25${query}`);
       expect(response.status).toBe(200);
-      return (await response.json()).data.markers.map((marker: { name: string }) => marker.name);
+      return (await response.json()).data.markers.map(
+        (marker: { comments: string }) => marker.comments.split('\n')[0]
+      );
     };
-    expect(await names('')).toHaveLength(2);
-    expect(await names('&includeResolved=false')).toEqual([
-      'Ayşe Çelik: Ses burada patlıyor, şöyle düzeltelim (+1)',
+    expect(await firstLines('')).toHaveLength(2);
+    expect(await firstLines('&includeResolved=false')).toEqual([
+      'Ayşe Çelik [Teknik]: Ses burada patlıyor, şöyle düzeltelim',
     ]);
   });
 

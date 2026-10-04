@@ -7,6 +7,9 @@
 
 local M = {}
 
+-- This script's release. The OpenFrame server sends the newest one with every sync.
+M.VERSION = '0.1.0'
+
 -- ---------------------------------------------------------------------------
 -- Pure helpers. The unit tests load this file with OPENFRAME_TEST set and call
 -- these directly, so they must not touch Resolve, files or the network.
@@ -105,6 +108,35 @@ local function number_text(value)
     return string.format('%d', value)
   end
   return tostring(value)
+end
+
+-- Whether a dotted version such as 0.2.0 is newer than another. Anything that is
+-- not a version reads as not newer, so a bad reply never nags the editor.
+local function version_parts(value)
+  if type(value) ~= 'string' or not value:match('^%d+[%d.]*$') or value:match('%.%.')
+    or value:match('%.$') then
+    return nil
+  end
+  local parts = {}
+  for part in value:gmatch('%d+') do parts[#parts + 1] = tonumber(part) end
+  return parts
+end
+
+function M.is_newer_version(latest, current)
+  local a, b = version_parts(latest), version_parts(current)
+  if not a or not b then return false end
+  for i = 1, math.max(#a, #b) do
+    local diff = (a[i] or 0) - (b[i] or 0)
+    if diff ~= 0 then return diff > 0 end
+  end
+  return false
+end
+
+-- The line the script adds after a sync when the server knows a newer script.
+function M.update_notice(plugin_versions)
+  local latest = type(plugin_versions) == 'table' and plugin_versions.resolve or nil
+  if not M.is_newer_version(latest, M.VERSION) then return nil end
+  return 'A new version of this script (' .. latest .. ') is out. Download it again from the comments menu in OpenFrame and replace this file.'
 end
 
 function M.version_name(version)
@@ -462,6 +494,8 @@ local function sync_markers()
   if blocked > 0 then
     lines[#lines + 1] = blocked .. ' marker(s) could not be added, usually because another marker already sits on that frame.'
   end
+  local notice = M.update_notice(data.pluginVersions)
+  if notice then lines[#lines + 1] = notice end
   set_status(table.concat(lines, '\n'))
 end
 

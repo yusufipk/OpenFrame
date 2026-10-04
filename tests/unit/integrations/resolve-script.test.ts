@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EDITOR_PLUGIN_VERSIONS } from '@/lib/editor-plugin-versions';
 import { loadLuaHelpers } from '../../helpers/lua';
 
 const call = loadLuaHelpers(
@@ -221,5 +223,42 @@ describe('Resolve script helpers', () => {
     '{1:2}',
   ])('refuses the malformed JSON %s', (text) => {
     expect(() => call('json_decode', text)).toThrow('Invalid JSON');
+  });
+
+  it('carries the version the server announces', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'integrations', 'resolve', 'OpenFrame Comments.lua'),
+      'utf8'
+    );
+    expect(source.match(/^M\.VERSION = '([^']+)'$/m)?.[1]).toBe(EDITOR_PLUGIN_VERSIONS.resolve);
+  });
+
+  it.each([
+    ['0.2.0', '0.1.0', true],
+    ['0.10.0', '0.9.0', true],
+    ['1.0', '0.9.9', true],
+    ['0.1.1', '0.1', true],
+    ['0.1.0', '0.1.0', false],
+    ['0.1', '0.1.0', false],
+    ['0.1.0', '0.2.0', false],
+    ['0.9.0', '0.10.0', false],
+    ['', '0.1.0', false],
+    ['1.x', '0.1.0', false],
+    ['1..0', '0.1.0', false],
+    ['1.0.', '0.1.0', false],
+    [null, '0.1.0', false],
+    [2, '0.1.0', false],
+  ])('reads %s as newer than %s: %s', (latest, current, newer) => {
+    expect(call('is_newer_version', latest, current)).toBe(newer);
+  });
+
+  it('asks for an update only when the server knows a newer script', () => {
+    expect(call('update_notice', { premiere: '0.0.1', resolve: '9.0.0' })).toBe(
+      'A new version of this script (9.0.0) is out. Download it again from the comments menu in OpenFrame and replace this file.'
+    );
+    // The Premiere entry is not this script's.
+    expect(call('update_notice', { premiere: '9.0.0', resolve: '0.0.1' })).toBeNull();
+    expect(call('update_notice', { resolve: '0.1.0' })).toBeNull();
+    expect(call('update_notice', null)).toBeNull();
   });
 });
