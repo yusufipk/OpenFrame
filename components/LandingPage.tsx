@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { CtaLink } from '@/components/marketing/cta-link';
+import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 import { MarketingCompareLinks } from '@/components/marketing/marketing-compare-links';
 import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
@@ -433,6 +434,45 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                     className="absolute inset-0 h-full w-full object-contain"
                   />
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Editor markers */}
+          <div className="border-b border-border bg-card/30 px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+            <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-14">
+              <div className="flex flex-col gap-4 lg:order-2">
+                <SectionTitle>Feedback lands on your timeline.</SectionTitle>
+                <p className="text-base leading-relaxed text-muted-foreground">
+                  Send every comment to Premiere Pro or DaVinci Resolve as a colored marker on the
+                  right frame, replies included. After the next round, one click updates them.
+                </p>
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <span className="flex items-center gap-2">
+                    <PremiereProIcon className="h-5 w-5" />
+                    Premiere Pro
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <DavinciResolveIcon className="h-5 w-5" />
+                    DaVinci Resolve
+                  </span>
+                </div>
+                <Link
+                  href="/guides/editor-markers"
+                  className="text-sm text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+                >
+                  How it works
+                </Link>
+              </div>
+              <div className="min-w-0 border border-border bg-card lg:order-1">
+                <MockToolbar left="Premiere Pro, Markers" />
+                <Image
+                  src="/landing/editor-markers.webp"
+                  alt="OpenFrame comments as colored markers in Premiere Pro's Markers panel"
+                  width={1247}
+                  height={873}
+                  className="h-auto w-full"
+                />
               </div>
             </div>
           </div>

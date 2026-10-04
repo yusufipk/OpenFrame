@@ -20,8 +20,9 @@ export function PremiereProIcon({ className, ...props }: SVGProps<SVGSVGElement>
 // The Resolve mark's frame follows the text color; its three petals are colored like
 // the app's icon. The single simple-icons path is split into the frame and the petals.
 export function DavinciResolveIcon(props: SVGProps<SVGSVGElement>) {
+  // The frame touches the 24-unit box on every side, so the view box leaves a margin.
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+    <svg viewBox="-0.5 -0.5 25 25" aria-hidden="true" {...props}>
       <path
         fill="currentColor"
         d="M17.621 0 5.977.004c-1.37 0-2.756.345-3.762 1.11a4.925 4.925 0 0 0-1.61 2.003C.233 3.93 0 5.02 0 5.951l.012 12.2c.002 1.604.479 3.057 1.461 4.112.984 1.056 2.462 1.683 4.331 1.691L16.856 24c1.26.005 3.095-.036 4.303-.714 1.075-.605 2.025-1.556 2.497-2.984.278-.84.345-2.084.344-3.147l-.021-11.13c-.002-.888-.15-2.023-.547-2.934-.425-.976-1.181-1.815-2.322-2.425C20.353.26 19.123 0 17.622 0zm0 .93c1.378 0 2.538.295 3.04.565.977.523 1.544 1.166 1.889 1.96.315.721.47 1.793.473 2.572l.018 11.13c.002 1.013-.097 2.257-.298 2.86-.396 1.202-1.146 1.946-2.063 2.462-.814.457-2.612.593-3.82.588l-11.05-.044c-1.657-.007-2.832-.534-3.626-1.386-.792-.851-1.212-2.06-1.212-3.485L.999 5.95c0-.829.196-1.827.474-2.437.345-.757.75-1.207 1.365-1.674C3.585 1.27 4.868.97 6.08.97z"
