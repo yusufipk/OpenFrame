@@ -16,6 +16,25 @@ import {
 
 export type EditorPlugin = 'premiere' | 'resolve';
 
+export interface EditorPluginTarget {
+  projectId: string;
+  videoId: string;
+  canDownload: boolean;
+}
+
+// The plugins address a video by its project page, and only the project page's
+// download right matches what their API calls carry: a watch page's can come from a
+// share link the plugins never present.
+export function editorPluginTarget(
+  mode: 'dashboard' | 'watch',
+  projectId: string | undefined,
+  videoId: string,
+  canDownload: boolean
+): EditorPluginTarget | undefined {
+  if (mode !== 'dashboard' || !projectId) return undefined;
+  return { projectId, videoId, canDownload };
+}
+
 // Whether this user may create an API token (a plan or trial of their own, or editor
 // rights on a team with one), as the token settings report it. null while loading and
 // when the check fails, so a passing error never reads as a refusal.

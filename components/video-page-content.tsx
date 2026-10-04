@@ -15,6 +15,7 @@ import {
 } from '@/components/video-page/live-review-canvas';
 import type { LiveStroke } from '@/lib/live-review/protocol';
 import { versionCommentsPath } from '@/lib/client/version-comments';
+import { editorPluginTarget } from '@/components/video-page/editor-sync-dialog';
 import { PlayerCore } from '@/components/video-page/player-core';
 import { ImageReviewPlayer } from '@/components/video-page/image-review-player';
 import { VideoPageHeader } from '@/components/video-page/video-page-header';
@@ -1202,13 +1203,7 @@ export function VideoPageContent({
           handleToggleShowResolved={handleToggleShowResolved}
           activeVersion={activeVersion}
           isGuest={isGuest}
-          // Only the project page: a watch page's download right can come from a share
-          // link, which the plugins' API calls do not carry.
-          editorTarget={
-            mode === 'dashboard' && projectId
-              ? { projectId, videoId, canDownload: !!video?.canDownload }
-              : undefined
-          }
+          editorTarget={editorPluginTarget(mode, projectId, videoId, !!video?.canDownload)}
           isExportingCsv={isExportingCsv}
           isExportingPdf={isExportingPdf}
           isExportingNle={isExportingNle}

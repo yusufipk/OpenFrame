@@ -31,6 +31,7 @@ import {
   EditorSyncDialog,
   useCanCreateApiToken,
   type EditorPlugin,
+  type EditorPluginTarget,
 } from '@/components/video-page/editor-sync-dialog';
 import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 import { Button } from '@/components/ui/button';
@@ -73,7 +74,7 @@ interface CommentsPaneProps {
   isGuest: boolean;
   // Set on a project's video page, where the editor plugins can address the video.
   // canDownload is the caller's right to download this video's media.
-  editorTarget?: { projectId: string; videoId: string; canDownload: boolean };
+  editorTarget?: EditorPluginTarget;
   isExportingCsv: boolean;
   isExportingPdf: boolean;
   isExportingNle?: boolean;
