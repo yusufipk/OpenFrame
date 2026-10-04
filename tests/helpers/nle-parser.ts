@@ -43,19 +43,3 @@ export function parseMarkerEdl(text: string) {
   }
   return events;
 }
-
-export function parseFcpxml(text: string) {
-  const doc = new JSDOM(text, { contentType: 'application/xml' }).window.document;
-  if (doc.querySelector('parsererror') || doc.documentElement.tagName !== 'fcpxml') {
-    throw new Error('Invalid FCPXML');
-  }
-  const attributes = (element: Element) =>
-    Object.fromEntries(Array.from(element.attributes).map((attr) => [attr.name, attr.value]));
-  return {
-    doc,
-    format: attributes(doc.querySelector('resources > format')!),
-    sequence: attributes(doc.querySelector('sequence')!),
-    gap: attributes(doc.querySelector('spine > gap')!),
-    markers: Array.from(doc.querySelectorAll('spine > gap > marker')).map(attributes),
-  };
-}

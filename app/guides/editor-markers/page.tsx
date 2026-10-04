@@ -7,19 +7,19 @@ import { Video } from 'lucide-react';
 export const metadata: Metadata = {
   title: 'Comments as timeline markers in Premiere Pro and DaVinci Resolve | OpenFrame',
   description:
-    'Install the OpenFrame panel for Premiere Pro or the script for DaVinci Resolve and bring review comments onto your timeline as colored markers.',
+    'Bring OpenFrame review comments onto your Premiere Pro or DaVinci Resolve timeline as colored markers.',
 };
 
 function Step({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <li className="space-y-2">
+    <li className="space-y-3">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <div className="space-y-2">{children}</div>
+      <div className="space-y-3">{children}</div>
     </li>
   );
 }
 
-// Screenshots live in public/guides/editor-markers, taken in Premiere 26.0 on Windows.
+// Screenshots live in public/guides/editor-markers: Premiere 26.0 on Windows, Resolve Studio 20 on Linux.
 function Shot({
   name,
   alt,
@@ -71,36 +71,28 @@ export default function EditorMarkersGuidePage() {
           Comments as markers on your timeline
         </h1>
         <p className="text-sm text-muted-foreground mb-10 max-w-2xl">
-          The OpenFrame panel for Premiere Pro and the script for DaVinci Resolve put a video&apos;s
-          review comments straight onto the timeline you have open, as colored markers at the right
-          frames, with the replies in each marker&apos;s note. Run them again after the next round
-          of feedback: they replace the markers they wrote before and leave yours alone.
+          Bring a video&apos;s review comments into Premiere Pro or DaVinci Resolve as colored
+          markers, each at the moment it was made, with the replies inside. After the next round of
+          feedback, run it again: the markers are updated and the ones you added yourself stay.
         </p>
 
         <div className="space-y-12 text-sm leading-relaxed text-foreground/80">
           <section className="space-y-3">
-            <h2 className="text-base font-semibold text-foreground">What you need</h2>
-            <ul className="list-disc space-y-1 pl-5">
-              <li>An OpenFrame account with access to the video.</li>
-              <li>
-                An API token with the <strong className="text-foreground">Read</strong> and{' '}
-                <strong className="text-foreground">Read comments</strong> permissions. The quickest
-                way is the <em>Create a read-only token</em> button in the dialog on the video page
-                (comments menu → <em>Premiere Pro: add to timeline</em> or{' '}
-                <em>DaVinci Resolve: add to timeline</em>). You can also make one in Settings → API
-                Tokens.
-              </li>
-              <li>
-                The video&apos;s link: the address of its page in OpenFrame, which the same dialog
-                copies for you.
-              </li>
-            </ul>
+            <h2 className="text-base font-semibold text-foreground">Before you start</h2>
+            <p>
+              Open the video in OpenFrame, click the download icon above the comments and choose{' '}
+              <strong className="text-foreground">Premiere Pro: add to timeline</strong> or{' '}
+              <strong className="text-foreground">DaVinci Resolve: add to timeline</strong>. The
+              window that opens has everything you need: the download, the video&apos;s link and a
+              button that creates a token. A token is a key that lets the plugin read your projects
+              and comments; it can&apos;t change anything.
+            </p>
           </section>
 
           <section id="premiere" className="space-y-4 scroll-mt-8">
             <h2 className="text-xl font-semibold text-foreground">Premiere Pro</h2>
-            <p>Needs Premiere Pro 25.6 or later and the Creative Cloud desktop app.</p>
-            <ol className="space-y-6">
+            <p>Works with Premiere Pro 25.6 or later, installed through Creative Cloud.</p>
+            <ol className="space-y-8">
               <Step title="1. Install the panel">
                 <p>
                   <a
@@ -110,37 +102,34 @@ export default function EditorMarkersGuidePage() {
                   >
                     Download the panel
                   </a>{' '}
-                  (<Path>openframe-comments.ccx</Path>) and double-click it. Creative Cloud opens
-                  and warns that the plugin is not from the Adobe Marketplace; choose Install.
+                  and double-click the file. Creative Cloud asks whether to install it; choose{' '}
+                  <strong>Install</strong>.
                 </p>
                 <Shot
                   name="premiere-install-confirm"
-                  alt="Creative Cloud asking to install a non-marketplace plugin"
+                  alt="Creative Cloud asking to install the plugin"
                   width={545}
                   height={355}
                 />
-                <p>It then lists what a plugin may do; choose OK.</p>
+                <p>Then choose OK.</p>
                 <Shot
                   name="premiere-install-permissions"
-                  alt="Creative Cloud listing the plugin's permissions before installing it"
+                  alt="Creative Cloud asking for confirmation before installing"
                   width={880}
                   height={485}
                 />
                 <Shot
                   name="premiere-installed"
-                  alt="Creative Cloud showing OpenFrame Comments as installed for Premiere"
+                  alt="Creative Cloud showing OpenFrame Comments as installed"
                   width={1305}
                   height={1010}
                 />
-                <p>
-                  If Creative Cloud says no compatible app is installed, Premiere Pro is missing
-                  from Creative Cloud or older than 25.6.
-                </p>
               </Step>
-              <Step title="2. Open it">
+
+              <Step title="2. Open the panel">
                 <p>
                   In Premiere, choose <strong>Window → UXP Plugins → OpenFrame Comments</strong>.
-                  Dock it wherever you like; it remembers the last video link.
+                  You can dock it next to your other panels.
                 </p>
                 <Shot
                   name="premiere-open-panel"
@@ -150,45 +139,46 @@ export default function EditorMarkersGuidePage() {
                 />
                 <Shot
                   name="premiere-panel-empty"
-                  alt="The empty OpenFrame Comments panel"
+                  alt="The OpenFrame Comments panel"
                   width={440}
                   height={763}
                 />
               </Step>
-              <Step title="3. Connect it">
+
+              <Step title="3. Paste the link and the token">
                 <p>
-                  Paste the video link, click outside the box (the panel shows which server it will
-                  talk to), paste the token and choose <strong>Load versions</strong>. The token is
-                  saved for that server only and filled in again next time.
+                  Paste the video&apos;s link and the token, then choose{' '}
+                  <strong>Load versions</strong> and pick the version you are cutting. You only
+                  paste the token once; the panel remembers it.
                 </p>
                 <Shot
                   name="premiere-panel-versions"
-                  alt="The panel with a video link, its server, a token and the versions loaded"
+                  alt="The panel with a video link and token, and a version picked"
                   width={335}
                   height={585}
                 />
               </Step>
+
               <Step title="4. Add the comments">
                 <p>
-                  Open the sequence you are editing, pick the version and choose{' '}
-                  <strong>Add comments to the active sequence</strong>. The panel reads the
-                  sequence&apos;s frame rate and start timecode by itself. Leave{' '}
-                  <em>Include resolved comments</em> off to keep finished notes off the timeline.
+                  With your sequence open, choose{' '}
+                  <strong>Add comments to the active sequence</strong>. Resolved comments are left
+                  out unless you tick <em>Include resolved comments</em>.
                 </p>
                 <Shot
                   name="premiere-synced-timeline"
-                  alt="Colored comment markers on the Premiere timeline after a sync"
+                  alt="Colored comment markers on the Premiere timeline"
                   width={1545}
                   height={940}
                 />
                 <p>
-                  Window → Markers lists them with their colors, times and the full thread. Each
-                  marker&apos;s comments end with an <Path>[OpenFrame …]</Path> line: that is how
-                  the panel recognizes its own markers next time, so leave it in.
+                  <strong>Window → Markers</strong> lists every comment with its color and replies.
+                  Keep the last line of each marker&apos;s comment as it is; the panel uses it to
+                  update the marker next time.
                 </p>
                 <Shot
                   name="premiere-markers-panel"
-                  alt="Premiere's Markers panel listing the synced comments with their colors"
+                  alt="Premiere's Markers panel listing the comments with their colors"
                   width={1600}
                   height={1059}
                 />
@@ -198,19 +188,22 @@ export default function EditorMarkersGuidePage() {
                   width={1465}
                   height={1190}
                 />
+              </Step>
+
+              <Step title="5. After new feedback">
                 <p>
-                  After new feedback, choose the same button again. The panel replaces what it added
-                  last time and says so.
+                  Choose the same button again. The markers from last time are replaced with the
+                  current comments, so comments resolved since then disappear from the timeline.
                 </p>
                 <Shot
                   name="premiere-resync"
-                  alt="The panel after a second sync, replacing the markers from the last one"
+                  alt="The panel after updating the markers"
                   width={454}
                   height={749}
                 />
                 <p>
-                  Each sync can be undone with Edit → Undo: twice for the first one (colors, then
-                  markers), three times for a later one.
+                  Changed your mind? Edit → Undo takes it back in a few steps: two for the first
+                  time (colors, then markers), three after that.
                 </p>
               </Step>
             </ol>
@@ -218,11 +211,7 @@ export default function EditorMarkersGuidePage() {
 
           <section id="resolve" className="space-y-4 scroll-mt-8">
             <h2 className="text-xl font-semibold text-foreground">DaVinci Resolve</h2>
-            <p>
-              Runs inside Resolve from the Workspace menu, so nothing else needs installing; it uses
-              curl, which ships with Windows 10 and later, macOS and Linux.
-            </p>
-            <ol className="space-y-6">
+            <ol className="space-y-8">
               <Step title="1. Install the script">
                 <p>
                   <a
@@ -232,8 +221,8 @@ export default function EditorMarkersGuidePage() {
                   >
                     Download the script
                   </a>{' '}
-                  (<Path>OpenFrame Comments.lua</Path>) and move it into Resolve&apos;s scripts
-                  folder, creating the <Path>Utility</Path> folder if it is not there:
+                  and move it into this folder (create the <Path>Utility</Path> folder if it is
+                  missing), then restart Resolve:
                 </p>
                 <ul className="list-disc space-y-1 pl-5">
                   <li>
@@ -243,7 +232,7 @@ export default function EditorMarkersGuidePage() {
                     </Path>
                   </li>
                   <li>
-                    macOS:{' '}
+                    Mac:{' '}
                     <Path>
                       ~/Library/Application Support/Blackmagic Design/DaVinci
                       Resolve/Fusion/Scripts/Utility
@@ -253,55 +242,95 @@ export default function EditorMarkersGuidePage() {
                     Linux: <Path>~/.local/share/DaVinciResolve/Fusion/Scripts/Utility</Path>
                   </li>
                 </ul>
-                <p>Restart Resolve.</p>
               </Step>
-              <Step title="2. Open it">
+
+              <Step title="2. Open the script">
                 <p>
                   With your timeline open, choose{' '}
                   <strong>Workspace → Scripts → OpenFrame Comments</strong>.
                 </p>
+                <Shot
+                  name="resolve-open-script"
+                  alt="Resolve's Workspace menu with Scripts and OpenFrame Comments"
+                  width={320}
+                  height={545}
+                />
+                <Shot
+                  name="resolve-window-empty"
+                  alt="The OpenFrame Comments window in Resolve"
+                  width={673}
+                  height={623}
+                />
               </Step>
-              <Step title="3. Connect it and add the comments">
+
+              <Step title="3. Paste the link and the token">
                 <p>
-                  Paste the video link and the token, choose <strong>Load versions</strong>, pick
-                  the version and choose <strong>Add comments to the current timeline</strong>. The
-                  script reads the timeline&apos;s frame rate by itself and keeps the token for that
-                  server in a file in your user folder.
+                  Paste the video&apos;s link and the token, choose <strong>Load versions</strong>{' '}
+                  and pick the version. The script remembers both for next time.
                 </p>
+                <Shot
+                  name="resolve-window-versions"
+                  alt="The script with a video link and token, and a version picked"
+                  width={673}
+                  height={623}
+                />
+              </Step>
+
+              <Step title="4. Add the comments">
                 <p>
-                  A Resolve marker owns its frame: if one of your own markers sits exactly where a
-                  comment lands, that comment is skipped and the script says how many were.
+                  Choose <strong>Add comments to the current timeline</strong>. Resolved comments
+                  are left out unless you tick <em>Include resolved comments</em>.
                 </p>
+                <Shot
+                  name="resolve-synced-timeline"
+                  alt="Colored comment markers on the Resolve timeline"
+                  width={1600}
+                  height={401}
+                />
+                <p>
+                  Double-click a marker to read the comment and its replies. Resolve has no orange
+                  markers, so orange tags show as yellow.
+                </p>
+                <Shot
+                  name="resolve-marker-detail"
+                  alt="A marker opened in Resolve, with the comment and its reply"
+                  width={1431}
+                  height={752}
+                />
+              </Step>
+
+              <Step title="5. After new feedback">
+                <p>
+                  Choose the same button again and the markers are replaced with the current
+                  comments. If one of your own markers sits on the exact frame of a comment, Resolve
+                  keeps yours and the script tells you how many comments it skipped.
+                </p>
+                <Shot
+                  name="resolve-resync"
+                  alt="The script after updating the markers"
+                  width={683}
+                  height={660}
+                />
               </Step>
             </ol>
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold text-foreground">Other editors and files</h2>
-            <p>
-              The same comments menu also downloads a Resolve EDL, a Premiere XML or a Final Cut Pro
-              FCPXML file. Those need the timeline&apos;s frame rate and start timecode entered by
-              hand, and Premiere and Final Cut import them as a separate sequence or project rather
-              than onto your own.
-            </p>
           </section>
 
           <section className="space-y-3">
             <h2 className="text-base font-semibold text-foreground">Good to know</h2>
             <ul className="list-disc space-y-1 pl-5">
               <li>
-                Supported frame rates: 23.976, 24, 25, 29.97, 30, 48, 50, 59.94 and 60, drop-frame
-                or not.
+                Marker colors follow the comment&apos;s tag. Comments without a tag are cyan,
+                resolved ones green.
               </li>
               <li>
-                Comments on the same frame share one marker; its name shows how many more there are.
+                Comments made at the same moment share one marker; its name shows how many more
+                there are.
               </li>
+              <li>Works with timelines at 23.976, 24, 25, 29.97, 30, 48, 50, 59.94 and 60 fps.</li>
+              <li>Lost a computer? Remove its token in OpenFrame under Settings → API Tokens.</li>
               <li>
-                Marker colors follow the comment&apos;s tag; untagged comments are cyan and resolved
-                ones green, as in the OpenFrame player.
-              </li>
-              <li>
-                The token only reads. Revoke it in Settings → API Tokens if a machine is lost.
+                Prefer files? The same menu also downloads a Resolve EDL or a Premiere XML to import
+                by hand.
               </li>
             </ul>
           </section>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Check, Copy, Download, KeyRound, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,45 +21,56 @@ const PLUGIN_TOKEN_SCOPES = ['read', 'comments:read'];
 const COPY: Record<
   EditorPlugin,
   {
-    title: string;
-    download: string;
+    app: string;
+    plugin: string;
     downloadHref: string;
     tokenName: string;
-    install: string;
-    run: string;
+    open: string;
     guide: string;
   }
 > = {
   premiere: {
-    title: 'Send comments to Premiere Pro',
-    download: 'Download the panel',
+    app: 'Premiere Pro',
+    plugin: 'panel',
     downloadHref: '/api/integrations/premiere-panel',
     tokenName: 'Premiere panel',
-    install:
-      'Double-click the downloaded file; Creative Cloud installs it. Then open Window → UXP Plugins → OpenFrame Comments. Needs Premiere 25.6 or later.',
-    run: 'Open your sequence, paste the link and the token into the panel, load the versions, pick one and add the comments.',
+    open: 'Window → UXP Plugins → OpenFrame Comments',
     guide: '/guides/editor-markers#premiere',
   },
   resolve: {
-    title: 'Send comments to DaVinci Resolve',
-    download: 'Download the script',
+    app: 'DaVinci Resolve',
+    plugin: 'script',
     downloadHref: '/api/integrations/resolve-script',
     tokenName: 'Resolve script',
-    install:
-      "Put the file in Resolve's Fusion/Scripts/Utility folder (the guide lists it for Windows, macOS and Linux) and restart Resolve. It then sits under Workspace → Scripts.",
-    run: 'Open your timeline, run Workspace → Scripts → OpenFrame Comments, paste the link and the token, load the versions, pick one and add the comments.',
+    open: 'Workspace → Scripts → OpenFrame Comments',
     guide: '/guides/editor-markers#resolve',
   },
 };
+
+function Step({ number, title, children }: { number: number; title: string; children: ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+        {number}
+      </span>
+      <div className="min-w-0 flex-1 space-y-2">
+        <p className="text-sm font-medium leading-6">{title}</p>
+        {children}
+      </div>
+    </li>
+  );
+}
 
 function CopyField({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex gap-2">
-      <Input readOnly value={value} className="font-mono text-xs" aria-label={label} />
+      <Input readOnly value={value} className="h-8 font-mono text-xs" aria-label={label} />
       <Button
         type="button"
         variant="outline"
+        size="sm"
+        className="h-8"
         aria-label={`Copy ${label.toLowerCase()}`}
         onClick={async () => {
           try {
@@ -129,75 +140,65 @@ export function EditorSyncDialog({
       }}
     >
       {copy && (
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{copy.title}</DialogTitle>
+            <DialogTitle>Add comments to {copy.app}</DialogTitle>
             <DialogDescription>
-              Adds this video&apos;s comments as colored markers on the timeline you have open, at
-              its own frame rate. Run it again after new feedback: it replaces its own markers and
-              leaves yours alone.
+              They appear as colored markers on the timeline you are editing.
             </DialogDescription>
           </DialogHeader>
 
-          <ol className="space-y-5 text-sm">
-            <li className="space-y-2">
-              <p className="font-medium">1. Install it once</p>
-              <p className="text-muted-foreground">{copy.install}</p>
+          <ol className="space-y-5">
+            <Step number={1} title={`Install the ${copy.plugin} (first time only)`}>
               <Button asChild variant="outline" size="sm">
                 <a href={copy.downloadHref} download>
                   <Download className="h-4 w-4 mr-2" />
-                  {copy.download}
+                  Download
                 </a>
               </Button>
-            </li>
+            </Step>
 
-            <li className="space-y-2">
-              <p className="font-medium">2. Connect it to this video</p>
+            <Step number={2} title="Copy this video's link">
               <CopyField value={videoLink} label="Video link" />
+            </Step>
+
+            <Step number={3} title="Get a token (first time only)">
               {token ? (
-                <div className="space-y-1">
-                  <CopyField value={token} label="API token" />
-                  <p className="text-xs text-muted-foreground">
-                    Shown only now. It can read projects and comments and nothing else; revoke it
-                    any time in Settings → API Tokens.
-                  </p>
-                </div>
+                <>
+                  <CopyField value={token} label="Token" />
+                  <p className="text-xs text-muted-foreground">Copy it now, it is shown once.</p>
+                </>
               ) : (
-                <div className="space-y-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={creating}
-                    onClick={createToken}
-                  >
-                    {creating ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <KeyRound className="h-4 w-4 mr-2" />
-                    )}
-                    Create a read-only token
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    Already pasted one into {editor === 'premiere' ? 'the panel' : 'the script'}? It
-                    remembers it; you only need the link.
-                  </p>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={creating}
+                  onClick={createToken}
+                >
+                  {creating ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <KeyRound className="h-4 w-4 mr-2" />
+                  )}
+                  Create token
+                </Button>
               )}
               {error && <p className="text-xs text-destructive">{error}</p>}
-            </li>
+            </Step>
 
-            <li className="space-y-2">
-              <p className="font-medium">3. Add the markers</p>
-              <p className="text-muted-foreground">{copy.run}</p>
-            </li>
+            <Step number={4} title={`Paste both in ${copy.app}`}>
+              <p className="text-xs text-muted-foreground">{copy.open}</p>
+            </Step>
           </ol>
 
-          <p className="text-xs text-muted-foreground">
-            <Link href={copy.guide} target="_blank" className="underline underline-offset-4">
-              Step-by-step guide with screenshots
-            </Link>
-          </p>
+          <Link
+            href={copy.guide}
+            target="_blank"
+            className="text-xs text-muted-foreground underline underline-offset-4"
+          >
+            Setup guide with screenshots
+          </Link>
         </DialogContent>
       )}
     </Dialog>

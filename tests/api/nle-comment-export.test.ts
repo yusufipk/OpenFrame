@@ -14,7 +14,7 @@ function request(versionId: string, query: string) {
 }
 
 describe('NLE comment exports', () => {
-  it.each(['edl', 'xml', 'fcpxml', 'markers'])(
+  it.each(['edl', 'xml', 'markers'])(
     'protects %s behind authentication and video access',
     async (format) => {
       const scenario = await seedVersion();

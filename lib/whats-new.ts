@@ -16,10 +16,16 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
-    date: '2026-10-02',
-    title: 'Comments as markers in Resolve, Premiere and Final Cut',
+    date: '2026-10-04',
+    title: 'Comments straight onto your Premiere or Resolve timeline',
     description:
-      'Download comments as a DaVinci Resolve EDL, an Adobe Premiere XML or a Final Cut Pro FCPXML and import them as timeline markers, with replies listed under each comment. The PDF and CSV downloads are cleaner too, and keep Turkish and other accented letters intact.',
+      "Install the OpenFrame panel for Premiere Pro or the script for DaVinci Resolve from the comments menu, and a video's comments land on the timeline you are editing as colored markers, with the replies in each note. Run it again after the next round of feedback and it swaps in the new markers, leaving your own alone.",
+  },
+  {
+    date: '2026-10-02',
+    title: 'Comments as markers in Resolve and Premiere',
+    description:
+      'Download comments as a DaVinci Resolve EDL or an Adobe Premiere XML and import them as timeline markers, with replies listed under each comment. The PDF and CSV downloads are cleaner too, and keep Turkish and other accented letters intact.',
   },
   {
     date: '2026-10-01',

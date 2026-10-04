@@ -1,9 +1,9 @@
 import type { ExportCommentRow } from '@/lib/comment-export';
 import { commentMarkerColor } from '@/lib/comment-tags';
 
-export type NleFormat = 'edl' | 'xml' | 'fcpxml';
+export type NleFormat = 'edl' | 'xml';
 export type CommentExportFormat = 'csv' | 'pdf' | NleFormat;
-export const NLE_FORMATS: readonly NleFormat[] = ['edl', 'xml', 'fcpxml'];
+export const NLE_FORMATS: readonly NleFormat[] = ['edl', 'xml'];
 export interface NleExportOptions {
   fps: string;
   origin: string;
@@ -302,49 +302,6 @@ function xmlText(value: string): string {
     .join('');
 }
 
-// Attribute values also need their line breaks and tabs as character references;
-// a parser would otherwise fold them into spaces.
-function xmlAttribute(value: string): string {
-  return xmlText(value).replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;');
-}
-
-// Final Cut Pro's standard format names; 48 fps has none, so it stays unnamed.
-const FCP_FORMAT_NAMES: Record<string, string> = {
-  '24000/1001': '2398',
-  '24': '24',
-  '25': '25',
-  '30000/1001': '2997',
-  '30': '30',
-  '50': '50',
-  '60000/1001': '5994',
-  '60': '60',
-};
-
-function buildFcpxml(
-  markers: { start: number; end: number; entries: MarkerEntry[]; done: boolean }[],
-  title: string,
-  options: NleExportOptions,
-  rate: ReturnType<typeof parseNleOptions>
-): string {
-  // FCPXML times are rational seconds; a frame count times the frame duration keeps
-  // every value on an exact frame boundary.
-  const time = (frames: number) =>
-    frames === 0 ? '0s' : `${frames * rate.denominator}/${rate.numerator}s`;
-  const origin = rate.originFrames;
-  const duration = Math.max(1, ...markers.map((marker) => marker.end));
-  const name = FCP_FORMAT_NAMES[options.fps];
-  const format = `<format id="r1"${name ? ` name="FFVideoFormat1080p${name}"` : ''} frameDuration="${rate.denominator}/${rate.numerator}s" width="1920" height="1080"/>`;
-  // Final Cut markers have no color. Each comment becomes a to-do: open threads stay
-  // red, resolved ones show as completed (green).
-  const markerXml = markers
-    .map(
-      (marker) =>
-        `<marker start="${time(origin + marker.start)}" duration="${time(marker.end - marker.start)}" value="${xmlAttribute(xmlName(marker.entries))}" completed="${marker.done ? 1 : 0}" note="${xmlAttribute(xmlNote(marker.entries))}"/>`
-    )
-    .join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.9"><resources>${format}</resources><library><event name="OpenFrame comments"><project name="${xmlAttribute(title)}"><sequence format="r1" duration="${time(duration)}" tcStart="${time(origin)}" tcFormat="${rate.drop ? 'DF' : 'NDF'}"><spine><gap name="OpenFrame comments" offset="${time(origin)}" start="${time(origin)}" duration="${time(duration)}">\n${markerXml}\n</gap></spine></sequence></project></event></library></fcpxml>\n`;
-}
-
 // Comments grouped by the frame they start on, in timeline order, with the text
 // order, color and done state every format shares.
 function groupMarkers(rows: ExportCommentRow[], rate: Rate) {
@@ -448,7 +405,6 @@ export function buildNleComments(
     });
     return lines.join('\n');
   }
-  if (format === 'fcpxml') return buildFcpxml(markers, title, options, rate);
   const rateXml = `<rate><timebase>${rate.nominal}</timebase><ntsc>${rate.denominator === 1001 ? 'TRUE' : 'FALSE'}</ntsc></rate>`;
   const duration = Math.max(1, ...markers.map((marker) => marker.end));
   const markerXml = markers

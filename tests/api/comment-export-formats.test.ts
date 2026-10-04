@@ -5,7 +5,6 @@ import { createComment, seedVersion } from '../factories';
 import { apiRequest, callRoute } from '../helpers/request';
 import { signedInAs } from '../helpers/session';
 import { parseCsv, pdfPages } from '../helpers/export-readers';
-import { parseFcpxml } from '../helpers/nle-parser';
 
 function request(versionId: string, query: string) {
   return callRoute(GET, apiRequest(`/api/versions/${versionId}/comments/export?${query}`), {
@@ -157,26 +156,5 @@ describe('comment export formats through the route', () => {
       const response = await request(scenario.version.id, query);
       expect(response.status).toBe(400);
     }
-  });
-
-  it('downloads an FCPXML project with a to-do marker per thread', async () => {
-    const { scenario } = await seedThread();
-    const response = await request(
-      scenario.version.id,
-      'format=fcpxml&fps=25&origin=00%3A00%3A00%3A00&dropFrame=false'
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toBe('application/xml; charset=utf-8');
-    expect(response.headers.get('content-disposition')).toMatch(/\.fcpxml"$/);
-    const { markers } = parseFcpxml(await response.text());
-    expect(markers).toEqual([
-      {
-        start: '300/25s',
-        duration: '75/25s',
-        value: 'Ayşe Çelik: Ses burada patlıyor, şöyle düzeltelim (+1)',
-        completed: '0',
-        note: 'Ayşe Çelik [Teknik]: Ses burada patlıyor, şöyle düzeltelim\n↳ İsmail (resolved): Tamam, düzeltiyorum',
-      },
-    ]);
   });
 });

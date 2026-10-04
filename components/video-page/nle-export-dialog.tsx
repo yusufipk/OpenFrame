@@ -31,14 +31,6 @@ const COPY: Record<NleFormat, { title: string; label: string; markers: string; h
     howTo:
       'In Premiere, use File → Import. XML creates a separate sequence with markers; it does not modify your existing sequence.',
   },
-  fcpxml: {
-    title: 'Final Cut Pro FCPXML',
-    label: 'FCPXML',
-    markers:
-      'Final Cut markers have no colors: open comments become to-do markers, resolved ones are marked complete.',
-    howTo:
-      'In Final Cut Pro, use File → Import → XML. It adds an event with a separate project whose markers sit on a gap clip.',
-  },
 };
 
 export function NleExportDialog({

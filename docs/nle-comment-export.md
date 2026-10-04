@@ -1,7 +1,7 @@
 # Export comments to an editor
 
-Open a video version, choose **Download comments**, then **DaVinci Resolve (EDL)**,
-**Adobe Premiere (XML)** or **Final Cut Pro (FCPXML)**. CSV and PDF are still available,
+Open a video version, choose **Download comments**, then **DaVinci Resolve (EDL)** or
+**Adobe Premiere (XML)**. CSV and PDF are still available,
 including for images: the CSV opens in Excel with readable columns and UTF-8 text, and
 the PDF lists each thread with its time, tag and status.
 NLE exports require an authenticated account with access to the video. The resolved
@@ -53,27 +53,33 @@ layer across the imported sequence, copy it, and paste it at the start of your o
 sequence; the markers come with it. The sequence uses placeholder 1920×1080
 square-pixel progressive video settings. No media files or external URLs are referenced.
 
-In Final Cut Pro, use **File → Import → XML** for the `.fcpxml` file (FCPXML 1.9). It adds
-an event with a separate project whose markers sit on a gap clip spanning the comments.
-Final Cut markers have no colors, so every marker is a to-do: open threads stay
-incomplete and resolved ones are marked complete.
-
 Checked by hand in DaVinci Resolve Studio 20.3: a 29.97 DF marker EDL imported
 through Timeline Markers from EDL, and 23.976 NDF and 59.94 DF XML files (one starting
 at `00:59:59;58`) imported as timelines, all landed on the exact expected frames and
-durations. Premiere and Final Cut Pro import have **not** been tested, and neither has the
-Premiere copy-paste route above. Before relying on a file for a live edit, import it into
+durations. Premiere XML import has **not** been tested, and neither has the Premiere
+copy-paste route above. Before relying on a file for a live edit, import it into
 a copy and check marker positions, colors and text. This feature exports from OpenFrame
 for import into editors; it does not import editor files back into OpenFrame.
 
+### Editor plugins
+
+Two plugins write the markers straight into the timeline the editor has open, at its
+own frame rate, with no file and no separate sequence: a UXP panel for Premiere and a
+Lua script for Resolve. On a project's video page the comments menu offers **Premiere
+Pro: add to timeline** and **DaVinci Resolve: add to timeline**; the dialog downloads
+the plugin, copies the video link and creates a token with only the **Read** and
+**Read comments** permissions. `/guides/editor-markers` is the public setup guide with
+screenshots. `GET /api/integrations/premiere-panel` (a `.ccx`, built as a stored ZIP of
+the folder) and `GET /api/integrations/resolve-script` serve the files to anyone; they
+hold no secrets. Both plugins leave resolved comments out unless asked and remember
+the choice, so a re-sync also clears markers of comments resolved since.
+
 ### Premiere panel
 
-`integrations/premiere-panel/` is a UXP panel for Premiere 25.6 or later that writes the
-markers straight into the open sequence, at the sequence's own frame rate, with no
-file and no separate sequence. Package it by zipping the folder's contents into a
-`.ccx` file (`zip -r openframe-comments.ccx .` inside the folder); double-clicking that
-opens Creative Cloud, which installs it after a warning about unverified plugins. It
-then sits under **Window → UXP Plugins → OpenFrame Comments**.
+`integrations/premiere-panel/` needs Premiere 25.6 or later. Double-clicking the `.ccx`
+opens Creative Cloud, which installs it after a warning about unverified plugins; it
+then sits under **Window → UXP Plugins → OpenFrame Comments**. Creative Cloud refuses
+it when Premiere was not installed through Creative Cloud.
 
 Paste a video page address and an API token with the **Read** and **Read comments**
 permissions, load the versions, pick one and add the comments. Running it again for the
@@ -98,16 +104,36 @@ them instead of doubling them, a marker added by hand survived it, and in a sequ
 starting at `01:00:00:00` the markers counted from that start. Other frame rates and
 macOS have not been tried.
 
+### Resolve script
+
+`integrations/resolve/OpenFrame Comments.lua` goes into Resolve's
+`Fusion/Scripts/Utility` folder and runs from **Workspace → Scripts**. It uses Resolve's
+own Lua (no Python install) and `curl` for HTTPS, with the token in a temporary header
+file so it never shows on a command line. Markers are added with
+`Timeline:AddMarker(frame, color, name, note, duration, customData)`; the custom data
+`openframe:<version id>` is how a re-sync finds and deletes its own markers, so the
+marker text carries no tag. A marker owns its frame in Resolve, so a comment landing
+on a frame that already has one of the editor's markers is skipped and counted. The
+link, the include-resolved choice and one token per server are kept in
+`%APPDATA%\OpenFrame-resolve.txt` or `~/.openframe-resolve` (mode 600). The helpers are
+unit-tested through fengari, which is Lua 5.3; Resolve runs LuaJIT, so the script
+avoids 5.3-only syntax and library calls.
+
+Checked by hand in Resolve Studio 20 on Linux with a 23.976 fps timeline: seven markers
+with resolved comments left out, on the expected frames with the expected colors
+(orange tags show as yellow, Resolve has no orange), the thread in the notes, and a
+second sync replacing them. The free edition of Resolve and Windows and macOS have not
+been tried.
+
 References:
 
 - [Apple FCP7 XML element catalog](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Elements/Elements.html)
 - [Adobe FCP7 XML import workflow](https://helpx.adobe.com/ph_fil/premiere-pro/how-to/migrate-from-final-cut-pro.html)
-- [Apple FCPXML reference](https://developer.apple.com/documentation/professional-video-applications/fcpxml-reference)
 - [Resolve marker EDL workflow](https://help.frame.io/en/articles/4128691-import-comments-into-resolve-with-edl)
 
 ## API
 
-`GET /api/versions/{versionId}/comments/export` takes `format=csv|pdf|edl|xml|fcpxml|markers`.
+`GET /api/versions/{versionId}/comments/export` takes `format=csv|pdf|edl|xml|markers`.
 The CSV columns are `#, Time, Author, Comment, Reply to, Tag, Status, Attachments,
 Created, Comment ID, Parent comment ID` (no `Time` for images); a reply's `Status` is
 its thread's, since only a root can be resolved. UTF-8 with a byte order
@@ -123,5 +149,5 @@ mark and CRLF line endings. NLE formats require all three timing parameters:
 
 Invalid options or unsupported image exports return 400. Session authentication,
 `comments:read` token scope, video access checks, the export rate limit and private
-no-store responses apply to NLE exports too. XML and FCPXML downloads use
+no-store responses apply to NLE exports too. XML downloads use
 `application/xml`, EDL uses `text/plain`; all use UTF-8 and `Content-Disposition: attachment`.

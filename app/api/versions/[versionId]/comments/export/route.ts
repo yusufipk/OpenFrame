@@ -41,9 +41,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     const format = (searchParams.get('format') || 'csv').toLowerCase();
     if (!['csv', 'pdf', 'markers', ...NLE_FORMATS].includes(format)) {
-      return apiErrors.badRequest(
-        'Invalid format. Use "csv", "pdf", "edl", "xml", "fcpxml" or "markers"'
-      );
+      return apiErrors.badRequest('Invalid format. Use "csv", "pdf", "edl", "xml" or "markers"');
     }
     const nleFormat = NLE_FORMATS.find((candidate) => candidate === format);
 

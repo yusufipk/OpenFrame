@@ -428,13 +428,6 @@ export const CommentsPane = memo(function CommentsPane({
                         <Clapperboard className="h-4 w-4 mr-2" />
                         Adobe Premiere (XML)
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!activeVersion || isExportingNle}
-                        onSelect={() => setNleFormat('fcpxml')}
-                      >
-                        <Clapperboard className="h-4 w-4 mr-2" />
-                        Final Cut Pro (FCPXML)
-                      </DropdownMenuItem>
                     </>
                   )}
                 </DropdownMenuContent>
