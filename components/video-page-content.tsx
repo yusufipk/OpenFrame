@@ -5,6 +5,7 @@ import Hls from 'hls.js';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { brandStyle } from '@/lib/project-branding';
+import { commentMarkerColor } from '@/lib/comment-tags';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
 import { useLiveReview } from '@/components/video-page/hooks/use-live-review';
 import { LiveReviewBar, LiveReviewEntryControl } from '@/components/video-page/live-review-bar';
@@ -14,6 +15,7 @@ import {
 } from '@/components/video-page/live-review-canvas';
 import type { LiveStroke } from '@/lib/live-review/protocol';
 import { versionCommentsPath } from '@/lib/client/version-comments';
+import { editorPluginTarget } from '@/components/video-page/editor-sync-dialog';
 import { PlayerCore } from '@/components/video-page/player-core';
 import { ImageReviewPlayer } from '@/components/video-page/image-review-player';
 import { VideoPageHeader } from '@/components/video-page/video-page-header';
@@ -278,7 +280,7 @@ export function VideoPageContent({
     setHighlightedAssetId(assetId);
   }, []);
 
-  const { isExportingCsv, isExportingPdf, exportComments } = useCommentExport({
+  const { isExportingCsv, isExportingPdf, isExportingNle, exportComments } = useCommentExport({
     activeVersionId,
     showResolved,
   });
@@ -769,7 +771,7 @@ export function VideoPageContent({
       id: comment.id,
       timestamp: comment.timestamp,
       timestampEnd: comment.timestampEnd,
-      color: comment.tag?.color || (comment.isResolved ? '#22C55E' : '#22D3EE'),
+      color: commentMarkerColor(comment.tag?.color, comment.isResolved),
       annotationData: comment.annotationData,
       preview: `${comment.tag ? ` [${comment.tag.name}]` : ''} - ${comment.content?.substring(0, 30) || '(voice note)'}...`,
     }));
@@ -1201,8 +1203,10 @@ export function VideoPageContent({
           handleToggleShowResolved={handleToggleShowResolved}
           activeVersion={activeVersion}
           isGuest={isGuest}
+          editorTarget={editorPluginTarget(mode, projectId, videoId, !!video?.canDownload)}
           isExportingCsv={isExportingCsv}
           isExportingPdf={isExportingPdf}
+          isExportingNle={isExportingNle}
           handleExportComments={commentsActions.onExportComments}
           canResolveComments={canResolveComments}
           handleResolveComment={commentsActions.onResolveComment}

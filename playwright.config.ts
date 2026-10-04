@@ -186,7 +186,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(process.env.E2E_CHROMIUM_PATH
+          ? { launchOptions: { executablePath: process.env.E2E_CHROMIUM_PATH } }
+          : {}),
+      },
       testIgnore: [
         '**/dashboard-mobile.spec.ts',
         '**/review-mobile.spec.ts',

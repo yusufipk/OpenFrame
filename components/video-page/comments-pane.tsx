@@ -1,8 +1,11 @@
 'use client';
 
+import type { CommentExportFormat, NleExportOptions, NleFormat } from '@/lib/nle-comment-export';
+
 import { memo, useState, type ReactNode, type RefObject } from 'react';
 import {
   ArrowUpRight,
+  Clapperboard,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -23,6 +26,14 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { NleExportDialog } from '@/components/video-page/nle-export-dialog';
+import {
+  EditorSyncDialog,
+  useCanCreateApiToken,
+  type EditorPlugin,
+  type EditorPluginTarget,
+} from '@/components/video-page/editor-sync-dialog';
+import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -61,9 +72,13 @@ interface CommentsPaneProps {
   handleToggleShowResolved: () => void;
   activeVersion: Version | undefined;
   isGuest: boolean;
+  // Set on a project's video page, where the editor plugins can address the video.
+  // canDownload is the caller's right to download this video's media.
+  editorTarget?: EditorPluginTarget;
   isExportingCsv: boolean;
   isExportingPdf: boolean;
-  handleExportComments: (format: 'csv' | 'pdf') => void;
+  isExportingNle?: boolean;
+  handleExportComments: (format: CommentExportFormat, options?: NleExportOptions) => void;
   canResolveComments: boolean;
   handleResolveComment: (commentId: string, currentlyResolved: boolean) => void;
   handleSeekToTimestamp: (
@@ -164,8 +179,10 @@ export const CommentsPane = memo(function CommentsPane({
   handleToggleShowResolved,
   activeVersion,
   isGuest,
+  editorTarget,
   isExportingCsv,
   isExportingPdf,
+  isExportingNle = false,
   handleExportComments,
   canResolveComments,
   handleResolveComment,
@@ -234,6 +251,19 @@ export const CommentsPane = memo(function CommentsPane({
   setActivePane,
   assetsPane,
 }: CommentsPaneProps) {
+  const [nleFormat, setNleFormat] = useState<NleFormat | null>(null);
+  const [editorPlugin, setEditorPlugin] = useState<EditorPlugin | null>(null);
+  const showEditorPlugins = !isImage && !isGuest && !!editorTarget;
+  const canCreateToken = useCanCreateApiToken(showEditorPlugins);
+  // The plugins need a token and put the review into the cut, so they follow the
+  // token rule and the media download rule together. Only a definite "no" from the
+  // token check greys them out; while it loads or if it fails, the server still
+  // enforces both rules.
+  const editorPluginsAllowed = !!editorTarget?.canDownload && canCreateToken !== false;
+  const editorPluginOptions = [
+    { id: 'premiere' as const, app: 'Premiere Pro', Icon: PremiereProIcon },
+    { id: 'resolve' as const, app: 'DaVinci Resolve', Icon: DavinciResolveIcon },
+  ];
   const [isPaneDraggingOver, setIsPaneDraggingOver] = useState(false);
   const formatCommentRange = (timestamp: number, timestampEnd: number | null) => {
     if (timestampEnd === null) return formatTime(timestamp);
@@ -317,6 +347,36 @@ export const CommentsPane = memo(function CommentsPane({
 
           {activePane === 'comments' && (
             <div className="ml-auto flex items-center justify-end gap-2">
+              {showEditorPlugins &&
+                editorPluginOptions.map(({ id, app, Icon }) => (
+                  // aria-disabled rather than disabled, so the "no access" tooltip still shows.
+                  <Button
+                    key={id}
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      'hidden h-8 w-8 p-0 sm:inline-flex',
+                      !editorPluginsAllowed && 'cursor-not-allowed opacity-40'
+                    )}
+                    disabled={!activeVersion}
+                    aria-disabled={!editorPluginsAllowed}
+                    onClick={() => {
+                      if (editorPluginsAllowed) setEditorPlugin(id);
+                    }}
+                    aria-label={
+                      editorPluginsAllowed
+                        ? `Add comments to the ${app} timeline`
+                        : `Add comments to the ${app} timeline: you don't have access`
+                    }
+                    title={
+                      editorPluginsAllowed
+                        ? `Add comments to the ${app} timeline`
+                        : "You don't have access"
+                    }
+                  >
+                    <Icon className="size-4" />
+                  </Button>
+                ))}
               <Button
                 variant={showResolved ? 'default' : 'outline'}
                 size="sm"
@@ -334,11 +394,11 @@ export const CommentsPane = memo(function CommentsPane({
                     variant="outline"
                     size="sm"
                     className="h-8 px-2"
-                    disabled={!activeVersion || isExportingCsv || isExportingPdf}
+                    disabled={!activeVersion || isExportingCsv || isExportingPdf || isExportingNle}
                     aria-label="Download comments"
                     title="Download comments"
                   >
-                    {isExportingCsv || isExportingPdf ? (
+                    {isExportingCsv || isExportingPdf || isExportingNle ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Download className="h-4 w-4" />
@@ -346,9 +406,15 @@ export const CommentsPane = memo(function CommentsPane({
                     <ChevronDown className="hidden h-4 w-4 ml-0.5 sm:block" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
+                <DropdownMenuContent align="end" collisionPadding={12} className="min-w-64">
                   <DropdownMenuItem
-                    disabled={!activeVersion || isGuest || isExportingCsv || isExportingPdf}
+                    disabled={
+                      !activeVersion ||
+                      isGuest ||
+                      isExportingCsv ||
+                      isExportingPdf ||
+                      isExportingNle
+                    }
                     onClick={(e) => {
                       e.stopPropagation();
                       handleExportComments('csv');
@@ -363,7 +429,7 @@ export const CommentsPane = memo(function CommentsPane({
                     Download CSV
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={!activeVersion || isExportingCsv || isExportingPdf}
+                    disabled={!activeVersion || isExportingCsv || isExportingPdf || isExportingNle}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleExportComments('pdf');
@@ -373,8 +439,62 @@ export const CommentsPane = memo(function CommentsPane({
                     <FileText className="h-4 w-4 mr-2" />
                     Download PDF
                   </DropdownMenuItem>
+                  {showEditorPlugins && (
+                    <>
+                      <DropdownMenuSeparator />
+                      {editorPluginOptions.map(({ id, app, Icon }) => (
+                        <DropdownMenuItem
+                          key={id}
+                          disabled={!activeVersion || !editorPluginsAllowed}
+                          onSelect={() => setEditorPlugin(id)}
+                        >
+                          <Icon className="h-4 w-4 mr-2" />
+                          <span className="flex flex-col">
+                            {app}: add to timeline
+                            {!editorPluginsAllowed && (
+                              <span className="text-xs text-muted-foreground">
+                                You don&apos;t have access
+                              </span>
+                            )}
+                          </span>
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                  {!isImage && !isGuest && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={!activeVersion || isExportingNle}
+                        onSelect={() => setNleFormat('edl')}
+                      >
+                        <Clapperboard className="h-4 w-4 mr-2" />
+                        DaVinci Resolve (EDL)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!activeVersion || isExportingNle}
+                        onSelect={() => setNleFormat('xml')}
+                      >
+                        <Clapperboard className="h-4 w-4 mr-2" />
+                        Adobe Premiere (XML)
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
+              <NleExportDialog
+                format={nleFormat}
+                onClose={() => setNleFormat(null)}
+                onExport={handleExportComments}
+              />
+              {editorTarget && (
+                <EditorSyncDialog
+                  editor={editorPlugin}
+                  projectId={editorTarget.projectId}
+                  videoId={editorTarget.videoId}
+                  onClose={() => setEditorPlugin(null)}
+                />
+              )}
             </div>
           )}
         </div>
