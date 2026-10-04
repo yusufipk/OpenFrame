@@ -19,6 +19,7 @@ import {
 } from '@/lib/nle-comment-export';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
+import { canDownloadProjectMedia } from '@/lib/project-download';
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
@@ -84,6 +85,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
                 ownerId: true,
                 workspaceId: true,
                 visibility: true,
+                allowDownloads: true,
               },
             },
           },
@@ -99,6 +101,13 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     if (!access.hasAccess) {
       return apiErrors.notFound('Version');
+    }
+
+    // The editor plugins put the review into the cut itself, so they follow the same
+    // rule as downloading the media: editors always, everyone else only when the
+    // project allows downloads.
+    if (format === 'markers' && !canDownloadProjectMedia(version.video.project, access)) {
+      return apiErrors.forbidden('You do not have access to send these comments to an editor');
     }
 
     if (nleOptions && version.video.mediaType !== 'VIDEO') {

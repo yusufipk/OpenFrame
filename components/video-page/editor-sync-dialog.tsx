@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import Link from 'next/link';
 import { Check, Copy, Download, KeyRound, Loader2 } from 'lucide-react';
 import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
@@ -15,6 +15,28 @@ import {
 } from '@/components/ui/dialog';
 
 export type EditorPlugin = 'premiere' | 'resolve';
+
+// Whether this user may create an API token (a plan or trial of their own, or editor
+// rights on a team with one), as the token settings report it. null while unknown.
+export function useCanCreateApiToken(enabled: boolean): boolean | null {
+  const [canCreate, setCanCreate] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch('/api/settings/api-tokens')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (!cancelled) setCanCreate(payload?.data?.canCreate === true);
+      })
+      .catch(() => {
+        if (!cancelled) setCanCreate(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return canCreate;
+}
 
 // The panel and the script need exactly these two permissions and nothing more.
 const PLUGIN_TOKEN_SCOPES = ['read', 'comments:read'];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
 import { GET } from '@/app/api/versions/[versionId]/comments/export/route';
-import { createComment, seedVersion } from '../factories';
+import { addProjectMember, createComment, createUser, seedVersion } from '../factories';
 import { apiRequest, callRoute } from '../helpers/request';
 import { signedInAs } from '../helpers/session';
 import { parseCsv, pdfPages } from '../helpers/export-readers';
@@ -141,6 +141,35 @@ describe('comment export formats through the route', () => {
     expect(await names('&includeResolved=false')).toEqual([
       'Ayşe Çelik: Ses burada patlıyor, şöyle düzeltelim (+1)',
     ]);
+  });
+
+  it('gives markers to a reviewer only when the project allows downloads', async () => {
+    const { scenario } = await seedThread();
+    const reviewer = await createUser();
+    await addProjectMember({ projectId: scenario.project.id, userId: reviewer.id });
+    await db.project.update({
+      where: { id: scenario.project.id },
+      data: { allowDownloads: false },
+    });
+    signedInAs(reviewer);
+    const refused = await request(scenario.version.id, 'format=markers&fps=25');
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).not.toContain('Ses burada');
+    // The same reviewer still gets the CSV; only the editor plugins follow the download rule.
+    expect((await request(scenario.version.id, 'format=csv')).status).toBe(200);
+
+    await db.project.update({ where: { id: scenario.project.id }, data: { allowDownloads: true } });
+    const allowed = await request(scenario.version.id, 'format=markers&fps=25');
+    expect(allowed.status).toBe(200);
+    expect((await allowed.json()).data.markers).toHaveLength(1);
+
+    // The owner edits the project, so downloads being off never stops them.
+    await db.project.update({
+      where: { id: scenario.project.id },
+      data: { allowDownloads: false },
+    });
+    signedInAs(scenario.owner);
+    expect((await request(scenario.version.id, 'format=markers&fps=25')).status).toBe(200);
   });
 
   it('refuses markers for an image', async () => {

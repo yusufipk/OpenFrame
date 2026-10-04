@@ -1202,7 +1202,9 @@ export function VideoPageContent({
           handleToggleShowResolved={handleToggleShowResolved}
           activeVersion={activeVersion}
           isGuest={isGuest}
-          editorTarget={projectId ? { projectId, videoId } : undefined}
+          editorTarget={
+            projectId ? { projectId, videoId, canDownload: !!video?.canDownload } : undefined
+          }
           isExportingCsv={isExportingCsv}
           isExportingPdf={isExportingPdf}
           isExportingNle={isExportingNle}

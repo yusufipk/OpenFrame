@@ -27,7 +27,11 @@ import {
   X,
 } from 'lucide-react';
 import { NleExportDialog } from '@/components/video-page/nle-export-dialog';
-import { EditorSyncDialog, type EditorPlugin } from '@/components/video-page/editor-sync-dialog';
+import {
+  EditorSyncDialog,
+  useCanCreateApiToken,
+  type EditorPlugin,
+} from '@/components/video-page/editor-sync-dialog';
 import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -68,7 +72,8 @@ interface CommentsPaneProps {
   activeVersion: Version | undefined;
   isGuest: boolean;
   // Set on a project's video page, where the editor plugins can address the video.
-  editorTarget?: { projectId: string; videoId: string };
+  // canDownload is the caller's right to download this video's media.
+  editorTarget?: { projectId: string; videoId: string; canDownload: boolean };
   isExportingCsv: boolean;
   isExportingPdf: boolean;
   isExportingNle?: boolean;
@@ -247,6 +252,15 @@ export const CommentsPane = memo(function CommentsPane({
 }: CommentsPaneProps) {
   const [nleFormat, setNleFormat] = useState<NleFormat | null>(null);
   const [editorPlugin, setEditorPlugin] = useState<EditorPlugin | null>(null);
+  const showEditorPlugins = !isImage && !isGuest && !!editorTarget;
+  const canCreateToken = useCanCreateApiToken(showEditorPlugins);
+  // The plugins need a token and put the review into the cut, so they follow the
+  // token rule and the media download rule together.
+  const editorPluginsAllowed = !!editorTarget?.canDownload && canCreateToken === true;
+  const editorPluginOptions = [
+    { id: 'premiere' as const, app: 'Premiere Pro', Icon: PremiereProIcon },
+    { id: 'resolve' as const, app: 'DaVinci Resolve', Icon: DavinciResolveIcon },
+  ];
   const [isPaneDraggingOver, setIsPaneDraggingOver] = useState(false);
   const formatCommentRange = (timestamp: number, timestampEnd: number | null) => {
     if (timestampEnd === null) return formatTime(timestamp);
@@ -330,32 +344,36 @@ export const CommentsPane = memo(function CommentsPane({
 
           {activePane === 'comments' && (
             <div className="ml-auto flex items-center justify-end gap-2">
-              {!isImage && !isGuest && editorTarget && (
-                <>
+              {showEditorPlugins &&
+                editorPluginOptions.map(({ id, app, Icon }) => (
+                  // aria-disabled rather than disabled, so the "no access" tooltip still shows.
                   <Button
+                    key={id}
                     variant="outline"
                     size="sm"
-                    className="hidden h-8 w-8 p-0 sm:inline-flex"
+                    className={cn(
+                      'hidden h-8 w-8 p-0 sm:inline-flex',
+                      !editorPluginsAllowed && 'cursor-not-allowed opacity-40'
+                    )}
                     disabled={!activeVersion}
-                    onClick={() => setEditorPlugin('premiere')}
-                    aria-label="Add comments to the Premiere Pro timeline"
-                    title="Add comments to the Premiere Pro timeline"
+                    aria-disabled={!editorPluginsAllowed}
+                    onClick={() => {
+                      if (editorPluginsAllowed) setEditorPlugin(id);
+                    }}
+                    aria-label={
+                      editorPluginsAllowed
+                        ? `Add comments to the ${app} timeline`
+                        : `Add comments to the ${app} timeline: you don't have access`
+                    }
+                    title={
+                      editorPluginsAllowed
+                        ? `Add comments to the ${app} timeline`
+                        : "You don't have access"
+                    }
                   >
-                    <PremiereProIcon className="size-4" />
+                    <Icon className="size-4" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="hidden h-8 w-8 p-0 sm:inline-flex"
-                    disabled={!activeVersion}
-                    onClick={() => setEditorPlugin('resolve')}
-                    aria-label="Add comments to the DaVinci Resolve timeline"
-                    title="Add comments to the DaVinci Resolve timeline"
-                  >
-                    <DavinciResolveIcon className="size-4" />
-                  </Button>
-                </>
-              )}
+                ))}
               <Button
                 variant={showResolved ? 'default' : 'outline'}
                 size="sm"
@@ -418,23 +436,26 @@ export const CommentsPane = memo(function CommentsPane({
                     <FileText className="h-4 w-4 mr-2" />
                     Download PDF
                   </DropdownMenuItem>
-                  {!isImage && !isGuest && editorTarget && (
+                  {showEditorPlugins && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={!activeVersion}
-                        onSelect={() => setEditorPlugin('premiere')}
-                      >
-                        <PremiereProIcon className="h-4 w-4 mr-2" />
-                        Premiere Pro: add to timeline
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!activeVersion}
-                        onSelect={() => setEditorPlugin('resolve')}
-                      >
-                        <DavinciResolveIcon className="h-4 w-4 mr-2" />
-                        DaVinci Resolve: add to timeline
-                      </DropdownMenuItem>
+                      {editorPluginOptions.map(({ id, app, Icon }) => (
+                        <DropdownMenuItem
+                          key={id}
+                          disabled={!activeVersion || !editorPluginsAllowed}
+                          onSelect={() => setEditorPlugin(id)}
+                        >
+                          <Icon className="h-4 w-4 mr-2" />
+                          <span className="flex flex-col">
+                            {app}: add to timeline
+                            {!editorPluginsAllowed && (
+                              <span className="text-xs text-muted-foreground">
+                                You don&apos;t have access
+                              </span>
+                            )}
+                          </span>
+                        </DropdownMenuItem>
+                      ))}
                     </>
                   )}
                   {!isImage && !isGuest && (
