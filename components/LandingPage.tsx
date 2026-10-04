@@ -457,12 +457,6 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                     DaVinci Resolve
                   </span>
                 </div>
-                <Link
-                  href="/guides/editor-markers"
-                  className="text-sm text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
-                >
-                  How it works
-                </Link>
               </div>
               <div className="min-w-0 border border-border bg-card lg:order-1">
                 <MockToolbar left="Premiere Pro, Markers" />
