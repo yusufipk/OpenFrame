@@ -485,6 +485,20 @@ describe('editor panel markers', () => {
     }
   });
 
+  it('numbers the markers in timeline order whatever order the comments come in', () => {
+    const markers = buildPanelMarkers(
+      [
+        row({ commentId: 'late', authorName: 'Late', timestamp: 9 }),
+        row({ commentId: 'early', authorName: 'Early', timestamp: 1 }),
+      ],
+      '25'
+    );
+    expect(markers.map((marker) => [marker.name, marker.startFrame])).toEqual([
+      ['Marker 1', 25],
+      ['Marker 2', 225],
+    ]);
+  });
+
   it('groups by frame and carries the same text, color and done state as the files', () => {
     const markers = buildPanelMarkers(
       [
@@ -511,7 +525,7 @@ describe('editor panel markers', () => {
       {
         startFrame: 25,
         durationFrames: 25,
-        name: 'Ann: Hello (+1)',
+        name: 'Marker 1',
         comments: 'Ann [Fix]: Hello\n↳ Bo: ok',
         color: '#EF4444',
         premiereColor: 'RED',
@@ -522,7 +536,7 @@ describe('editor panel markers', () => {
       {
         startFrame: 250,
         durationFrames: 1,
-        name: 'Cem: Hello',
+        name: 'Marker 2',
         comments: 'Cem (resolved): Hello',
         color: '#22C55E',
         premiereColor: 'GREEN',

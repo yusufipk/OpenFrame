@@ -72,7 +72,9 @@ the plugin, copies the video link and creates a token with only the **Read** and
 screenshots. `GET /api/integrations/premiere-panel` (a `.ccx`, built as a stored ZIP of
 the folder) and `GET /api/integrations/resolve-script` serve the files to anyone; they
 hold no secrets. Both plugins leave resolved comments out unless asked and remember
-the choice, so a re-sync also clears markers of comments resolved since.
+the choice, so a re-sync also clears markers of comments resolved since. Their markers
+are named Marker 1, Marker 2 and so on in timeline order, and the comments go in the
+marker note, which both editors show wider than the name.
 
 ### Premiere panel
 
