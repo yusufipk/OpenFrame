@@ -17,6 +17,7 @@ RUN bun run db:generate
 FROM deps AS build
 COPY app ./app
 COPY components ./components
+COPY integrations ./integrations
 COPY lib ./lib
 COPY prisma ./prisma
 COPY public ./public
@@ -50,6 +51,8 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/lib ./lib
+# Editor plugins, served as downloads by app/api/integrations.
+COPY --from=build /app/integrations ./integrations
 COPY --from=build /app/app ./app
 COPY --from=build /app/components ./components
 COPY --from=build /app/types ./types

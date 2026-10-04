@@ -164,7 +164,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 81;
+const EXPECTED_ROUTE_MODULE_COUNT = 82;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -172,6 +172,12 @@ const EXPECTED_ROUTE_MODULE_COUNT = 81;
  * "this endpoint is now reachable without a session".
  */
 const PUBLIC_ROUTES: ReadonlyMap<string, string> = new Map([
+  [
+    'integrations/[name]/route.ts',
+    // The Premiere panel and Resolve script downloads. They are open source, hold no
+    // secrets and talk to the API with the user's own token, so no session is needed.
+    'editor plugin downloads, open source files with no secrets',
+  ],
   [
     'auth/[...nextauth]/route.ts',
     // The NextAuth handler itself: sign-in, callback and CSRF endpoints. It has

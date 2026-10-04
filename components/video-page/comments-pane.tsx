@@ -6,6 +6,7 @@ import { memo, useState, type ReactNode, type RefObject } from 'react';
 import {
   ArrowUpRight,
   Clapperboard,
+  MonitorPlay,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -27,6 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import { NleExportDialog } from '@/components/video-page/nle-export-dialog';
+import { EditorSyncDialog, type EditorPlugin } from '@/components/video-page/editor-sync-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -65,6 +67,8 @@ interface CommentsPaneProps {
   handleToggleShowResolved: () => void;
   activeVersion: Version | undefined;
   isGuest: boolean;
+  // Set on a project's video page, where the editor plugins can address the video.
+  editorTarget?: { projectId: string; videoId: string };
   isExportingCsv: boolean;
   isExportingPdf: boolean;
   isExportingNle?: boolean;
@@ -169,6 +173,7 @@ export const CommentsPane = memo(function CommentsPane({
   handleToggleShowResolved,
   activeVersion,
   isGuest,
+  editorTarget,
   isExportingCsv,
   isExportingPdf,
   isExportingNle = false,
@@ -241,6 +246,7 @@ export const CommentsPane = memo(function CommentsPane({
   assetsPane,
 }: CommentsPaneProps) {
   const [nleFormat, setNleFormat] = useState<NleFormat | null>(null);
+  const [editorPlugin, setEditorPlugin] = useState<EditorPlugin | null>(null);
   const [isPaneDraggingOver, setIsPaneDraggingOver] = useState(false);
   const formatCommentRange = (timestamp: number, timestampEnd: number | null) => {
     if (timestampEnd === null) return formatTime(timestamp);
@@ -386,6 +392,25 @@ export const CommentsPane = memo(function CommentsPane({
                     <FileText className="h-4 w-4 mr-2" />
                     Download PDF
                   </DropdownMenuItem>
+                  {!isImage && !isGuest && editorTarget && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={!activeVersion}
+                        onSelect={() => setEditorPlugin('premiere')}
+                      >
+                        <MonitorPlay className="h-4 w-4 mr-2" />
+                        Premiere Pro: add to timeline
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!activeVersion}
+                        onSelect={() => setEditorPlugin('resolve')}
+                      >
+                        <MonitorPlay className="h-4 w-4 mr-2" />
+                        DaVinci Resolve: add to timeline
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   {!isImage && !isGuest && (
                     <>
                       <DropdownMenuSeparator />
@@ -419,6 +444,14 @@ export const CommentsPane = memo(function CommentsPane({
                 onClose={() => setNleFormat(null)}
                 onExport={handleExportComments}
               />
+              {editorTarget && (
+                <EditorSyncDialog
+                  editor={editorPlugin}
+                  projectId={editorTarget.projectId}
+                  videoId={editorTarget.videoId}
+                  onClose={() => setEditorPlugin(null)}
+                />
+              )}
             </div>
           )}
         </div>

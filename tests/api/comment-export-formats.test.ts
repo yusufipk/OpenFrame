@@ -114,6 +114,7 @@ describe('comment export formats through the route', () => {
       durationFrames: 75,
       name: 'Ayşe Çelik: Ses burada patlıyor, şöyle düzeltelim (+1)',
       premiereColor: 'RED',
+      resolveColor: 'Red',
       done: false,
     });
     expect(data.markers[0].commentIds).toHaveLength(2);

@@ -197,6 +197,11 @@ async function syncMarkers() {
   }
 }
 
+// Resolved comments stay off the timeline unless asked for, and the choice sticks.
+$('resolved').checked = localStorage.getItem('openframe.includeResolved') === 'true';
+$('resolved').addEventListener('change', () =>
+  localStorage.setItem('openframe.includeResolved', String($('resolved').checked))
+);
 $('link').addEventListener('change', onLinkChange);
 $('load').addEventListener('click', loadVersions);
 $('sync').addEventListener('click', syncMarkers);

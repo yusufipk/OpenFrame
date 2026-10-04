@@ -396,6 +396,7 @@ export interface PanelMarker {
   comments: string;
   color: string;
   premiereColor: string | null;
+  resolveColor: string;
   done: boolean;
   commentIds: string[];
 }
@@ -411,6 +412,7 @@ export function buildPanelMarkers(rows: ExportCommentRow[], fps: string): PanelM
     comments: xmlNote(marker.entries),
     color: marker.color,
     premiereColor: premierePanelColor(marker.color),
+    resolveColor: resolveMarkerColor(marker.color),
     done: marker.done,
     commentIds: marker.entries.map((entry) => entry.row.commentId),
   }));
