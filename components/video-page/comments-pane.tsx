@@ -330,6 +330,32 @@ export const CommentsPane = memo(function CommentsPane({
 
           {activePane === 'comments' && (
             <div className="ml-auto flex items-center justify-end gap-2">
+              {!isImage && !isGuest && editorTarget && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="hidden h-8 w-8 p-0 sm:inline-flex"
+                    disabled={!activeVersion}
+                    onClick={() => setEditorPlugin('premiere')}
+                    aria-label="Add comments to the Premiere Pro timeline"
+                    title="Add comments to the Premiere Pro timeline"
+                  >
+                    <PremiereProIcon className="size-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="hidden h-8 w-8 p-0 sm:inline-flex"
+                    disabled={!activeVersion}
+                    onClick={() => setEditorPlugin('resolve')}
+                    aria-label="Add comments to the DaVinci Resolve timeline"
+                    title="Add comments to the DaVinci Resolve timeline"
+                  >
+                    <DavinciResolveIcon className="size-4" />
+                  </Button>
+                </>
+              )}
               <Button
                 variant={showResolved ? 'default' : 'outline'}
                 size="sm"
@@ -359,7 +385,7 @@ export const CommentsPane = memo(function CommentsPane({
                     <ChevronDown className="hidden h-4 w-4 ml-0.5 sm:block" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
+                <DropdownMenuContent align="end" collisionPadding={12} className="min-w-64">
                   <DropdownMenuItem
                     disabled={
                       !activeVersion ||
