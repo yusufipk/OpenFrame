@@ -101,8 +101,9 @@ Checked by hand in Premiere 26.0 on Windows with a 23.976 fps sequence: eight ma
 landed on the expected frames and durations with the expected colors (magenta shows as
 Premiere's lilac), thread text and Turkish letters came through, a second sync replaced
 them instead of doubling them, a marker added by hand survived it, and in a sequence
-starting at `01:00:00:00` the markers counted from that start. Other frame rates and
-macOS have not been tried.
+starting at `01:00:00:00` the markers counted from that start. The same seven markers
+also landed on the expected frames at 25, 29.97 DF and 59.94 DF, including past the
+first minute and the first ten minutes. macOS has not been tried.
 
 ### Resolve script
 
@@ -119,7 +120,7 @@ link, the include-resolved choice and one token per server are kept in
 unit-tested through fengari, which is Lua 5.3; Resolve runs LuaJIT, so the script
 avoids 5.3-only syntax and library calls.
 
-Checked by hand in Resolve Studio 20 on Linux with a 23.976 fps timeline: seven markers
+Checked by hand in Resolve Studio 20 on Linux with 23.976, 29.97 DF and 59.94 DF timelines: seven markers
 with resolved comments left out, on the expected frames with the expected colors
 (orange tags show as yellow, Resolve has no orange), the thread in the notes, and a
 second sync replacing them. The free edition of Resolve and Windows and macOS have not
