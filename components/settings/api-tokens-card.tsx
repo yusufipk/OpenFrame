@@ -30,8 +30,15 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/**
+ * The list response says whether this account may create tokens: it may with a plan or
+ * trial of its own, or as an editor on an account that has one. Without that the card
+ * stays hidden unless the account still holds tokens from before, which it can list and
+ * revoke. A failed load shows the form, and the server's own check has the last word.
+ */
 export function ApiTokensCard() {
   const [tokens, setTokens] = useState<ApiTokenRow[]>([]);
+  const [canCreate, setCanCreate] = useState<boolean | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [name, setName] = useState('');
@@ -48,6 +55,7 @@ export function ApiTokensCard() {
       const payload = await res.json().catch(() => null);
       if (!res.ok) throw new Error(payload?.error || 'Failed to load API tokens');
       setTokens(payload.data.tokens);
+      setCanCreate(payload.data.canCreate !== false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load API tokens');
       setLoadFailed(true);
@@ -129,6 +137,10 @@ export function ApiTokensCard() {
     }
   };
 
+  // Nothing until the list arrives, so an account that cannot create never sees the form flash up.
+  if (!loaded) return null;
+  if (canCreate === false && tokens.length === 0 && !newToken && !loadFailed) return null;
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -150,46 +162,53 @@ export function ApiTokensCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <form onSubmit={handleCreate} className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Token name, e.g. Render machine"
-              maxLength={MAX_API_TOKEN_NAME_LENGTH}
-              aria-label="Token name"
-            />
-            <Button type="submit" disabled={creating || !name.trim() || scopes.length === 0}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
-            </Button>
-          </div>
-          <fieldset className="grid gap-2 sm:grid-cols-2">
-            <legend className="mb-2 text-sm font-medium">Permissions</legend>
-            {API_TOKEN_SCOPES.map((scope) => (
-              <label
-                key={scope}
-                className="flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={scopes.includes(scope)}
-                  onChange={() => toggleScope(scope)}
-                />
-                <span>
-                  <span className="font-medium">{API_TOKEN_SCOPE_DETAILS[scope].label}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {API_TOKEN_SCOPE_DETAILS[scope].description}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          <p className="text-xs text-muted-foreground">
-            A token never goes beyond what you can do yourself, and it never reaches billing,
-            settings or other tokens.
+        {canCreate === false ? (
+          <p className="text-sm text-muted-foreground">
+            Creating API tokens needs an active plan of your own or on an account you edit. You can
+            still revoke the ones below.
           </p>
-        </form>
+        ) : (
+          <form onSubmit={handleCreate} className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Token name, e.g. Render machine"
+                maxLength={MAX_API_TOKEN_NAME_LENGTH}
+                aria-label="Token name"
+              />
+              <Button type="submit" disabled={creating || !name.trim() || scopes.length === 0}>
+                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
+              </Button>
+            </div>
+            <fieldset className="grid gap-2 sm:grid-cols-2">
+              <legend className="mb-2 text-sm font-medium">Permissions</legend>
+              {API_TOKEN_SCOPES.map((scope) => (
+                <label
+                  key={scope}
+                  className="flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={scopes.includes(scope)}
+                    onChange={() => toggleScope(scope)}
+                  />
+                  <span>
+                    <span className="font-medium">{API_TOKEN_SCOPE_DETAILS[scope].label}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {API_TOKEN_SCOPE_DETAILS[scope].description}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <p className="text-xs text-muted-foreground">
+              A token never goes beyond what you can do yourself, and it never reaches billing,
+              settings or other tokens.
+            </p>
+          </form>
+        )}
 
         {newToken && (
           <div className="rounded-md border border-primary/40 bg-primary/5 p-3 space-y-2">
@@ -214,9 +233,7 @@ export function ApiTokensCard() {
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {loadFailed ? null : !loaded ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : tokens.length === 0 ? (
+        {loadFailed ? null : tokens.length === 0 ? (
           <p className="text-sm text-muted-foreground">No tokens yet.</p>
         ) : (
           <ul className="divide-y rounded-md border">

@@ -1,5 +1,7 @@
 'use client';
 
+import { DriveAssetImportButton } from '@/components/drive-import/drive-import-button';
+import { DriveAssetImportIndicator } from '@/components/drive-import/drive-imports-panel';
 import { withRetryParam } from '@/lib/client/video-thumbnail';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as tus from 'tus-js-client';
@@ -118,6 +120,9 @@ interface AssetsPaneProps {
   attachmentCommentCounts: Record<string, number>;
   onAttachmentCommentsChanged: () => void;
   guestName?: string | null;
+  /** Set for a signed-in project member, whose Drive imports run under their account. */
+  driveImportProjectId?: string | null;
+  onDriveAssetsImported?: () => void;
 }
 
 export const AssetsPane = memo(function AssetsPane({
@@ -144,7 +149,13 @@ export const AssetsPane = memo(function AssetsPane({
   attachmentCommentCounts,
   onAttachmentCommentsChanged,
   guestName,
+  driveImportProjectId = null,
+  onDriveAssetsImported,
 }: AssetsPaneProps) {
+  const handleDriveAssetsImported = useCallback(() => {
+    onDriveAssetsImported?.();
+  }, [onDriveAssetsImported]);
+
   const [uploadTab, setUploadTab] = useState<'image' | 'youtube' | 'bunny' | 'voice'>('image');
   const [imageTitle, setImageTitle] = useState('');
   const [pendingImageFiles, setPendingImageFiles] = useState<File[]>([]);
@@ -1185,6 +1196,15 @@ export const AssetsPane = memo(function AssetsPane({
               </span>
             </div>
           )}
+          {driveImportProjectId && (
+            // One button for every kind: Drive's file type decides whether a
+            // pick becomes an image, a video or an audio asset.
+            <DriveAssetImportButton
+              videoId={videoId}
+              disabled={isCreatingAsset}
+              onImported={handleDriveAssetsImported}
+            />
+          )}
           <Tabs
             value={uploadTab}
             onValueChange={(value) =>
@@ -1552,6 +1572,14 @@ export const AssetsPane = memo(function AssetsPane({
         <div className="rounded-lg border p-3 text-xs text-muted-foreground">
           You do not have permission to upload assets.
         </div>
+      )}
+
+      {driveImportProjectId && (
+        <DriveAssetImportIndicator
+          projectId={driveImportProjectId}
+          videoId={videoId}
+          onLanded={handleDriveAssetsImported}
+        />
       )}
 
       {canDownloadAssets &&

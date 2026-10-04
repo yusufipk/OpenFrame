@@ -25,6 +25,10 @@ beforeEach(() => {
   vi.stubEnv('BUNNY_CDN_URL', undefined);
   vi.stubEnv('NEXT_PUBLIC_BUNNY_CDN_URL', undefined);
   vi.stubEnv('NEXT_PUBLIC_DIRECT_DOWNLOAD_ALLOWED_HOSTS', undefined);
+  vi.stubEnv('GOOGLE_CLIENT_ID', undefined);
+  vi.stubEnv('GOOGLE_DRIVE_CLIENT_ID', undefined);
+  vi.stubEnv('GOOGLE_PICKER_API_KEY', undefined);
+  vi.stubEnv('GOOGLE_CLOUD_PROJECT_NUMBER', undefined);
 });
 
 afterEach(() => {
@@ -44,7 +48,36 @@ describe('buildRuntimePublicConfig', () => {
     expect(buildRuntimePublicConfig()).toEqual({
       bunnyCdnUrl: '',
       directDownloadAllowedHosts: '',
+      googleDrive: null,
     });
+  });
+
+  it('hands the browser the Google Picker settings on a host that can import from Drive', () => {
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'client.apps.googleusercontent.com');
+    vi.stubEnv('GOOGLE_PICKER_API_KEY', 'picker-key');
+    vi.stubEnv('GOOGLE_CLOUD_PROJECT_NUMBER', '1234');
+    vi.stubEnv('OPENFRAME_ENABLE_S3_VIDEO_UPLOADS', 'false');
+    vi.stubEnv('OPENFRAME_ENABLE_BUNNY_UPLOADS', 'true');
+    vi.stubEnv('BUNNY_STREAM_API_KEY', 'bunny-key');
+    vi.stubEnv('BUNNY_STREAM_LIBRARY_ID', '1');
+
+    expect(buildRuntimePublicConfig().googleDrive).toEqual({
+      clientId: 'client.apps.googleusercontent.com',
+      apiKey: 'picker-key',
+      appId: '1234',
+    });
+  });
+
+  // The Picker settings are useless without somewhere to put the video, and
+  // showing the button would lead to a refusal from the import route.
+  it('leaves the Picker settings out when the host has no upload backend', () => {
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'client.apps.googleusercontent.com');
+    vi.stubEnv('GOOGLE_PICKER_API_KEY', 'picker-key');
+    vi.stubEnv('GOOGLE_CLOUD_PROJECT_NUMBER', '1234');
+    vi.stubEnv('OPENFRAME_ENABLE_S3_VIDEO_UPLOADS', 'false');
+    vi.stubEnv('OPENFRAME_ENABLE_BUNNY_UPLOADS', 'false');
+
+    expect(buildRuntimePublicConfig().googleDrive).toBeNull();
   });
 });
 
@@ -65,7 +98,28 @@ describe('readRuntimePublicConfig', () => {
     expect(readRuntimePublicConfig()).toEqual({
       bunnyCdnUrl: '',
       directDownloadAllowedHosts: '',
+      googleDrive: null,
     });
+  });
+
+  it('reads the Google Picker settings back', () => {
+    injectConfig(
+      JSON.stringify({ googleDrive: { clientId: 'client', apiKey: 'key', appId: '1234' } })
+    );
+
+    expect(readRuntimePublicConfig()?.googleDrive).toEqual({
+      clientId: 'client',
+      apiKey: 'key',
+      appId: '1234',
+    });
+  });
+
+  it('treats Google Picker settings with an empty key as none at all', () => {
+    injectConfig(
+      JSON.stringify({ googleDrive: { clientId: 'client', apiKey: '', appId: '1234' } })
+    );
+
+    expect(readRuntimePublicConfig()?.googleDrive).toBeNull();
   });
 });
 

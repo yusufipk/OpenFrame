@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { CtaLink } from '@/components/marketing/cta-link';
 import { DavinciResolveIcon, PremiereProIcon } from '@/components/video-page/editor-icons';
 import { MarketingCompareLinks } from '@/components/marketing/marketing-compare-links';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import {
   Video,
@@ -41,7 +41,7 @@ const labelClass = 'text-[11px] uppercase tracking-[0.14em] text-muted-foregroun
 
 const trustSignals = [
   { label: 'No client accounts', icon: Users },
-  { label: 'Flat $10 per month', icon: Tag },
+  { label: 'From $10 per month', icon: Tag },
   { label: 'Fair Source, self-hostable', icon: Code },
   { label: 'Private by default', icon: Lock },
 ];
@@ -69,14 +69,35 @@ const steps = [
   },
 ];
 
+// Identical on both plans on purpose: the plans differ only in editors, storage and price.
 const hostedFeatures = [
-  'Unlimited collaborators and clients',
+  'Unlimited reviewers and clients',
   'Live review sessions, up to 10 participants',
   'Comments, voice notes, annotations',
   'Version compare, history, approvals',
   'Permissioned share links, PDF and CSV export',
   'Unlimited unlisted YouTube imports',
-  '200 GB storage, add 100 GB for $5/mo',
+];
+
+type BillingCycle = 'monthly' | 'yearly';
+
+const hostedPlans = [
+  {
+    name: 'Solo',
+    headline: 'You edit, your clients review',
+    price: { monthly: '$10', yearly: '$96' },
+    editors: '1 editor',
+    storage: '200 GB storage, add 100 GB for $5/mo',
+    recommended: false,
+  },
+  {
+    name: 'Studio',
+    headline: 'Your whole team uploads, one bill',
+    price: { monthly: '$29', yearly: '$290' },
+    editors: 'Unlimited editors',
+    storage: '1 TB storage, add 100 GB for $5/mo',
+    recommended: true,
+  },
 ];
 
 const selfHostedFeatures = [
@@ -100,7 +121,7 @@ const faq = [
   },
   {
     q: 'Is there a free trial?',
-    a: 'Yes. Hosted Cloud starts with a 7-day free trial and never asks for a card to begin it. After that it is a flat $10/mo, with no per-seat or per-client fees.',
+    a: 'Yes. Hosted Cloud starts with a 7-day free trial and never asks for a card to begin it. After that, Solo is $10/mo ($96/yr) for one editor and Studio is $29/mo ($290/yr) for unlimited editors. Reviewers and clients are always free, with no per-seat fees on either plan.',
   },
   {
     q: 'How is this different from a Google Drive link?',
@@ -108,7 +129,7 @@ const faq = [
   },
   {
     q: 'What happens if I exceed my storage?',
-    a: 'You can add 100 GB for $5/mo. If you need much more, contact us at info@open-frame.net and we will help you choose the best setup.',
+    a: 'Solo includes 200 GB and Studio 1 TB. Either plan can add storage in 100 GB blocks for $5/mo, up to 300 GB extra on Solo and 1 TB extra on Studio. When storage is full, uploads pause; nothing is deleted and you are never billed for overage. If you need much more, contact us at info@open-frame.net.',
   },
   {
     q: 'Can I self-host?',
@@ -196,6 +217,7 @@ function Toggle({ on }: { on: boolean }) {
 export function LandingPage({ isLoggedIn }: LandingPageProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const hostedCtaHref = isLoggedIn ? '/dashboard' : '/register';
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   // Same button, two audiences. Once you are signed in it goes to the dashboard,
   // and offering a trial to someone who is already using the product reads as a
   // mistake rather than as an offer.
@@ -734,35 +756,78 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
               <span className={labelClass}>No per-seat fees</span>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-3">
-              <div className="relative flex flex-col gap-[18px] border border-primary/40 bg-card p-6 sm:p-7">
-                <span className="absolute -top-[11px] left-6 bg-primary px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-foreground sm:left-7">
-                  Recommended
-                </span>
-                <div className="flex flex-col gap-2">
-                  <span className={labelClass}>Hosted cloud</span>
-                  <div className="flex items-baseline gap-2 text-primary">
-                    <span className="text-[40px] font-semibold tracking-[-0.02em]">$10</span>
-                    <span className="text-sm">/ month</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    7-day free trial, no credit card. Cancel anytime.
-                  </span>
-                </div>
-                <ul className="flex flex-col gap-2.5 text-[13px]">
-                  {hostedFeatures.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2">
-                      <Check className="mt-0.5 h-[15px] w-[15px] shrink-0 text-primary" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-auto pt-2">
-                  <CtaLink href={hostedCtaHref} className={`${primaryCtaClass} w-full`}>
-                    {isLoggedIn ? 'Open dashboard' : 'Start 7-day free trial'}
-                  </CtaLink>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                Reviewers are always free. You only pay for the people who upload.
+              </p>
+              <div className="inline-flex border border-border p-0.5 text-xs">
+                {(['monthly', 'yearly'] as const).map((cycle) => (
+                  <button
+                    key={cycle}
+                    type="button"
+                    onClick={() => setBillingCycle(cycle)}
+                    aria-pressed={billingCycle === cycle}
+                    className={`px-3 py-1.5 font-medium transition-colors ${
+                      billingCycle === cycle
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
+                  </button>
+                ))}
               </div>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {hostedPlans.map((plan) => (
+                <div
+                  key={plan.name}
+                  className={`relative flex flex-col gap-[18px] border bg-card p-6 sm:p-7 ${
+                    plan.recommended ? 'border-primary/40' : 'border-border'
+                  }`}
+                >
+                  {plan.recommended ? (
+                    <span className="absolute -top-[11px] left-6 bg-primary px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-foreground sm:left-7">
+                      For teams
+                    </span>
+                  ) : null}
+                  <div className="flex flex-col gap-2">
+                    <span className={labelClass}>{plan.name}</span>
+                    <span className="text-[15px] font-medium">{plan.headline}</span>
+                    <div className="flex items-baseline gap-2 text-primary">
+                      <span className="text-[40px] font-semibold tracking-[-0.02em]">
+                        {plan.price[billingCycle]}
+                      </span>
+                      <span className="text-sm">
+                        / {billingCycle === 'monthly' ? 'month' : 'year'}
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      7-day free trial, no credit card. Cancel anytime.
+                    </span>
+                  </div>
+                  <ul className="flex flex-col gap-2.5 text-[13px]">
+                    {[plan.editors, plan.storage].map((row) => (
+                      <li key={row} className="flex items-start gap-2 font-medium">
+                        <Check className="mt-0.5 h-[15px] w-[15px] shrink-0 text-primary" />
+                        <span>{row}</span>
+                      </li>
+                    ))}
+                    {hostedFeatures.map((feature) => (
+                      <li key={feature} className="flex items-start gap-2">
+                        <Check className="mt-0.5 h-[15px] w-[15px] shrink-0 text-primary" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-auto pt-2">
+                    <CtaLink href={hostedCtaHref} className={`${primaryCtaClass} w-full`}>
+                      {isLoggedIn ? 'Open dashboard' : 'Start 7-day free trial'}
+                    </CtaLink>
+                  </div>
+                </div>
+              ))}
 
               <div className="flex flex-col gap-[18px] border border-border bg-card p-6 sm:p-7">
                 <div className="flex flex-col gap-2">
@@ -828,6 +893,16 @@ export function LandingPage({ isLoggedIn }: LandingPageProps) {
                 </div>
               </div>
             </div>
+
+            <p className="text-center text-sm text-muted-foreground">
+              Need it on your own servers, or a setup built for you?{' '}
+              <a
+                href="mailto:info@open-frame.net?subject=Self-hosted%20or%20custom%20setup"
+                className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+              >
+                Write to us
+              </a>
+            </p>
           </div>
         </section>
 

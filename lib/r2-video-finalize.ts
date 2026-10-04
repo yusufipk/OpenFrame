@@ -29,7 +29,7 @@ export type R2VideoFinalizeResult =
     }
   | { ok: false; error: string; status: 400 | 403 };
 
-function hasKnownVideoMagicBytes(bytes: Uint8Array): boolean {
+export function hasKnownVideoMagicBytes(bytes: Uint8Array): boolean {
   if (bytes.length >= 12) {
     const box = String.fromCharCode(bytes[4] ?? 0, bytes[5] ?? 0, bytes[6] ?? 0, bytes[7] ?? 0);
     if (box === 'ftyp') return true;

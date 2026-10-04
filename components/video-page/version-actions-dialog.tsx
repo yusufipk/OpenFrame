@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { VideoSource } from '@/lib/video-providers';
 import { isImageFile } from '@/lib/client/project-image-upload';
+import { DriveImportButton } from '@/components/drive-import/drive-import-button';
 
 interface VersionActionsDialogProps {
   mediaType?: 'VIDEO' | 'IMAGE';
@@ -47,6 +48,10 @@ interface VersionActionsDialogProps {
   isCreatingVersion: boolean;
   versionsCount: number;
   onCreateVersion: () => void;
+  /** Both set: the dialog also offers a new version from Google Drive. */
+  projectId?: string;
+  videoId?: string;
+  onDriveImportStarted?: () => void;
 }
 
 export const VersionActionsDialog = memo(function VersionActionsDialog({
@@ -70,6 +75,9 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
   isCreatingVersion,
   versionsCount,
   onCreateVersion,
+  projectId,
+  videoId,
+  onDriveImportStarted,
 }: VersionActionsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -103,6 +111,16 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
               ) : null}
             </TabsList>
           </Tabs>
+
+          {mediaType === 'VIDEO' && directUploadsEnabled && projectId && videoId ? (
+            <DriveImportButton
+              projectId={projectId}
+              targetVideoId={videoId}
+              disabled={isCreatingVersion}
+              onBeforePick={() => onOpenChange(false)}
+              onStarted={() => onDriveImportStarted?.()}
+            />
+          ) : null}
 
           {mediaType === 'VIDEO' && newVersionMode === 'url' ? (
             <div className="space-y-2">

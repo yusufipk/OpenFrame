@@ -16,6 +16,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useEditorLimitDialog } from '@/components/editor-limit-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -90,6 +91,7 @@ export function MembersManagementPage({
   const [cancelingInvitationId, setCancelingInvitationId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const editorLimit = useEditorLimitDialog();
 
   const fetchMembers = useCallback(async () => {
     try {
@@ -151,7 +153,7 @@ export function MembersManagementPage({
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || 'Failed to invite member');
+        if (!editorLimit.handle(data)) setError(data.error || 'Failed to invite member');
         return;
       }
 
@@ -181,7 +183,7 @@ export function MembersManagementPage({
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || 'Failed to update role');
+        if (!editorLimit.handle(data)) setError(data.error || 'Failed to update role');
         return;
       }
 
@@ -246,6 +248,7 @@ export function MembersManagementPage({
 
   return (
     <div className="px-6 lg:px-8 py-8 w-full max-w-4xl mx-auto">
+      {editorLimit.dialog}
       <div className="mb-6">
         <Link
           href={backHref}

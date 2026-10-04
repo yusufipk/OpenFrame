@@ -1,14 +1,17 @@
 import { Metadata } from 'next';
-import { Prisma, BillingSubscriptionStatus } from '@prisma/client';
+import { Prisma, BillingSubscriptionStatus, BillingInterval, BillingPlan } from '@prisma/client';
+import { PLAN_DEFINITIONS, isFoundingAccount } from '@/lib/billing-plans';
 import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { isBunnyUploadsFeatureEnabled, isStripeBillingEnabled } from '@/lib/feature-flags';
 import {
   buildBillingAccessWhereInput,
   buildEffectiveBillingStatusWhereInput,
+  getBillingAccessEndDate,
   getBillingStatusLabel,
   getEffectiveBillingStatus,
   hasBillingAccess,
+  isPaidTier,
 } from '@/lib/billing';
 import { redirect } from 'next/navigation';
 import {
@@ -17,10 +20,16 @@ import {
   getCachedUserDownloadEgress,
   getCachedUserMediaStorage,
 } from '@/lib/admin-stats';
+import {
+  getUploaderCountsByAccount,
+  UPLOADER_WINDOW_DAYS,
+  uploaderWindowStart,
+} from '@/lib/uploader-stats';
 import { Film, HardDrive } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { StatsExclusionButton } from '@/components/admin/stats-exclusion-button';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -77,6 +86,14 @@ function getOwnBillingAccess(
   // date its access runs out instead of an open-ended "Active access".
   if (getEffectiveBillingStatus(user, now) === BillingSubscriptionStatus.TRIALING) {
     endsAt = user.trialEndsAt;
+  } else if (
+    user.subscriptionStatus === BillingSubscriptionStatus.PAST_DUE ||
+    user.subscriptionStatus === BillingSubscriptionStatus.UNPAID
+  ) {
+    // Behind on payment: access runs to the end of the payment grace window, not
+    // the period end Stripe advanced for the unpaid renewal invoice, unless a trial
+    // still running outlasts it. Safe here because access is already confirmed above.
+    endsAt = getBillingAccessEndDate(user);
   } else if (isEnding) {
     endsAt = user.stripeCurrentPeriodEnd ?? user.stripeCancelAt;
   }
@@ -94,6 +111,7 @@ type SortBy =
   | 'joinedDate'
   | 'workspacesOwned'
   | 'invitedMembers'
+  | 'uploaders'
   | 'projectsOwned'
   | 'totalComments'
   | 'bunnyUpload'
@@ -146,6 +164,7 @@ const SORTABLE_COLUMNS: SortBy[] = [
   'joinedDate',
   'workspacesOwned',
   'invitedMembers',
+  'uploaders',
   'projectsOwned',
   'totalComments',
   'bunnyUpload',
@@ -276,6 +295,30 @@ function getUsersOrderBy(
   return [createdAtTieBreaker];
 }
 
+/** Plan and quota as the admin list shows them: base plus add-on blocks. */
+function describePlan(
+  user: {
+    subscriptionStatus: BillingSubscriptionStatus;
+    stripeCurrentPeriodEnd: Date | null;
+    billingAccessEndedAt: Date | null;
+    billingPlan: BillingPlan;
+    billingInterval: BillingInterval;
+    storageBlocks: number;
+    stripeSubscriptionId: string | null;
+    foundingSubscriptionId: string | null;
+  },
+  now: Date
+) {
+  if (!isPaidTier(user, now)) return { label: '-', quota: '3 GB (trial)' };
+  const founding = isFoundingAccount(user);
+  const name = founding ? 'Founding' : PLAN_DEFINITIONS[user.billingPlan].label;
+  const base = user.billingPlan === 'STUDIO' ? '1 TB' : '200 GB';
+  return {
+    label: `${name}${user.billingInterval === 'YEAR' ? ' (yearly)' : ''}`,
+    quota: user.storageBlocks > 0 ? `${base} + ${user.storageBlocks} x 100 GB` : base,
+  };
+}
+
 export default async function AdminUsersPage({
   searchParams,
 }: {
@@ -357,6 +400,7 @@ export default async function AdminUsersPage({
     userBunnyStorage,
     userDownloadEgress,
     bunnyStorageStats,
+    uploaderCounts,
   ] = await Promise.all([
     db.user.count(),
     db.user.count({ where }),
@@ -364,6 +408,7 @@ export default async function AdminUsersPage({
     getCachedUserBunnyStorage(),
     getCachedUserDownloadEgress(),
     getCachedBunnyStorageStats(),
+    getUploaderCountsByAccount(uploaderWindowStart(now)),
   ]);
   const totalPages = Math.max(1, Math.ceil(matchingUsers / pageSize));
   const page = Math.min(Math.max(1, requestedPage), totalPages);
@@ -380,6 +425,12 @@ export default async function AdminUsersPage({
     stripeCancelAtPeriodEnd: true,
     stripeCancelAt: true,
     billingAccessEndedAt: true,
+    billingPlan: true,
+    billingInterval: true,
+    storageBlocks: true,
+    stripeSubscriptionId: true,
+    excludedFromStats: true,
+    foundingSubscriptionId: true,
     ownedWorkspaces: {
       select: {
         _count: {
@@ -410,9 +461,16 @@ export default async function AdminUsersPage({
     stripeCancelAtPeriodEnd: boolean;
     stripeCancelAt: Date | null;
     billingAccessEndedAt: Date | null;
+    billingPlan: BillingPlan;
+    billingInterval: BillingInterval;
+    storageBlocks: number;
+    stripeSubscriptionId: string | null;
+    foundingSubscriptionId: string | null;
+    excludedFromStats: boolean;
     ownedWorkspaces: Array<{ _count: { members: number } }>;
     _count: { ownedWorkspaces: number; projects: number; comments: number };
     invitedMembersCount: number;
+    uploadersCount: number;
     bunnyUploadBytes: number;
     downloadEgressBytes: number;
     mediaStorageBytes: number;
@@ -434,6 +492,7 @@ export default async function AdminUsersPage({
         (total, workspace) => total + workspace._count.members,
         0
       ),
+      uploadersCount: uploaderCounts[user.id] ?? 0,
       bunnyUploadBytes: userBunnyStorage[user.id] || 0,
       downloadEgressBytes: userDownloadEgress[user.id] || 0,
       mediaStorageBytes: userStorage[user.id]?.total || 0,
@@ -448,6 +507,7 @@ export default async function AdminUsersPage({
         (total, workspace) => total + workspace._count.members,
         0
       ),
+      uploadersCount: uploaderCounts[user.id] ?? 0,
       bunnyUploadBytes: userBunnyStorage[user.id] || 0,
       downloadEgressBytes: userDownloadEgress[user.id] || 0,
       mediaStorageBytes: userStorage[user.id]?.total || 0,
@@ -462,6 +522,8 @@ export default async function AdminUsersPage({
           STATUS_SORT_ORDER.indexOf(b.effectiveStatus);
       } else if (sortBy === 'invitedMembers') {
         comparison = a.invitedMembersCount - b.invitedMembersCount;
+      } else if (sortBy === 'uploaders') {
+        comparison = a.uploadersCount - b.uploadersCount;
       } else if (sortBy === 'bunnyUpload') {
         comparison = a.bunnyUploadBytes - b.bunnyUploadBytes;
       } else if (sortBy === 'downloadEgress') {
@@ -665,6 +727,8 @@ export default async function AdminUsersPage({
                       </Link>
                     </TableHead>
                   )}
+                  {stripeBillingEnabled && <TableHead>Plan</TableHead>}
+                  {stripeBillingEnabled && <TableHead>Quota</TableHead>}
                   <TableHead>
                     <Link
                       href={buildSortHref('joinedDate')}
@@ -695,6 +759,18 @@ export default async function AdminUsersPage({
                       Invited Members
                       <span className="text-xs">
                         {getSortIndicator('invitedMembers', sortBy, sortDirection)}
+                      </span>
+                    </Link>
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <Link
+                      href={buildSortHref('uploaders')}
+                      title={`Distinct people, owner included, who added a video or version to this account's workspaces in the last ${UPLOADER_WINDOW_DAYS} days. Uploads from before this was recorded are not counted.`}
+                      className="inline-flex items-center justify-center gap-1 hover:underline"
+                    >
+                      Uploaders ({UPLOADER_WINDOW_DAYS}d)
+                      <span className="text-xs">
+                        {getSortIndicator('uploaders', sortBy, sortDirection)}
                       </span>
                     </Link>
                   </TableHead>
@@ -758,7 +834,10 @@ export default async function AdminUsersPage({
               <TableBody>
                 {paginatedUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={stripeBillingEnabled ? 10 : 9} className="h-24 text-center">
+                    <TableCell
+                      colSpan={stripeBillingEnabled ? 13 : 10}
+                      className="h-24 text-center"
+                    >
                       {hasActiveFilters ? 'No users match these filters.' : 'No users found.'}
                     </TableCell>
                   </TableRow>
@@ -767,8 +846,19 @@ export default async function AdminUsersPage({
                     <TableRow key={user.id}>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="font-medium">{user.name || 'Anonymous'}</span>
+                          <span className="font-medium">
+                            {user.name || 'Anonymous'}
+                            {user.excludedFromStats ? (
+                              <Badge variant="outline" className="ml-2 align-middle">
+                                Not in stats
+                              </Badge>
+                            ) : null}
+                          </span>
                           <span className="text-xs text-muted-foreground">{user.email}</span>
+                          <StatsExclusionButton
+                            userId={user.id}
+                            excluded={user.excludedFromStats}
+                          />
                         </div>
                       </TableCell>
                       {stripeBillingEnabled &&
@@ -801,9 +891,24 @@ export default async function AdminUsersPage({
                             </TableCell>
                           );
                         })()}
+                      {stripeBillingEnabled &&
+                        (() => {
+                          const plan = describePlan(user, now);
+                          return (
+                            <>
+                              <TableCell className="text-sm whitespace-nowrap">
+                                {plan.label}
+                              </TableCell>
+                              <TableCell className="text-sm whitespace-nowrap">
+                                {plan.quota}
+                              </TableCell>
+                            </>
+                          );
+                        })()}
                       <TableCell>{format(new Date(user.createdAt), 'MMM dd, yyyy')}</TableCell>
                       <TableCell className="text-center">{user._count.ownedWorkspaces}</TableCell>
                       <TableCell className="text-center">{user.invitedMembersCount}</TableCell>
+                      <TableCell className="text-center">{user.uploadersCount}</TableCell>
                       <TableCell className="text-center">{user._count.projects}</TableCell>
                       <TableCell className="text-center">{user._count.comments}</TableCell>
                       <TableCell className="text-right text-sm font-medium">

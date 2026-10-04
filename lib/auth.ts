@@ -91,6 +91,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   pages: {
     signIn: '/login',
     signOut: '/signout',
+    // Auth.js reports every error it does not consider client-safe as
+    // `Configuration`, including an OAuth callback whose PKCE or state cookie the
+    // browser did not send back. Its built-in page then blames the server, so
+    // errors land on the login form, which explains what the user can do.
+    error: '/login',
   },
   callbacks: {
     async signIn({ account, profile }) {

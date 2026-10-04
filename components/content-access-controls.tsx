@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Share2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { useEditorLimitDialog } from '@/components/editor-limit-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -48,6 +49,7 @@ export function ContentAccessControls({
   const [invitations, setInvitations] = useState<Pending[]>([]);
   const [invitationUrl, setInvitationUrl] = useState('');
   const [busy, setBusy] = useState(false);
+  const editorLimit = useEditorLimitDialog();
   const [accessMode, setAccessMode] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{
     message: string;
@@ -68,6 +70,7 @@ export function ContentAccessControls({
         body: JSON.stringify({ ...body, folderId, videoId }),
       });
       const payload = await res.json();
+      if (!res.ok && editorLimit.handle(payload)) return;
       if (!res.ok)
         throw new Error(payload.error?.message ?? payload.error ?? 'Could not update access');
       if (payload.data.needsConfirmation) {
@@ -95,6 +98,7 @@ export function ContentAccessControls({
   }
   return (
     <>
+      {editorLimit.dialog}
       <Button
         variant="outline"
         size="sm"

@@ -95,14 +95,19 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest('Unsupported video format');
     }
 
-    const quotaError = await enforceStorageQuota(billedUserId, sizeBytes + THUMBNAIL_RESERVE_BYTES);
+    const quotaError = await enforceStorageQuota(
+      billedUserId,
+      sizeBytes + THUMBNAIL_RESERVE_BYTES,
+      context.viewerUserId ?? null
+    );
     if (quotaError) return quotaError;
 
     const reserveResult = await reserveStorageQuota(
       billedUserId,
       sizeBytes + THUMBNAIL_RESERVE_BYTES,
       UPLOAD_RESERVATION_PURPOSES.R2_VIDEO,
-      VIDEO_RESERVATION_TTL_MS
+      VIDEO_RESERVATION_TTL_MS,
+      context.viewerUserId ?? null
     );
     if ('error' in reserveResult) return reserveResult.error;
 

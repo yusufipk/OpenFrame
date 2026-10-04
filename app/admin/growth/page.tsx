@@ -8,6 +8,7 @@ import {
   getScoreboard,
   type FunnelRates,
 } from '@/lib/analytics/scoreboard';
+import { UPLOADER_WINDOW_DAYS } from '@/lib/uploader-stats';
 import { isProductAnalyticsEnabled } from '@/lib/feature-flags';
 import { AlertTriangle, CreditCard, TrendingUp, Users } from 'lucide-react';
 
@@ -350,12 +351,59 @@ export default async function AdminGrowthPage() {
         </CardContent>
       </Card>
 
+      {scoreboard.paidCampaigns.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Paid search by keyword</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              The paid channel split by utm_campaign, over the same {scoreboard.channelWindowDays}{' '}
+              days. Visitors are first touches and signups are accounts created in the window, so a
+              row can differ from the paid row above, which counts landing views and signup events.
+            </p>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 pr-4 font-medium">Keyword</th>
+                  <th className="py-2 pr-4 text-right font-medium">Visitors</th>
+                  <th className="py-2 pr-4 text-right font-medium">Signup</th>
+                  <th className="py-2 pr-4 text-right font-medium">Trial</th>
+                  <th className="py-2 pr-4 text-right font-medium">Paid</th>
+                  <th className="py-2 pr-4 text-right font-medium">Visitor to signup</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scoreboard.paidCampaigns.map((row) => (
+                  <tr key={row.campaign} className="border-b last:border-0">
+                    <td className="py-2 pr-4">{row.campaign}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.visitors}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.signups}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.trials}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{row.paid}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      <Rate
+                        rate={row.visitors > 0 ? row.signups / row.visitors : null}
+                        of={row.visitors}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Paid accounts</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Value events are videos, share links, outside feedback, approvals and projects. Rows
-            marked at risk have produced none for {AT_RISK_SILENT_DAYS} days.
+            Value events are videos, versions, comments, live reviews, share links, approvals and
+            projects; versions, comments, live reviews and approval requests count once a day. Rows
+            marked at risk have produced none for {AT_RISK_SILENT_DAYS} days. Uploaders counts the
+            distinct people, owner included, who added a video or version in the last{' '}
+            {UPLOADER_WINDOW_DAYS} days; uploads from before this was recorded are not counted.
             {scoreboard.paidAccountsTruncated && (
               <>
                 {' '}
@@ -374,13 +422,14 @@ export default async function AdminGrowthPage() {
                 <th className="py-2 pr-4 font-medium">Source</th>
                 <th className="py-2 pr-4 text-right font-medium">7d</th>
                 <th className="py-2 pr-4 text-right font-medium">30d</th>
+                <th className="py-2 pr-4 text-right font-medium">Uploaders</th>
                 <th className="py-2 pr-4 font-medium">Last activity</th>
               </tr>
             </thead>
             <tbody>
               {scoreboard.paidAccounts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-muted-foreground">
+                  <td colSpan={7} className="py-4 text-muted-foreground">
                     No active or trialing accounts.
                   </td>
                 </tr>
@@ -411,6 +460,7 @@ export default async function AdminGrowthPage() {
                     </td>
                     <td className="py-2 pr-4 text-right tabular-nums">{account.valueEvents7}</td>
                     <td className="py-2 pr-4 text-right tabular-nums">{account.valueEvents30}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{account.uploaders30}</td>
                     <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
                       {formatDate(account.lastValueEventAt)}
                     </td>

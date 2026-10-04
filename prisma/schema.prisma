@@ -32,8 +32,29 @@ model User {
   stripeCancelAt DateTime?
   billingAccessEndedAt DateTime?
   subscriptionStatus BillingSubscriptionStatus @default(FREE)
+  // Mirrored from the plan and storage items of the authoritative Stripe subscription.
+  billingPlan BillingPlan @default(SOLO)
+  billingInterval BillingInterval @default(MONTH)
+  storageBlocks Int @default(0)
+  // The next phase of the subscription's Stripe schedule, applied by Stripe at the period end.
+  pendingBillingPlan BillingPlan?
+  pendingBillingInterval BillingInterval?
+  pendingStorageBlocks Int?
+  pendingChangeAt DateTime?
+  // Who the owner was shown when agreeing to Solo's one-editor limit; display only.
+  // The limit itself is enforced by the Stripe sync on every active Solo subscription.
+  pendingEditorDemotions String[] @default([])
+  // Set on subscriptions that predate the two plans. Holds only while that same
+  // subscription is the one being synced and it stays on Solo.
+  foundingSubscriptionId String?
+  // While set and in the future, a plan, storage or cancellation change is being made for
+  // this account; a second one is turned away rather than built on a stale read.
+  billingChangeLockedUntil DateTime?
   // When false, deleting a project asks for a plain confirmation instead of the typed name.
   requireProjectDeleteNameConfirmation Boolean @default(true)
+  // Set by an admin for internal and test accounts. The account works as usual but is left
+  // out of the admin dashboard, the growth scoreboard and the cancellation answers.
+  excludedFromStats Boolean @default(false)
 
   // Relations
   accounts           Account[]
@@ -58,10 +79,13 @@ model User {
   approvalDecisions         ApprovalDecision[]
   sentInvitations           Invitation[] @relation("InvitationsSentBy")
   acquisition               UserAcquisition?
-  analyticsEvents           AnalyticsEvent[]
+  analyticsEvents           AnalyticsEvent[]   @relation("AnalyticsEventUser")
+  analyticsEventsActed      AnalyticsEvent[]   @relation("AnalyticsEventActor")
+  uploadedVersions          VideoVersion[]     @relation("VideoVersionUploader")
   subscriptionCancellations SubscriptionCancellation[]
   managedLiveReviews LiveReviewSession[]
   liveReviewParticipants LiveReviewParticipant[]
+  driveImports       DriveImport[]
   apiTokens          ApiToken[]
 
   @@map("users")
@@ -85,6 +109,16 @@ model ApiToken {
 
   @@index([userId])
   @@map("api_tokens")
+}
+
+enum BillingPlan {
+  SOLO
+  STUDIO
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
 }
 
 enum BillingSubscriptionStatus {
@@ -285,6 +319,7 @@ model Project {
   shareLinks  ShareLink[]
   commentTags CommentTag[]
   invitations Invitation[]
+  driveImports DriveImport[]
   
   @@index([ownerId])
   @@index([slug])
@@ -478,6 +513,12 @@ model VideoVersion {
   
   // Status
   isActive        Boolean  @default(true) // Currently displayed version
+
+  // Who created this version, as opposed to the workspace owner it is billed to.
+  // Null on rows created before this was recorded, and after the uploader's
+  // account is deleted.
+  uploadedById    String?  @map("uploaded_by_id")
+  uploadedBy      User?    @relation("VideoVersionUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   
   // Parent video
   videoParentId   String
@@ -496,6 +537,7 @@ model VideoVersion {
   @@unique([videoParentId, versionNumber])
   @@index([videoParentId])
   @@index([videoParentId, isActive])
+  @@index([uploadedById])
   @@map("video_versions")
 }
 
@@ -970,6 +1012,67 @@ model WatchProgress {
   @@map("watch_progress")
 }
 
+enum DriveImportBackend {
+  BUNNY
+  S3
+}
+
+enum DriveImportStatus {
+  /// Bytes are on their way: Bunny is fetching them, or this server is copying them to S3.
+  TRANSFERRING
+  /// One caller has claimed the row and is writing the video or version for it.
+  FINALIZING
+  DONE
+  FAILED
+}
+
+/// A Google Drive file being copied into a project. The video or version row is
+/// only written once the bytes have landed, so a failed import leaves nothing
+/// behind in the project; this row is what the uploader sees in the meantime.
+/// See docs/google-drive-import.md.
+model DriveImport {
+  id                 String             @id @default(cuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Destination folder for a new video, null for the project root.
+  folderId           String?
+  /// Set when the import adds a new version to this video instead of creating one.
+  targetVideoId      String?
+  /// Set when the import becomes an attachment (asset) on this video instead.
+  assetVideoId       String?
+  driveFileId        String
+  fileName           String
+  title              String
+  mimeType           String
+  /// As reported by Drive, which is what the quota was reserved against.
+  sizeBytes          BigInt             @map("size_bytes")
+  billedUserId       String
+  reservationId      String?
+  backend            DriveImportBackend
+  status             DriveImportStatus  @default(TRANSFERRING)
+  bunnyVideoId       String?
+  objectKey          String?
+  multipartUploadId  String?
+  thumbnailObjectKey String?
+  /// Set by the S3 copier once the object is complete; Bunny imports use Bunny's status instead.
+  transferredAt      DateTime?
+  /// Refreshed by the S3 copier while it runs, so a copy lost to a restart can be told from a slow one.
+  heartbeatAt        DateTime           @default(now())
+  createdVideoId     String?
+  createdVersionId   String?
+  createdAssetId     String?
+  error              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([projectId, userId, status])
+  @@index([status])
+  @@index([bunnyVideoId])
+  @@map("drive_imports")
+}
+
 // Tracks in-flight R2 upload slots so concurrent uploads are counted against quota
 // before the VideoAsset record is committed. Rows expire after a short TTL.
 model UploadReservation {
@@ -1040,7 +1143,14 @@ enum AcquisitionChannel {
   DIRECT
   GITHUB
   YOUTUBE
+  // Organic search only. A paid click on a search ad is PAID.
   GOOGLE
+  // Any paid ad click: an ad network's click id on the landing URL, or a paid
+  // utm_medium such as cpc. utm_source and utm_campaign say which network.
+  // First touch still applies: a visitor who already holds a first-touch cookie
+  // from an earlier visit keeps that channel when they later click an ad, so
+  // this bucket undercounts ad clicks from people who had been here before.
+  PAID
   REVIEW_LINK
   REFERRAL
   OUTBOUND
@@ -1061,6 +1171,13 @@ enum AnalyticsEventName {
   SHARE_LINK_CREATED
   FIRST_GUEST_COMMENT
   APPROVAL_COMPLETED
+  // Ongoing use, recorded at most once per account per UTC day. They feed the
+  // scoreboard's silence check only, never the weekly funnel.
+  VERSION_ADDED
+  COMMENT_ADDED
+  LIVE_REVIEW_STARTED
+  LIVE_REVIEW_JOINED
+  APPROVAL_REQUESTED
   CHECKOUT_STARTED
   SUBSCRIPTION_STARTED
   SUBSCRIPTION_CANCELED
@@ -1121,7 +1238,11 @@ model AnalyticsEvent {
   id          String              @id @default(cuid())
   name        AnalyticsEventName
   userId      String?             @map("user_id")
-  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user        User?               @relation("AnalyticsEventUser", fields: [userId], references: [id], onDelete: SetNull)
+  // The person who acted, when that is not the account the event is counted
+  // against (a team member adding a video to the owner's project).
+  actorId     String?             @map("actor_id")
+  actor       User?               @relation("AnalyticsEventActor", fields: [actorId], references: [id], onDelete: SetNull)
   anonymousId String?             @map("anonymous_id")
   channel     AcquisitionChannel?
   dedupeKey   String              @unique @map("dedupe_key")
@@ -1131,6 +1252,7 @@ model AnalyticsEvent {
   @@index([userId, occurredAt])
   @@index([channel, name, occurredAt])
   @@index([anonymousId])
+  @@index([actorId])
   @@map("analytics_events")
 }
 

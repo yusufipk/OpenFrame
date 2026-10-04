@@ -326,6 +326,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
               duration: duration || null,
               sizeBytes: versionSizeBytes,
               isActive: true,
+              // The caller, or the owner of the API token the request came in on.
+              uploadedById: session.user.id,
             },
           },
         },
@@ -351,7 +353,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     await recordEvent({
       name: 'VIDEO_ADDED',
       dedupeKey: eventKey('VIDEO_ADDED', video.id),
+      // userId stays the account the scoreboard counts; actorId is who added it.
       userId: project.ownerId,
+      actorId: session.user.id,
     });
 
     const response = successResponse(

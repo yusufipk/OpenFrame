@@ -1,4 +1,5 @@
 import { liveReviewEnabled, liveReviewPublicUrl } from '@/lib/live-review/config';
+import { getDriveImportBackend } from '@/lib/feature-flags';
 
 function resolveBunnyCdnHostname(): string | null {
   const raw = process.env.BUNNY_CDN_URL || process.env.NEXT_PUBLIC_BUNNY_CDN_URL;
@@ -59,12 +60,30 @@ export function buildContentSecurityPolicy(): string {
   const isDev = process.env.NODE_ENV === 'development';
   const bunnyCdnHostname = resolveBunnyCdnHostname();
   const cdnOrigin = bunnyCdnHostname ? `https://${bunnyCdnHostname}` : '';
+  // Google Identity Services (the token popup) and the Google Picker, which loads
+  // through apis.google.com and renders in a docs.google.com iframe. Only added
+  // on a host that offers Drive import.
+  const driveImport = getDriveImportBackend() !== null;
+  const googleScriptOrigins = driveImport
+    ? ['https://accounts.google.com', 'https://apis.google.com']
+    : [];
+  const googleFrameOrigins = driveImport
+    ? ['https://accounts.google.com', 'https://docs.google.com', 'https://content.googleapis.com']
+    : [];
+  const googleConnectOrigins = driveImport
+    ? [
+        'https://accounts.google.com',
+        'https://www.googleapis.com',
+        'https://content.googleapis.com',
+      ]
+    : [];
 
   const connectSrcParts = [
     "'self'",
     'https://video.bunnycdn.com',
     'https://www.youtube.com',
     cdnOrigin,
+    ...googleConnectOrigins,
     ...resolveR2ConnectOrigins(),
     ...(liveReviewEnabled() && liveReviewPublicUrl()
       ? [new URL(liveReviewPublicUrl()!).origin]
@@ -90,11 +109,14 @@ export function buildContentSecurityPolicy(): string {
     "default-src 'self'",
     // 'unsafe-inline' is required by Next.js App Router (hydration scripts, inline styles)
     // https://www.youtube.com is required for the dynamically-injected YouTube IFrame API script
-    "script-src 'self' 'unsafe-inline' https://www.youtube.com",
+    ["script-src 'self' 'unsafe-inline' https://www.youtube.com", ...googleScriptOrigins].join(' '),
     "style-src 'self' 'unsafe-inline'",
     `img-src ${imgSrcParts.join(' ')}`,
     `media-src ${mediaSrcParts.join(' ')}`,
-    "frame-src 'self' https://www.youtube.com https://iframe.mediadelivery.net",
+    [
+      "frame-src 'self' https://www.youtube.com https://iframe.mediadelivery.net",
+      ...googleFrameOrigins,
+    ].join(' '),
     `connect-src ${connectSrcParts.join(' ')}`,
     // next/font self-hosts Google Fonts at build time — no external font origin needed
     "font-src 'self'",

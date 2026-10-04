@@ -14,6 +14,7 @@ import {
 import { issueLiveTicket } from '@/lib/live-review/tickets';
 import { joinLiveRoom, LiveRoomError, startLiveRoom } from '@/lib/live-review/state';
 import type { LiveDiscovery, LiveJoinResult } from '@/lib/live-review/protocol';
+import { recordVideoActivity } from '@/lib/analytics/record';
 
 type RouteParams = { params: Promise<{ videoId: string }> };
 
@@ -79,6 +80,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             typeof body.participantId === 'string' ? body.participantId : undefined
           );
     const ticket = await issueLiveTicket(room.sessionId, room.participantId);
+    await recordVideoActivity({
+      name: body.action === 'start' ? 'LIVE_REVIEW_STARTED' : 'LIVE_REVIEW_JOINED',
+      videoId,
+      actorId: viewer.userId,
+    });
     const data: LiveJoinResult = {
       ticket,
       participantId: room.participantId,

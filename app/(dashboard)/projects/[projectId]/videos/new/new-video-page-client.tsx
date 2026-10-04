@@ -40,6 +40,7 @@ import {
   type PendingProjectUploadCleanup,
 } from '@/lib/client/project-video-upload';
 import type { DirectUploadProvider } from '@/components/video-page/types';
+import { DriveImportButton } from '@/components/drive-import/drive-import-button';
 
 export default function NewVideoPageClient({
   projectId,
@@ -573,6 +574,19 @@ export default function NewVideoPageClient({
               ) : null}
             </TabsList>
           </Tabs>
+
+          {directUploadsEnabled && (
+            <div className="mb-6">
+              <DriveImportButton
+                projectId={projectId}
+                folderId={folderId}
+                disabled={isLoading}
+                onStarted={() =>
+                  router.push(`/projects/${projectId}${folderId ? `?folderId=${folderId}` : ''}`)
+                }
+              />
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {uploadMode === 'url' ? (

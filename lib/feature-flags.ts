@@ -73,6 +73,40 @@ export function isBunnyUploadsEnabled() {
   return isBunnyUploadsFeatureEnabled() && hasBunnyUploadsConfig();
 }
 
+/**
+ * Google Drive import needs a Picker API key and the Cloud project number on top
+ * of an OAuth client. The client id defaults to the sign-in one, since one OAuth
+ * client can serve both; a host that keeps them apart sets GOOGLE_DRIVE_CLIENT_ID.
+ */
+export function getGoogleDriveConfig(): {
+  clientId: string;
+  apiKey: string;
+  appId: string;
+} | null {
+  const clientId = (
+    process.env.GOOGLE_DRIVE_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID ||
+    ''
+  ).trim();
+  const apiKey = (process.env.GOOGLE_PICKER_API_KEY || '').trim();
+  const appId = (process.env.GOOGLE_CLOUD_PROJECT_NUMBER || '').trim();
+  if (!clientId || !apiKey || !appId) return null;
+  return { clientId, apiKey, appId };
+}
+
+/**
+ * Where a Drive import lands, or null when this host cannot import at all. It
+ * follows the direct upload backend, so a host never stores an imported video
+ * somewhere its own uploads would not go.
+ */
+export function getDriveImportBackend(): 'BUNNY' | 'S3' | null {
+  if (!readBooleanEnv('OPENFRAME_ENABLE_DRIVE_IMPORT', true)) return null;
+  if (!getGoogleDriveConfig()) return null;
+  if (isS3VideoUploadsEnabled()) return 'S3';
+  if (isBunnyUploadsEnabled()) return 'BUNNY';
+  return null;
+}
+
 export function isDirectFileUploadEnabled() {
   return isS3VideoUploadsEnabled() || isBunnyUploadsEnabled();
 }

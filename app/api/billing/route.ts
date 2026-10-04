@@ -10,6 +10,7 @@ import {
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { hasStripeRuntimeConfig, isStripeConfigured } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
+import { getPlanOverview } from '@/lib/billing-changes';
 
 export async function GET() {
   try {
@@ -18,7 +19,10 @@ export async function GET() {
       return apiErrors.unauthorized();
     }
 
-    const billing = await getBillingOverview(session.user.id);
+    const [billing, plan] = await Promise.all([
+      getBillingOverview(session.user.id),
+      getPlanOverview(session.user.id),
+    ]);
     const isEnabled = isStripeFeatureEnabled();
     const isConfigured = hasStripeRuntimeConfig();
 
@@ -88,6 +92,7 @@ export async function GET() {
           billing.subscription.storageCleanupEligibleAt?.toISOString() ?? null,
       },
       workspaceCreation: billing.workspaceCreation,
+      plan,
     });
 
     return withCacheControl(response, 'private, no-store');

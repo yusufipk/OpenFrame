@@ -47,9 +47,12 @@ import { apiRequest, callRoute, readData, readError } from '../helpers/request';
 import { signedInAs, signedOut } from '../helpers/session';
 import {
   addProjectMember,
+  addWorkspaceMember,
   createComment,
+  createExpiredUser,
   createSubscribedUser,
   createUser,
+  createVideo,
   seedProject,
   seedVersion,
 } from '../factories';
@@ -119,7 +122,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('cannot be called with a token instead of a session', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     const token = tokenLiteral('a');
     await insertToken(user.id, token);
     signedOut();
@@ -137,7 +140,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('refuses a cross-origin request', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     const response = await callRoute(
@@ -152,8 +155,194 @@ describe('POST /api/settings/api-tokens', () => {
     expect(await db.apiToken.count()).toBe(0);
   });
 
+  it('lets an account on a free trial create a token', async () => {
+    const user = await createUser({ trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) });
+    signedInAs(user);
+
+    const response = await callRoute(
+      createToken,
+      apiRequest('/api/settings/api-tokens', {
+        headers: ORIGIN,
+        body: { scopes: ['read'], name: 'CI' },
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(await db.apiToken.count({ where: { userId: user.id } })).toBe(1);
+  });
+
+  it('refuses a subscription whose first payment never went through', async () => {
+    const user = await createSubscribedUser({ subscriptionStatus: 'INCOMPLETE' });
+    signedInAs(user);
+
+    const response = await callRoute(
+      createToken,
+      apiRequest('/api/settings/api-tokens', {
+        headers: ORIGIN,
+        body: { scopes: ['read'], name: 'CI' },
+      })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await db.apiToken.count()).toBe(0);
+  });
+
+  it('refuses an account whose billing access has ended, but still lets it list and revoke', async () => {
+    const user = await createExpiredUser();
+    const existing = await insertToken(user.id, tokenLiteral('e'));
+    signedInAs(user);
+
+    const created = await callRoute(
+      createToken,
+      apiRequest('/api/settings/api-tokens', {
+        headers: ORIGIN,
+        body: { scopes: ['read'], name: 'CI' },
+      })
+    );
+    expect(created.status).toBe(403);
+    expect(await db.apiToken.count({ where: { userId: user.id } })).toBe(1);
+
+    const listed = await callRoute(listTokens, apiRequest('/api/settings/api-tokens'));
+    expect(listed.status).toBe(200);
+    const { tokens, canCreate } = await readData<{ tokens: { id: string }[]; canCreate: boolean }>(
+      listed
+    );
+    expect(tokens.map((token) => token.id)).toEqual([existing.id]);
+    expect(canCreate).toBe(false);
+
+    const revoked = await callRoute(
+      revokeToken,
+      apiRequest(`/api/settings/api-tokens/${existing.id}`, { method: 'DELETE', headers: ORIGIN }),
+      { tokenId: existing.id }
+    );
+    expect(revoked.status).toBe(200);
+    expect(await db.apiToken.count({ where: { userId: user.id } })).toBe(0);
+  });
+
+  describe('an editor without a plan of their own', () => {
+    // The owner is on Studio because that is where a team of editors lives. The rule
+    // itself reads the owner's billing access, not the plan: a non-founding Solo
+    // account has no editor but its owner, so nobody else can qualify through it.
+    async function studioTeam(ownerInput: Parameters<typeof createSubscribedUser>[0] = {}) {
+      const owner = await createSubscribedUser(ownerInput);
+      await db.user.update({ where: { id: owner.id }, data: { billingPlan: 'STUDIO' } });
+      const scenario = await seedProject({ ownerUser: owner });
+      const folder = await db.projectFolder.create({
+        data: { projectId: scenario.project.id, name: 'Cuts' },
+      });
+      const video = await createVideo({ projectId: scenario.project.id });
+      const member = await createExpiredUser();
+      return { ...scenario, folder, video, member };
+    }
+
+    type Team = Awaited<ReturnType<typeof studioTeam>>;
+    type Level = 'workspace' | 'project' | 'folder' | 'video';
+
+    async function join(team: Team, level: Level, role: 'ADMIN' | 'COMMENTATOR') {
+      const userId = team.member.id;
+      if (level === 'workspace') {
+        await addWorkspaceMember({ workspaceId: team.workspace.id, userId, role });
+      } else if (level === 'project') {
+        await addProjectMember({ projectId: team.project.id, userId, role });
+      } else if (level === 'folder') {
+        await db.projectFolderMember.create({ data: { folderId: team.folder.id, userId, role } });
+      } else {
+        await db.videoMember.create({ data: { videoId: team.video.id, userId, role } });
+      }
+    }
+
+    function create() {
+      return callRoute(
+        createToken,
+        apiRequest('/api/settings/api-tokens', {
+          headers: ORIGIN,
+          body: { scopes: ['read', 'upload'], name: 'Team agent' },
+        })
+      );
+    }
+
+    async function listCanCreate() {
+      const response = await callRoute(listTokens, apiRequest('/api/settings/api-tokens'));
+      expect(response.status).toBe(200);
+      return (await readData<{ canCreate: boolean }>(response)).canCreate;
+    }
+
+    for (const level of ['workspace', 'project', 'folder', 'video'] as const) {
+      it(`can create a token as a ${level} editor on a paying account`, async () => {
+        const team = await studioTeam();
+        await join(team, level, 'ADMIN');
+        signedInAs(team.member);
+
+        expect(await listCanCreate()).toBe(true);
+        const response = await create();
+
+        expect(response.status).toBe(201);
+        expect(await db.apiToken.count({ where: { userId: team.member.id } })).toBe(1);
+      });
+
+      it(`cannot as a ${level} reviewer on that same paying account`, async () => {
+        const team = await studioTeam();
+        await join(team, level, 'COMMENTATOR');
+        signedInAs(team.member);
+
+        expect(await listCanCreate()).toBe(false);
+        const response = await create();
+
+        expect(response.status).toBe(403);
+        expect(await db.apiToken.count({ where: { userId: team.member.id } })).toBe(0);
+      });
+    }
+
+    it('can create a token as the owner of a project in a paying workspace', async () => {
+      const team = await studioTeam();
+      await db.project.update({
+        where: { id: team.project.id },
+        data: { ownerId: team.member.id },
+      });
+      signedInAs(team.member);
+
+      expect(await listCanCreate()).toBe(true);
+      const response = await create();
+
+      expect(response.status).toBe(201);
+      expect(await db.apiToken.count({ where: { userId: team.member.id } })).toBe(1);
+    });
+
+    it('cannot once the account they edit for has lapsed', async () => {
+      const team = await studioTeam({
+        subscriptionStatus: 'CANCELED',
+        stripeCurrentPeriodEnd: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+      await join(team, 'workspace', 'ADMIN');
+      signedInAs(team.member);
+
+      expect(await listCanCreate()).toBe(false);
+      const response = await create();
+
+      expect(response.status).toBe(403);
+      expect(await db.apiToken.count({ where: { userId: team.member.id } })).toBe(0);
+    });
+  });
+
+  it('lets anyone create a token when this host runs without billing', async () => {
+    vi.stubEnv('OPENFRAME_ENABLE_STRIPE', 'false');
+    const user = await createExpiredUser();
+    signedInAs(user);
+
+    const response = await callRoute(
+      createToken,
+      apiRequest('/api/settings/api-tokens', {
+        headers: ORIGIN,
+        body: { scopes: ['read'], name: 'Self-hosted' },
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(await db.apiToken.count({ where: { userId: user.id } })).toBe(1);
+  });
+
   it('returns the plaintext once and stores only its SHA-256', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     const response = await callRoute(
@@ -177,7 +366,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('refuses a token with no permissions', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     const response = await callRoute(
@@ -193,7 +382,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('refuses a permission that does not exist, such as billing', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     const response = await callRoute(
@@ -209,7 +398,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('stores the chosen permissions once each, in a fixed order', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     const response = await callRoute(
@@ -226,7 +415,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('refuses an empty name', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     const response = await callRoute(
@@ -242,7 +431,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('refuses a name longer than 60 characters', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     signedInAs(user);
 
     const response = await callRoute(
@@ -258,11 +447,11 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('counts the cap per user, not across the whole instance', async () => {
-    const busy = await createUser();
+    const busy = await createSubscribedUser();
     for (let i = 0; i < 10; i += 1) {
       await insertToken(busy.id, tokenLiteral(String.fromCharCode(98 + i)));
     }
-    const fresh = await createUser();
+    const fresh = await createSubscribedUser();
     signedInAs(fresh);
 
     const response = await callRoute(
@@ -283,7 +472,7 @@ describe('POST /api/settings/api-tokens', () => {
   // has to be seen waiting on it, and has to read the count only after it is
   // released, by which time the tenth token already exists.
   it('counts under a per-user lock, so a token added meanwhile is seen', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     for (let i = 0; i < 9; i += 1) {
       await insertToken(user.id, tokenLiteral(String.fromCharCode(98 + i)));
     }
@@ -329,7 +518,7 @@ describe('POST /api/settings/api-tokens', () => {
   });
 
   it('stops at ten tokens per user', async () => {
-    const user = await createUser();
+    const user = await createSubscribedUser();
     for (let i = 0; i < 10; i += 1) {
       await insertToken(user.id, tokenLiteral(String.fromCharCode(98 + i)));
     }
@@ -357,11 +546,12 @@ describe('GET /api/settings/api-tokens', () => {
     await insertToken(other.id, tokenLiteral('o'));
     signedInAs(user);
 
-    const data = await readData<{ tokens: Array<Record<string, unknown>> }>(
+    const data = await readData<{ tokens: Array<Record<string, unknown>>; canCreate: boolean }>(
       await callRoute(listTokens, apiRequest('/api/settings/api-tokens'))
     );
 
     expect(data.tokens.map((token) => token.id)).toEqual([mine.id]);
+    expect(data.canCreate).toBe(true);
     expect(data.tokens[0]).not.toHaveProperty('tokenHash');
   });
 });

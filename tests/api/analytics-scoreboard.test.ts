@@ -142,6 +142,175 @@ describe('getScoreboard', () => {
     expect(scoreboard.channels.find((row) => row.channel === 'GITHUB')).toBeUndefined();
   });
 
+  it('breaks the REFERRAL channel down by referring host and landing path', async () => {
+    const touches = [
+      { anonymousId: 'ref-a', referrerHost: 'blog.example', landingPath: '/' },
+      { anonymousId: 'ref-b', referrerHost: 'blog.example', landingPath: '/' },
+      { anonymousId: 'ref-c', referrerHost: 'spam.example', landingPath: '/vs/frameio' },
+    ];
+    for (const touch of touches) {
+      await db.acquisitionTouch.create({ data: { ...touch, channel: 'REFERRAL' } });
+      await seedEvent({
+        name: 'LANDING_VIEW',
+        occurredAt: daysAgo(3),
+        anonymousId: touch.anonymousId,
+        channel: 'REFERRAL',
+      });
+    }
+    // The same visitor on a second day is still one visitor.
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(4),
+      anonymousId: 'ref-a',
+      channel: 'REFERRAL',
+    });
+    // Another channel, and a referral older than the window: neither belongs here.
+    await db.acquisitionTouch.create({
+      data: { anonymousId: 'gh', channel: 'GITHUB', referrerHost: 'github.com', landingPath: '/' },
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(3),
+      anonymousId: 'gh',
+      channel: 'GITHUB',
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'old',
+        channel: 'REFERRAL',
+        referrerHost: 'old.example',
+        landingPath: '/',
+      },
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(40),
+      anonymousId: 'old',
+      channel: 'REFERRAL',
+    });
+
+    // Only landing views count as visitors, so another REFERRAL event adds no row.
+    await seedEvent({
+      name: 'SIGNUP_STARTED',
+      occurredAt: daysAgo(3),
+      anonymousId: 'ref-x',
+      channel: 'REFERRAL',
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'ref-x',
+        channel: 'REFERRAL',
+        referrerHost: 'x.example',
+        landingPath: '/',
+      },
+    });
+    // A signed-up visitor is read through the account, as the channels table does:
+    // the event and touch say GITHUB, the account says REFERRAL from forum.example.
+    const user = await createUser();
+    await db.userAcquisition.create({
+      data: {
+        userId: user.id,
+        anonymousId: 'ref-u',
+        channel: 'REFERRAL',
+        referrerHost: 'forum.example',
+        landingPath: '/pricing',
+      },
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'ref-u',
+        channel: 'GITHUB',
+        referrerHost: 'github.com',
+        landingPath: '/',
+      },
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: daysAgo(3),
+      anonymousId: 'ref-u',
+      userId: user.id,
+      channel: 'GITHUB',
+    });
+
+    const scoreboard = await getScoreboard({ weeks: 2 });
+
+    expect(scoreboard.referrals).toEqual([
+      { referrerHost: 'blog.example', landingPath: '/', visitors: 2 },
+      { referrerHost: 'forum.example', landingPath: '/pricing', visitors: 1 },
+      { referrerHost: 'spam.example', landingPath: '/vs/frameio', visitors: 1 },
+    ]);
+    expect(scoreboard.channels.find((row) => row.channel === 'REFERRAL')?.visitors).toBe(4);
+  });
+
+  it('splits the PAID channel by keyword over the channel window', async () => {
+    const touch = (anonymousId: string, utmCampaign: string | null, createdAt: Date) =>
+      db.acquisitionTouch.create({
+        data: { anonymousId, channel: 'PAID', utmCampaign, landingPath: '/', createdAt },
+      });
+    await touch('kw-a1', 'video review tool', daysAgo(2));
+    await touch('kw-a2', 'video review tool', daysAgo(3));
+    await touch('kw-b1', 'frame io alternative', daysAgo(2));
+    await touch('kw-none', null, daysAgo(2));
+    // Outside the window, and another channel: neither is counted.
+    await touch('kw-old', 'video review tool', daysAgo(40));
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'kw-gh',
+        channel: 'GITHUB',
+        utmCampaign: 'video review tool',
+        landingPath: '/',
+      },
+    });
+
+    const signup = async (
+      anonymousId: string,
+      utmCampaign: string | null,
+      options: { createdAt?: Date; excluded?: boolean } = {}
+    ) => {
+      const user = await createUser();
+      if (options.excluded) {
+        await db.user.update({ where: { id: user.id }, data: { excludedFromStats: true } });
+      }
+      await db.userAcquisition.create({
+        data: {
+          userId: user.id,
+          anonymousId,
+          channel: 'PAID',
+          utmCampaign,
+          createdAt: options.createdAt ?? daysAgo(2),
+        },
+      });
+      return user;
+    };
+    const counted = await signup('kw-a1', 'video review tool');
+    await signup('kw-none', null);
+    await signup('kw-old', 'video review tool', { createdAt: daysAgo(40) });
+    // An excluded account is left out of signups, and the touch its browser
+    // left is left out of visitors.
+    const excluded = await signup('kw-b1', 'frame io alternative', { excluded: true });
+
+    await seedEvent({ name: 'TRIAL_STARTED', occurredAt: daysAgo(1), userId: counted.id });
+    await seedEvent({ name: 'SUBSCRIPTION_STARTED', occurredAt: daysAgo(1), userId: counted.id });
+    await seedEvent({ name: 'TRIAL_STARTED', occurredAt: daysAgo(1), userId: excluded.id });
+    // An event with no account reads its keyword from the touch, and the same
+    // visitor twice is still one trial.
+    for (const day of [1, 2]) {
+      await seedEvent({
+        name: 'TRIAL_STARTED',
+        occurredAt: daysAgo(day),
+        anonymousId: 'kw-a2',
+        channel: 'PAID',
+      });
+    }
+
+    const scoreboard = await getScoreboard({ weeks: 2 });
+
+    expect(scoreboard.paidCampaigns).toEqual([
+      { campaign: 'video review tool', visitors: 2, signups: 1, trials: 2, paid: 1 },
+      { campaign: '(no keyword)', visitors: 1, signups: 1, trials: 0, paid: 0 },
+    ]);
+  });
+
   it('carries subscriptions started before the window into the running total', async () => {
     // The pair has to land in the week the assertions read, which is this one.
     const thisWeek = startOfThisWeek();
@@ -206,6 +375,60 @@ describe('getScoreboard', () => {
     expect(ids).toEqual([cardless.id]);
     expect(ids).not.toContain(expired.id);
     expect(scoreboard.paidAccounts[0]?.status).toBe('TRIALING');
+  });
+
+  it('leaves an account an admin excluded out of every table', async () => {
+    const thisWeek = startOfThisWeek();
+    const counted = await createUser({ subscriptionStatus: 'ACTIVE' });
+    const excluded = await createUser({ subscriptionStatus: 'ACTIVE' });
+    await db.user.update({ where: { id: excluded.id }, data: { excludedFromStats: true } });
+    await db.userAcquisition.create({
+      data: { userId: excluded.id, channel: 'REFERRAL', anonymousId: 'tester' },
+    });
+    await db.acquisitionTouch.create({
+      data: {
+        anonymousId: 'tester',
+        channel: 'REFERRAL',
+        referrerHost: 'test.example',
+        landingPath: '/',
+      },
+    });
+
+    for (const user of [counted, excluded]) {
+      await seedEvent({ name: 'SIGNUP_COMPLETED', occurredAt: thisWeek, userId: user.id });
+      await seedEvent({ name: 'SUBSCRIPTION_STARTED', occurredAt: thisWeek, userId: user.id });
+    }
+    // Before the window, so only the running total can pick it up.
+    await seedEvent({
+      name: 'SUBSCRIPTION_STARTED',
+      occurredAt: daysAgo(120),
+      userId: excluded.id,
+    });
+    // Signed-out visits carry only the visitor cookie the account signed up with: one
+    // tied to the account at signup, and one made later after signing out.
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: thisWeek,
+      anonymousId: 'tester',
+      userId: excluded.id,
+      channel: 'REFERRAL',
+    });
+    await seedEvent({
+      name: 'LANDING_VIEW',
+      occurredAt: thisWeek,
+      anonymousId: 'tester',
+      channel: 'REFERRAL',
+    });
+    // A stranger's visit still counts.
+    await seedEvent({ name: 'LANDING_VIEW', occurredAt: thisWeek, anonymousId: 'stranger' });
+
+    const scoreboard = await getScoreboard({ weeks: 2 });
+    const last = scoreboard.weeks[scoreboard.weeks.length - 1];
+
+    expect(last).toMatchObject({ visitors: 1, signups: 1, newPaid: 1, activePaid: 1 });
+    expect(scoreboard.channels.find((row) => row.channel === 'REFERRAL')).toBeUndefined();
+    expect(scoreboard.referrals).toEqual([]);
+    expect(scoreboard.paidAccounts.map((row) => row.userId)).toEqual([counted.id]);
   });
 });
 
@@ -287,6 +510,26 @@ describe('getCohortComparison', () => {
     ]);
   });
 
+  it('leaves an account an admin excluded out of its cohort', async () => {
+    vi.stubEnv('OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT', CUTOVER);
+    await seedAccount({ createdAt: '2026-03-10T00:00:00.000Z' });
+    const excluded = await seedAccount({
+      createdAt: '2026-03-11T00:00:00.000Z',
+      trialAt: '2026-03-11T00:00:00.000Z',
+      paidAt: '2026-03-12T00:00:00.000Z',
+    });
+    await db.user.update({ where: { id: excluded.id }, data: { excludedFromStats: true } });
+
+    const comparison = await getCohortComparison(NOW);
+
+    expect(comparison?.rows[1]).toMatchObject({
+      cohort: 'CARDLESS',
+      signups: 1,
+      trials: 0,
+      paid: 0,
+    });
+  });
+
   it('reports both cohorts as empty rows rather than omitting them', async () => {
     vi.stubEnv('OPENFRAME_CARDLESS_TRIAL_LAUNCHED_AT', CUTOVER);
 
@@ -342,6 +585,9 @@ describe('GET /api/admin/growth', () => {
 
     const paying = await createUser({ subscriptionStatus: 'ACTIVE' });
     await seedEvent({ name: 'SIGNUP_COMPLETED', occurredAt: daysAgo(1), userId: paying.id });
+    await db.acquisitionTouch.create({
+      data: { anonymousId: 'kw-api', channel: 'PAID', utmCampaign: 'review app', landingPath: '/' },
+    });
 
     const response = await growthRequest({ authorization: `Bearer ${TOKEN}` });
     expect(response.status).toBe(200);
@@ -353,6 +599,10 @@ describe('GET /api/admin/growth', () => {
     // Rates ride along with each week; the digest reads them rather than
     // recomputing the denominators.
     expect(scoreboard.weeks.at(-1)).toHaveProperty('rates');
+    // The keyword rows sit beside the existing fields rather than replacing any.
+    expect(scoreboard.paidCampaigns).toEqual([
+      { campaign: 'review app', visitors: 1, signups: 0, trials: 0, paid: 0 },
+    ]);
   });
 
   it('still refuses the token when analytics are off, without saying so', async () => {

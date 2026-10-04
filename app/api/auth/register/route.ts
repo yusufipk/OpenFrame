@@ -146,6 +146,12 @@ export async function POST(request: NextRequest) {
       });
       if (result !== 'accepted') {
         await db.user.delete({ where: { id: user.id } });
+        if (result === 'editor_limit') {
+          return apiErrors.editorLimitReached(
+            'This invitation is for an editor, and the inviting account’s plan has no room for another one. Ask the person who invited you to upgrade, or to invite you as a reviewer.',
+            true
+          );
+        }
         return apiErrors.conflict(
           'Invitation could not be accepted. Please request a new invitation.'
         );

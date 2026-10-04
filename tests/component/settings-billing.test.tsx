@@ -3,7 +3,10 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SettingsPage from '@/app/(dashboard)/settings/settings-page-client';
 
-function renderScheduledCancellation(status: 'ACTIVE' | 'TRIALING') {
+function renderScheduledCancellation(
+  status: 'ACTIVE' | 'TRIALING',
+  cancelAt = '2026-10-08T12:00:00Z'
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
@@ -30,7 +33,7 @@ function renderScheduledCancellation(status: 'ACTIVE' | 'TRIALING') {
               currentPeriodEnd: '2026-10-08T12:00:00Z',
               trialEndsAt: '2026-09-15T12:00:00Z',
               cancelAtPeriodEnd: true,
-              cancelAt: '2026-10-08T12:00:00Z',
+              cancelAt,
             },
           },
         }),
@@ -56,8 +59,16 @@ describe('scheduled cancellation in billing settings', () => {
     expect(screen.getByText(/Your subscription ends on/)).toHaveTextContent(
       new Date('2026-10-08T12:00:00Z').toLocaleDateString()
     );
-    expect(screen.getByText(/Cancellation takes effect on/)).toBeInTheDocument();
+    expect(screen.queryByText(/Cancellation takes effect/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Cancellation was scheduled on/)).not.toBeInTheDocument();
+  });
+
+  it('dates the end by cancelAt when Stripe cancels before the period ends', async () => {
+    renderScheduledCancellation('ACTIVE', '2026-09-20T12:00:00Z');
+
+    expect(await screen.findByText(/Your subscription ends on/)).toHaveTextContent(
+      new Date('2026-09-20T12:00:00Z').toLocaleDateString()
+    );
   });
 
   it('still explains the trial end for a Stripe trial subscription', async () => {
@@ -142,15 +153,66 @@ describe('past-due access in billing settings', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Billing access has ended.')).not.toBeInTheDocument();
     expect(screen.queryByText('Free trial, no card required.')).not.toBeInTheDocument();
+    expect(screen.getByText(/Current billing period ends on/)).toHaveTextContent(
+      new Date('2026-10-08T12:00:00Z').toLocaleDateString()
+    );
   });
 
   it('shows access has ended when payment grace has expired and no trial remains', async () => {
     renderPastDue(false);
 
     expect(await screen.findByText('Billing access has ended.')).toBeInTheDocument();
+    expect(screen.queryByText(/Current billing period ends on/)).not.toBeInTheDocument();
     expect(
       screen.queryByText('Workspace access remains available while you resolve your payment.')
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Free trial, no card required.')).not.toBeInTheDocument();
+  });
+});
+
+describe('a canceled subscription whose access has ended', () => {
+  it('drops the past end dates and keeps only the retention deadline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url !== '/api/billing') return { ok: false };
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              isEnabled: true,
+              isConfigured: true,
+              checkoutAvailable: false,
+              portalAvailable: false,
+              cancelAvailable: false,
+              needsPaymentFix: false,
+              openInvoice: null,
+              workspaceCreation: { canCreateWorkspace: true, canStartTrial: false },
+              subscription: {
+                status: 'CANCELED',
+                label: 'Canceled',
+                hasActiveSubscription: false,
+                hasRecoverableSubscription: false,
+                hasActiveTrial: false,
+                hasBillingAccess: false,
+                currentPeriodEnd: '2026-04-15T12:00:00Z',
+                trialEndsAt: null,
+                cancelAtPeriodEnd: true,
+                cancelAt: '2026-04-15T12:00:00Z',
+                storageCleanupEligibleAt: '2026-04-30T12:00:00Z',
+              },
+            },
+          }),
+        };
+      })
+    );
+    render(<SettingsPage billingOnly />);
+
+    expect(await screen.findByText('Billing access has ended.')).toBeInTheDocument();
+    expect(screen.getByText(/Nothing is deleted yet/)).toHaveTextContent(
+      new Date('2026-04-30T12:00:00Z').toLocaleDateString()
+    );
+    expect(screen.queryByText(/ends on/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Cancellation takes effect/)).not.toBeInTheDocument();
   });
 });

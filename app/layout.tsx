@@ -36,7 +36,9 @@ export const metadata: Metadata = {
   creator: seoConfig.name,
   publisher: seoConfig.name,
   category: 'technology',
-  referrer: 'no-referrer',
+  // Matches the Referrer-Policy header: other sites get our origin, never a path.
+  // The Google Picker needs that origin to accept its website-restricted API key.
+  referrer: 'strict-origin-when-cross-origin',
   alternates: {
     canonical: '/',
   },

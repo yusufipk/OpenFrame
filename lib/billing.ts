@@ -1,8 +1,15 @@
 import type { Prisma } from '@prisma/client';
 import type Stripe from 'stripe';
-import { BillingSubscriptionStatus, InvitationStatus } from '@prisma/client';
+import { BillingPlan, BillingSubscriptionStatus, InvitationStatus } from '@prisma/client';
 import { db } from '@/lib/db';
-import { getStripe, getStripePriceId } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
+import {
+  getPlanPriceIds,
+  getStoragePriceIds,
+  readSubscriptionPlanItems,
+  type SubscriptionItemLike,
+} from '@/lib/billing-plans';
+import { demoteAccountEditors, listAccountEditorIds } from '@/lib/account-editors';
 import { isStripeFeatureEnabled } from '@/lib/feature-flags';
 import { recordSubscriptionTransition } from '@/lib/analytics/billing-events';
 import { eventKey, recordEvent } from '@/lib/analytics/record';
@@ -916,12 +923,49 @@ function getInactiveBillingAccessEndedAt(
   return canceledAt ? new Date(canceledAt * 1000) : new Date();
 }
 
-function getEntitledStripePriceId(subscription: Stripe.Subscription) {
-  return hasEntitledPrice(subscription, getStripePriceId()) ? getStripePriceId() : null;
+function hasEntitledPrice(subscription: Stripe.Subscription, planPriceIds: Set<string>): boolean {
+  return subscription.items.data.some((item) => planPriceIds.has(item.price.id));
 }
 
-function hasEntitledPrice(subscription: Stripe.Subscription, configuredPriceId: string): boolean {
-  return subscription.items.data.some((item) => item.price.id === configuredPriceId);
+export interface PendingPlanChange {
+  plan: BillingPlan;
+  interval: 'MONTH' | 'YEAR';
+  storageBlocks: number;
+  at: Date;
+}
+
+/**
+ * The phase a subscription schedule moves to when the current one ends, which is how
+ * every change that waits for the period end is expressed in Stripe.
+ *
+ * `undefined` means the schedule was not expanded on this payload, so the caller
+ * cannot tell and must keep what it already has; `null` means nothing is pending.
+ */
+export function readPendingScheduleChange(
+  subscription: Stripe.Subscription
+): PendingPlanChange | null | undefined {
+  const schedule = subscription.schedule;
+  if (!schedule) return null;
+  if (typeof schedule === 'string') return undefined;
+  const currentEnd = schedule.current_phase?.end_date;
+  if (!currentEnd || schedule.status !== 'active') return null;
+  const next = schedule.phases.find((phase) => phase.start_date >= currentEnd);
+  if (!next) return null;
+  const items = readSubscriptionPlanItems(
+    next.items.map(
+      (item): SubscriptionItemLike => ({
+        price: item.price,
+        quantity: item.quantity ?? null,
+      })
+    )
+  );
+  if (!items) return null;
+  return {
+    plan: items.plan,
+    interval: items.interval,
+    storageBlocks: items.storageBlocks,
+    at: new Date(next.start_date * 1000),
+  };
 }
 
 export async function syncStripeSubscriptionToUser(subscription: Stripe.Subscription) {
@@ -946,6 +990,14 @@ async function writeStripeSubscriptionToUser(
       // being overwritten has to be captured before the update below.
       subscriptionStatus: true,
       stripeCancelAtPeriodEnd: true,
+      billingPlan: true,
+      billingInterval: true,
+      pendingBillingPlan: true,
+      pendingBillingInterval: true,
+      pendingStorageBlocks: true,
+      pendingChangeAt: true,
+      pendingEditorDemotions: true,
+      foundingSubscriptionId: true,
     },
   });
 
@@ -966,7 +1018,8 @@ async function writeStripeSubscriptionToUser(
     'trial_end' in subscription && typeof subscription.trial_end === 'number'
       ? subscription.trial_end
       : null;
-  const entitledPriceId = getEntitledStripePriceId(subscription);
+  const planItems = readSubscriptionPlanItems(subscription.items.data);
+  const entitledPriceId = planItems?.planPriceId ?? null;
   const hasEntitledPrice = Boolean(entitledPriceId);
   const mappedStatus = hasEntitledPrice
     ? mapStripeSubscriptionStatus(subscription.status)
@@ -984,6 +1037,52 @@ async function writeStripeSubscriptionToUser(
   // the status, and every other case gets a cutoff stamped into `billingAccessEndedAt`,
   // which is cleared again as soon as the subscription goes back to active.
   const hasAccess = hasEntitledPrice && hasActiveSubscription(mappedStatus);
+
+  const subscriptionEnded =
+    subscription.status === 'canceled' || subscription.status === 'incomplete_expired';
+  const scheduled = subscriptionEnded ? null : readPendingScheduleChange(subscription);
+  const pending =
+    scheduled === undefined
+      ? {
+          plan: user.pendingBillingPlan,
+          interval: user.pendingBillingInterval,
+          storageBlocks: user.pendingStorageBlocks,
+          at: user.pendingChangeAt,
+        }
+      : {
+          plan: scheduled?.plan ?? null,
+          interval: scheduled?.interval ?? null,
+          storageBlocks: scheduled?.storageBlocks ?? null,
+          at: scheduled?.at ?? null,
+        };
+
+  // Founding terms ride on the one subscription they were granted to. A different
+  // subscription (the old one ended and a new one started) or a move to Studio ends
+  // them for good; adding storage or switching to yearly keeps the same subscription.
+  const keepsFounding =
+    Boolean(user.foundingSubscriptionId) &&
+    user.foundingSubscriptionId === subscription.id &&
+    !subscriptionEnded &&
+    planItems?.plan === BillingPlan.SOLO;
+
+  // Solo means one editor, the owner. Whenever the subscription is active on Solo and
+  // the account is not founding, everybody else who can upload becomes a reviewer.
+  // Every way onto Solo inside the app (checkout, or a scheduled move from Studio)
+  // shows the owner who that will be and asks them to confirm first; enforcing it here,
+  // on the plan rather than on a stored confirmation, is what keeps a second checkout
+  // session, a cancellation in between or a change made outside the app from leaving a
+  // team uploading on Solo. Nothing happens for an unpaid or abandoned subscription.
+  let demotionUpdate: { pendingEditorDemotions: string[] } | Record<string, never> = {};
+  if (hasAccess && planItems?.plan === BillingPlan.SOLO && !keepsFounding) {
+    const editors = await listAccountEditorIds(user.id, client);
+    editors.delete(user.id);
+    if (editors.size > 0) await demoteAccountEditors(client, user.id, [...editors]);
+    if ((user.pendingEditorDemotions ?? []).length > 0) {
+      demotionUpdate = { pendingEditorDemotions: [] };
+    }
+  } else if (subscriptionEnded && (user.pendingEditorDemotions ?? []).length > 0) {
+    demotionUpdate = { pendingEditorDemotions: [] };
+  }
 
   const updated = await client.user.update({
     where: { id: user.id },
@@ -1004,6 +1103,17 @@ async function writeStripeSubscriptionToUser(
       billingAccessEndedAt: hasAccess
         ? null
         : getInactiveBillingAccessEndedAt(subscription, hasEntitledPrice ? currentPeriodEnd : null),
+      billingPlan: planItems?.plan ?? user.billingPlan,
+      billingInterval: planItems?.interval ?? user.billingInterval,
+      // An ended subscription still lists its items, but the blocks on it are no longer paid for.
+      storageBlocks:
+        hasEntitledPrice && planItems && !subscriptionEnded ? planItems.storageBlocks : 0,
+      pendingBillingPlan: pending.plan,
+      pendingBillingInterval: pending.interval,
+      pendingStorageBlocks: pending.storageBlocks,
+      pendingChangeAt: pending.at,
+      ...demotionUpdate,
+      foundingSubscriptionId: keepsFounding ? user.foundingSubscriptionId : null,
     },
   });
 
@@ -1064,11 +1174,11 @@ export function selectAuthoritativeSubscription(
   // STRIPE_PRICE_ID configured worked for every customer holding one subscription and
   // threw only for those holding two, because a comparator never runs for a one-element
   // array. That is a miserable failure mode to diagnose in production.
-  const configuredPriceId = getStripePriceId();
+  const planPriceIds = getPlanPriceIds();
 
   return [...subscriptions].sort((a, b) => {
-    const aEntitled = hasEntitledPrice(a, configuredPriceId);
-    const bEntitled = hasEntitledPrice(b, configuredPriceId);
+    const aEntitled = hasEntitledPrice(a, planPriceIds);
+    const bEntitled = hasEntitledPrice(b, planPriceIds);
     if (aEntitled !== bEntitled) {
       return aEntitled ? -1 : 1;
     }
@@ -1096,10 +1206,12 @@ export async function syncStripeCustomerSubscriptions(customerId: string) {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext('stripe-subscription-sync'), hashtext(${customerId}))
       `;
+      // The schedule is expanded so a change waiting for the period end is mirrored too.
       const { data: subscriptions } = await getStripe().subscriptions.list({
         customer: customerId,
         status: 'all',
         limit: 100,
+        expand: ['data.schedule'],
       });
 
       const authoritative = selectAuthoritativeSubscription(subscriptions);
@@ -1161,6 +1273,14 @@ async function writeSubscriptionCanceledByCustomerId(
       stripeCancelAtPeriodEnd: false,
       stripeCancelAt: null,
       billingAccessEndedAt: options?.endedAt ?? options?.currentPeriodEnd ?? new Date(),
+      storageBlocks: 0,
+      pendingBillingPlan: null,
+      pendingBillingInterval: null,
+      pendingStorageBlocks: null,
+      pendingChangeAt: null,
+      pendingEditorDemotions: [],
+      // No subscription is left, so the one founding terms belonged to is gone.
+      foundingSubscriptionId: null,
     },
   });
 
@@ -1252,13 +1372,16 @@ export function isCurrentSubscriptionInvoice(
     invoice.lines.data.length === 0
   )
     return false;
+  const billedPriceIds = new Set([...getPlanPriceIds(), ...getStoragePriceIds()]);
   return invoice.lines.data.every((line) => {
     const details = line.parent?.subscription_item_details;
+    const linePrice = line.pricing?.price_details?.price;
     return (
       line.parent?.type === 'subscription_item_details' &&
       details?.subscription === subscription.id &&
       details.proration === false &&
-      line.pricing?.price_details?.price === getStripePriceId() &&
+      typeof linePrice === 'string' &&
+      billedPriceIds.has(linePrice) &&
       line.period.start === start &&
       line.period.end === end
     );
@@ -1328,10 +1451,11 @@ export async function findCancelableStripeSubscription(customerId: string) {
     if (!page.has_more || page.data.length === 0) break;
     startingAfter = page.data[page.data.length - 1].id;
   }
+  const planPriceIds = getPlanPriceIds();
   const candidate = selectAuthoritativeSubscription(
     subscriptions.filter(
       (subscription) =>
-        hasEntitledPrice(subscription, getStripePriceId()) &&
+        hasEntitledPrice(subscription, planPriceIds) &&
         LIVE_STRIPE_STATUSES.has(subscription.status) &&
         (isUnpaidStripeSubscription(subscription) ||
           (!subscription.cancel_at && !subscription.cancel_at_period_end))
@@ -1342,7 +1466,7 @@ export async function findCancelableStripeSubscription(customerId: string) {
   for (const subscription of subscriptions) {
     if (
       !['canceled', 'incomplete_expired'].includes(subscription.status) ||
-      !hasEntitledPrice(subscription, getStripePriceId())
+      !hasEntitledPrice(subscription, planPriceIds)
     )
       continue;
     const invoices = await listOpenSubscriptionInvoices(customerId, subscription.id);

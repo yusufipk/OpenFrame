@@ -13,14 +13,32 @@
 import type { AcquisitionChannel } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getCachedStripeStats } from '@/lib/admin-stats';
+import { getUploaderCountsByAccount, uploaderWindowStart } from '@/lib/uploader-stats';
+import { countedEventSql } from '@/lib/stats-exclusion';
 
-/** What "using the product" means for a paying account. */
+/**
+ * What "using the product" means for a paying account.
+ *
+ * The second half is everyday use, written at most once per account per day, so
+ * an account that only pushes new versions or reviews live is not read as
+ * silent. None of it is in WEEK_COLUMN_BY_EVENT, which keeps the funnel as it
+ * was. Those events only exist from the day they shipped; earlier activity of
+ * that kind was never recorded and cannot be backfilled. They also raise the
+ * 7- and 30-day counts (up to five a day for a busy account), so those counts
+ * are not comparable with ones taken before the change; the silence check only
+ * reads the latest event and is unaffected.
+ */
 export const VALUE_EVENT_NAMES = [
   'VIDEO_ADDED',
   'SHARE_LINK_CREATED',
   'FIRST_GUEST_COMMENT',
   'APPROVAL_COMPLETED',
   'PROJECT_CREATED',
+  'VERSION_ADDED',
+  'COMMENT_ADDED',
+  'LIVE_REVIEW_STARTED',
+  'LIVE_REVIEW_JOINED',
+  'APPROVAL_REQUESTED',
 ] as const;
 
 /** A paid account that has produced nothing for this long is drifting away. */
@@ -28,6 +46,13 @@ export const AT_RISK_SILENT_DAYS = 14;
 
 const DEFAULT_WEEKS = 12;
 const CHANNEL_WINDOW_DAYS = 28;
+const REFERRAL_ROW_LIMIT = 25;
+
+/**
+ * The row a PAID visitor with no utm_campaign is filed under. sanitizeTag never
+ * stores parentheses, so no real keyword can collide with it.
+ */
+export const NO_KEYWORD_LABEL = '(no keyword)';
 
 /**
  * How many paid accounts the per-account table carries.
@@ -65,6 +90,38 @@ export interface ChannelRow {
   paid: number;
 }
 
+/**
+ * Where the REFERRAL channel's visitors came from and where they landed.
+ *
+ * REFERRAL is the catch-all for a site no list recognises, so its total says
+ * nothing until it is broken down: one forum thread, a spam referrer and our own
+ * pages filed by mistake all look the same as a single number.
+ *
+ * Touches recorded before the proxy compared referrers against the public host
+ * can still show our own domain here; they age out of the window, they are not
+ * rewritten.
+ */
+export interface ReferralRow {
+  referrerHost: string | null;
+  landingPath: string | null;
+  visitors: number;
+}
+
+/**
+ * One keyword of the paid search campaign, read from utm_campaign.
+ *
+ * Visitors are first touches and signups are accounts created in the window, so
+ * both are counted where they started. Trials and paid follow the channels rows:
+ * events in the window, read through the account's first touch.
+ */
+export interface PaidCampaignRow {
+  campaign: string;
+  visitors: number;
+  signups: number;
+  trials: number;
+  paid: number;
+}
+
 export interface PaidAccountRow {
   userId: string;
   name: string | null;
@@ -73,6 +130,11 @@ export interface PaidAccountRow {
   valueEvents7: number;
   valueEvents30: number;
   lastValueEventAt: Date | null;
+  /**
+   * Distinct people who uploaded into this account's workspaces in the last
+   * UPLOADER_WINDOW_DAYS, owner included. Above 1 means a team is working in it.
+   */
+  uploaders30: number;
   channel: AcquisitionChannel | null;
   selfReported: AcquisitionChannel | null;
 }
@@ -109,6 +171,10 @@ export interface Scoreboard {
   weeks: WeeklyRow[];
   channels: ChannelRow[];
   channelWindowDays: number;
+  /** The busiest REFERRAL host and landing path pairs over the channel window. */
+  referrals: ReferralRow[];
+  /** The PAID channel per utm_campaign over the channel window, busiest first. */
+  paidCampaigns: PaidCampaignRow[];
   paidAccounts: PaidAccountRow[];
   /** True when there are more paid accounts than the table shows. */
   paidAccountsTruncated: boolean;
@@ -131,6 +197,21 @@ interface ChannelQueryRow {
   channel: AcquisitionChannel | null;
   name: string;
   subjects: number;
+}
+
+interface ReferralQueryRow {
+  referrer_host: string | null;
+  landing_path: string | null;
+  visitors: number;
+}
+
+export interface CampaignCountRow {
+  campaign: string | null;
+  subjects: number;
+}
+
+export interface CampaignEventRow extends CampaignCountRow {
+  name: string;
 }
 
 interface PaidQueryRow {
@@ -226,6 +307,39 @@ export function conversionRates(row: {
 }
 
 /**
+ * Folds the three per-campaign counts into one row per keyword.
+ *
+ * Each source groups on its own, so a keyword can appear in any of them alone: a
+ * signup whose first touch is older than the window still gets its row.
+ */
+export function mergePaidCampaigns(
+  visitorRows: CampaignCountRow[],
+  signupRows: CampaignCountRow[],
+  eventRows: CampaignEventRow[]
+): PaidCampaignRow[] {
+  const byCampaign = new Map<string, PaidCampaignRow>();
+  const bucket = (campaign: string | null) => {
+    const label = campaign ?? NO_KEYWORD_LABEL;
+    const existing = byCampaign.get(label);
+    if (existing) return existing;
+    const row = { campaign: label, visitors: 0, signups: 0, trials: 0, paid: 0 };
+    byCampaign.set(label, row);
+    return row;
+  };
+
+  for (const row of visitorRows) bucket(row.campaign).visitors += row.subjects;
+  for (const row of signupRows) bucket(row.campaign).signups += row.subjects;
+  for (const row of eventRows) {
+    if (row.name === 'TRIAL_STARTED') bucket(row.campaign).trials += row.subjects;
+    if (row.name === 'SUBSCRIPTION_STARTED') bucket(row.campaign).paid += row.subjects;
+  }
+
+  return [...byCampaign.values()].sort(
+    (a, b) => b.visitors - a.visitors || a.campaign.localeCompare(b.campaign)
+  );
+}
+
+/**
  * The day the cardless trial replaced the card-first one, if it has been set.
  *
  * Kept in the environment rather than in code because it is a fact about a
@@ -311,8 +425,9 @@ export async function getCohortComparison(
         AND e.name::text = 'SUBSCRIPTION_STARTED'
         AND e.occurred_at <= u."createdAt" + ${observationInterval}::interval
     ) p ON TRUE
-    WHERE (u."createdAt" >= ${beforeStart} AND u."createdAt" < ${beforeEnd})
-       OR (u."createdAt" >= ${afterStart} AND u."createdAt" < ${afterEnd})
+    WHERE ((u."createdAt" >= ${beforeStart} AND u."createdAt" < ${beforeEnd})
+       OR (u."createdAt" >= ${afterStart} AND u."createdAt" < ${afterEnd}))
+      AND NOT u."excludedFromStats"
     GROUP BY 1
   `;
 
@@ -346,7 +461,19 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
   const channelWindowStart = new Date(now);
   channelWindowStart.setUTCDate(channelWindowStart.getUTCDate() - CHANNEL_WINDOW_DAYS);
 
-  const [weekRows, channelRows, priorPaid, paidAccounts, stripeStats, cohorts] = await Promise.all([
+  const [
+    weekRows,
+    channelRows,
+    referralRows,
+    campaignVisitorRows,
+    campaignSignupRows,
+    campaignEventRows,
+    priorPaid,
+    paidAccounts,
+    stripeStats,
+    cohorts,
+    uploaders,
+  ] = await Promise.all([
     // COUNT(DISTINCT COALESCE(anonymous_id, id)) rather than COUNT(*): a landing
     // view is deduped per visitor per day, so a visitor who came back on three
     // days would otherwise be three weekly visitors. Rows with no anonymous id
@@ -357,6 +484,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
              COUNT(DISTINCT COALESCE(anonymous_id, id))::int AS subjects
       FROM analytics_events
       WHERE occurred_at >= ${firstWeekStart}
+        AND ${countedEventSql('analytics_events')}
       GROUP BY 1, 2
     `,
     db.$queryRaw<ChannelQueryRow[]>`
@@ -366,6 +494,64 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       FROM analytics_events e
       LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
       WHERE e.occurred_at >= ${channelWindowStart}
+        AND ${countedEventSql('e')}
+      GROUP BY 1, 2
+    `,
+    // Same channel rule as the table above, so these rows add up to its REFERRAL
+    // visitors whenever there are no more than the limit.
+    db.$queryRaw<ReferralQueryRow[]>`
+      SELECT COALESCE(ua.referrer_host, t.referrer_host) AS referrer_host,
+             COALESCE(ua.landing_path, t.landing_path) AS landing_path,
+             COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS visitors
+      FROM analytics_events e
+      LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
+      LEFT JOIN acquisition_touches t ON t.anonymous_id = e.anonymous_id
+      WHERE e.occurred_at >= ${channelWindowStart}
+        AND e.name::text = 'LANDING_VIEW'
+        AND COALESCE(ua.channel, e.channel)::text = 'REFERRAL'
+        AND ${countedEventSql('e')}
+      GROUP BY 1, 2
+      ORDER BY 3 DESC, 1 ASC NULLS LAST, 2 ASC NULLS LAST
+      LIMIT ${REFERRAL_ROW_LIMIT}
+    `,
+    // A touch left by a browser that later signed up to an excluded account is
+    // dropped, the same rule countedEventSql applies to the channels' visitors.
+    db.$queryRaw<CampaignCountRow[]>`
+      SELECT t.utm_campaign AS campaign, COUNT(*)::int AS subjects
+      FROM acquisition_touches t
+      WHERE t.channel::text = 'PAID'
+        AND t.created_at >= ${channelWindowStart}
+        AND NOT EXISTS (
+          SELECT 1 FROM user_acquisitions excluded_visit
+          JOIN users excluded ON excluded.id = excluded_visit.user_id
+          WHERE excluded_visit.anonymous_id = t.anonymous_id AND excluded."excludedFromStats"
+        )
+      GROUP BY 1
+    `,
+    db.$queryRaw<CampaignCountRow[]>`
+      SELECT ua.utm_campaign AS campaign, COUNT(*)::int AS subjects
+      FROM user_acquisitions ua
+      JOIN users u ON u.id = ua.user_id
+      WHERE ua.channel::text = 'PAID'
+        AND ua.created_at >= ${channelWindowStart}
+        AND NOT u."excludedFromStats"
+      GROUP BY 1
+    `,
+    // The channel rule of the channels table. The keyword comes from the account
+    // when there is one, even a null one, so it always agrees with the channel
+    // it was read beside; only an event with no account falls back to the touch.
+    db.$queryRaw<CampaignEventRow[]>`
+      SELECT CASE WHEN ua.user_id IS NOT NULL THEN ua.utm_campaign ELSE t.utm_campaign END
+               AS campaign,
+             e.name::text AS name,
+             COUNT(DISTINCT COALESCE(e.anonymous_id, e.id))::int AS subjects
+      FROM analytics_events e
+      LEFT JOIN user_acquisitions ua ON ua.user_id = e.user_id
+      LEFT JOIN acquisition_touches t ON t.anonymous_id = e.anonymous_id
+      WHERE e.occurred_at >= ${channelWindowStart}
+        AND e.name::text IN ('TRIAL_STARTED', 'SUBSCRIPTION_STARTED')
+        AND COALESCE(ua.channel, e.channel)::text = 'PAID'
+        AND ${countedEventSql('e')}
       GROUP BY 1, 2
     `,
     db.$queryRaw<Array<{ started: number; canceled: number }>>`
@@ -374,6 +560,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
         COUNT(*) FILTER (WHERE name::text = 'SUBSCRIPTION_CANCELED')::int AS canceled
       FROM analytics_events
       WHERE occurred_at < ${firstWeekStart}
+        AND ${countedEventSql('analytics_events')}
     `,
     db.$queryRaw<PaidQueryRow[]>`
       SELECT u.id AS user_id,
@@ -399,8 +586,9 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
       LEFT JOIN analytics_events e
         ON e.user_id = u.id
        AND e.name::text = ANY(${[...VALUE_EVENT_NAMES]}::text[])
-      WHERE u."subscriptionStatus"::text IN ('ACTIVE', 'TRIALING')
-         OR (u."subscriptionStatus"::text = 'FREE' AND u."trialEndsAt" > NOW())
+      WHERE (u."subscriptionStatus"::text IN ('ACTIVE', 'TRIALING')
+         OR (u."subscriptionStatus"::text = 'FREE' AND u."trialEndsAt" > NOW()))
+        AND NOT u."excludedFromStats"
       GROUP BY u.id, u.name, u.email, u."subscriptionStatus", u."trialEndsAt", ua.channel,
                ua.self_reported
       ORDER BY MAX(e.occurred_at) ASC NULLS FIRST
@@ -408,6 +596,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     `,
     getCachedStripeStats(),
     getCohortComparison(now),
+    getUploaderCountsByAccount(uploaderWindowStart(now)),
   ]);
 
   const byWeek = new Map<number, WeeklyRow>();
@@ -471,6 +660,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     valueEvents7: row.value_events_7,
     valueEvents30: row.value_events_30,
     lastValueEventAt: row.last_value_event_at,
+    uploaders30: uploaders[row.user_id] ?? 0,
   }));
 
   const silentBefore = new Date(now);
@@ -480,6 +670,12 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     weeks: orderedWeeks,
     channels: [...channelBuckets.values()].sort((a, b) => b.visitors - a.visitors),
     channelWindowDays: CHANNEL_WINDOW_DAYS,
+    referrals: referralRows.map((row) => ({
+      referrerHost: row.referrer_host,
+      landingPath: row.landing_path,
+      visitors: row.visitors,
+    })),
+    paidCampaigns: mergePaidCampaigns(campaignVisitorRows, campaignSignupRows, campaignEventRows),
     paidAccounts: accounts,
     paidAccountsTruncated,
     paidAccountLimit: PAID_ACCOUNT_LIMIT,

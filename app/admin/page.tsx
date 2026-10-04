@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import { Suspense } from 'react';
 import { db } from '@/lib/db';
+import { COUNTED_USER } from '@/lib/stats-exclusion';
 import { auth } from '@/lib/auth';
 import { isBunnyUploadsFeatureEnabled, isStripeBillingEnabled } from '@/lib/feature-flags';
 import { redirect } from 'next/navigation';
@@ -67,7 +68,8 @@ export default async function AdminDashboardPage() {
     }
   ).userFeedback;
 
-  // 1. Database Stats
+  // 1. Database Stats. Accounts excluded from stats drop out of the user count only; the
+  // content totals measure what the instance stores, whoever made it.
   const [
     totalUsers,
     totalProjects,
@@ -76,7 +78,7 @@ export default async function AdminDashboardPage() {
     totalVoiceComments,
     totalImageComments,
   ] = await Promise.all([
-    db.user.count(),
+    db.user.count({ where: COUNTED_USER }),
     db.project.count(),
     db.video.count(),
     db.comment.count(),

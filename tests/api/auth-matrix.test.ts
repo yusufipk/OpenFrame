@@ -50,12 +50,15 @@ import {
 import * as adminFeedbackRoute from '@/app/api/admin/feedback/[feedbackId]/route';
 import * as adminGrowthRoute from '@/app/api/admin/growth/route';
 import * as adminRefreshR2Route from '@/app/api/admin/stats/refresh-r2/route';
+import * as adminUserRoute from '@/app/api/admin/users/[userId]/route';
 import * as approvalCancelRoute from '@/app/api/approvals/[requestId]/cancel/route';
 import * as approvalDecisionRoute from '@/app/api/approvals/[requestId]/decision/route';
 import * as billingCancelRoute from '@/app/api/billing/cancel/route';
 import * as billingCheckoutRoute from '@/app/api/billing/checkout/route';
 import * as billingPortalRoute from '@/app/api/billing/portal/route';
 import * as billingTrialRoute from '@/app/api/billing/trial/route';
+import * as billingPlanRoute from '@/app/api/billing/plan/route';
+import * as billingStorageRoute from '@/app/api/billing/storage/route';
 import * as billingRoute from '@/app/api/billing/route';
 import * as commentRoute from '@/app/api/comments/[commentId]/route';
 import * as feedbackRoute from '@/app/api/feedback/route';
@@ -74,6 +77,7 @@ import * as projectTagsRoute from '@/app/api/projects/[projectId]/tags/route';
 import * as projectTagRoute from '@/app/api/projects/[projectId]/tags/[tagId]/route';
 import * as videosBulkDeleteRoute from '@/app/api/projects/[projectId]/videos/bulk-delete/route';
 import * as videosBunnyInitRoute from '@/app/api/projects/[projectId]/videos/bunny-init/route';
+import * as driveImportsRoute from '@/app/api/projects/[projectId]/drive-imports/route';
 import * as videosImagesRoute from '@/app/api/projects/[projectId]/videos/images/route';
 import * as videosMoveRoute from '@/app/api/projects/[projectId]/videos/move/route';
 import * as videosR2CompleteRoute from '@/app/api/projects/[projectId]/videos/r2-complete/route';
@@ -107,6 +111,7 @@ import * as assetRoute from '@/app/api/videos/[videoId]/assets/[assetId]/route';
 import * as attachmentCommentsRoute from '@/app/api/videos/[videoId]/attachment-comments/route';
 import * as attachmentCommentRoute from '@/app/api/videos/[videoId]/attachment-comments/[attachmentCommentId]/route';
 import * as assetsBunnyInitRoute from '@/app/api/videos/[videoId]/assets/bunny-init/route';
+import * as assetsDriveImportRoute from '@/app/api/videos/[videoId]/assets/drive-import/route';
 import * as assetsR2InitRoute from '@/app/api/videos/[videoId]/assets/r2-init/route';
 import * as assetsRoute from '@/app/api/videos/[videoId]/assets/route';
 import * as subtitleRoute from '@/app/api/videos/[videoId]/subtitles/[subtitleId]/route';
@@ -164,7 +169,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 82;
+const EXPECTED_ROUTE_MODULE_COUNT = 87;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -452,6 +457,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: () => '/api/admin/stats/refresh-r2',
   },
   {
+    file: 'admin/users/[userId]/route.ts',
+    module: adminUserRoute,
+    url: (f) => `/api/admin/users/${f.userId}`,
+    params: (f) => ({ userId: f.userId }),
+    body: { excludedFromStats: true },
+  },
+  {
     file: 'approvals/[requestId]/cancel/route.ts',
     module: approvalCancelRoute,
     url: (f) => `/api/approvals/${f.approvalRequestId}/cancel`,
@@ -483,6 +495,20 @@ const ROUTE_CASES: readonly RouteCase[] = [
     headers: { origin: 'http://localhost:3000' },
   },
   { file: 'billing/route.ts', module: billingRoute, url: () => '/api/billing' },
+  {
+    file: 'billing/plan/route.ts',
+    module: billingPlanRoute,
+    url: () => '/api/billing/plan',
+    headers: { origin: 'http://localhost:3000' },
+    body: { plan: 'STUDIO', interval: 'MONTH' },
+  },
+  {
+    file: 'billing/storage/route.ts',
+    module: billingStorageRoute,
+    url: () => '/api/billing/storage',
+    headers: { origin: 'http://localhost:3000' },
+    body: { blocks: 1 },
+  },
   {
     file: 'billing/trial/route.ts',
     module: billingTrialRoute,
@@ -612,6 +638,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: (f) => `/api/projects/${f.projectId}/videos/bunny-init`,
     params: (f) => ({ projectId: f.projectId }),
     body: { title: 'anon' },
+  },
+  {
+    file: 'projects/[projectId]/drive-imports/route.ts',
+    module: driveImportsRoute,
+    url: (f) => `/api/projects/${f.projectId}/drive-imports`,
+    params: (f) => ({ projectId: f.projectId }),
+    body: { fileIds: ['1AbCdEfGhIjKlMnOpQrStUvWxYz'], accessToken: 'ya29.anonymous' },
   },
   {
     file: 'projects/[projectId]/folders/route.ts',
@@ -832,6 +865,16 @@ const ROUTE_CASES: readonly RouteCase[] = [
     // is in tests/api/assets-authz.test.ts, which asserts the 403 for a stranger
     // next to the 400 a member gets one line below the guard.
     body: { fileName: 'a.mp4' },
+  },
+  {
+    file: 'videos/[videoId]/assets/drive-import/route.ts',
+    module: assetsDriveImportRoute,
+    url: (f) => `/api/videos/${f.videoId}/assets/drive-import`,
+    params: (f) => ({ videoId: f.videoId }),
+    body: {
+      fileIds: ['1AbCdEfGhIjKlMnOpQrStUvWxYz'],
+      accessToken: 'ya29.anonymous',
+    },
   },
   {
     file: 'videos/[videoId]/assets/r2-init/route.ts',
@@ -1222,6 +1265,63 @@ describe('auth matrix', () => {
 
       expect(response.status).toBe(200);
       expect(await db.userFeedback.count({ where: { id: fixtures.feedbackId } })).toBe(0);
+    });
+
+    it('refuses PATCH /api/admin/users/[userId] to a non-admin and leaves the account counted', async () => {
+      signedInAs({ id: fixtures.userId, isAdmin: false });
+
+      const response = await callRoute(
+        adminUserRoute.PATCH as unknown as RouteHandler<ParamRecord>,
+        apiRequest(`/api/admin/users/${fixtures.userId}`, {
+          method: 'PATCH',
+          body: { excludedFromStats: true },
+        }),
+        { userId: fixtures.userId }
+      );
+
+      expect(response.status).toBe(403);
+      const user = await db.user.findUniqueOrThrow({ where: { id: fixtures.userId } });
+      expect(user.excludedFromStats).toBe(false);
+    });
+
+    it('lets an admin PATCH /api/admin/users/[userId] to exclude an account and count it again', async () => {
+      signedInAs({ id: fixtures.userId, isAdmin: true });
+      const patch = (excludedFromStats: unknown) =>
+        callRoute(
+          adminUserRoute.PATCH as unknown as RouteHandler<ParamRecord>,
+          apiRequest(`/api/admin/users/${fixtures.userId}`, {
+            method: 'PATCH',
+            body: { excludedFromStats },
+          }),
+          { userId: fixtures.userId }
+        );
+      const excluded = async () =>
+        (await db.user.findUniqueOrThrow({ where: { id: fixtures.userId } })).excludedFromStats;
+
+      expect((await patch(true)).status).toBe(200);
+      expect(await excluded()).toBe(true);
+
+      // Anything but a boolean is refused rather than read as truthy or falsy.
+      expect((await patch('false')).status).toBe(400);
+      expect(await excluded()).toBe(true);
+
+      expect((await patch(false)).status).toBe(200);
+      expect(await excluded()).toBe(false);
+    });
+
+    it('answers 404 to an admin for an account that does not exist', async () => {
+      signedInAs({ id: fixtures.userId, isAdmin: true });
+
+      const response = await callRoute(
+        adminUserRoute.PATCH as unknown as RouteHandler<ParamRecord>,
+        apiRequest('/api/admin/users/no-such-user', {
+          method: 'PATCH',
+          body: { excludedFromStats: true },
+        }),
+        { userId: 'no-such-user' }
+      );
+
+      expect(response.status).toBe(404);
     });
 
     it('refuses POST /api/admin/stats/refresh-r2 to a non-admin', async () => {

@@ -20,91 +20,18 @@ import {
   UPLOAD_RESERVATION_PURPOSES,
 } from '@/lib/storage-quota';
 import { logError } from '@/lib/logger';
+import {
+  ALLOWED_AUDIO_TYPES,
+  AUDIO_MIME_ALIASES,
+  AUDIO_MIME_TO_EXT,
+  hasValidAudioMagicBytes,
+  isHtmlContent,
+  MAX_AUDIO_UPLOAD_BYTES,
+  SAFE_AUDIO_EXTENSIONS,
+} from '@/lib/audio-upload-validation';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = MAX_AUDIO_UPLOAD_BYTES;
 const MAX_MULTIPART_BODY_SIZE = MAX_FILE_SIZE + 512 * 1024; // file + multipart overhead
-
-// Canonical MIME types accepted
-const ALLOWED_TYPES = new Set([
-  'audio/webm',
-  'audio/ogg',
-  'audio/opus',
-  'audio/mp4',
-  'audio/mpeg',
-  'audio/wav',
-]);
-
-// Normalize known MIME aliases to canonical values
-const MIME_ALIASES: Record<string, string> = {
-  'audio/wave': 'audio/wav',
-  'audio/vnd.wave': 'audio/wav',
-  'audio/x-wav': 'audio/wav',
-  'audio/x-pn-wav': 'audio/wav',
-  'audio/mp3': 'audio/mpeg',
-  'audio/x-mpeg': 'audio/mpeg',
-  // Some browsers report MediaRecorder audio-only blobs as video/* containers.
-  'video/webm': 'audio/webm',
-  'video/mp4': 'audio/mp4',
-};
-
-// Map canonical MIME to fallback file extension
-const MIME_TO_EXT: Record<string, string> = {
-  'audio/webm': 'webm',
-  'audio/ogg': 'ogg',
-  'audio/opus': 'opus',
-  'audio/mp4': 'm4a',
-  'audio/mpeg': 'mp3',
-  'audio/wav': 'wav',
-};
-
-// Safe extensions to preserve from original filename (prevents path traversal, allows known types)
-// Intentionally excludes flac/aac: they have no corresponding MIME in ALLOWED_TYPES and are
-// never produced by MediaRecorder, so accepting them would create extension/MIME mismatches.
-const SAFE_AUDIO_EXTENSIONS = new Set(['webm', 'ogg', 'opus', 'mp3', 'm4a', 'mp4', 'wav']);
-
-// Reject content that looks like HTML/XML/script regardless of the declared MIME type.
-function isHtmlContent(bytes: Buffer): boolean {
-  const snippet = bytes
-    .toString('latin1', 0, Math.min(bytes.length, 512))
-    .trimStart()
-    .slice(0, 50)
-    .toLowerCase();
-  return (
-    snippet.startsWith('<!doctype') ||
-    snippet.startsWith('<html') ||
-    snippet.startsWith('<?xml') ||
-    snippet.startsWith('<script') ||
-    snippet.startsWith('<svg')
-  );
-}
-
-// Verify that the first bytes of the file match known audio container signatures.
-function hasValidAudioMagicBytes(header: Buffer, mimeType: string): boolean {
-  if (header.length < 8) return false;
-  switch (mimeType) {
-    // WebM / Matroska: EBML header 1a 45 df a3
-    case 'audio/webm':
-      return header[0] === 0x1a && header[1] === 0x45 && header[2] === 0xdf && header[3] === 0xa3;
-    // OGG container (covers ogg vorbis and opus)
-    case 'audio/ogg':
-    case 'audio/opus':
-      return header[0] === 0x4f && header[1] === 0x67 && header[2] === 0x67 && header[3] === 0x53; // "OggS"
-    // MPEG audio: ID3 tag header or raw MPEG sync frame
-    case 'audio/mpeg': {
-      const hasId3 = header[0] === 0x49 && header[1] === 0x44 && header[2] === 0x33; // "ID3"
-      const hasMpegSync = header[0] === 0xff && (header[1] & 0xe0) === 0xe0;
-      return hasId3 || hasMpegSync;
-    }
-    // MP4 / M4A: ISO base media file; "ftyp" box starts at offset 4
-    case 'audio/mp4':
-      return header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70; // "ftyp"
-    // WAV: RIFF header
-    case 'audio/wav':
-      return header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46; // "RIFF"
-    default:
-      return false;
-  }
-}
 
 async function handlePost(request: NextRequest) {
   try {
@@ -213,7 +140,9 @@ async function handlePost(request: NextRequest) {
     const reserveResult = await reserveStorageQuota(
       workspaceOwnerId,
       BigInt(file.size),
-      UPLOAD_RESERVATION_PURPOSES.AUDIO
+      UPLOAD_RESERVATION_PURPOSES.AUDIO,
+      undefined,
+      session?.user?.id ?? null
     );
     if ('error' in reserveResult) return reserveResult.error;
     const reservationId = reserveResult.reservationId;
@@ -221,8 +150,8 @@ async function handlePost(request: NextRequest) {
     // Normalize content type: strip codec params, then resolve aliases
     const rawContentType = file.type || 'audio/webm';
     const strippedType = rawContentType.split(';')[0].trim().toLowerCase();
-    const contentType = MIME_ALIASES[strippedType] ?? strippedType;
-    if (!ALLOWED_TYPES.has(contentType)) {
+    const contentType = AUDIO_MIME_ALIASES[strippedType] ?? strippedType;
+    if (!ALLOWED_AUDIO_TYPES.has(contentType)) {
       await releaseStorageReservation(
         reservationId,
         workspaceOwnerId,
@@ -234,7 +163,9 @@ async function handlePost(request: NextRequest) {
     // Prefer the original file extension when it's a known safe type (e.g. preserve .opus, .mp3)
     // Fall back to MIME-derived extension for blobs without a real name (e.g. MediaRecorder output)
     const origExt = (file.name.split('.').pop() ?? '').toLowerCase();
-    const ext = SAFE_AUDIO_EXTENSIONS.has(origExt) ? origExt : (MIME_TO_EXT[contentType] ?? 'webm');
+    const ext = SAFE_AUDIO_EXTENSIONS.has(origExt)
+      ? origExt
+      : (AUDIO_MIME_TO_EXT[contentType] ?? 'webm');
     const filename = `${randomUUID()}.${ext}`;
     const key = `voice/${filename}`;
 

@@ -16,6 +16,7 @@ import { readBunnyUploadGrant } from '@/lib/bunny-upload-token';
 import { finalizeR2VideoUpload } from '@/lib/r2-video-finalize';
 import { UPLOAD_RESERVATION_PURPOSES } from '@/lib/storage-quota';
 import { logError } from '@/lib/logger';
+import { recordAccountActivity } from '@/lib/analytics/record';
 
 type RouteParams = { params: Promise<{ projectId: string; videoId: string }> };
 
@@ -44,6 +45,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const versions = await db.videoVersion.findMany({
       where: { videoParentId: videoId },
       orderBy: { versionNumber: 'desc' },
+      // Readable by anyone with view access, who does not need to know who uploaded.
+      omit: { uploadedById: true },
       include: {
         _count: { select: { comments: true } },
       },
@@ -304,6 +307,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           sizeBytes: versionSizeBytes,
           isActive: setActive ?? false,
           videoParentId: videoId,
+          // The caller, or the owner of the API token the request came in on.
+          uploadedById: session.user.id,
         },
         include: {
           _count: { select: { comments: true } },
@@ -323,6 +328,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         url: `${baseUrl}/watch/${video.id}`,
       }).catch((err) => logError('Notification failed:', err));
     }
+
+    await recordAccountActivity({
+      name: 'VERSION_ADDED',
+      accountId: video.project.workspace.ownerId,
+      actorId: session.user.id,
+    });
 
     const response = successResponse(withSignedThumbnail(version), 201);
     return withCacheControl(response, 'private, no-store');

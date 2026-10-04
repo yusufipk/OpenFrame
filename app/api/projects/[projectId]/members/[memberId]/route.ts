@@ -6,6 +6,7 @@ import { ProjectMemberRole } from '@prisma/client';
 import { rateLimit } from '@/lib/rate-limit';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { logError } from '@/lib/logger';
+import { checkEditorAddition, editorLimitResponse, getWorkspaceOwnerId } from '@/lib/editor-limit';
 
 type RouteParams = { params: Promise<{ projectId: string; memberId: string }> };
 
@@ -49,11 +50,23 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const member = await db.projectMember.findFirst({
       where: { id: memberId, projectId },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
 
     if (!member) {
       return apiErrors.notFound('Member');
+    }
+
+    if (role === ProjectMemberRole.ADMIN) {
+      const ownerId = await getWorkspaceOwnerId({ projectId });
+      if (ownerId) {
+        const allowed = await checkEditorAddition({
+          ownerId,
+          actorUserId: session.user.id,
+          candidate: { userId: member.userId },
+        });
+        if (!allowed.ok) return editorLimitResponse(allowed);
+      }
     }
 
     const updatedMember = await db.projectMember.update({

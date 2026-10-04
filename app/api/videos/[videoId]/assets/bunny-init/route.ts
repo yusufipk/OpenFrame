@@ -80,7 +80,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiErrors.badRequest(declaredSize.error);
     }
 
-    const quotaError = await enforceStorageQuota(billedUserId, declaredSize.sizeBytes);
+    const quotaError = await enforceStorageQuota(
+      billedUserId,
+      declaredSize.sizeBytes,
+      context.viewerUserId ?? null
+    );
     if (quotaError) return quotaError;
 
     const shareSession = getShareSessionFromRequest(request, context.video.id);
@@ -98,7 +102,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       billedUserId,
       declaredSize.sizeBytes,
       UPLOAD_RESERVATION_PURPOSES.BUNNY,
-      context.viewerUserId ? BUNNY_RESERVATION_TTL_MS : GUEST_BUNNY_RESERVATION_TTL_MS
+      context.viewerUserId ? BUNNY_RESERVATION_TTL_MS : GUEST_BUNNY_RESERVATION_TTL_MS,
+      context.viewerUserId ?? null
     );
     if ('error' in reserveResult) return reserveResult.error;
     const { reservationId } = reserveResult;

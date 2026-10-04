@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { UserX } from 'lucide-react';
 import { db } from '@/lib/db';
+import { COUNTED_USER } from '@/lib/stats-exclusion';
 import { CANCELLATION_REASONS, getCancellationReasonLabel } from '@/lib/cancellation-reasons';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -18,6 +19,7 @@ const RECENT_LIMIT = 15;
 export async function CancellationReasonsCard() {
   const [recent, tally] = await Promise.all([
     db.subscriptionCancellation.findMany({
+      where: { user: COUNTED_USER },
       orderBy: { createdAt: 'desc' },
       take: RECENT_LIMIT,
       select: {
@@ -31,6 +33,7 @@ export async function CancellationReasonsCard() {
     }),
     db.subscriptionCancellation.groupBy({
       by: ['reason'],
+      where: { user: COUNTED_USER },
       _count: { _all: true },
     }),
   ]);

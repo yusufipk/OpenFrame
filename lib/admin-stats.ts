@@ -3,9 +3,11 @@ import { db } from '@/lib/db';
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { ListObjectsV2Command, type ListObjectsV2CommandInput } from '@aws-sdk/client-s3';
 import { isBunnyUploadsEnabled, isStripeBillingEnabled } from '@/lib/feature-flags';
-import { getStripe, getStripePriceId } from '@/lib/stripe';
 import { buildCardlessTrialWhereInput } from '@/lib/billing';
+import { getPlanPriceId, getStoragePriceId } from '@/lib/billing-plans';
+import { getStripe } from '@/lib/stripe';
 import { logError } from '@/lib/logger';
+import { COUNTED_USER } from '@/lib/stats-exclusion';
 
 const BUNNY_API_BASE = 'https://video.bunnycdn.com';
 const STORAGE_CACHE_SECONDS = 120;
@@ -546,6 +548,8 @@ export interface StripeStats {
 }
 
 const STRIPE_STATS_CACHE_SECONDS = 300;
+/** Expired when an account is excluded or included, so the change shows at once. */
+export const STRIPE_STATS_CACHE_TAG = 'admin-stripe-stats';
 
 export const getCachedStripeStats = unstable_cache(
   async (): Promise<StripeStats | null> => {
@@ -559,9 +563,10 @@ export const getCachedStripeStats = unstable_cache(
       const [statusCounts, cardlessTrialUsers] = await Promise.all([
         db.user.groupBy({
           by: ['subscriptionStatus'],
+          where: COUNTED_USER,
           _count: { id: true },
         }),
-        db.user.count({ where: buildCardlessTrialWhereInput(now) }),
+        db.user.count({ where: { AND: [COUNTED_USER, buildCardlessTrialWhereInput(now)] } }),
       ]);
 
       const counts: Record<string, number> = {};
@@ -586,15 +591,42 @@ export const getCachedStripeStats = unstable_cache(
       let mrrCents = 0;
       let currency = 'usd';
 
+      // Each plan and interval in use is priced from its own Stripe price, normalised
+      // to a month (a yearly price counts a twelfth), and storage blocks are added at
+      // the price of their interval. Discounts are not reflected.
       try {
+        const activeRows = await db.user.groupBy({
+          by: ['billingPlan', 'billingInterval'],
+          where: { ...COUNTED_USER, subscriptionStatus: 'ACTIVE' },
+          _count: { id: true },
+          _sum: { storageBlocks: true },
+        });
         const stripe = getStripe();
-        const priceId = getStripePriceId();
-        const price = await stripe.prices.retrieve(priceId);
-        const unitAmount = price.unit_amount ?? 0;
-        currency = price.currency ?? 'usd';
-        mrrCents = activeSubscribers * unitAmount;
+        const unitAmounts = new Map<string, number>();
+        const unitAmount = async (priceId: string | null) => {
+          if (!priceId) return 0;
+          if (!unitAmounts.has(priceId)) {
+            const price = await stripe.prices.retrieve(priceId);
+            currency = price.currency ?? currency;
+            unitAmounts.set(priceId, price.unit_amount ?? 0);
+          }
+          return unitAmounts.get(priceId)!;
+        };
+
+        let monthly = 0;
+        for (const row of activeRows) {
+          const months = row.billingInterval === 'YEAR' ? 12 : 1;
+          const planCents = await unitAmount(getPlanPriceId(row.billingPlan, row.billingInterval));
+          const blocks = row._sum.storageBlocks ?? 0;
+          const blockCents =
+            blocks > 0 ? await unitAmount(getStoragePriceId(row.billingInterval)) : 0;
+          monthly += (row._count.id * planCents + blocks * blockCents) / months;
+        }
+        mrrCents = Math.round(monthly);
       } catch (err) {
-        logError('Failed to fetch Stripe price for MRR calculation:', err);
+        mrrCents = 0;
+        currency = 'usd';
+        logError('Failed to fetch Stripe prices for MRR calculation:', err);
       }
 
       return {
@@ -613,5 +645,5 @@ export const getCachedStripeStats = unstable_cache(
     }
   },
   ['admin-stripe-stats'],
-  { revalidate: STRIPE_STATS_CACHE_SECONDS }
+  { revalidate: STRIPE_STATS_CACHE_SECONDS, tags: [STRIPE_STATS_CACHE_TAG] }
 );

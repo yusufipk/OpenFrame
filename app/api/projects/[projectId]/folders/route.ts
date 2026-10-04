@@ -19,9 +19,23 @@ import { rateLimit } from '@/lib/rate-limit';
 import { buildInvitationUrl } from '@/lib/invitations';
 import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 import { logError } from '@/lib/logger';
+import {
+  checkEditorAddition,
+  editorLimitResponse,
+  getWorkspaceOwnerId,
+  type EditorAdditionResult,
+} from '@/lib/editor-limit';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
+
+class EditorLimitError extends Error {
+  constructor(public result: Extract<EditorAdditionResult, { ok: false }>) {
+    super(result.message);
+  }
+}
+
 function failure(error: unknown) {
+  if (error instanceof EditorLimitError) return editorLimitResponse(error.result);
   if (error instanceof ContentError) {
     if (error.status === 403) return apiErrors.forbidden(error.message);
     if (error.status === 409) return apiErrors.conflict(error.message);
@@ -162,6 +176,18 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
         if (!isValidEmailAddress(email) || !['ADMIN', 'COMMENTATOR'].includes(body.role))
           throw new ContentError(400, 'Valid email and role required');
+        if (body.role === 'ADMIN') {
+          const ownerId = await getWorkspaceOwnerId({ projectId }, tx);
+          if (ownerId) {
+            const allowed = await checkEditorAddition({
+              ownerId,
+              actorUserId: userId,
+              candidate: { email },
+              client: tx,
+            });
+            if (!allowed.ok) throw new EditorLimitError(allowed);
+          }
+        }
         const target = {
           projectId,
           folderId: videoId ? null : folderId,

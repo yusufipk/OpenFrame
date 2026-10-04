@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "excludedFromStats" BOOLEAN NOT NULL DEFAULT false;

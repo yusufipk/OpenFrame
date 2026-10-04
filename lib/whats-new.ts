@@ -22,6 +22,12 @@ export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
       "Install the OpenFrame panel for Premiere Pro or the script for DaVinci Resolve from the comments menu, and a video's comments land on the timeline you are editing as colored markers, with the replies in each note. Run it again after the next round of feedback and it swaps in the new markers, leaving your own alone.",
   },
   {
+    date: '2026-10-03',
+    title: 'Import from Google Drive',
+    description:
+      'Add videos and images to a project, a new version to a video, or attachments to its Assets tab straight from Google Drive, without downloading them first. Pick several files at once and browse your folders and shared drives.',
+  },
+  {
     date: '2026-10-02',
     title: 'Comments as markers in Resolve and Premiere',
     description:
