@@ -159,9 +159,9 @@ export function EditorSyncDialog({
             <Step number={1} title={`Install the ${copy.plugin} (first time only)`}>
               <Button asChild variant="outline" size="sm">
                 <a href={copy.downloadHref} download>
-                  <copy.Icon className="h-4 w-4 mr-2" />
+                  <copy.Icon className="size-4 mr-2" />
                   Download for {copy.app}
-                  <Download className="h-4 w-4 ml-2 opacity-60" />
+                  <Download className="size-4 ml-2 opacity-60" />
                 </a>
               </Button>
             </Step>
