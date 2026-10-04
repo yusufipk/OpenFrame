@@ -362,10 +362,12 @@ export interface PanelMarker {
 // it needs frames rather than timecode and no file format around them.
 export function buildPanelMarkers(rows: ExportCommentRow[], fps: string): PanelMarker[] {
   const rate = parseNleOptions({ fps, origin: '00:00:00:00', dropFrame: false });
-  return groupMarkers(rows, rate).map((marker) => ({
+  // The name only numbers the marker in timeline order. The comments go in the note,
+  // which the editors show wider, so the name does not repeat them.
+  return groupMarkers(rows, rate).map((marker, index) => ({
     startFrame: marker.start,
     durationFrames: marker.end - marker.start,
-    name: xmlName(marker.entries),
+    name: `Marker ${index + 1}`,
     comments: xmlNote(marker.entries),
     color: marker.color,
     premiereColor: premierePanelColor(marker.color),
