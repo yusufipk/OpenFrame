@@ -11,6 +11,7 @@ import {
   Minimize,
   Pause,
   Play,
+  Repeat,
   SkipBack,
   SkipForward,
   Volume2,
@@ -51,6 +52,8 @@ import type {
   SubtitleTrackOption,
 } from '@/components/video-page/types';
 
+const SHORT_SHOT_MAX_SECONDS = 20;
+
 interface PlayerCoreProps {
   liveOverlay?: ReactNode;
   activeVersionId: string | null;
@@ -68,6 +71,9 @@ interface PlayerCoreProps {
   isFullscreenMode: boolean;
   cursorIdle: boolean;
   isPlaying: boolean;
+  isLoopEnabled: boolean;
+  loopDisabled: boolean;
+  handleLoopToggle: () => void;
   handlePlayPause: () => void;
   handleVideoMouseMove: () => void;
   handleVideoMouseLeave: () => void;
@@ -155,6 +161,9 @@ export const PlayerCore = memo(function PlayerCore({
   isFullscreenMode,
   cursorIdle,
   isPlaying,
+  isLoopEnabled,
+  loopDisabled,
+  handleLoopToggle,
   handlePlayPause,
   handleVideoMouseMove,
   handleVideoMouseLeave,
@@ -213,6 +222,8 @@ export const PlayerCore = memo(function PlayerCore({
   commentMarkers,
   liveOverlay,
 }: PlayerCoreProps) {
+  const isShortShot =
+    Number.isFinite(duration) && duration > 0 && duration <= SHORT_SHOT_MAX_SECONDS;
   const qualityHint = useQualityHint(activeProviderId === 'bunny');
   // Measured here rather than in the page because this component is what mounts the
   // <video>: the page can hold a version id while it still shows the guest name gate,
@@ -275,6 +286,7 @@ export const PlayerCore = memo(function PlayerCore({
                   }}
                   preload="metadata"
                   playsInline
+                  loop={isLoopEnabled}
                   // Read by the ::cue rules in globals.css.
                   data-subtitle-scaled={subtitleFontSize !== null ? '' : undefined}
                   data-subtitle-background={subtitleAppearance.background}
@@ -305,26 +317,28 @@ export const PlayerCore = memo(function PlayerCore({
             />
           )}
 
-          <div
-            className={cn(
-              'absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-300',
-              (showBunnyProcessingOverlay || showBunnyErrorOverlay) &&
-                'opacity-0 pointer-events-none',
-              isPlaying
-                ? cursorIdle
-                  ? 'opacity-0'
-                  : 'opacity-0 group-hover:opacity-100'
-                : 'opacity-100'
-            )}
-          >
-            <div className="w-16 h-16 rounded-full bg-black/60 flex items-center justify-center relative z-10">
-              {isPlaying ? (
-                <Pause className="h-8 w-8 text-white relative right-[-1px]" />
-              ) : (
-                <Play className="h-8 w-8 text-white relative left-[2px]" />
+          {(!isPlaying || !isShortShot) && (
+            <div
+              className={cn(
+                'absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-300',
+                (showBunnyProcessingOverlay || showBunnyErrorOverlay) &&
+                  'opacity-0 pointer-events-none',
+                isPlaying
+                  ? cursorIdle
+                    ? 'opacity-0'
+                    : 'opacity-0 group-hover:opacity-100'
+                  : 'opacity-100'
               )}
+            >
+              <div className="w-16 h-16 rounded-full bg-black/60 flex items-center justify-center relative z-10">
+                {isPlaying ? (
+                  <Pause className="h-8 w-8 text-white relative right-[-1px]" />
+                ) : (
+                  <Play className="h-8 w-8 text-white relative left-[2px]" />
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {showBunnyProcessingOverlay && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/65">
@@ -474,6 +488,25 @@ export const PlayerCore = memo(function PlayerCore({
 
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleMuteToggle}>
             {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </Button>
+
+          <Button
+            variant={isLoopEnabled ? 'secondary' : 'ghost'}
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleLoopToggle}
+            disabled={loopDisabled}
+            aria-label="Loop playback"
+            aria-pressed={isLoopEnabled}
+            title={
+              loopDisabled
+                ? 'Loop is unavailable during Live Review'
+                : isLoopEnabled
+                  ? 'Disable loop (R)'
+                  : 'Enable loop (R)'
+            }
+          >
+            <Repeat className="h-4 w-4" />
           </Button>
 
           <span className="ml-1 whitespace-nowrap text-xs text-muted-foreground tabular-nums">

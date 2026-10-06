@@ -252,6 +252,7 @@ describe('resolvePlayerShortcut', () => {
   it('maps the play/pause, seek, mute and fullscreen keys', () => {
     expect(resolvePlayerShortcut({ code: 'Space' })).toBe('toggle-play');
     expect(resolvePlayerShortcut({ code: 'KeyK' })).toBe('toggle-play');
+    expect(resolvePlayerShortcut({ code: 'KeyR' })).toBe('toggle-loop');
     expect(resolvePlayerShortcut({ code: 'ArrowLeft' })).toBe('skip-back');
     expect(resolvePlayerShortcut({ code: 'ArrowRight' })).toBe('skip-forward');
     expect(resolvePlayerShortcut({ code: 'KeyJ' })).toBe('jump-back');
@@ -264,7 +265,7 @@ describe('resolvePlayerShortcut', () => {
   // Ctrl+C with a comment selected has to copy, and Ctrl+F has to open the browser's find
   // bar, instead of toggling subtitles or fullscreen and swallowing the keystroke.
   it('leaves every shortcut alone while Ctrl, Cmd or Alt is held', () => {
-    for (const code of ['KeyC', 'KeyF', 'KeyK', 'KeyM', 'Space', 'ArrowLeft']) {
+    for (const code of ['KeyC', 'KeyF', 'KeyK', 'KeyM', 'KeyR', 'Space', 'ArrowLeft']) {
       expect(resolvePlayerShortcut({ code, ctrlKey: true })).toBeNull();
       expect(resolvePlayerShortcut({ code, metaKey: true })).toBeNull();
       expect(resolvePlayerShortcut({ code, altKey: true })).toBeNull();

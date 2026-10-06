@@ -16,6 +16,12 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    date: '2026-10-06',
+    title: 'Loop short shots without dimming the picture',
+    description:
+      'Use the loop button or press R to repeat a video. This browser remembers the choice for each video across its versions. Shots up to 20 seconds stay clear while playing, even with the pointer over the picture. Looping is unavailable during Live Review.',
+  },
+  {
     date: '2026-10-04',
     title: 'Comments straight onto your Premiere or Resolve timeline',
     description:

@@ -136,6 +136,76 @@ const qualityButton = (page: Page) => page.getByRole('button', { name: /^Quality
 
 test.setTimeout(90_000);
 
+for (const source of ['original', 'hls'] as const) {
+  test(`Bunny ${source} playback loops without dimming the shot`, async ({
+    page,
+    seed,
+    seededUser,
+  }) => {
+    const seeded = await seed.bunnyVersion(seededUser, {
+      // A saved long duration opens HLS directly; its real metadata is six seconds.
+      duration: source === 'original' ? 2 : 120,
+    });
+    const requests = await serveBunnyCdn(page, seeded.providerVideoId, 'short');
+    await openVideo(page, seeded.project.id, seeded.videoId);
+    const video = page.locator('video');
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState))
+      .toBeGreaterThanOrEqual(2);
+    if (source === 'original') {
+      await expect.poll(() => videoSource(page)).toContain('/original');
+      expect(requests).toContain('original');
+    } else {
+      await expect.poll(() => firstSegmentRendition(requests)).toBe('1080p');
+      expect(requests).not.toContain('original');
+    }
+
+    await video.evaluate((element) => {
+      const media = element as HTMLVideoElement;
+      media.dataset.loopCount = '0';
+      let previousTime = media.currentTime;
+      media.addEventListener('timeupdate', () => {
+        if (media.currentTime < previousTime - 0.5) {
+          media.dataset.loopCount = String(Number(media.dataset.loopCount) + 1);
+        }
+        previousTime = media.currentTime;
+      });
+    });
+    const loop = page.getByRole('button', { name: 'Loop playback', exact: true });
+    await expect(loop).toHaveAttribute('aria-pressed', 'false');
+    await loop.click();
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).loop))
+      .toBe(true);
+    await page.keyboard.press('Space');
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).paused))
+      .toBe(false);
+    await video.hover();
+    await expect(page.locator('[class~="bg-black/20"]')).toHaveCount(0);
+    await expect
+      .poll(
+        () => video.evaluate((element) => Number((element as HTMLVideoElement).dataset.loopCount)),
+        {
+          timeout: 20_000,
+        }
+      )
+      .toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).paused))
+      .toBe(false);
+    await expect(page.locator('[class~="bg-black/20"]')).toHaveCount(0);
+    // A source fallback must not satisfy a test for looping the other playback path.
+    if (source === 'original') {
+      await expect.poll(() => videoSource(page)).toContain('/original');
+      expect(requests.some((request) => request.endsWith('.ts'))).toBe(false);
+    } else {
+      await expect.poll(() => videoSource(page)).toMatch(/^blob:/);
+      expect(requests).not.toContain('original');
+    }
+  });
+}
+
 test('Auto opens a long cut on the top rendition, not the lowest', async ({
   page,
   seed,

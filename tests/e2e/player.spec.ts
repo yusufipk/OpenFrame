@@ -149,3 +149,127 @@ test('the arrow keys are not hijacked while a comment is being typed', async ({
   expect(await currentTime(page)).toEqual(0);
   await expect(composer).toHaveValue('cursor keys belong to this box');
 });
+
+for (const viewport of [
+  { name: 'desktop', width: 1280, height: 720 },
+  { name: 'phone', width: 390, height: 844 },
+]) {
+  test(`short shots loop without a dark hover overlay on ${viewport.name}`, async ({
+    page,
+    seed,
+    seededUser,
+  }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const { project } = await seed.project(seededUser);
+    await uploadAndOpen(page, project.id, `Loop ${viewport.name} ${Date.now()}`);
+    await waitForMetadata(page);
+
+    const video = page.locator('video');
+    const stage = page.locator('div.group').filter({ has: video });
+    await expect(stage).toHaveCount(1);
+    const overlay = stage.locator('[class~="bg-black/20"]');
+    await expect(overlay).toBeVisible();
+    const loop = page.getByRole('button', { name: 'Loop playback', exact: true });
+    await expect(loop).toBeVisible();
+    await expect(loop).toHaveAttribute('aria-pressed', 'false');
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).loop))
+      .toBe(false);
+    await loop.click();
+    await expect(loop).toHaveAttribute('aria-pressed', 'true');
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).loop))
+      .toBe(true);
+
+    // Count real timeline wraps rather than trusting the loop attribute alone.
+    await video.evaluate((element) => {
+      const media = element as HTMLVideoElement;
+      media.dataset.loopCount = '0';
+      let previousTime = media.currentTime;
+      media.addEventListener('timeupdate', () => {
+        if (media.currentTime < previousTime - 0.5) {
+          media.dataset.loopCount = String(Number(media.dataset.loopCount) + 1);
+        }
+        previousTime = media.currentTime;
+      });
+    });
+    await stage.click();
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).paused))
+      .toBe(false);
+    await video.hover();
+    await expect(overlay).toHaveCount(0);
+    await expect
+      .poll(
+        () => video.evaluate((element) => Number((element as HTMLVideoElement).dataset.loopCount)),
+        {
+          timeout: 10_000,
+        }
+      )
+      .toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).paused))
+      .toBe(false);
+    await expect(overlay).toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+    ).toBe(true);
+    await page.screenshot({ path: test.info().outputPath('loop-playing.png') });
+
+    await page.keyboard.press('r');
+    await expect(loop).toHaveAttribute('aria-pressed', 'false');
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).loop))
+      .toBe(false);
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).paused))
+      .toBe(true);
+    await expect(overlay).toBeVisible();
+  });
+}
+
+test('loop is remembered after reload and isolated from other videos', async ({
+  page,
+  seed,
+  seededUser,
+}) => {
+  const { project } = await seed.project(seededUser);
+  await uploadAndOpen(page, project.id, `Remembered Loop ${Date.now()}`);
+  await waitForMetadata(page);
+  const firstVideoUrl = page.url();
+  const loop = page.getByRole('button', { name: 'Loop playback', exact: true });
+  const video = page.locator('video');
+  await loop.click();
+  await expect(loop).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await waitForMetadata(page);
+  await expect(loop).toHaveAttribute('aria-pressed', 'true');
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).loop))
+    .toBe(true);
+
+  await uploadAndOpen(page, project.id, `Independent Loop ${Date.now()}`);
+  await waitForMetadata(page);
+  await expect(loop).toHaveAttribute('aria-pressed', 'false');
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).loop))
+    .toBe(false);
+  const composer = page.getByPlaceholder('Add a comment...');
+  await composer.fill('Loop shortcut stays in this comment');
+  await composer.press('End');
+  await composer.press('r');
+  await expect(composer).toHaveValue('Loop shortcut stays in this commentr');
+  await expect(loop).toHaveAttribute('aria-pressed', 'false');
+
+  await page.goto(firstVideoUrl);
+  await waitForMetadata(page);
+  await expect(loop).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('r');
+  await expect(loop).toHaveAttribute('aria-pressed', 'false');
+  await page.reload();
+  await waitForMetadata(page);
+  await expect(loop).toHaveAttribute('aria-pressed', 'false');
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).loop))
+    .toBe(false);
+});
