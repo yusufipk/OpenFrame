@@ -6,6 +6,13 @@ import { toast } from 'sonner';
 import { useEditorLimitDialog } from '@/components/editor-limit-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  parseInvitationEmails,
+  sendInvitationBatch,
+  invitationDeliveryMessage,
+  type InvitationResult,
+} from '@/lib/invitation-batch';
 import {
   Select,
   SelectContent,
@@ -23,7 +30,7 @@ import {
 } from '@/components/ui/dialog';
 
 type Member = { id: string; role: string; user: { name: string | null; email: string | null } };
-type Pending = { id: string; email: string; role: string };
+type Pending = { id: string; email: string; role: string; invitationUrl: string };
 export function ContentAccessControls({
   projectId,
   folderId,
@@ -47,7 +54,8 @@ export function ContentAccessControls({
   const [role, setRole] = useState('COMMENTATOR');
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Pending[]>([]);
-  const [invitationUrl, setInvitationUrl] = useState('');
+  const [delivery, setDelivery] = useState<string[]>([]);
+  const [returnedInvitations, setReturnedInvitations] = useState<InvitationResult[]>([]);
   const [busy, setBusy] = useState(false);
   const editorLimit = useEditorLimitDialog();
   const [accessMode, setAccessMode] = useState<string | null>(null);
@@ -82,9 +90,14 @@ export function ContentAccessControls({
       if (payload.data.members) {
         setMembers(payload.data.members);
         setInvitations(payload.data.invitations);
-      } else if (payload.data.invitationUrl) {
-        setInvitationUrl(payload.data.invitationUrl);
-        await run({ action: 'members' });
+        setReturnedInvitations((previous) =>
+          previous.filter(
+            (result) =>
+              !payload.data.invitations.some(
+                (invitation: Pending) => invitation.invitationUrl === result.invitationUrl
+              )
+          )
+        );
       } else {
         onAccessChanged?.();
         toast.success('Access updated');
@@ -94,6 +107,45 @@ export function ContentAccessControls({
       toast.error(error instanceof Error ? error.message : 'Could not update access');
     } finally {
       setBusy(false);
+    }
+  }
+  async function invite(input: string, inviteRole: string, resend = false) {
+    try {
+      const emails = parseInvitationEmails(input);
+      setBusy(true);
+      setDelivery([]);
+      const results = await sendInvitationBatch(`/api/projects/${projectId}/folders`, emails, {
+        action: 'invite',
+        folderId,
+        videoId,
+        role: inviteRole,
+      });
+      const failures = results.filter((result) => result.error);
+      for (const result of failures) {
+        if (!editorLimit.handle(result.errorPayload))
+          toast.error(`${result.email}: ${result.error}`);
+      }
+      setDelivery(results.filter((result) => !result.error).map(invitationDeliveryMessage));
+      setReturnedInvitations((previous) => [
+        ...previous.filter(
+          (old) => !results.some((result) => !result.error && result.email === old.email)
+        ),
+        ...results.filter((result) => !result.error && result.invitationUrl),
+      ]);
+      if (!resend) setEmail(failures.map((result) => result.email).join('\n'));
+      await run({ action: 'members' });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not send invitation');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Invitation link copied');
+    } catch {
+      toast.error('Could not copy. Select the invitation link and copy it manually.');
     }
   }
   return (
@@ -117,7 +169,7 @@ export function ContentAccessControls({
         {showMembers ? 'Members' : share ? 'Share' : 'Manage access'}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {contentName
@@ -126,7 +178,7 @@ export function ContentAccessControls({
             </DialogTitle>
             <DialogDescription>Choose who can access this area.</DialogDescription>
           </DialogHeader>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               disabled={busy || !accessMode}
               variant={selectedMode === 'INHERIT' ? 'default' : 'outline'}
@@ -177,17 +229,18 @@ export function ContentAccessControls({
             className="space-y-3"
             onSubmit={(e) => {
               e.preventDefault();
-              void run({ action: 'invite', email, role });
+              void invite(email, role);
             }}
           >
-            <Input
-              type="email"
+            <Textarea
               aria-label="Invitation email"
-              placeholder="Email address"
+              placeholder="Email addresses, separated by commas or new lines"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={busy}
             />
+            <p className="text-xs text-muted-foreground">Invite up to 20 people at a time.</p>
             <Select value={role} onValueChange={setRole} disabled={busy}>
               <SelectTrigger aria-label="Invitation role" className="w-full">
                 <SelectValue />
@@ -197,16 +250,37 @@ export function ContentAccessControls({
                 <SelectItem value="ADMIN">Admin: manage this area</SelectItem>
               </SelectContent>
             </Select>
-            <Button disabled={busy}>Create account invitation</Button>
+            <Button disabled={busy}>Send invitations</Button>
           </form>
-          {invitationUrl && (
-            <div>
-              <p className="text-sm">
-                Send this invitation to the invited email address. It expires in 7 days.
-              </p>
-              <Input aria-label="Invitation link" readOnly value={invitationUrl} />
+          {delivery.length > 0 && (
+            <div role="status" className="space-y-1 text-sm">
+              {delivery.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
             </div>
           )}
+          {returnedInvitations
+            .filter(
+              (result) =>
+                !invitations.some((invitation) => invitation.invitationUrl === result.invitationUrl)
+            )
+            .map((result) => (
+              <div key={result.email} className="space-y-2 rounded-md border p-3">
+                <p className="break-all text-sm">{result.email}</p>
+                <Input
+                  readOnly
+                  aria-label={`Invitation link for ${result.email}`}
+                  value={result.invitationUrl}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void copyLink(result.invitationUrl!)}
+                >
+                  Copy link
+                </Button>
+              </div>
+            ))}
           {members.map((m) => (
             <div className="flex justify-between gap-2" key={m.id}>
               <span>
@@ -226,20 +300,45 @@ export function ContentAccessControls({
             </div>
           ))}
           {invitations.map((i) => (
-            <div className="flex justify-between gap-2" key={i.id}>
-              <span>{i.email} (pending)</span>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={async () => {
-                  await run({ action: 'revokeInvitation', invitationId: i.id });
-                  setInvitationUrl('');
-                  await run({ action: 'members' });
-                }}
-              >
-                Cancel
-              </Button>
+            <div className="space-y-2 rounded-md border p-3" key={i.id}>
+              <span className="block break-all text-sm">{i.email} (pending)</span>
+              <Input
+                aria-label={
+                  invitations.length === 1 ? 'Invitation link' : `Invitation link for ${i.email}`
+                }
+                readOnly
+                value={i.invitationUrl}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void copyLink(i.invitationUrl)}
+                >
+                  Copy link
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void invite(i.email, i.role, true)}
+                >
+                  Resend
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={async () => {
+                    await run({ action: 'revokeInvitation', invitationId: i.id });
+                    setDelivery([]);
+                    await run({ action: 'members' });
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           ))}
         </DialogContent>

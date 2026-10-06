@@ -54,7 +54,7 @@ describe('createOrRefreshInvitation', () => {
     expect(ttl).toBeLessThanOrEqual(SEVEN_DAYS_MS);
   });
 
-  it('refreshes the live invitation in place and rotates its token', async () => {
+  it('refreshes the live invitation in place and preserves its token', async () => {
     const scenario = await seedProject();
     const args = {
       email: 'invitee@example.com',
@@ -68,8 +68,7 @@ describe('createOrRefreshInvitation', () => {
 
     expect(second.id).toBe(first.id);
     expect(await db.invitation.count()).toBe(1);
-    // Re-inviting has to invalidate the link already in someone's inbox.
-    expect(second.token).not.toBe(first.token);
+    expect(second.token).toBe(first.token);
     expect(second.role).toBe('ADMIN');
     expect(second.expiresAt.getTime()).toBeGreaterThanOrEqual(first.expiresAt.getTime());
   });
@@ -100,10 +99,7 @@ describe('createOrRefreshInvitation', () => {
     expect(await db.invitation.count()).toBe(2);
   });
 
-  // Two concurrent invites can leave two live rows for one address. The next
-  // call has to collapse them, or a cancelled invitation still has a working
-  // twin in the database.
-  it('leaves exactly one live invitation when duplicates already exist', async () => {
+  it('preserves previously shared links when duplicate pending rows already exist', async () => {
     const scenario = await seedProject();
     for (let i = 0; i < 2; i++) {
       await createInvitation({
@@ -123,8 +119,9 @@ describe('createOrRefreshInvitation', () => {
     });
 
     const pending = await db.invitation.findMany({ where: { status: 'PENDING' } });
-    expect(pending.map((row) => row.id)).toEqual([refreshed.id]);
-    expect(await db.invitation.count({ where: { status: 'CANCELED' } })).toBe(1);
+    expect(pending.map((row) => row.id)).toContain(refreshed.id);
+    expect(pending).toHaveLength(2);
+    expect(await db.invitation.count({ where: { status: 'CANCELED' } })).toBe(0);
     expect(await db.invitation.count()).toBe(2);
   });
 
@@ -148,6 +145,51 @@ describe('createOrRefreshInvitation', () => {
 
     expect(projectInvitation.id).not.toBe(workspaceInvitation.id);
     expect(await db.invitation.count({ where: { status: 'PENDING' } })).toBe(2);
+  });
+
+  it('applies a role downgrade to all older live links for the same recipient and target', async () => {
+    const f = await seedProject();
+    const invited = await createUser();
+    const older = await createInvitation({
+      invitedById: f.owner.id,
+      email: invited.email!,
+      scope: 'WORKSPACE',
+      workspaceId: f.workspace.id,
+      role: 'ADMIN',
+    });
+    const latest = await createInvitation({
+      invitedById: f.owner.id,
+      email: invited.email!,
+      scope: 'WORKSPACE',
+      workspaceId: f.workspace.id,
+      role: 'COMMENTATOR',
+    });
+    await createOrRefreshInvitation({
+      invitedById: f.owner.id,
+      email: invited.email!,
+      scope: 'WORKSPACE',
+      workspaceId: f.workspace.id,
+      role: 'COMMENTATOR',
+    });
+    const rows = await db.invitation.findMany({ where: { id: { in: [older.id, latest.id] } } });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.role === 'COMMENTATOR' && row.status === 'PENDING')).toBe(true);
+    expect(rows.find((row) => row.id === older.id)?.token).toBe(older.token);
+    expect(rows.find((row) => row.id === latest.id)?.token).toBe(latest.token);
+    expect(
+      await acceptInvitationTokenForUser({
+        token: older.token,
+        userId: invited.id,
+        email: invited.email!,
+      })
+    ).toBe('accepted');
+    expect(
+      (
+        await db.workspaceMember.findUniqueOrThrow({
+          where: { workspaceId_userId: { workspaceId: f.workspace.id, userId: invited.id } },
+        })
+      ).role
+    ).toBe('COMMENTATOR');
   });
 });
 
@@ -783,8 +825,6 @@ describe('sendInvitationEmail', () => {
     expect(html).toContain('&lt;script&gt;');
   });
 
-  // The member routes call this with `void`, so a rejection here would surface
-  // as an unhandled rejection rather than as a failed invite.
   it('reports failure instead of throwing when the transport rejects', async () => {
     vi.mocked(nodemailer.createTransport).mockReturnValueOnce({
       sendMail: vi.fn(async () => {

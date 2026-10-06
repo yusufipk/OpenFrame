@@ -74,6 +74,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
               role: true,
               createdAt: true,
               expiresAt: true,
+              token: true,
               invitedBy: {
                 select: { id: true, name: true, email: true },
               },
@@ -83,7 +84,14 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         : Promise.resolve([]),
     ]);
 
-    const response = successResponse({ members, owner, pendingInvitations });
+    const response = successResponse({
+      members,
+      owner,
+      pendingInvitations: pendingInvitations.map(({ token, ...invitation }) => ({
+        ...invitation,
+        invitationUrl: buildInvitationUrl(token),
+      })),
+    });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error fetching project members:', error);
@@ -179,7 +187,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     });
 
     const invitationUrl = buildInvitationUrl(invitation.token);
-    void sendInvitationEmail({
+    const emailSent = await sendInvitationEmail({
       to: normalizedEmail,
       inviterName: session.user.name || 'A team member',
       role: invitation.role,
@@ -188,7 +196,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       invitationUrl,
     });
 
-    const response = successResponse({ message: 'Invitation email sent.' });
+    const response = successResponse({
+      invitationUrl,
+      emailSent,
+      message: emailSent
+        ? 'Invitation email sent.'
+        : 'Invitation created, but email could not be sent. Copy the link to share it.',
+    });
     return withCacheControl(response, 'private, no-store');
   } catch (error) {
     logError('Error inviting project member:', error);

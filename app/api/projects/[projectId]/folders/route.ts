@@ -1,7 +1,6 @@
 import { apiTokenScopeRefusal, getSession, withApiToken } from '@/lib/api-tokens';
 import type { ApiTokenScope } from '@/lib/api-token-scopes';
 import { NextRequest } from 'next/server';
-import { randomBytes } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { checkFolderAccess, checkVideoAccess, visibleFolderWhere } from '@/lib/content-access';
@@ -16,7 +15,11 @@ import {
 } from '@/lib/content-mutations';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { rateLimit } from '@/lib/rate-limit';
-import { buildInvitationUrl } from '@/lib/invitations';
+import {
+  buildInvitationUrl,
+  createOrRefreshInvitation,
+  sendInvitationEmail,
+} from '@/lib/invitations';
 import { isValidEmailAddress, normalizeEmail } from '@/lib/email-validation';
 import { logError } from '@/lib/logger';
 import {
@@ -167,10 +170,17 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             status: 'PENDING',
             expiresAt: { gt: new Date() },
           },
-          select: { id: true, email: true, role: true },
+          select: { id: true, email: true, role: true, token: true },
         });
         const accessMode = 'video' in access ? access.video?.accessMode : access.folder?.accessMode;
-        return { members, invitations, accessMode };
+        return {
+          members,
+          invitations: invitations.map(({ token, ...invitation }) => ({
+            ...invitation,
+            invitationUrl: buildInvitationUrl(token),
+          })),
+          accessMode,
+        };
       }
       if (action === 'invite') {
         const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
@@ -194,21 +204,19 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           videoId,
           scope: videoId ? ('VIDEO' as const) : ('FOLDER' as const),
         };
-        await tx.invitation.updateMany({
-          where: { ...target, email, status: 'PENDING' },
-          data: { status: 'CANCELED' },
-        });
-        const invitation = await tx.invitation.create({
-          data: {
+        const invitation = await createOrRefreshInvitation(
+          {
             ...target,
             email,
             role: body.role,
             invitedById: userId,
-            token: randomBytes(32).toString('hex'),
-            expiresAt: new Date(Date.now() + 7 * 86400000),
           },
-        });
-        return { invitationUrl: buildInvitationUrl(invitation.token) };
+          tx
+        );
+        return {
+          invitation,
+          targetName: 'video' in access ? access.video!.title : access.folder!.name,
+        };
       }
       if (action === 'revokeMember') {
         const memberId = contentId(body.memberId);
@@ -292,6 +300,18 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }
       throw new ContentError(400, 'Unknown folder operation');
     });
+    if ('invitation' in result && result.invitation && result.targetName !== undefined) {
+      const invitationUrl = buildInvitationUrl(result.invitation.token);
+      const emailSent = await sendInvitationEmail({
+        to: result.invitation.email,
+        inviterName: session.user.name || 'A team member',
+        role: result.invitation.role,
+        scope: result.invitation.scope,
+        targetName: result.targetName,
+        invitationUrl,
+      });
+      return withCacheControl(successResponse({ invitationUrl, emailSent }), 'private, no-store');
+    }
     revalidatePath(`/projects/${projectId}`);
     revalidatePath('/shared');
     return withCacheControl(successResponse(result), 'private, no-store');
