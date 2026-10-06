@@ -19,6 +19,7 @@ export function useVideoPageData({ mode, videoId, propProjectId }: UseVideoPageD
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
 
   const commentsEtagRef = useRef<Map<string, string>>(new Map());
+  const recordedOpenRef = useRef<string | null>(null);
 
   const apiBasePath = useMemo(() => {
     return mode === 'dashboard'
@@ -124,6 +125,16 @@ export function useVideoPageData({ mode, videoId, propProjectId }: UseVideoPageD
     }
     void fetchVideo();
   }, [apiBasePath, mode]);
+
+  useEffect(() => {
+    if (mode !== 'watch' || loading || video?.id !== videoId) return;
+    if (recordedOpenRef.current === videoId) return;
+    recordedOpenRef.current = videoId;
+    // Recording an open is best effort and must not interrupt the review page.
+    void fetch(`/api/watch/${videoId}/open`, { method: 'POST' })
+      .then((response) => response.json())
+      .catch(() => {});
+  }, [loading, mode, video, videoId]);
 
   useEffect(() => {
     if (!activeVersionId) return;

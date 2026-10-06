@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -29,6 +29,8 @@ interface ShareLinkData {
   allowGuests: boolean;
   allowDownloads: boolean;
   hasPassword: boolean;
+  firstOpenedAt: string | null;
+  lastOpenedAt: string | null;
 }
 
 interface ShareResponse {
@@ -49,9 +51,20 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
   const [hasPassword, setHasPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [allowDownloads, setAllowDownloads] = useState(false);
+  const [linkActivity, setLinkActivity] = useState<ShareLinkData | null>(null);
+
+  const linkMutationRevisionRef = useRef(0);
+
+  const invalidateLinkLoads = () => {
+    linkMutationRevisionRef.current += 1;
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!projectId || !videoId) return;
+    let cancelled = false;
+    const revision = linkMutationRevisionRef.current;
+    const isCurrent = () => !cancelled && revision === linkMutationRevisionRef.current;
 
     async function loadShareLink() {
       setLoading(true);
@@ -62,27 +75,35 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
           cache: 'no-store',
         });
         const payload = (await response.json()) as ShareResponse;
+        if (!isCurrent()) return;
 
         if (!response.ok || payload.error) {
           setError(payload.error || 'Failed to load share link');
           setShareUrl(null);
+          setLinkActivity(null);
           return;
         }
 
         setShareUrl(payload.data.shareUrl);
+        setLinkActivity(payload.data.link);
         setHasPassword(!!payload.data.link?.hasPassword);
         setAllowDownloads(!!payload.data.link?.allowDownloads);
       } catch {
+        if (!isCurrent()) return;
         setError('Failed to load share link');
         setShareUrl(null);
+        setLinkActivity(null);
         setHasPassword(false);
         setAllowDownloads(false);
       } finally {
-        setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
     }
 
-    loadShareLink();
+    void loadShareLink();
+    return () => {
+      cancelled = true;
+    };
   }, [projectId, videoId, accessRevision]);
 
   const copyLink = async () => {
@@ -95,6 +116,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
   const createShareLink = async () => {
     if (!projectId || !videoId) return;
 
+    invalidateLinkLoads();
     setSubmitting(true);
     setError('');
 
@@ -112,12 +134,14 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
       }
 
       setShareUrl(payload.data.shareUrl);
+      setLinkActivity(payload.data.link);
       setHasPassword(!!payload.data.link?.hasPassword);
       setAllowDownloads(!!payload.data.link?.allowDownloads);
       setPassword('');
     } catch {
       setError('Failed to create share link');
     } finally {
+      invalidateLinkLoads();
       setSubmitting(false);
     }
   };
@@ -125,6 +149,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
   const revokeShareLink = async () => {
     if (!projectId || !videoId) return;
 
+    invalidateLinkLoads();
     setSubmitting(true);
     setError('');
 
@@ -140,12 +165,14 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
       }
 
       setShareUrl(null);
+      setLinkActivity(null);
       setHasPassword(false);
       setAllowDownloads(false);
       setPassword('');
     } catch {
       setError('Failed to revoke share link');
     } finally {
+      invalidateLinkLoads();
       setSubmitting(false);
     }
   };
@@ -153,6 +180,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
   const updateSecuritySettings = async (clearPassword = false) => {
     if (!projectId || !videoId || !shareUrl) return;
 
+    invalidateLinkLoads();
     setSubmitting(true);
     setError('');
 
@@ -177,12 +205,14 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
 
       const data = (payload as ShareResponse).data;
       setShareUrl(data.shareUrl);
+      setLinkActivity(data.link);
       setHasPassword(!!data.link?.hasPassword);
       setAllowDownloads(!!data.link?.allowDownloads);
       setPassword('');
     } catch {
       setError('Failed to update link security');
     } finally {
+      invalidateLinkLoads();
       setSubmitting(false);
     }
   };
@@ -190,6 +220,7 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
   const updateDownloadSetting = async (nextAllowDownloads: boolean) => {
     if (!projectId || !videoId || !shareUrl) return;
 
+    invalidateLinkLoads();
     setSubmitting(true);
     setError('');
 
@@ -211,11 +242,13 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
       }
       const data = (payload as ShareResponse).data;
       setShareUrl(data.shareUrl);
+      setLinkActivity(data.link);
       setAllowDownloads(!!data.link?.allowDownloads);
       setHasPassword(!!data.link?.hasPassword);
     } catch {
       setError('Failed to update download setting');
     } finally {
+      invalidateLinkLoads();
       setSubmitting(false);
     }
   };
@@ -268,6 +301,47 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
                   >
                     {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   </Button>
+                </div>
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">Link activity</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={submitting}
+                      onClick={() => setAccessRevision((revision) => revision + 1)}
+                    >
+                      Refresh activity
+                    </Button>
+                  </div>
+                  {linkActivity?.firstOpenedAt ? (
+                    <dl className="text-sm space-y-1">
+                      <div className="flex flex-wrap justify-between gap-x-3">
+                        <dt className="text-muted-foreground">First recorded open</dt>
+                        <dd>
+                          <time dateTime={linkActivity.firstOpenedAt}>
+                            {new Date(linkActivity.firstOpenedAt).toLocaleString()}
+                          </time>
+                        </dd>
+                      </div>
+                      {linkActivity.lastOpenedAt && (
+                        <div className="flex flex-wrap justify-between gap-x-3">
+                          <dt className="text-muted-foreground">Last recorded open</dt>
+                          <dd>
+                            <time dateTime={linkActivity.lastOpenedAt}>
+                              {new Date(linkActivity.lastOpenedAt).toLocaleString()}
+                            </time>
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No opens recorded yet</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Shows recorded page opens, not who opened the link or whether they watched.
+                    Earlier opens are not included. Editor previews are excluded.
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={createShareLink} disabled={submitting} variant="outline">

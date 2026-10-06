@@ -174,6 +174,39 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('useVideoPageData recording share link opens', () => {
+  it('posts one open after the watch page loads and does not repeat on comment updates', async () => {
+    const harness = await renderPage({ mode: 'watch', propProjectId: undefined });
+    expect(callsMatching((url) => url === `/api/watch/${VIDEO_ID}/open`)).toHaveLength(1);
+    expect(callsMatching((url) => url === `/api/watch/${VIDEO_ID}/open`)[0][1]).toEqual({
+      method: 'POST',
+    });
+    await act(async () => harness.result.current.fetchVersionComments('ver1', false));
+    expect(callsMatching((url) => url === `/api/watch/${VIDEO_ID}/open`)).toHaveLength(1);
+  });
+
+  it('does not record dashboard visits or a denied watch page', async () => {
+    await renderPage();
+    expect(callsMatching((url) => url.endsWith('/open'))).toHaveLength(0);
+    videoResponse = respond({ ok: false, status: 403 });
+    const harness = await renderPage({ mode: 'watch', propProjectId: undefined });
+    expect(harness.result.current.error).toBe('Video not found or access denied');
+    expect(callsMatching((url) => url.endsWith('/open'))).toHaveLength(0);
+  });
+
+  it('keeps the watch page usable when recording fails', async () => {
+    const original = fetchMock.getMockImplementation() as (url: string) => Promise<Responder>;
+    fetchMock.mockImplementation((url: string) =>
+      url.endsWith('/open') ? Promise.reject(new Error('offline')) : original(url)
+    );
+    const harness = await renderPage({ mode: 'watch', propProjectId: undefined });
+    expect(callsMatching((url) => url.endsWith('/open'))).toHaveLength(1);
+    expect(harness.result.current.video?.title).toBe('Cut 3');
+    expect(harness.result.current.error).toBe('');
+    expect(harness.result.current.loading).toBe(false);
+  });
+});
+
 describe('useVideoPageData loading the video', () => {
   it('reads the project-scoped route without comments in dashboard mode', async () => {
     const harness = await renderPage();

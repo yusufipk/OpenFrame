@@ -753,6 +753,8 @@ model ShareLink {
   
   // Timestamps
   createdAt   DateTime        @default(now())
+  firstOpenedAt DateTime?
+  lastOpenedAt  DateTime?
   
   @@index([projectId])
   @@index([videoId])

@@ -116,6 +116,7 @@ import * as assetsR2InitRoute from '@/app/api/videos/[videoId]/assets/r2-init/ro
 import * as assetsRoute from '@/app/api/videos/[videoId]/assets/route';
 import * as subtitleRoute from '@/app/api/videos/[videoId]/subtitles/[subtitleId]/route';
 import * as subtitlesRoute from '@/app/api/videos/[videoId]/subtitles/route';
+import * as watchOpenRoute from '@/app/api/watch/[videoId]/open/route';
 import * as watchProgressRoute from '@/app/api/watch/[videoId]/progress/route';
 import * as watchRoute from '@/app/api/watch/[videoId]/route';
 import * as watchUploadTokenRoute from '@/app/api/watch/[videoId]/upload-token/route';
@@ -169,7 +170,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 87;
+const EXPECTED_ROUTE_MODULE_COUNT = 88;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -922,6 +923,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: (f) => `/api/videos/${f.videoId}/live-review`,
     params: (f) => ({ videoId: f.videoId }),
     body: { action: 'join', versionId: 'fixture' },
+    headers: { origin: 'http://localhost:3000' },
+  },
+  {
+    file: 'watch/[videoId]/open/route.ts',
+    module: watchOpenRoute,
+    url: (f) => `/api/watch/${f.videoId}/open`,
+    params: (f) => ({ videoId: f.videoId }),
     headers: { origin: 'http://localhost:3000' },
   },
   {
