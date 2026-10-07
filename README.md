@@ -33,7 +33,7 @@ OpenFrame is built for video teams that want one system for review, revision, ap
 - Approval requests and sign-off tracking
 - Share links for client review with optional guest commenting
 - Workspaces, projects with [nested folders](docs/project-folders.md) and client branding, member roles, and invitation flows
-- Comment tags, resolved states, and CSV/PDF exports
+- Comment tags, resolved states, CSV/PDF exports, and comments as [timeline markers](docs/nle-comment-export.md) in Premiere Pro and DaVinci Resolve
 - Video-linked assets for supporting media and references
 - Email and Telegram notifications
 - URL-based YouTube video intake, [Google Drive import](docs/google-drive-import.md), and optional direct uploads (Bunny Stream or self-hosted S3)
@@ -73,7 +73,7 @@ OpenFrame is built for video teams that want one system for review, revision, ap
 
 - Approval requests can be sent to specific reviewers.
 - Approval decisions are tracked per request with pending, approved, rejected, and canceled states.
-- Comments can be exported as CSV or PDF for offline review and handoff.
+- Comments can be exported as CSV or PDF for offline review and handoff, or brought into Premiere Pro and DaVinci Resolve as timeline markers that update on the next round.
 
 ### Assets, Notifications, And Integrations
 
