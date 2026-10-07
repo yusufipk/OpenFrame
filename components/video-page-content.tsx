@@ -31,6 +31,8 @@ import { resolveR2PlaybackUrl } from '@/lib/video-upload-validation';
 import { useVersionActions } from '@/components/video-page/hooks/use-version-actions';
 import { useWatchProgress } from '@/components/video-page/hooks/use-watch-progress';
 import { useVideoPlayer } from '@/components/video-page/hooks/use-video-player';
+import { useVideoPresence } from '@/components/video-page/hooks/use-video-presence';
+import { VideoPresence } from '@/components/video-page/video-presence';
 import { useCommentActions } from '@/components/video-page/hooks/use-comment-actions';
 import { useVideoPageData } from '@/components/video-page/hooks/use-video-page-data';
 import { useCommentExport } from '@/components/video-page/hooks/use-comment-export';
@@ -479,6 +481,12 @@ export function VideoPageContent({
     loopDisabled: liveReview.isJoined,
     autoOriginalAllowed: !!video?.canDownload,
     bunnySource: bunnyPlayback,
+  });
+
+  const presence = useVideoPresence({
+    videoId,
+    enabled: !loading && !error && video?.id === videoId && !!activeVersion && canInitializePlayer,
+    isPlaying: !isImage && isPlaying,
   });
 
   const { isJoined: isLiveReviewJoined, selectComment: selectLiveComment } = liveReview;
@@ -1008,6 +1016,9 @@ export function VideoPageContent({
             activeVersionId={activeVersionId}
             onVersionSelect={headerActions.onVersionSelect}
             versionSelectionLocked={liveReview.isJoined}
+            presenceControl={
+              <VideoPresence participants={presence.participants} status={presence.status} />
+            }
             liveReviewControl={
               <LiveReviewEntryControl
                 discovery={liveReview.discovery}

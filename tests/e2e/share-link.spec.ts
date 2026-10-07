@@ -34,6 +34,7 @@ test('the owner creates a review link and a stranger opens it through the guest 
   const shareUrl = await linkField.inputValue();
   expect(new URL(shareUrl).pathname).toMatch(/^\/s\/[A-Za-z0-9_-]{16}$/);
   expect(new URL(shareUrl).search).toBe('');
+  await expect(page.getByText('No opens recorded yet')).toBeVisible();
 
   // A stranger, in a context with no session at all.
   //
@@ -46,6 +47,11 @@ test('the owner creates a review link and a stranger opens it through the guest 
   const guestContext = await browser.newContext({ storageState: undefined });
   try {
     const guestPage = await guestContext.newPage();
+    const recordedOpen = guestPage.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/api/watch/${seeded.videoId}/open` &&
+        response.request().method() === 'POST'
+    );
     await guestPage.goto(shareUrl);
 
     // The bootstrap page exchanges the token for a share session cookie and
@@ -60,6 +66,16 @@ test('the owner creates a review link and a stranger opens it through the guest 
     // The permission level on a link created through this UI is COMMENT, so the
     // guest gets a comment composer, not a read-only page.
     await expect(guestPage.getByPlaceholder('Add a comment...')).toBeVisible();
+    const openResponse = await recordedOpen;
+    expect(openResponse.status()).toBe(200);
+    expect(await openResponse.json()).toMatchObject({ data: { recorded: true } });
+    await page.getByRole('button', { name: 'Refresh activity' }).click();
+    await expect(page.getByText('First recorded open')).toBeVisible();
+    await expect(page.getByText('Last recorded open')).toBeVisible();
+    await expect(page.locator('time[datetime]')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Regenerate Link' }).click();
+    await expect(page.getByText('No opens recorded yet')).toBeVisible();
+    await expect(page.locator('time[datetime]')).toHaveCount(0);
   } finally {
     await guestContext.close();
   }

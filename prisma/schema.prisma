@@ -484,9 +484,29 @@ model Video {
   assets      VideoAsset[]
   shareLinks  ShareLink[]
   liveReviews LiveReviewSession[]
+  presences   VideoPresence[]
   
   @@index([projectId])
   @@map("videos")
+}
+
+model VideoPresence {
+  id                String   @id @default(cuid())
+  videoId           String
+  video             Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  identityKey       String
+  clientId          String
+  userId            String?
+  shareToken        String?
+  sharePasswordHash String?
+  name              String
+  isPlaying         Boolean  @default(false)
+  lastSeenAt        DateTime @default(now())
+
+  @@unique([videoId, identityKey, clientId])
+  @@index([videoId, lastSeenAt])
+  @@index([lastSeenAt])
+  @@map("video_presences")
 }
 
 enum MediaType {
@@ -753,6 +773,8 @@ model ShareLink {
   
   // Timestamps
   createdAt   DateTime        @default(now())
+  firstOpenedAt DateTime?
+  lastOpenedAt  DateTime?
   
   @@index([projectId])
   @@index([videoId])
