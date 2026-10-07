@@ -113,10 +113,6 @@ export function VideoPresence({
               {status === 'connecting' ? 'Connecting...' : 'Presence is temporarily unavailable.'}
             </p>
           )}
-          <p className="border-t pt-2 text-xs leading-relaxed text-muted-foreground">
-            Shows open pages and player activity, not proof someone is watching. Disconnected
-            viewers may take about 30 seconds to disappear.
-          </p>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
