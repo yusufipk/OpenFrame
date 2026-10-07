@@ -51,6 +51,7 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, 'prisma', 'migrations');
  * else is a plain table/column/enum addition that db push derives on its own.
  */
 const REVIEWED_MIGRATIONS = [
+  '20261007120000_video_presence',
   '20261006120000_share_link_opens', // nullable columns only
   '20261003190000_drive_imports',
   '20261003200000_exclude_from_stats',

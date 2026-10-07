@@ -1,6 +1,7 @@
 import * as foldersRoute from '@/app/api/projects/[projectId]/folders/route';
 import * as liveReviewAccessRoute from '@/app/api/internal/live-review/access/route';
 import * as liveReviewRoute from '@/app/api/videos/[videoId]/live-review/route';
+import * as videoPresenceRoute from '@/app/api/videos/[videoId]/presence/route';
 // A sweep over every route module under app/api asserting that an
 // unauthenticated caller can never reach a 2xx.
 //
@@ -170,7 +171,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 88;
+const EXPECTED_ROUTE_MODULE_COUNT = 89;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -923,6 +924,18 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: (f) => `/api/videos/${f.videoId}/live-review`,
     params: (f) => ({ videoId: f.videoId }),
     body: { action: 'join', versionId: 'fixture' },
+    headers: { origin: 'http://localhost:3000' },
+  },
+  {
+    file: 'videos/[videoId]/presence/route.ts',
+    module: videoPresenceRoute,
+    url: (f) => `/api/videos/${f.videoId}/presence`,
+    params: (f) => ({ videoId: f.videoId }),
+    body: {
+      clientId: '550e8400-e29b-41d4-a716-446655440000',
+      action: 'heartbeat',
+      isPlaying: false,
+    },
     headers: { origin: 'http://localhost:3000' },
   },
   {
