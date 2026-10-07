@@ -6,6 +6,7 @@ export interface VideoPresenceParticipant {
   id: string;
   name: string;
   isAnonymous: boolean;
+  isGuest?: boolean;
   isPlaying: boolean;
   isSelf: boolean;
 }

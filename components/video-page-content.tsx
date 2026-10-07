@@ -487,6 +487,7 @@ export function VideoPageContent({
     videoId,
     enabled: !loading && !error && video?.id === videoId && !!activeVersion && canInitializePlayer,
     isPlaying: !isImage && isPlaying,
+    guestName: isGuest ? normalizedGuestName : undefined,
   });
 
   const { isJoined: isLiveReviewJoined, selectComment: selectLiveComment } = liveReview;

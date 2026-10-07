@@ -22,6 +22,7 @@ type PresenceData = {
     id: string;
     name: string;
     isAnonymous: boolean;
+    isGuest?: boolean;
     isPlaying: boolean;
     isSelf: boolean;
   }>;
@@ -39,6 +40,7 @@ function request(
     clientId?: string;
     action?: 'heartbeat' | 'leave';
     isPlaying?: boolean;
+    guestName?: unknown;
     cookies?: Record<string, string>;
     origin?: string | null;
   } = {}
@@ -49,6 +51,7 @@ function request(
       clientId: input.clientId ?? randomUUID(),
       action: input.action ?? 'heartbeat',
       isPlaying: input.isPlaying ?? false,
+      ...(input.guestName !== undefined ? { guestName: input.guestName } : {}),
     },
     headers: input.origin === null ? {} : { origin: input.origin ?? ORIGIN },
     cookies: input.cookies,
@@ -130,6 +133,63 @@ describe('POST /api/videos/[videoId]/presence', () => {
       { isAnonymous: true, isPlaying: true, isSelf: true },
     ]);
     expect((await db.videoPresence.findFirstOrThrow()).shareToken).toBeNull();
+  });
+
+  it('uses an entered guest name and updates it within the heartbeat write interval', async () => {
+    const { project, video } = await seedVersion({ visibility: 'PRIVATE' });
+    const link = await createShareLink({ projectId: project.id, videoId: video.id });
+    const clientId = randomUUID();
+    signedOut();
+    const first = await call(video.id, { clientId, cookies: shareCookie(video.id, link.token) });
+    const anonymous = (await readData<PresenceData>(first)).participants[0];
+    const cookies = { ...shareCookie(video.id, link.token), ...guestCookie(first) };
+    const named = await call(video.id, { clientId, cookies, guestName: '  Zoë İpek  ' });
+    expect(named.status).toBe(200);
+    expect((await readData<PresenceData>(named)).participants).toEqual([
+      { ...anonymous, name: 'Zoë İpek', isAnonymous: false, isGuest: true },
+    ]);
+    const row = await db.videoPresence.findFirstOrThrow();
+    expect(row.name).toBe('Zoë İpek');
+    expect(await db.videoPresence.count()).toBe(1);
+    await call(video.id, { clientId, cookies, guestName: 'Renamed Reviewer' });
+    expect((await db.videoPresence.findFirstOrThrow()).name).toBe('Renamed Reviewer');
+    await call(video.id, { clientId, cookies, guestName: '   ' });
+    expect((await db.videoPresence.findFirstOrThrow()).name).toBe('');
+    expect(
+      (await readData<PresenceData>(await call(video.id, { clientId, cookies }))).participants
+    ).toEqual([anonymous]);
+  });
+
+  it('prefers a supplied guest name over a newer unnamed tab for the same identity', async () => {
+    const { project, video } = await seedVersion();
+    const link = await createShareLink({ projectId: project.id, videoId: video.id });
+    signedOut();
+    const named = await call(video.id, {
+      cookies: shareCookie(video.id, link.token),
+      guestName: 'Reviewer Name',
+    });
+    const cookies = { ...shareCookie(video.id, link.token), ...guestCookie(named) };
+    const response = await call(video.id, { cookies, isPlaying: true });
+    const data = await readData<PresenceData>(response);
+    expect(data.participants).toMatchObject([
+      { name: 'Reviewer Name', isAnonymous: false, isGuest: true, isPlaying: true },
+    ]);
+    expect(data.participants).toHaveLength(1);
+    expect(await db.videoPresence.count()).toBe(2);
+  });
+
+  it('rejects invalid guest labels without writing and cannot replace an account name', async () => {
+    const { owner, video } = await seedVersion();
+    signedInAs(owner);
+    expect((await call(video.id, { guestName: { name: 'Other' } })).status).toBe(400);
+    expect((await call(video.id, { guestName: 'x'.repeat(101) })).status).toBe(400);
+    expect(await db.videoPresence.count()).toBe(0);
+    const response = await call(video.id, { guestName: 'Other account' });
+    expect(response.status).toBe(200);
+    expect((await readData<PresenceData>(response)).participants).toMatchObject([
+      { name: owner.name, isAnonymous: false, isGuest: false },
+    ]);
+    expect((await db.videoPresence.findFirstOrThrow()).name).toBe(owner.name);
   });
 
   it('aggregates two tabs, removes one on leave, and expires stale rows', async () => {

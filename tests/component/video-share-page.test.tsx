@@ -85,7 +85,9 @@ describe('video sharing access', () => {
     );
     const { container } = render(<VideoSharePageClient projectId="project" videoId="video" />);
     expect(await screen.findByText('No opens recorded yet')).toBeInTheDocument();
-    expect(screen.getByText(/not who opened the link or whether they watched/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/not who opened the link or whether they watched/)
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh activity' }));
     expect(await screen.findByText('First recorded open')).toBeInTheDocument();
     expect(screen.getByText('Last recorded open')).toBeInTheDocument();

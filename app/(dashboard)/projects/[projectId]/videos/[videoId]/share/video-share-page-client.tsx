@@ -338,10 +338,6 @@ export default function VideoSharePageClient({ projectId, videoId }: VideoShareP
                   ) : (
                     <p className="text-sm text-muted-foreground">No opens recorded yet</p>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    Shows recorded page opens, not who opened the link or whether they watched.
-                    Earlier opens are not included. Editor previews are excluded.
-                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={createShareLink} disabled={submitting} variant="outline">
