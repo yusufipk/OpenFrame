@@ -35,6 +35,9 @@ function createSmtpTransport() {
     port,
     secure: port === 465,
     auth: { user, pass },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   });
 }
 
@@ -120,104 +123,73 @@ function invitationEmailTemplate(input: {
   );
 }
 
-export async function createOrRefreshInvitation(params: {
+interface InvitationInput {
   email: string;
   scope: InvitationScope;
   role: InvitationRole;
   invitedById: string;
   workspaceId?: string;
   projectId?: string;
-}) {
-  const normalizedEmail = params.email.toLowerCase().trim();
+  folderId?: string | null;
+  videoId?: string | null;
+}
 
+async function refreshPendingInvitation(params: InvitationInput, tx: Prisma.TransactionClient) {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const target = {
+    email: params.email.toLowerCase().trim(),
+    scope: params.scope,
+    workspaceId: params.workspaceId ?? null,
+    projectId: params.projectId ?? null,
+    folderId: params.folderId ?? null,
+    videoId: params.videoId ?? null,
+  };
+  await tx.invitation.updateMany({
+    where: { ...target, status: InvitationStatus.PENDING, expiresAt: { lte: now } },
+    data: { status: InvitationStatus.EXPIRED },
+  });
+  const existingPending = await tx.invitation.findFirst({
+    where: { ...target, status: InvitationStatus.PENDING, expiresAt: { gt: now } },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  if (existingPending) {
+    // Legacy duplicates keep their links but must grant the same current role.
+    await tx.invitation.updateMany({
+      where: { ...target, status: InvitationStatus.PENDING, expiresAt: { gt: now } },
+      data: { role: params.role, invitedById: params.invitedById, expiresAt },
+    });
+    return tx.invitation.findUniqueOrThrow({ where: { id: existingPending.id } });
+  }
+  return tx.invitation.create({
+    data: {
+      ...target,
+      role: params.role,
+      invitedById: params.invitedById,
+      token: randomBytes(32).toString('hex'),
+      expiresAt,
+      status: InvitationStatus.PENDING,
+    },
+  });
+}
+
+export async function createOrRefreshInvitation(
+  params: InvitationInput,
+  client?: Prisma.TransactionClient
+) {
+  if (client) return refreshPendingInvitation(params, client);
   for (let attempt = 1; attempt <= MAX_INVITATION_RETRIES; attempt++) {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
-    const token = randomBytes(32).toString('hex');
-
     try {
-      return await db.$transaction(
-        async (tx) => {
-          await tx.invitation.updateMany({
-            where: {
-              email: normalizedEmail,
-              scope: params.scope,
-              workspaceId: params.workspaceId ?? null,
-              projectId: params.projectId ?? null,
-              status: InvitationStatus.PENDING,
-              expiresAt: { lte: now },
-            },
-            data: {
-              status: InvitationStatus.EXPIRED,
-            },
-          });
-
-          const existingPending = await tx.invitation.findFirst({
-            where: {
-              email: normalizedEmail,
-              scope: params.scope,
-              workspaceId: params.workspaceId ?? null,
-              projectId: params.projectId ?? null,
-              status: InvitationStatus.PENDING,
-              expiresAt: { gt: now },
-            },
-            orderBy: { createdAt: 'desc' },
-            select: { id: true },
-          });
-
-          if (existingPending) {
-            await tx.invitation.updateMany({
-              where: {
-                email: normalizedEmail,
-                scope: params.scope,
-                workspaceId: params.workspaceId ?? null,
-                projectId: params.projectId ?? null,
-                status: InvitationStatus.PENDING,
-                id: { not: existingPending.id },
-              },
-              data: {
-                status: InvitationStatus.CANCELED,
-              },
-            });
-
-            return tx.invitation.update({
-              where: { id: existingPending.id },
-              data: {
-                role: params.role,
-                invitedById: params.invitedById,
-                token,
-                expiresAt,
-              },
-            });
-          }
-
-          return tx.invitation.create({
-            data: {
-              email: normalizedEmail,
-              scope: params.scope,
-              role: params.role,
-              invitedById: params.invitedById,
-              workspaceId: params.workspaceId ?? null,
-              projectId: params.projectId ?? null,
-              token,
-              expiresAt,
-              status: InvitationStatus.PENDING,
-            },
-          });
-        },
-        {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        }
-      );
+      return await db.$transaction((tx) => refreshPendingInvitation(params, tx), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
     } catch (error) {
       const isSerializationFailure =
         error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
-      if (!isSerializationFailure || attempt === MAX_INVITATION_RETRIES) {
-        throw error;
-      }
+      if (!isSerializationFailure || attempt === MAX_INVITATION_RETRIES) throw error;
     }
   }
-
   throw new Error('Failed to create invitation after retrying');
 }
 

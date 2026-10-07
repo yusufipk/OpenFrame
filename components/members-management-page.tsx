@@ -19,6 +19,13 @@ import { Button } from '@/components/ui/button';
 import { useEditorLimitDialog } from '@/components/editor-limit-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  parseInvitationEmails,
+  sendInvitationBatch,
+  invitationDeliveryMessage,
+  type InvitationResult,
+} from '@/lib/invitation-batch';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +62,7 @@ interface PendingInvitation {
   role: 'ADMIN' | 'COMMENTATOR';
   createdAt: string;
   expiresAt: string;
+  invitationUrl: string;
   invitedBy: {
     id: string;
     name: string | null;
@@ -91,6 +99,7 @@ export function MembersManagementPage({
   const [cancelingInvitationId, setCancelingInvitationId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [returnedInvitations, setReturnedInvitations] = useState<InvitationResult[]>([]);
   const editorLimit = useEditorLimitDialog();
 
   const fetchMembers = useCallback(async () => {
@@ -118,6 +127,14 @@ export function MembersManagementPage({
       setMembers(data.data.members);
       setOwner(data.data.owner);
       setPendingInvitations(data.data.pendingInvitations || []);
+      setReturnedInvitations((previous) =>
+        previous.filter(
+          (result) =>
+            !data.data.pendingInvitations?.some(
+              (invitation: PendingInvitation) => invitation.invitationUrl === result.invitationUrl
+            )
+        )
+      );
     } catch {
       setError('Failed to load members');
     } finally {
@@ -144,32 +161,68 @@ export function MembersManagementPage({
     setSuccess('');
 
     try {
-      const res = await fetch(`${apiBasePath}/members`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (!editorLimit.handle(data)) setError(data.error || 'Failed to invite member');
-        return;
-      }
-
-      if (data.user) {
-        setSuccess(
-          `Invited ${data.user.name || data.user.email || inviteEmail} as ${inviteRole.toLowerCase()}`
-        );
-      } else {
-        setSuccess(data.message || `Invitation sent to ${inviteEmail}`);
-      }
-      setInviteEmail('');
-      fetchMembers();
-    } catch {
-      setError('Something went wrong');
+      const results = await sendInvitationBatch(
+        `${apiBasePath}/members`,
+        parseInvitationEmails(inviteEmail),
+        { role: inviteRole }
+      );
+      const failures = results.filter((result) => result.error);
+      setReturnedInvitations((previous) => [
+        ...previous.filter(
+          (old) => !results.some((result) => !result.error && result.email === old.email)
+        ),
+        ...results.filter((result) => !result.error && result.invitationUrl),
+      ]);
+      setError(
+        failures
+          .filter((result) => !editorLimit.handle(result.errorPayload))
+          .map((result) => `${result.email}: ${result.error}`)
+          .join(' ')
+      );
+      setSuccess(
+        results
+          .filter((result) => !result.error)
+          .map(invitationDeliveryMessage)
+          .join(' ')
+      );
+      setInviteEmail(failures.map((result) => result.email).join('\n'));
+      await fetchMembers();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not send invitations');
     } finally {
       setIsInviting(false);
+    }
+  };
+
+  const handleResend = async (invitation: PendingInvitation) => {
+    setIsInviting(true);
+    setError('');
+    setSuccess('');
+    try {
+      const [result] = await sendInvitationBatch(`${apiBasePath}/members`, [invitation.email], {
+        role: invitation.role,
+      });
+      if (result.error) {
+        if (!editorLimit.handle(result.errorPayload)) setError(result.error);
+      } else {
+        setSuccess(invitationDeliveryMessage(result));
+        setReturnedInvitations((previous) => [
+          ...previous.filter((old) => old.email !== result.email),
+          result,
+        ]);
+      }
+      await fetchMembers();
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleCopyLink = async (invitation: { email: string; invitationUrl: string }) => {
+    try {
+      await navigator.clipboard.writeText(invitation.invitationUrl);
+      setSuccess(`Invitation link copied for ${invitation.email}.`);
+    } catch {
+      setError('Could not copy. Select the invitation link and copy it manually.');
     }
   };
 
@@ -278,22 +331,25 @@ export function MembersManagementPage({
           <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3 sm:items-end">
             <div className="w-full sm:flex-1">
               <Label htmlFor="email" className="mb-2 block">
-                Email Address
+                Email Addresses
               </Label>
-              <Input
+              <Textarea
                 id="email"
-                type="email"
-                placeholder="colleague@example.com"
+                placeholder="Email addresses, separated by commas or new lines"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 required
                 disabled={isInviting}
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Invite up to 20 people at a time.
+              </p>
             </div>
             <div className="w-full sm:w-40">
               <Label className="mb-2 block">Role</Label>
               <Select
                 value={inviteRole}
+                disabled={isInviting}
                 onValueChange={(v) => setInviteRole(v as 'ADMIN' | 'COMMENTATOR')}
               >
                 <SelectTrigger className="w-full">
@@ -327,6 +383,35 @@ export function MembersManagementPage({
               {success}
             </div>
           )}
+          {returnedInvitations
+            .filter(
+              (result) =>
+                !pendingInvitations.some(
+                  (invitation) => invitation.invitationUrl === result.invitationUrl
+                )
+            )
+            .map((result) => (
+              <div key={result.email} className="mt-3 space-y-2 rounded-md border p-3">
+                <p className="break-all text-sm">{result.email}</p>
+                <Input
+                  readOnly
+                  aria-label={`Invitation link for ${result.email}`}
+                  value={result.invitationUrl}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void handleCopyLink({
+                      email: result.email,
+                      invitationUrl: result.invitationUrl!,
+                    })
+                  }
+                >
+                  Copy link
+                </Button>
+              </div>
+            ))}
         </CardContent>
       </Card>
 
@@ -418,7 +503,9 @@ export function MembersManagementPage({
             <Clock3 className="h-5 w-5" />
             Pending Invitations
           </CardTitle>
-          <CardDescription>Invitations that were sent but not accepted yet.</CardDescription>
+          <CardDescription>
+            Invitations awaiting acceptance. Copy a link or resend the email.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {pendingInvitations.map((invitation) => (
@@ -426,8 +513,8 @@ export function MembersManagementPage({
               key={invitation.id}
               className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-lg border"
             >
-              <div>
-                <p className="text-sm font-medium">{invitation.email}</p>
+              <div className="min-w-0 flex-1">
+                <p className="break-all text-sm font-medium">{invitation.email}</p>
                 <p className="text-xs text-muted-foreground">
                   {invitation.role === 'ADMIN' ? 'Admin' : 'Commentator'} · Sent by{' '}
                   {invitation.invitedBy.name || invitation.invitedBy.email || 'Unknown'}
@@ -435,22 +522,46 @@ export function MembersManagementPage({
                 <p className="text-xs text-muted-foreground">
                   Expires {new Date(invitation.expiresAt).toLocaleString()}
                 </p>
+                <Input
+                  className="mt-2"
+                  readOnly
+                  aria-label={`Invitation link for ${invitation.email}`}
+                  value={invitation.invitationUrl}
+                />
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleCancelInvitation(invitation.id)}
-                disabled={cancelingInvitationId === invitation.id}
-              >
-                {cancelingInvitationId === invitation.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>
-                    <MailX className="h-4 w-4 mr-2" />
-                    Cancel
-                  </>
-                )}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isInviting || cancelingInvitationId !== null}
+                  onClick={() => void handleCopyLink(invitation)}
+                >
+                  Copy link
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isInviting || cancelingInvitationId !== null}
+                  onClick={() => void handleResend(invitation)}
+                >
+                  Resend
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleCancelInvitation(invitation.id)}
+                  disabled={isInviting || cancelingInvitationId !== null}
+                >
+                  {cancelingInvitationId === invitation.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <MailX className="h-4 w-4 mr-2" />
+                      Cancel
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           ))}
 

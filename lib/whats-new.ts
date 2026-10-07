@@ -22,6 +22,12 @@ export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
       'Use the loop button or press R to repeat a video. This browser remembers the choice for each video across its versions. Shots up to 20 seconds stay clear while playing, even with the pointer over the picture. Looping is unavailable during Live Review.',
   },
   {
+    date: '2026-10-06',
+    title: 'Invite several people and keep their links',
+    description:
+      'Invite people to folders and videos by email, or paste several addresses at once in any invitation form. Every pending invitation has its own copyable link and resend button. Resending extends the invitation without replacing a working link.',
+  },
+  {
     date: '2026-10-04',
     title: 'Comments straight onto your Premiere or Resolve timeline',
     description:
