@@ -52,6 +52,7 @@ interface VideoPageHeaderProps {
   activeVersionId: string | null;
   versionSelectionLocked?: boolean;
   liveReviewControl?: ReactNode;
+  presenceControl?: ReactNode;
   onVersionSelect: (versionId: string) => void;
   onDeleteCurrentVersionClick: () => void;
   showDeleteVersionDialog: boolean;
@@ -106,6 +107,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   onVersionSelect,
   versionSelectionLocked = false,
   liveReviewControl,
+  presenceControl,
   onDeleteCurrentVersionClick,
   showDeleteVersionDialog,
   setShowDeleteVersionDialog,
@@ -148,7 +150,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   return (
     <div
       className={cn(
-        'shrink-0 flex flex-wrap items-center justify-between min-h-12 px-4 py-2 sm:h-12 sm:py-0 sm:flex-nowrap border-b bg-background/50 gap-3',
+        '@container/video-header shrink-0 flex flex-wrap items-center justify-between min-h-12 px-4 py-2 border-b bg-background/50 gap-3',
         isFullscreenMode
           ? 'absolute top-0 left-0 right-0 z-50 transition-opacity duration-300'
           : // On a phone, upright or sideways, the keyboard takes half the screen, so
@@ -157,7 +159,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
         isFullscreenMode && cursorIdle && isPlaying && 'opacity-0 pointer-events-none'
       )}
     >
-      <div className="flex min-w-fit flex-1 items-center gap-3 sm:min-w-0">
+      <div className="flex min-w-24 flex-1 items-center gap-3">
         <Link
           href={backHref}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
@@ -166,7 +168,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
           Back
         </Link>
         <Separator orientation="vertical" className="h-5 shrink-0" />
-        <div className="hidden sm:flex min-w-0 items-center gap-2">
+        <div className="hidden @[42rem]/video-header:flex min-w-0 items-center gap-2">
           <span className="text-sm font-medium truncate">{title}</span>
           <span className="text-xs text-muted-foreground shrink-0">•</span>
           {projectLogoUrl ? <ProjectBrandLogo src={projectLogoUrl} className="h-5 w-5" /> : null}
@@ -189,7 +191,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               <Badge variant="secondary" className="sm:mr-2">
                 v{activeVersion.versionNumber}
               </Badge>
-              <span className="hidden sm:inline-block max-w-40 truncate">
+              <span className="hidden @[42rem]/video-header:inline-block max-w-40 truncate">
                 {activeVersion.versionLabel || `Version ${activeVersion.versionNumber}`}
               </span>
               <ChevronDown className="h-4 w-4 ml-2" />
@@ -252,7 +254,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                 size="sm"
                 disabled={versionSelectionLocked}
                 onClick={() => setShowVersionDialog(true)}
-                className="hidden sm:inline-flex"
+                className="hidden @[56rem]/video-header:inline-flex"
               >
                 <Plus className="h-4 w-4 mr-1" />
                 New Version
@@ -263,7 +265,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               variant="outline"
               size="sm"
               onClick={onOpenApprovalsPanel}
-              className="hidden sm:inline-flex"
+              className="hidden @[56rem]/video-header:inline-flex"
             >
               <ListChecks className="h-4 w-4 mr-1" />
               Approvals
@@ -275,7 +277,12 @@ export const VideoPageHeader = memo(function VideoPageHeader({
             </Button>
 
             {canShareVideo ? (
-              <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex">
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                className="hidden @[56rem]/video-header:inline-flex"
+              >
                 <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
                   <Share2 className="h-4 w-4 mr-1" />
                   {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
@@ -318,53 +325,59 @@ export const VideoPageHeader = memo(function VideoPageHeader({
               </div>
             ) : null}
 
-            {/* Phones get Share and Request Approval here; desktop gets Compare and Request Approval.
-                Hide the trigger at any breakpoint where the menu would be empty. */}
-            {(canManageVideo || canCompare) && (
-              <div
-                className={cn(
-                  !canManageVideo && 'hidden sm:block',
-                  !canCompare && !canRequestApproval && 'sm:hidden'
-                )}
-              >
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-7 px-0 self-center"
-                      aria-label="More actions"
+            {/* Keep actions reachable when the video column hides their header buttons. */}
+            <div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-7 px-0 self-center"
+                    aria-label="More actions"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {canManageVideo ? (
+                    <DropdownMenuItem
+                      onSelect={() => setShowVersionDialog(true)}
+                      disabled={versionSelectionLocked}
                     >
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {canCompare ? (
-                      <DropdownMenuItem onSelect={onOpenCompare} className="hidden sm:flex">
-                        <GitCompareArrows className="h-4 w-4 mr-2" />
-                        Compare
-                      </DropdownMenuItem>
-                    ) : null}
-                    {canShareVideo ? (
-                      <DropdownMenuItem asChild className="sm:hidden">
-                        <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
-                          <Share2 className="h-4 w-4 mr-2" />
-                          {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
-                        </Link>
-                      </DropdownMenuItem>
-                    ) : null}
-                    {canRequestApproval ? (
-                      <DropdownMenuItem onSelect={onOpenApprovalRequest}>
-                        <ShieldCheck className="h-4 w-4 mr-2" />
-                        Request Approval
-                      </DropdownMenuItem>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
+                      <Plus className="h-4 w-4 mr-2" />
+                      New Version
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem onSelect={onOpenApprovalsPanel}>
+                    <ListChecks className="h-4 w-4 mr-2" />
+                    Approvals
+                  </DropdownMenuItem>
+                  {canCompare ? (
+                    <DropdownMenuItem onSelect={onOpenCompare}>
+                      <GitCompareArrows className="h-4 w-4 mr-2" />
+                      Compare
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canShareVideo ? (
+                    <DropdownMenuItem asChild>
+                      <Link href={`/projects/${projectId}/videos/${videoId}/share`}>
+                        <Share2 className="h-4 w-4 mr-2" />
+                        {mediaType === 'IMAGE' ? 'Share Image' : 'Share Video'}
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canRequestApproval ? (
+                    <DropdownMenuItem onSelect={onOpenApprovalRequest}>
+                      <ShieldCheck className="h-4 w-4 mr-2" />
+                      Request Approval
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </>
         )}
+        {presenceControl}
       </div>
     </div>
   );

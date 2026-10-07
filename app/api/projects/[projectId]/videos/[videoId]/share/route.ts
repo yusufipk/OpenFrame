@@ -67,6 +67,8 @@ function serializeShareLink(
     allowDownloads: boolean;
     expiresAt: Date | null;
     createdAt: Date;
+    firstOpenedAt: Date | null;
+    lastOpenedAt: Date | null;
     passwordHash: string | null;
   } | null
 ) {
@@ -83,6 +85,8 @@ function serializeShareLink(
       allowDownloads: link.allowDownloads,
       expiresAt: link.expiresAt,
       createdAt: link.createdAt,
+      firstOpenedAt: link.firstOpenedAt,
+      lastOpenedAt: link.lastOpenedAt,
       hasPassword: !!link.passwordHash,
     },
     shareUrl: buildShareUrl(request, link.token),
@@ -120,6 +124,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           allowDownloads: true,
           expiresAt: true,
           createdAt: true,
+          firstOpenedAt: true,
+          lastOpenedAt: true,
           passwordHash: true,
         },
       });
@@ -174,6 +180,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       allowDownloads: boolean;
       expiresAt: Date | null;
       createdAt: Date;
+      firstOpenedAt: Date | null;
+      lastOpenedAt: Date | null;
       passwordHash: string | null;
     } | null = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -197,6 +205,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
               where: { id: existing.id },
               data: {
                 token,
+                firstOpenedAt: null,
+                lastOpenedAt: null,
                 allowGuests,
                 allowDownloads,
                 passwordHash,
@@ -210,6 +220,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
                 allowDownloads: true,
                 expiresAt: true,
                 createdAt: true,
+                firstOpenedAt: true,
+                lastOpenedAt: true,
                 passwordHash: true,
               },
             });
@@ -233,6 +245,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
               allowDownloads: true,
               expiresAt: true,
               createdAt: true,
+              firstOpenedAt: true,
+              lastOpenedAt: true,
               passwordHash: true,
             },
           });
@@ -325,7 +339,13 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
           ...(allowGuests !== undefined ? { allowGuests } : {}),
           ...(allowDownloads !== undefined ? { allowDownloads } : {}),
           ...(passwordHashUpdate !== undefined ? { passwordHash: passwordHashUpdate } : {}),
-          ...(shouldRotateToken ? { token: randomBytes(12).toString('base64url') } : {}),
+          ...(shouldRotateToken
+            ? {
+                token: randomBytes(12).toString('base64url'),
+                firstOpenedAt: null,
+                lastOpenedAt: null,
+              }
+            : {}),
         },
         select: {
           id: true,
@@ -335,6 +355,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
           allowDownloads: true,
           expiresAt: true,
           createdAt: true,
+          firstOpenedAt: true,
+          lastOpenedAt: true,
           passwordHash: true,
         },
       });
