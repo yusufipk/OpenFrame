@@ -2,7 +2,11 @@
 // growth scoreboard show it.
 
 import { describe, expect, it } from 'vitest';
-import { getUploaderCountsByAccount, uploaderWindowStart } from '@/lib/uploader-stats';
+import {
+  getTeamUploadersByAccount,
+  getUploaderCountsByAccount,
+  uploaderWindowStart,
+} from '@/lib/uploader-stats';
 import { getScoreboard } from '@/lib/analytics/scoreboard';
 import {
   createProject,
@@ -16,15 +20,15 @@ import {
 const DAY = 24 * 60 * 60 * 1000;
 
 describe('getUploaderCountsByAccount', () => {
-  it('counts each person once per account, across its workspaces and projects', async () => {
+  it('counts each collaborator once per account and excludes the workspace owner', async () => {
     const { owner, project } = await seedProject();
     const secondWorkspace = await createWorkspace({ ownerId: owner.id });
     const secondProject = await createProject({
       ownerId: owner.id,
       workspaceId: secondWorkspace.id,
     });
-    const editor = await createUser();
-    const colorist = await createUser();
+    const editor = await createUser({ name: 'Editor', email: 'editor@example.com' });
+    const colorist = await createUser({ name: 'Colorist', email: 'colorist@example.com' });
 
     const first = await createVideo({ projectId: project.id });
     const second = await createVideo({ projectId: secondProject.id });
@@ -36,7 +40,22 @@ describe('getUploaderCountsByAccount', () => {
 
     const counts = await getUploaderCountsByAccount(uploaderWindowStart());
 
-    expect(counts).toEqual({ [owner.id]: 3 });
+    expect(counts).toEqual({ [owner.id]: 2 });
+    expect(await getTeamUploadersByAccount(uploaderWindowStart())).toEqual({
+      [owner.id]: [
+        { userId: colorist.id, name: 'Colorist', email: 'colorist@example.com' },
+        { userId: editor.id, name: 'Editor', email: 'editor@example.com' },
+      ],
+    });
+  });
+
+  it('reports no team uploaders when only the workspace owner uploads', async () => {
+    const { owner, project } = await seedProject();
+    const video = await createVideo({ projectId: project.id });
+    await createVersion({ videoParentId: video.id, uploadedById: owner.id });
+
+    expect(await getUploaderCountsByAccount(uploaderWindowStart())).toEqual({});
+    expect(await getTeamUploadersByAccount(uploaderWindowStart())).toEqual({});
   });
 
   it('skips versions with no recorded uploader and versions older than the window', async () => {
@@ -62,7 +81,7 @@ describe('getUploaderCountsByAccount', () => {
 
     const counts = await getUploaderCountsByAccount(uploaderWindowStart());
 
-    expect(counts).toEqual({ [owner.id]: 2 });
+    expect(counts).toEqual({ [owner.id]: 1 });
   });
 
   it('credits an upload to the workspace owner, not to the project owner', async () => {
@@ -77,10 +96,28 @@ describe('getUploaderCountsByAccount', () => {
 
     expect(counts).toEqual({ [workspaceOwner.id]: 1 });
   });
+
+  it('counts an owner as a collaborator only when uploading to another account', async () => {
+    const first = await seedProject();
+    const second = await seedProject();
+    const ownVideo = await createVideo({ projectId: first.project.id });
+    const teamVideo = await createVideo({ projectId: second.project.id });
+    await createVersion({ videoParentId: ownVideo.id, uploadedById: first.owner.id });
+    await createVersion({ videoParentId: teamVideo.id, uploadedById: first.owner.id });
+
+    expect(await getUploaderCountsByAccount(uploaderWindowStart())).toEqual({
+      [second.owner.id]: 1,
+    });
+    expect(await getTeamUploadersByAccount(uploaderWindowStart())).toEqual({
+      [second.owner.id]: [
+        { userId: first.owner.id, name: first.owner.name, email: first.owner.email },
+      ],
+    });
+  });
 });
 
 describe('scoreboard uploaders', () => {
-  it('reports the uploaders of each paid account, and zero for one with none', async () => {
+  it('reports team uploaders for each paid account, excluding its owner', async () => {
     const { owner, project } = await seedProject({ owner: { subscriptionStatus: 'ACTIVE' } });
     const quiet = await createUser({ subscriptionStatus: 'ACTIVE' });
     const editor = await createUser();
@@ -91,7 +128,11 @@ describe('scoreboard uploaders', () => {
     const scoreboard = await getScoreboard({ weeks: 1 });
     const rowFor = (userId: string) => scoreboard.paidAccounts.find((row) => row.userId === userId);
 
-    expect(rowFor(owner.id)?.uploaders30).toBe(2);
+    expect(rowFor(owner.id)?.uploaders30).toBe(1);
+    expect(rowFor(owner.id)?.teamUploaders30).toEqual([
+      { userId: editor.id, name: editor.name, email: editor.email },
+    ]);
     expect(rowFor(quiet.id)?.uploaders30).toBe(0);
+    expect(rowFor(quiet.id)?.teamUploaders30).toEqual([]);
   });
 });

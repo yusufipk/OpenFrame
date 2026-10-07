@@ -13,7 +13,11 @@
 import type { AcquisitionChannel } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getCachedStripeStats } from '@/lib/admin-stats';
-import { getUploaderCountsByAccount, uploaderWindowStart } from '@/lib/uploader-stats';
+import {
+  getTeamUploadersByAccount,
+  uploaderWindowStart,
+  type TeamUploader,
+} from '@/lib/uploader-stats';
 import { countedEventSql } from '@/lib/stats-exclusion';
 
 /**
@@ -131,10 +135,11 @@ export interface PaidAccountRow {
   valueEvents30: number;
   lastValueEventAt: Date | null;
   /**
-   * Distinct people who uploaded into this account's workspaces in the last
-   * UPLOADER_WINDOW_DAYS, owner included. Above 1 means a team is working in it.
+   * Distinct collaborators who uploaded into this account's workspaces in the
+   * last UPLOADER_WINDOW_DAYS, excluding the workspace owner.
    */
   uploaders30: number;
+  teamUploaders30: TeamUploader[];
   channel: AcquisitionChannel | null;
   selfReported: AcquisitionChannel | null;
 }
@@ -596,7 +601,7 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     `,
     getCachedStripeStats(),
     getCohortComparison(now),
-    getUploaderCountsByAccount(uploaderWindowStart(now)),
+    getTeamUploadersByAccount(uploaderWindowStart(now)),
   ]);
 
   const byWeek = new Map<number, WeeklyRow>();
@@ -660,7 +665,8 @@ export async function getScoreboard(options?: { weeks?: number }): Promise<Score
     valueEvents7: row.value_events_7,
     valueEvents30: row.value_events_30,
     lastValueEventAt: row.last_value_event_at,
-    uploaders30: uploaders[row.user_id] ?? 0,
+    uploaders30: uploaders[row.user_id]?.length ?? 0,
+    teamUploaders30: uploaders[row.user_id] ?? [],
   }));
 
   const silentBefore = new Date(now);
