@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { checkFolderAccess, checkVideoAccess, visibleFolderWhere } from '@/lib/content-access';
+import { accessModeDescription } from '@/lib/content-access-copy';
 import {
   ContentError,
   contentId,
@@ -268,10 +269,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         const linkCount = await tx.shareLink.count({
           where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
         });
-        const accessMessage =
-          body.accessMode === 'RESTRICTED'
-            ? 'Account access is limited to invited members. Project and workspace managers retain access.'
-            : 'Members with access to the parent can access this area.';
+        const accessMessage = accessModeDescription(
+          body.accessMode === 'RESTRICTED' ? 'RESTRICTED' : 'INHERIT',
+          videoId ? 'video' : 'folder'
+        );
         const message =
           (action === 'access'
             ? accessMessage
