@@ -195,7 +195,7 @@ describe('project folder access', () => {
     const preview = await (await action(f.project.id, body)).json();
     expect(preview.data.needsConfirmation).toBe(true);
     expect(preview.data.message).toBe(
-      'Account access is limited to invited members. Project and workspace managers retain access. 1 existing video link will be revoked.'
+      'Only the people you invite below can open this folder. Project and workspace owners and admins can always open it. 1 existing video link will be revoked.'
     );
     expect(
       (await db.projectFolder.findUniqueOrThrow({ where: { id: f.folderA.id } })).accessMode

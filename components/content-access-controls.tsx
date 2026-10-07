@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ACCESS_MODE_LABELS, accessModeDescription } from '@/lib/content-access-copy';
 import {
   parseInvitationEmails,
   sendInvitationBatch,
@@ -67,10 +69,7 @@ export function ContentAccessControls({
     body: Record<string, unknown>;
   } | null>(null);
   const selectedMode = confirmation?.body.accessMode ?? accessMode;
-  const accessDescription =
-    selectedMode === 'RESTRICTED'
-      ? 'Account access is limited to invited members. Project and workspace managers retain access.'
-      : 'Members with access to the parent can access this area.';
+  const contentKind = videoId ? 'video' : 'folder';
   async function run(body: Record<string, unknown>) {
     setBusy(true);
     try {
@@ -178,54 +177,74 @@ export function ContentAccessControls({
                 ? `${showMembers ? 'Folder members' : 'Share folder'}: ${contentName}`
                 : 'Content access'}
             </DialogTitle>
-            <DialogDescription>Choose who can access this area.</DialogDescription>
+            <DialogDescription>Choose who can open this {contentKind}.</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 space-y-4 overflow-y-auto">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={busy || !accessMode}
-                variant={selectedMode === 'INHERIT' ? 'default' : 'outline'}
-                aria-pressed={selectedMode === 'INHERIT'}
-                onClick={() =>
-                  accessMode === 'INHERIT'
-                    ? setConfirmation(null)
-                    : void run({ action: 'access', accessMode: 'INHERIT' })
-                }
+            {accessMode ? (
+              <RadioGroup
+                aria-label="Access"
+                value={typeof selectedMode === 'string' ? selectedMode : accessMode}
+                onValueChange={(mode) => {
+                  // The group stays enabled while a request runs so keyboard focus is kept.
+                  if (busy) return;
+                  if (accessMode === mode) setConfirmation(null);
+                  else void run({ action: 'access', accessMode: mode });
+                }}
               >
-                Inherit parent access
-              </Button>
-              <Button
-                disabled={busy || !accessMode}
-                variant={selectedMode === 'RESTRICTED' ? 'default' : 'outline'}
-                aria-pressed={selectedMode === 'RESTRICTED'}
-                onClick={() =>
-                  accessMode === 'RESTRICTED'
-                    ? setConfirmation(null)
-                    : void run({ action: 'access', accessMode: 'RESTRICTED' })
-                }
-              >
-                Restrict access
-              </Button>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {accessMode ? (confirmation?.message ?? accessDescription) : 'Loading access...'}
-            </p>
+                {(['INHERIT', 'RESTRICTED'] as const).map((mode) => (
+                  <Label
+                    key={mode}
+                    htmlFor={`${invitationFormId}-access-${mode}`}
+                    className="flex cursor-pointer items-start gap-3 rounded-md border p-3 font-normal has-[[data-state=checked]]:border-primary"
+                  >
+                    <RadioGroupItem
+                      id={`${invitationFormId}-access-${mode}`}
+                      value={mode}
+                      aria-labelledby={`${invitationFormId}-access-${mode}-label`}
+                      aria-describedby={`${invitationFormId}-access-${mode}-help`}
+                      className="mt-0.5"
+                    />
+                    <span className="space-y-1">
+                      <span
+                        id={`${invitationFormId}-access-${mode}-label`}
+                        className="block font-medium"
+                      >
+                        {ACCESS_MODE_LABELS[mode]}
+                      </span>
+                      <span
+                        id={`${invitationFormId}-access-${mode}-help`}
+                        className="block text-sm text-muted-foreground"
+                      >
+                        {accessModeDescription(mode, contentKind)}
+                      </span>
+                    </span>
+                  </Label>
+                ))}
+              </RadioGroup>
+            ) : (
+              <p className="text-sm text-muted-foreground">Loading access...</p>
+            )}
             {confirmation && (
-              <div className="flex items-center gap-2">
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    void run({
-                      ...confirmation.body,
-                      confirmationToken: confirmation.confirmationToken,
-                    })
-                  }
-                >
-                  Confirm access change
-                </Button>
-                <Button variant="ghost" disabled={busy} onClick={() => setConfirmation(null)}>
-                  Cancel
-                </Button>
+              <div className="space-y-2">
+                <p role="status" className="text-sm">
+                  {confirmation.message}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      void run({
+                        ...confirmation.body,
+                        confirmationToken: confirmation.confirmationToken,
+                      })
+                    }
+                  >
+                    Confirm access change
+                  </Button>
+                  <Button variant="ghost" disabled={busy} onClick={() => setConfirmation(null)}>
+                    Cancel
+                  </Button>
+                </div>
               </div>
             )}
             <form
