@@ -136,6 +136,8 @@ services:
       OPENFRAME_REQUIRE_INVITE_CODE: 'true'
       INVITE_CODE: test-invite
       TRUSTED_PROXY_MODE: none
+      ADMIN_EMAILS: e2e-admin@example.com
+      OPENFRAME_ENABLE_ANALYTICS: 'true'
       OPENFRAME_ENABLE_S3_VIDEO_UPLOADS: 'true'
       OPENFRAME_ENABLE_BUNNY_UPLOADS: 'false'
       R2_ENDPOINT: http://minio-test:9000

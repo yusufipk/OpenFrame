@@ -98,6 +98,7 @@ const APP_ENV: Record<string, string> = {
   // without it no account in this suite can be an admin and admin.spec.ts can
   // only assert the refusals. The address is the one that spec signs in as.
   ADMIN_EMAILS: process.env.ADMIN_EMAILS ?? 'e2e-admin@example.com',
+  OPENFRAME_ENABLE_ANALYTICS: 'true',
 
   // Direct video uploads through the MinIO service in docker-compose.test.yml.
   // Without these the `Direct Upload` tab does not render at all, because

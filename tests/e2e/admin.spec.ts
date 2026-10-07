@@ -21,9 +21,9 @@
 // not about the authorization being tested: if the /admin guard itself
 // regressed, isAdmin would still be true and the tests below would fail on
 // their own assertions.
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { anonTest, expect, E2E_PASSWORD, signInPage } from './fixtures';
-import { createUser } from '../factories';
+import { addWorkspaceMember, createUser, createVersion, createVideo } from '../factories';
 import { db } from '@/lib/db';
 
 /**
@@ -139,6 +139,111 @@ anonTest.describe('the admin area', () => {
       await submit.click();
       await expect(page.getByText('No users match these filters.')).toBeVisible();
       await expect(page.getByText(targetEmail, { exact: true })).toHaveCount(0);
+    }
+  );
+
+  anonTest(
+    'shows team uploader names, owner exclusion and sorting on both admin pages',
+    async ({ page, seed }, testInfo) => {
+      const [solo, one, two, editor, colorist, inactive] = await Promise.all([
+        seed.user({ name: 'Uploader Browser Account Solo' }),
+        seed.user({ name: 'Uploader Browser Account One' }),
+        seed.user({ name: 'Uploader Browser Account Two' }),
+        seed.user({ name: 'Editor Çiğdem' }),
+        seed.user({ name: 'Colorist Özgür' }),
+        seed.user({ name: 'Inactive Collaborator' }),
+      ]);
+
+      await db.user.updateMany({
+        where: { id: { in: [solo.id, one.id, two.id] } },
+        data: { subscriptionStatus: 'ACTIVE' },
+      });
+
+      for (const owner of [solo, one, two]) {
+        const { project, workspaceId } = await seed.project(owner);
+        const video = await createVideo({ projectId: project.id });
+        await createVersion({ videoParentId: video.id, versionNumber: 1, uploadedById: owner.id });
+        if (owner.id === solo.id) continue;
+
+        await addWorkspaceMember({ workspaceId, userId: editor.id, role: 'ADMIN' });
+        await createVersion({ videoParentId: video.id, versionNumber: 2, uploadedById: editor.id });
+        await createVersion({ videoParentId: video.id, versionNumber: 3, uploadedById: editor.id });
+        await addWorkspaceMember({ workspaceId, userId: inactive.id, role: 'ADMIN' });
+        await createVersion({
+          videoParentId: video.id,
+          versionNumber: 4,
+          uploadedById: inactive.id,
+          createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+        });
+        await createVersion({ videoParentId: video.id, versionNumber: 5, uploadedById: null });
+        if (owner.id === two.id) {
+          await addWorkspaceMember({ workspaceId, userId: colorist.id, role: 'ADMIN' });
+          await createVersion({
+            videoParentId: video.id,
+            versionNumber: 6,
+            uploadedById: colorist.id,
+          });
+        }
+      }
+
+      await signInAsAdmin(page);
+      expect(await sessionIsAdmin(page.context().request), ADMIN_SETUP_HINT).toBe(true);
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      await page.goto('/admin/users?q=Uploader%20Browser%20Account');
+      const usersTable = page.getByRole('table');
+      const headers = await usersTable.getByRole('columnheader').allTextContents();
+      const teamColumn = headers.findIndex((text) => text.includes('Team uploaders (30d)'));
+      expect(teamColumn).toBeGreaterThanOrEqual(0);
+
+      const assertTeam = async (
+        table: Locator,
+        identity: string,
+        column: number,
+        count: string,
+        names: string[]
+      ) => {
+        const row = table.getByRole('row').filter({ hasText: identity });
+        await expect(row).toHaveCount(1);
+        const cell = row.getByRole('cell').nth(column);
+        await expect(cell.locator('span').first()).toHaveText(count);
+        await expect(cell.getByRole('listitem')).toHaveText(names);
+      };
+
+      await assertTeam(usersTable, solo.email ?? '', teamColumn, '0', []);
+      await assertTeam(usersTable, one.email ?? '', teamColumn, '1', ['Editor Çiğdem']);
+      await assertTeam(usersTable, two.email ?? '', teamColumn, '2', [
+        'Colorist Özgür',
+        'Editor Çiğdem',
+      ]);
+
+      await page.getByRole('link', { name: 'Team uploaders (30d)' }).click();
+      await expect(page).toHaveURL(/[?&]sortDirection=desc/);
+      await expect(usersTable.locator('tbody tr').first()).toContainText(two.email ?? '');
+      await page.getByRole('link', { name: 'Team uploaders (30d)' }).click();
+      await expect(page).toHaveURL(/[?&]sortDirection=asc/);
+      await expect(usersTable.locator('tbody tr').first()).toContainText(solo.email ?? '');
+      await page.screenshot({
+        path: testInfo.outputPath('team-uploaders-users.png'),
+        fullPage: true,
+      });
+
+      await page.goto('/admin/growth');
+      const growthTable = page.getByRole('table').filter({
+        has: page.getByRole('columnheader', { name: 'Team uploaders', exact: true }),
+      });
+      await expect(growthTable).toHaveCount(1);
+      const growthHeaders = await growthTable.getByRole('columnheader').allTextContents();
+      const growthTeamColumn = growthHeaders.findIndex((text) => text.trim() === 'Team uploaders');
+      expect(growthTeamColumn).toBeGreaterThanOrEqual(0);
+      await assertTeam(growthTable, 'Uploader Browser Account Solo', growthTeamColumn, '0', []);
+      await assertTeam(growthTable, 'Uploader Browser Account One', growthTeamColumn, '1', [
+        'Editor Çiğdem',
+      ]);
+      await assertTeam(growthTable, 'Uploader Browser Account Two', growthTeamColumn, '2', [
+        'Colorist Özgür',
+        'Editor Çiğdem',
+      ]);
+      await growthTable.screenshot({ path: testInfo.outputPath('team-uploaders-growth.png') });
     }
   );
 });
