@@ -324,62 +324,67 @@ export function MembersManagementPage({
             Invite Member
           </CardTitle>
           <CardDescription>
-            Invite someone by email. They must have an account to be added.
+            Send email invitations. Recipients can sign in or create an account to join.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3 sm:items-end">
-            <div className="w-full sm:flex-1">
+          <form onSubmit={handleInvite} className="space-y-4">
+            <div>
               <Label htmlFor="email" className="mb-2 block">
                 Email Addresses
               </Label>
               <Textarea
                 id="email"
+                aria-describedby="invitation-email-help"
                 placeholder="Email addresses, separated by commas or new lines"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 required
                 disabled={isInviting}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p id="invitation-email-help" className="mt-2 text-xs text-muted-foreground">
                 Invite up to 20 people at a time.
               </p>
             </div>
-            <div className="w-full sm:w-40">
-              <Label className="mb-2 block">Role</Label>
-              <Select
-                value={inviteRole}
-                disabled={isInviting}
-                onValueChange={(v) => setInviteRole(v as 'ADMIN' | 'COMMENTATOR')}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ADMIN">Admin</SelectItem>
-                  <SelectItem value="COMMENTATOR">Commentator</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0 flex-1 sm:w-48 sm:flex-none">
+                <Label htmlFor="invitation-role" className="mb-2 block">
+                  Role
+                </Label>
+                <Select
+                  value={inviteRole}
+                  disabled={isInviting}
+                  onValueChange={(v) => setInviteRole(v as 'ADMIN' | 'COMMENTATOR')}
+                >
+                  <SelectTrigger id="invitation-role" className="w-full data-[size=default]:h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ADMIN">Admin</SelectItem>
+                    <SelectItem value="COMMENTATOR">Commentator</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" disabled={isInviting} className="h-10 min-w-28">
+                {isInviting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Invite
+                  </>
+                )}
+              </Button>
             </div>
-            <Button type="submit" disabled={isInviting} className="w-full sm:w-auto">
-              {isInviting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Invite
-                </>
-              )}
-            </Button>
           </form>
 
           {error && (
-            <div className="mt-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="mt-3 break-words rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
           {success && (
-            <div className="mt-3 rounded-md bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
+            <div className="mt-3 break-words rounded-md bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
               {success}
             </div>
           )}
@@ -509,13 +514,10 @@ export function MembersManagementPage({
         </CardHeader>
         <CardContent className="space-y-3">
           {pendingInvitations.map((invitation) => (
-            <div
-              key={invitation.id}
-              className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-lg border"
-            >
+            <div key={invitation.id} className="space-y-3 p-3 rounded-lg border">
               <div className="min-w-0 flex-1">
                 <p className="break-all text-sm font-medium">{invitation.email}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="break-words text-xs text-muted-foreground">
                   {invitation.role === 'ADMIN' ? 'Admin' : 'Commentator'} · Sent by{' '}
                   {invitation.invitedBy.name || invitation.invitedBy.email || 'Unknown'}
                 </p>
@@ -556,7 +558,7 @@ export function MembersManagementPage({
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      <MailX className="h-4 w-4 mr-2" />
+                      <MailX className="hidden h-4 w-4 sm:block" />
                       Cancel
                     </>
                   )}

@@ -27,6 +27,54 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
 
 describe('createOrRefreshInvitation', () => {
+  it('retries a PostgreSQL driver write conflict and persists the invitation once', async () => {
+    const scenario = await seedProject();
+    const conflict = Object.assign(new Error('TransactionWriteConflict'), {
+      name: 'DriverAdapterError',
+      cause: { kind: 'TransactionWriteConflict' },
+    });
+    const transaction = vi.spyOn(db, '$transaction').mockRejectedValueOnce(conflict);
+    try {
+      const invitation = await createOrRefreshInvitation({
+        email: 'invitee@example.com',
+        scope: 'WORKSPACE',
+        role: 'COMMENTATOR',
+        invitedById: scenario.owner.id,
+        workspaceId: scenario.workspace.id,
+      });
+      expect(transaction).toHaveBeenCalledTimes(2);
+      expect(await db.invitation.findMany()).toEqual([invitation]);
+      expect(invitation.status).toBe('PENDING');
+      expect(invitation.email).toBe('invitee@example.com');
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
+  it('stops retrying a persistent PostgreSQL driver write conflict after three attempts', async () => {
+    const scenario = await seedProject();
+    const conflict = Object.assign(new Error('TransactionWriteConflict'), {
+      name: 'DriverAdapterError',
+      cause: { kind: 'TransactionWriteConflict' },
+    });
+    const transaction = vi.spyOn(db, '$transaction').mockRejectedValue(conflict);
+    try {
+      await expect(
+        createOrRefreshInvitation({
+          email: 'invitee@example.com',
+          scope: 'WORKSPACE',
+          role: 'COMMENTATOR',
+          invitedById: scenario.owner.id,
+          workspaceId: scenario.workspace.id,
+        })
+      ).rejects.toBe(conflict);
+      expect(transaction).toHaveBeenCalledTimes(3);
+      expect(await db.invitation.count()).toBe(0);
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
   it('creates a pending invitation with a normalized address and a 32-byte token', async () => {
     const scenario = await seedProject();
 

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Share2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import { useEditorLimitDialog } from '@/components/editor-limit-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import {
   parseInvitationEmails,
   sendInvitationBatch,
@@ -48,6 +49,7 @@ export function ContentAccessControls({
   showMembers?: boolean;
   onAccessChanged?: () => void;
 }) {
+  const invitationFormId = useId();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -169,8 +171,8 @@ export function ContentAccessControls({
         {showMembers ? 'Members' : share ? 'Share' : 'Manage access'}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden">
+          <DialogHeader className="pr-6">
             <DialogTitle>
               {contentName
                 ? `${showMembers ? 'Folder members' : 'Share folder'}: ${contentName}`
@@ -178,169 +180,187 @@ export function ContentAccessControls({
             </DialogTitle>
             <DialogDescription>Choose who can access this area.</DialogDescription>
           </DialogHeader>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={busy || !accessMode}
-              variant={selectedMode === 'INHERIT' ? 'default' : 'outline'}
-              aria-pressed={selectedMode === 'INHERIT'}
-              onClick={() =>
-                accessMode === 'INHERIT'
-                  ? setConfirmation(null)
-                  : void run({ action: 'access', accessMode: 'INHERIT' })
-              }
-            >
-              Inherit parent access
-            </Button>
-            <Button
-              disabled={busy || !accessMode}
-              variant={selectedMode === 'RESTRICTED' ? 'default' : 'outline'}
-              aria-pressed={selectedMode === 'RESTRICTED'}
-              onClick={() =>
-                accessMode === 'RESTRICTED'
-                  ? setConfirmation(null)
-                  : void run({ action: 'access', accessMode: 'RESTRICTED' })
-              }
-            >
-              Restrict access
-            </Button>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {accessMode ? (confirmation?.message ?? accessDescription) : 'Loading access...'}
-          </p>
-          {confirmation && (
-            <div className="flex items-center gap-2">
+          <div className="min-h-0 space-y-4 overflow-y-auto">
+            <div className="flex flex-wrap gap-2">
               <Button
-                disabled={busy}
+                disabled={busy || !accessMode}
+                variant={selectedMode === 'INHERIT' ? 'default' : 'outline'}
+                aria-pressed={selectedMode === 'INHERIT'}
                 onClick={() =>
-                  void run({
-                    ...confirmation.body,
-                    confirmationToken: confirmation.confirmationToken,
-                  })
+                  accessMode === 'INHERIT'
+                    ? setConfirmation(null)
+                    : void run({ action: 'access', accessMode: 'INHERIT' })
                 }
               >
-                Confirm access change
+                Inherit parent access
               </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => setConfirmation(null)}>
-                Cancel
+              <Button
+                disabled={busy || !accessMode}
+                variant={selectedMode === 'RESTRICTED' ? 'default' : 'outline'}
+                aria-pressed={selectedMode === 'RESTRICTED'}
+                onClick={() =>
+                  accessMode === 'RESTRICTED'
+                    ? setConfirmation(null)
+                    : void run({ action: 'access', accessMode: 'RESTRICTED' })
+                }
+              >
+                Restrict access
               </Button>
             </div>
-          )}
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void invite(email, role);
-            }}
-          >
-            <Textarea
-              aria-label="Invitation email"
-              placeholder="Email addresses, separated by commas or new lines"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={busy}
-            />
-            <p className="text-xs text-muted-foreground">Invite up to 20 people at a time.</p>
-            <Select value={role} onValueChange={setRole} disabled={busy}>
-              <SelectTrigger aria-label="Invitation role" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="COMMENTATOR">Commentator: view and comment</SelectItem>
-                <SelectItem value="ADMIN">Admin: manage this area</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button disabled={busy}>Send invitations</Button>
-          </form>
-          {delivery.length > 0 && (
-            <div role="status" className="space-y-1 text-sm">
-              {delivery.map((message) => (
-                <p key={message}>{message}</p>
-              ))}
-            </div>
-          )}
-          {returnedInvitations
-            .filter(
-              (result) =>
-                !invitations.some((invitation) => invitation.invitationUrl === result.invitationUrl)
-            )
-            .map((result) => (
-              <div key={result.email} className="space-y-2 rounded-md border p-3">
-                <p className="break-all text-sm">{result.email}</p>
-                <Input
-                  readOnly
-                  aria-label={`Invitation link for ${result.email}`}
-                  value={result.invitationUrl}
-                />
+            <p className="text-sm text-muted-foreground">
+              {accessMode ? (confirmation?.message ?? accessDescription) : 'Loading access...'}
+            </p>
+            {confirmation && (
+              <div className="flex items-center gap-2">
                 <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void copyLink(result.invitationUrl!)}
+                  disabled={busy}
+                  onClick={() =>
+                    void run({
+                      ...confirmation.body,
+                      confirmationToken: confirmation.confirmationToken,
+                    })
+                  }
                 >
-                  Copy link
+                  Confirm access change
+                </Button>
+                <Button variant="ghost" disabled={busy} onClick={() => setConfirmation(null)}>
+                  Cancel
                 </Button>
               </div>
-            ))}
-          {members.map((m) => (
-            <div className="flex justify-between gap-2" key={m.id}>
-              <span>
-                {m.user.name ?? m.user.email} ({m.role})
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={async () => {
-                  await run({ action: 'revokeMember', memberId: m.id });
-                  await run({ action: 'members' });
-                }}
-              >
-                Remove
+            )}
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void invite(email, role);
+              }}
+            >
+              <div className="space-y-2">
+                <Label htmlFor={`${invitationFormId}-email`}>Email Addresses</Label>
+                <Textarea
+                  id={`${invitationFormId}-email`}
+                  aria-label="Invitation email"
+                  aria-describedby={`${invitationFormId}-help`}
+                  placeholder="Email addresses, separated by commas or new lines"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={busy}
+                />
+                <p id={`${invitationFormId}-help`} className="text-xs text-muted-foreground">
+                  Invite up to 20 people at a time.
+                </p>
+              </div>
+              <Label htmlFor={`${invitationFormId}-role`}>Role</Label>
+              <Select value={role} onValueChange={setRole} disabled={busy}>
+                <SelectTrigger
+                  id={`${invitationFormId}-role`}
+                  aria-label="Invitation role"
+                  className="w-full data-[size=default]:h-10"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COMMENTATOR">Commentator: view and comment</SelectItem>
+                  <SelectItem value="ADMIN">Admin: manage this area</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button disabled={busy} className="h-10 w-full">
+                Send invitations
               </Button>
-            </div>
-          ))}
-          {invitations.map((i) => (
-            <div className="space-y-2 rounded-md border p-3" key={i.id}>
-              <span className="block break-all text-sm">{i.email} (pending)</span>
-              <Input
-                aria-label={
-                  invitations.length === 1 ? 'Invitation link' : `Invitation link for ${i.email}`
-                }
-                readOnly
-                value={i.invitationUrl}
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void copyLink(i.invitationUrl)}
-                >
-                  Copy link
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void invite(i.email, i.role, true)}
-                >
-                  Resend
-                </Button>
+            </form>
+            {delivery.length > 0 && (
+              <div role="status" className="space-y-1 break-words text-sm">
+                {delivery.map((message) => (
+                  <p key={message}>{message}</p>
+                ))}
+              </div>
+            )}
+            {returnedInvitations
+              .filter(
+                (result) =>
+                  !invitations.some(
+                    (invitation) => invitation.invitationUrl === result.invitationUrl
+                  )
+              )
+              .map((result) => (
+                <div key={result.email} className="space-y-2 rounded-md border p-3">
+                  <p className="break-all text-sm">{result.email}</p>
+                  <Input
+                    readOnly
+                    aria-label={`Invitation link for ${result.email}`}
+                    value={result.invitationUrl}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void copyLink(result.invitationUrl!)}
+                  >
+                    Copy link
+                  </Button>
+                </div>
+              ))}
+            {members.map((m) => (
+              <div className="flex justify-between gap-2" key={m.id}>
+                <span>
+                  {m.user.name ?? m.user.email} ({m.role})
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={busy}
                   onClick={async () => {
-                    await run({ action: 'revokeInvitation', invitationId: i.id });
-                    setDelivery([]);
+                    await run({ action: 'revokeMember', memberId: m.id });
                     await run({ action: 'members' });
                   }}
                 >
-                  Cancel
+                  Remove
                 </Button>
               </div>
-            </div>
-          ))}
+            ))}
+            {invitations.map((i) => (
+              <div className="space-y-2 rounded-md border p-3" key={i.id}>
+                <span className="block break-all text-sm">{i.email} (pending)</span>
+                <Input
+                  aria-label={
+                    invitations.length === 1 ? 'Invitation link' : `Invitation link for ${i.email}`
+                  }
+                  readOnly
+                  value={i.invitationUrl}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void copyLink(i.invitationUrl)}
+                  >
+                    Copy link
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void invite(i.email, i.role, true)}
+                  >
+                    Resend
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={async () => {
+                      await run({ action: 'revokeInvitation', invitationId: i.id });
+                      setDelivery([]);
+                      await run({ action: 'members' });
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </>
