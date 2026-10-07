@@ -91,7 +91,11 @@ test('an invited member accepts, is promoted, and is removed, and their own page
     await page.getByLabel('Email Address').fill(memberEmail);
     await page.getByRole('button', { name: 'Invite' }).click();
 
-    await expect(page.getByText(`Invitation sent to ${memberEmail}`)).toBeVisible();
+    await expect(
+      page.getByText(
+        `Invitation created for ${memberEmail}, but email could not be sent. Copy the link to share it.`
+      )
+    ).toBeVisible();
     // The pending list is the owner-visible proof that a row was written; the
     // success banner alone would also appear for a no-op.
     await expect(page.getByText('No pending invitations.')).toHaveCount(0);
@@ -191,7 +195,11 @@ test('a commentator cannot invite anyone, and the owner can withdraw a pending i
     await page.goto(`/workspaces/${workspace.id}/members`);
     await page.getByLabel('Email Address').fill(outsiderEmail);
     await page.getByRole('button', { name: 'Invite' }).click();
-    await expect(page.getByText(`Invitation sent to ${outsiderEmail}`)).toBeVisible();
+    await expect(
+      page.getByText(
+        `Invitation created for ${outsiderEmail}, but email could not be sent. Copy the link to share it.`
+      )
+    ).toBeVisible();
 
     const invitationRow = page
       .getByText(outsiderEmail, { exact: true })

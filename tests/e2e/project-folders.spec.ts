@@ -97,7 +97,7 @@ test('folder navigation and account invitation expose only the assigned area', a
   );
   await dialog.getByRole('combobox', { name: 'Invitation role' }).click();
   await page.getByRole('option', { name: 'Commentator: view and comment', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Create account invitation' }).click();
+  await dialog.getByRole('button', { name: 'Send invitations' }).click();
   const invitation = dialog.getByLabel('Invitation link');
   await expect(invitation).toBeVisible();
   const invitationUrl = await invitation.inputValue();
@@ -272,6 +272,7 @@ test('folder Members lists and cancels its pending invitations', async ({
 }) => {
   const { project } = await seed.project(seededUser);
   const invited = await seed.user();
+  const secondInvited = await seed.user();
   const folder = await db.projectFolder.create({
     data: { projectId: project.id, name: 'Assigned area', accessMode: 'RESTRICTED' },
   });
@@ -283,17 +284,45 @@ test('folder Members lists and cancels its pending invitations', async ({
   const dialog = page.getByRole('dialog', { name: 'Folder members: Assigned area', exact: true });
   await expect(dialog).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`folderId=${folder.id}$`));
-  await dialog.getByLabel('Invitation email').fill(invited.email!);
-  await dialog.getByRole('button', { name: 'Create account invitation' }).click();
+  await dialog.getByLabel('Invitation email').fill(`${invited.email},\n${secondInvited.email}`);
+  await dialog.getByRole('button', { name: 'Send invitations' }).click();
   await expect(dialog.getByText(`${invited.email} (pending)`, { exact: true })).toBeVisible();
   const invitation = await db.invitation.findFirstOrThrow({
     where: { folderId: folder.id, email: invited.email!, status: 'PENDING' },
+  });
+  await expect(dialog.getByText(`${secondInvited.email} (pending)`, { exact: true })).toBeVisible();
+  const firstUrl = await dialog.getByLabel(`Invitation link for ${invited.email}`).inputValue();
+  const firstRow = dialog.getByText(`${invited.email} (pending)`, { exact: true }).locator('..');
+  await firstRow.getByRole('button', { name: 'Resend', exact: true }).click();
+  await expect(
+    dialog.getByText(
+      `Invitation created for ${invited.email}, but email could not be sent. Copy the link to share it.`,
+      { exact: true }
+    )
+  ).toBeVisible();
+  await expect(dialog.getByLabel(`Invitation link for ${invited.email}`)).toHaveValue(firstUrl);
+  expect((await db.invitation.findUniqueOrThrow({ where: { id: invitation.id } })).token).toBe(
+    invitation.token
+  );
+  await test.info().attach('folder-invitations-desktop', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await test.info().attach('folder-invitations-mobile', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
   });
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.reload();
   await membersButton.click();
   await expect(dialog.getByText(`${invited.email} (pending)`, { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog
+    .getByText(`${invited.email} (pending)`, { exact: true })
+    .locator('..')
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click();
   await expect(dialog.getByText(`${invited.email} (pending)`, { exact: true })).toHaveCount(0);
   await expect
     .poll(

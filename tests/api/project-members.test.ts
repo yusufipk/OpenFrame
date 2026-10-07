@@ -349,7 +349,7 @@ describe('POST /api/projects/[projectId]/members', () => {
 
     const invitation = await db.invitation.findFirstOrThrow();
     expect(invitation.role).toBe('ADMIN');
-    expect(invitation.token).not.toBe(firstToken);
+    expect(invitation.token).toBe(firstToken);
   });
 });
 
