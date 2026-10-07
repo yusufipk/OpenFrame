@@ -185,8 +185,18 @@ export async function createOrRefreshInvitation(
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     } catch (error) {
+      // The PostgreSQL adapter can surface a conflict directly while committing.
+      const isDriverWriteConflict =
+        error instanceof Error &&
+        error.name === 'DriverAdapterError' &&
+        'cause' in error &&
+        typeof error.cause === 'object' &&
+        error.cause !== null &&
+        'kind' in error.cause &&
+        error.cause.kind === 'TransactionWriteConflict';
       const isSerializationFailure =
-        error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
+        (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') ||
+        isDriverWriteConflict;
       if (!isSerializationFailure || attempt === MAX_INVITATION_RETRIES) throw error;
     }
   }
