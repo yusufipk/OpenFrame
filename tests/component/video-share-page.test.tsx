@@ -127,9 +127,9 @@ describe('video sharing access', () => {
     expect(screen.queryByRole('button', { name: 'Manage access' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Members' }));
     await waitFor(() =>
-      expect(screen.getByRole('radio', { name: 'Only invited people' })).toBeEnabled()
+      expect(screen.getByRole('checkbox', { name: 'Only invited people' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('radio', { name: 'Only invited people' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Only invited people' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm access change' }));
     await waitFor(() =>
       expect(screen.queryByDisplayValue('https://example.com/s/review')).not.toBeInTheDocument()

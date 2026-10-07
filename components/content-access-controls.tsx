@@ -8,8 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { ACCESS_MODE_LABELS, accessModeDescription } from '@/lib/content-access-copy';
 import {
   parseInvitationEmails,
   sendInvitationBatch,
@@ -181,46 +179,21 @@ export function ContentAccessControls({
           </DialogHeader>
           <div className="min-h-0 space-y-4 overflow-y-auto">
             {accessMode ? (
-              <RadioGroup
-                aria-label="Access"
-                value={typeof selectedMode === 'string' ? selectedMode : accessMode}
-                onValueChange={(mode) => {
-                  // The group stays enabled while a request runs so keyboard focus is kept.
-                  if (busy) return;
-                  if (accessMode === mode) setConfirmation(null);
-                  else void run({ action: 'access', accessMode: mode });
-                }}
-              >
-                {(['INHERIT', 'RESTRICTED'] as const).map((mode) => (
-                  <Label
-                    key={mode}
-                    htmlFor={`${invitationFormId}-access-${mode}`}
-                    className="flex cursor-pointer items-start gap-3 rounded-md border p-3 font-normal has-[[data-state=checked]]:border-primary"
-                  >
-                    <RadioGroupItem
-                      id={`${invitationFormId}-access-${mode}`}
-                      value={mode}
-                      aria-labelledby={`${invitationFormId}-access-${mode}-label`}
-                      aria-describedby={`${invitationFormId}-access-${mode}-help`}
-                      className="mt-0.5"
-                    />
-                    <span className="space-y-1">
-                      <span
-                        id={`${invitationFormId}-access-${mode}-label`}
-                        className="block font-medium"
-                      >
-                        {ACCESS_MODE_LABELS[mode]}
-                      </span>
-                      <span
-                        id={`${invitationFormId}-access-${mode}-help`}
-                        className="block text-sm text-muted-foreground"
-                      >
-                        {accessModeDescription(mode, contentKind)}
-                      </span>
-                    </span>
-                  </Label>
-                ))}
-              </RadioGroup>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-primary"
+                  checked={selectedMode === 'RESTRICTED'}
+                  onChange={(event) => {
+                    // Stays enabled while a request runs so keyboard focus is kept.
+                    if (busy) return;
+                    const mode = event.target.checked ? 'RESTRICTED' : 'INHERIT';
+                    if (accessMode === mode) setConfirmation(null);
+                    else void run({ action: 'access', accessMode: mode });
+                  }}
+                />
+                Only invited people
+              </label>
             ) : (
               <p className="text-sm text-muted-foreground">Loading access...</p>
             )}

@@ -195,7 +195,7 @@ describe('project folder access', () => {
     const preview = await (await action(f.project.id, body)).json();
     expect(preview.data.needsConfirmation).toBe(true);
     expect(preview.data.message).toBe(
-      'Only the people you invite below can open this folder. Project and workspace owners and admins can always open it. 1 existing video link will be revoked.'
+      'Owners and admins keep access. 1 existing video link will be revoked.'
     );
     expect(
       (await db.projectFolder.findUniqueOrThrow({ where: { id: f.folderA.id } })).accessMode
@@ -217,6 +217,16 @@ describe('project folder access', () => {
       await action(f.project.id, { action: 'members', folderId: f.folderA.id })
     ).json();
     expect(after.data.accessMode).toBe('RESTRICTED');
+    const inheritPreview = await (
+      await action(f.project.id, {
+        action: 'access',
+        folderId: f.folderA.id,
+        accessMode: 'INHERIT',
+      })
+    ).json();
+    expect(inheritPreview.data.message).toBe(
+      'Anyone who can open its folder or project gets access.'
+    );
   });
   it('preserves video identity, versions and direct grants on confirmed cross-project moves', async () => {
     const f = await fixture();

@@ -45,21 +45,11 @@ test('folder navigation and account invitation expose only the assigned area', a
     .click();
   const dialog = page.getByRole('dialog', { name: 'Share folder: Assigned area', exact: true });
   await expect(dialog).toBeVisible();
-  await expect(
-    dialog.getByRole('radio', { name: 'Same as its folder or project', exact: true })
-  ).toHaveAttribute('aria-checked', 'true');
-  await expect(
-    dialog.getByRole('radio', { name: 'Only invited people', exact: true })
-  ).toHaveAttribute('aria-checked', 'false');
-  await dialog.getByRole('radio', { name: 'Only invited people', exact: true }).click();
-  await expect(
-    dialog.getByRole('radio', { name: 'Only invited people', exact: true })
-  ).toHaveAttribute('aria-checked', 'true');
-  await expect(
-    dialog.getByRole('status').filter({ hasText: 'Only the people you invite below' })
-  ).toHaveText(
-    'Only the people you invite below can open this folder. Project and workspace owners and admins can always open it.'
-  );
+  const onlyInvited = dialog.getByRole('checkbox', { name: 'Only invited people', exact: true });
+  await expect(onlyInvited).not.toBeChecked();
+  await onlyInvited.click();
+  await expect(onlyInvited).toBeChecked();
+  await expect(dialog.getByRole('status')).toHaveText('Owners and admins keep access.');
   await dialog.getByRole('button', { name: 'Confirm access change' }).click();
   await expect
     .poll(
@@ -67,24 +57,14 @@ test('folder navigation and account invitation expose only the assigned area', a
         (await db.projectFolder.findUniqueOrThrow({ where: { id: folder.id } })).accessMode
     )
     .toBe('RESTRICTED');
-  await expect(
-    dialog.getByRole('radio', { name: 'Only invited people', exact: true })
-  ).toHaveAttribute('aria-checked', 'true');
+  await expect(onlyInvited).toBeChecked();
   await expect(dialog.getByRole('button', { name: 'Confirm access change' })).toHaveCount(0);
-  await expect(
-    dialog.getByRole('radio', { name: 'Same as its folder or project', exact: true })
-  ).toHaveAttribute('aria-checked', 'false');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page
     .getByRole('group', { name: 'Project actions' })
     .getByRole('button', { name: 'Share', exact: true })
     .click();
-  await expect(
-    dialog.getByRole('radio', { name: 'Only invited people', exact: true })
-  ).toHaveAttribute('aria-checked', 'true');
-  await expect(
-    dialog.getByRole('radio', { name: 'Same as its folder or project', exact: true })
-  ).toHaveAttribute('aria-checked', 'false');
+  await expect(onlyInvited).toBeChecked();
   await dialog.getByLabel('Invitation email').fill(director.email!);
   await dialog.getByRole('combobox', { name: 'Invitation role' }).click();
   await page.getByRole('option', { name: 'Admin: manage this area', exact: true }).click();
