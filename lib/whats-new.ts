@@ -17,9 +17,9 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-10-07',
-    title: 'Clearer folder and video access',
+    title: 'Simpler folder and video access',
     description:
-      'When you share a folder or video, choose between "Same as its folder or project" and "Only invited people", and each option says who will be able to open it.',
+      'Tick "Only invited people" when sharing a folder or video to keep it to the people you invite. Leave it off and it follows its folder or project.',
   },
   {
     date: '2026-10-06',

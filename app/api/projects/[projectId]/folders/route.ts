@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { checkFolderAccess, checkVideoAccess, visibleFolderWhere } from '@/lib/content-access';
-import { accessModeDescription } from '@/lib/content-access-copy';
+import { accessChangeMessage } from '@/lib/content-access-copy';
 import {
   ContentError,
   contentId,
@@ -269,9 +269,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         const linkCount = await tx.shareLink.count({
           where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
         });
-        const accessMessage = accessModeDescription(
-          body.accessMode === 'RESTRICTED' ? 'RESTRICTED' : 'INHERIT',
-          videoId ? 'video' : 'folder'
+        const accessMessage = accessChangeMessage(
+          body.accessMode === 'RESTRICTED' ? 'RESTRICTED' : 'INHERIT'
         );
         const message =
           (action === 'access'
