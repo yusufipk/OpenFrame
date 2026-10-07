@@ -425,6 +425,7 @@ export function VideoPageContent({
     videoDuration,
     durationVersionId,
     isPlaying,
+    isLoopEnabled,
     isMuted,
     isFrameMode,
     frameStepLabel,
@@ -442,6 +443,7 @@ export function VideoPageContent({
     handleVideoMouseMove,
     handleVideoMouseLeave,
     handlePlayPause,
+    handleLoopToggle,
     handleSeekToTimestamp: handleLocalSeekToTimestamp,
     handleMuteToggle,
     handleFrameModeToggle,
@@ -452,6 +454,7 @@ export function VideoPageContent({
     handleTimelinePointerMove,
     toggleFullscreen,
   } = useVideoPlayer({
+    videoId,
     activeVersion,
     activeVersionId,
     activeProviderId,
@@ -473,6 +476,7 @@ export function VideoPageContent({
     setViewingAnnotation,
     toggleCaptionsRef,
     playbackLocked: liveReview.playbackLocked,
+    loopDisabled: liveReview.isJoined,
     autoOriginalAllowed: !!video?.canDownload,
     bunnySource: bunnyPlayback,
   });
@@ -1132,6 +1136,9 @@ export function VideoPageContent({
                 isFullscreenMode={isFullscreenMode}
                 cursorIdle={cursorIdle}
                 isPlaying={isPlaying}
+                isLoopEnabled={isLoopEnabled}
+                loopDisabled={liveReview.isJoined}
+                handleLoopToggle={handleLoopToggle}
                 handlePlayPause={handlePlayPause}
                 handleVideoMouseMove={handleVideoMouseMove}
                 handleVideoMouseLeave={handleVideoMouseLeave}

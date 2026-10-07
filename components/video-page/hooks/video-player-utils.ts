@@ -134,6 +134,7 @@ export function getAdjacentPlaybackSpeed(
 
 export type PlayerShortcut =
   | 'toggle-play'
+  | 'toggle-loop'
   | 'skip-back'
   | 'skip-forward'
   | 'speed-up'
@@ -162,6 +163,8 @@ export function resolvePlayerShortcut(event: {
     case 'Space':
     case 'KeyK':
       return 'toggle-play';
+    case 'KeyR':
+      return 'toggle-loop';
     case 'ArrowLeft':
       return 'skip-back';
     case 'ArrowRight':

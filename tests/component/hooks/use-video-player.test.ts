@@ -33,6 +33,7 @@ function createVideoStub() {
     currentTime: 0,
     duration: DURATION,
     paused: true,
+    loop: false,
     muted: false,
     playbackRate: 1,
     seeking: false,
@@ -115,6 +116,7 @@ function renderPlayer(overrides: Partial<Params> = {}) {
   const playerRef: { current: PlayerAdapter | null } = { current: null };
 
   const params: Params = {
+    videoId: 'review-video-1',
     activeVersion: makeVersion(),
     activeVersionId: 'ver1',
     activeProviderId: 'r2',
@@ -181,12 +183,13 @@ function measureFrameRate(video: VideoStub, fps: number) {
 
 function pressKey(
   code: string,
-  options: { shiftKey?: boolean; ctrlKey?: boolean; target?: EventTarget } = {}
+  options: { shiftKey?: boolean; ctrlKey?: boolean; repeat?: boolean; target?: EventTarget } = {}
 ): KeyboardEvent {
   const event = new KeyboardEvent('keydown', {
     code,
     shiftKey: options.shiftKey ?? false,
     ctrlKey: options.ctrlKey ?? false,
+    repeat: options.repeat ?? false,
     bubbles: true,
     cancelable: true,
   });
@@ -215,6 +218,7 @@ function windowPointer(
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.useFakeTimers();
   // The hook injects the YouTube iframe API before the first <script> on the
   // page. Next always renders one; jsdom renders none, and the hook would
@@ -223,9 +227,152 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
+describe('useVideoPlayer looping', () => {
+  it('restarts an ended YouTube video only while looping is enabled', () => {
+    let events: YT.PlayerEvents | undefined;
+    const player = {
+      seekTo: vi.fn(),
+      playVideo: vi.fn(),
+      destroy: vi.fn(),
+      getDuration: () => 3,
+      getCurrentTime: () => 3,
+    } as unknown as YT.Player;
+    const constructor = vi.fn(function (_element: HTMLElement, options: YT.PlayerOptions) {
+      events = options.events;
+      return player;
+    });
+    vi.stubGlobal('YT', {
+      Player: constructor,
+      PlayerState: { ENDED: 0, PLAYING: 1, PAUSED: 2 },
+    });
+    const { params, rerender } = renderPlayer({
+      activeProviderId: 'youtube',
+      iframeRef: { current: document.createElement('iframe') },
+      videoRef: { current: null },
+    });
+    expect(events?.onStateChange).toBeTypeOf('function');
+    const endPlayback = () => act(() => events!.onStateChange!({ data: 0, target: player }));
+    endPlayback();
+    expect(player.playVideo).not.toHaveBeenCalled();
+    pressKey('KeyR');
+    endPlayback();
+    expect(player.seekTo).toHaveBeenLastCalledWith(0, true);
+    expect(player.playVideo).toHaveBeenCalledTimes(1);
+    expect(constructor).toHaveBeenCalledTimes(1);
+    pressKey('KeyR');
+    endPlayback();
+    expect(player.playVideo).toHaveBeenCalledTimes(1);
+    pressKey('KeyR');
+    rerender({ ...params, loopDisabled: true });
+    endPlayback();
+    expect(player.playVideo).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles native looping with R and restores the preference after remount', () => {
+    const first = renderPlayer();
+    expect(first.video.loop).toBe(false);
+    const key = pressKey('KeyR');
+    expect(key.defaultPrevented).toBe(true);
+    expect(first.video.loop).toBe(true);
+    expect(first.result.current.isLoopEnabled).toBe(true);
+    expect(window.localStorage.getItem('openframe:loop:review-video-1')).toBe('true');
+    // Toggling loop must not rebuild the player or interrupt the current shot.
+    expect(first.video.load).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    const second = renderPlayer();
+    expect(second.video.loop).toBe(true);
+    act(() => second.result.current.handleLoopToggle());
+    expect(second.video.loop).toBe(false);
+    second.unmount();
+    expect(renderPlayer().video.loop).toBe(false);
+  });
+
+  it('keeps the preference across versions and isolates different review videos', () => {
+    const { result, video, params, rerender } = renderPlayer();
+    pressKey('KeyR');
+    rerender({
+      ...params,
+      activeVersionId: 'ver2',
+      activeVersion: { ...makeVersion(), id: 'ver2' },
+    });
+    expect(result.current.isLoopEnabled).toBe(true);
+    expect(video.loop).toBe(true);
+    rerender({ ...params, videoId: 'review-video-2' });
+    expect(result.current.isLoopEnabled).toBe(false);
+    expect(video.loop).toBe(false);
+    rerender(params);
+    expect(result.current.isLoopEnabled).toBe(true);
+    expect(video.loop).toBe(true);
+  });
+
+  it('suspends remembered looping while playback is locked without forgetting it', () => {
+    const { result, video, params, rerender } = renderPlayer();
+    pressKey('KeyR');
+    rerender({ ...params, playbackLocked: true });
+    expect(video.loop).toBe(false);
+    expect(result.current.isLoopEnabled).toBe(false);
+    pressKey('KeyR');
+    act(() => result.current.handleLoopToggle());
+    expect(video.loop).toBe(false);
+    expect(window.localStorage.getItem('openframe:loop:review-video-1')).toBe('true');
+    rerender(params);
+    expect(video.loop).toBe(true);
+  });
+
+  it('suspends looping for a Live Review presenter as well as followers', () => {
+    const { result, video, params, rerender } = renderPlayer();
+    pressKey('KeyR');
+    rerender({ ...params, loopDisabled: true, playbackLocked: false });
+    expect(video.loop).toBe(false);
+    pressKey('KeyR');
+    act(() => result.current.handleLoopToggle());
+    expect(window.localStorage.getItem('openframe:loop:review-video-1')).toBe('true');
+    expect(video.loop).toBe(false);
+    rerender(params);
+    expect(video.loop).toBe(true);
+  });
+
+  it('does not toggle repeatedly when R is held down', () => {
+    const { video } = renderPlayer();
+    pressKey('KeyR');
+    pressKey('KeyR', { repeat: true });
+    expect(video.loop).toBe(true);
+  });
+
+  it('leaves R to text fields, browser shortcuts and open dialogs', () => {
+    const { video } = renderPlayer();
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    expect(pressKey('KeyR', { target: input }).defaultPrevented).toBe(false);
+    expect(pressKey('KeyR', { ctrlKey: true }).defaultPrevented).toBe(false);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('data-slot', 'dialog-content');
+    document.body.appendChild(dialog);
+    expect(pressKey('KeyR').defaultPrevented).toBe(false);
+    expect(video.loop).toBe(false);
+    expect(window.localStorage.getItem('openframe:loop:review-video-1')).toBeNull();
+  });
+
+  it('keeps looping usable when browser storage is disabled', () => {
+    vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => {
+      throw new Error('Storage disabled');
+    });
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('Storage disabled');
+    });
+    const { video } = renderPlayer();
+    pressKey('KeyR');
+    expect(video.loop).toBe(true);
+    pressKey('KeyR');
+    expect(video.loop).toBe(false);
+  });
+});
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.onYouTubeIframeAPIReady = undefined;
   document.head.innerHTML = '';
   document.body.innerHTML = '';

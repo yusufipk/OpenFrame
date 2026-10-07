@@ -36,6 +36,10 @@ import {
 import type { BunnyPlaybackSource } from '@/components/video-page/hooks/use-bunny-playback-source';
 import { useCursorIdle } from '@/components/video-page/hooks/use-cursor-idle';
 import {
+  readStoredLoopPreference,
+  writeStoredLoopPreference,
+} from '@/components/video-page/hooks/loop-preference';
+import {
   findLevelForHeight,
   findTopLevel,
   parseMasterPlaylistLevels,
@@ -57,6 +61,8 @@ const SHORT_CLIP_ORIGINAL_MAX_SECONDS = 20;
 const AUTO_ORIGINAL_MAX_BYTES = 100 * 1024 * 1024;
 
 interface UseVideoPlayerParams {
+  /** The review video's ID, not the provider's media ID. */
+  videoId: string;
   activeVersion: Version | undefined;
   activeVersionId: string | null;
   activeProviderId: string | undefined;
@@ -81,6 +87,8 @@ interface UseVideoPlayerParams {
   /** Turns subtitles on or off. Lives outside this hook, next to the caption state. */
   toggleCaptionsRef: RefObject<() => void>;
   playbackLocked?: boolean;
+  /** Local looping is suspended in Live Review because it is not a shared playback action. */
+  loopDisabled?: boolean;
   /**
    * Whether Auto may open short clips on the uploaded original. Off where the viewer may
    * not download the project's media: the original as the <video> source is one
@@ -95,6 +103,7 @@ interface UseVideoPlayerParams {
 }
 
 export function useVideoPlayer({
+  videoId,
   activeVersion,
   activeVersionId,
   activeProviderId,
@@ -116,6 +125,7 @@ export function useVideoPlayer({
   setViewingAnnotation,
   toggleCaptionsRef,
   playbackLocked = false,
+  loopDisabled = false,
   autoOriginalAllowed = false,
   bunnySource,
 }: UseVideoPlayerParams) {
@@ -150,6 +160,34 @@ export function useVideoPlayer({
     [activeVersionId]
   );
   const [isPlaying, setIsPlaying] = useState(false);
+  const [loopPreference, setLoopPreference] = useState<{
+    videoId: string;
+    enabled: boolean;
+  } | null>(null);
+  const isLoopEnabled =
+    loopPreference?.videoId === videoId &&
+    loopPreference.enabled &&
+    !playbackLocked &&
+    !loopDisabled;
+  const loopEnabledRef = useRef(false);
+
+  useEffect(() => {
+    setLoopPreference({ videoId, enabled: readStoredLoopPreference(videoId) });
+  }, [videoId]);
+
+  // Keep native looping and the long-lived YouTube callback current without rebuilding
+  // either player when the viewer toggles the preference.
+  useLayoutEffect(() => {
+    loopEnabledRef.current = isLoopEnabled;
+    if (videoRef.current) videoRef.current.loop = isLoopEnabled;
+  }, [activeVersionId, canInitializePlayer, isLoopEnabled, videoRef]);
+
+  const handleLoopToggle = useCallback(() => {
+    if (playbackLocked || loopDisabled) return;
+    const enabled = !isLoopEnabled;
+    setLoopPreference({ videoId, enabled });
+    writeStoredLoopPreference(videoId, enabled);
+  }, [isLoopEnabled, loopDisabled, playbackLocked, videoId]);
   const [isMuted, setIsMuted] = useState(false);
   const [isFrameMode, setIsFrameMode] = useState(false);
   const [estimatedFrameRate, setEstimatedFrameRate] = useState<number | null>(null);
@@ -419,6 +457,12 @@ export function useVideoPlayer({
             },
             onStateChange: (event: YT.OnStateChangeEvent) => {
               setIsPlaying(event.data === YT.PlayerState.PLAYING);
+              if (event.data === YT.PlayerState.ENDED && loopEnabledRef.current) {
+                dismissAnnotation();
+                setCurrentTime(0);
+                event.target.seekTo(0, true);
+                event.target.playVideo();
+              }
               if (event.data === YT.PlayerState.PLAYING) dismissAnnotation();
 
               if (event.data === YT.PlayerState.PAUSED) {
@@ -1526,6 +1570,7 @@ export function useVideoPlayer({
 
       const shortcut = resolvePlayerShortcut(e);
       if (shortcut === null) return;
+      if (shortcut === 'toggle-loop' && e.repeat) return;
       e.preventDefault();
       // Mute, fullscreen and subtitles only change what this viewer sees and hears, so
       // they stay available while someone else is driving playback.
@@ -1548,6 +1593,9 @@ export function useVideoPlayer({
       switch (shortcut) {
         case 'toggle-play':
           handlePlayPause();
+          break;
+        case 'toggle-loop':
+          handleLoopToggle();
           break;
         case 'skip-back':
           handleSkip(-5);
@@ -1615,6 +1663,7 @@ export function useVideoPlayer({
     playerRef,
     playbackLocked,
     handlePlayPause,
+    handleLoopToggle,
     dismissAnnotation,
   ]);
 
@@ -1851,6 +1900,7 @@ export function useVideoPlayer({
     durationVersionId: durationMeasurement.versionId,
     setVideoDuration,
     isPlaying,
+    isLoopEnabled,
     isMuted,
     isFrameMode,
     frameStepSeconds,
@@ -1870,6 +1920,7 @@ export function useVideoPlayer({
     handleVideoMouseMove,
     handleVideoMouseLeave,
     handlePlayPause,
+    handleLoopToggle,
     handleSeekToTimestamp,
     handleMuteToggle,
     handleFrameModeToggle,
