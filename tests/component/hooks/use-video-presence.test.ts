@@ -68,6 +68,19 @@ describe('useVideoPresence', () => {
     expect(new Set(bodies().map((body) => body.clientId)).size).toBe(1);
   });
 
+  it('sends the entered guest name and refreshes a rename without creating another tab', async () => {
+    const { rerender } = renderHook(useVideoPresence, {
+      initialProps: { ...params, guestName: '  Zoë İpek  ' },
+    });
+    await advance();
+    expect(bodies()[0].guestName).toBe('Zoë İpek');
+    rerender({ ...params, guestName: 'Updated Reviewer' });
+    await advance();
+    expect(bodies().map((body) => body.guestName)).toEqual(['Zoë İpek', 'Updated Reviewer']);
+    expect(new Set(bodies().map((body) => body.clientId)).size).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('uses slower polling in a background tab and refreshes on return', async () => {
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     renderHook(() => useVideoPresence(params));

@@ -9,10 +9,12 @@ export function useVideoPresence({
   videoId,
   enabled,
   isPlaying,
+  guestName = '',
 }: {
   videoId: string;
   enabled: boolean;
   isPlaying: boolean;
+  guestName?: string;
 }) {
   const [snapshot, setSnapshot] = useState<{
     videoId: string;
@@ -20,12 +22,15 @@ export function useVideoPresence({
     status: PresenceStatus;
   }>({ videoId: '', participants: [], status: 'connecting' });
   const playingRef = useRef(isPlaying);
+  const displayName = guestName.trim().slice(0, 80);
+  const nameRef = useRef(displayName);
   const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     playingRef.current = isPlaying;
+    nameRef.current = displayName;
     refreshRef.current?.();
-  }, [isPlaying]);
+  }, [isPlaying, displayName]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -63,7 +68,12 @@ export function useVideoPresence({
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientId, action: 'heartbeat', isPlaying: playingRef.current }),
+            body: JSON.stringify({
+              clientId,
+              action: 'heartbeat',
+              isPlaying: playingRef.current,
+              ...(nameRef.current ? { guestName: nameRef.current } : {}),
+            }),
             signal: controller.signal,
             cache: 'no-store',
           });

@@ -35,6 +35,7 @@ test('the owner creates a review link and a stranger opens it through the guest 
   expect(new URL(shareUrl).pathname).toMatch(/^\/s\/[A-Za-z0-9_-]{16}$/);
   expect(new URL(shareUrl).search).toBe('');
   await expect(page.getByText('No opens recorded yet')).toBeVisible();
+  await expect(page.getByText(/Shows recorded page opens/)).toHaveCount(0);
 
   // A stranger, in a context with no session at all.
   //

@@ -177,6 +177,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
       </div>
 
       <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:shrink-0 sm:flex-nowrap">
+        {presenceControl}
         {mode === 'dashboard' && mediaType === 'VIDEO' && directUploadsEnabled && projectId ? (
           <DriveVersionImportIndicator projectId={projectId} videoId={videoId} />
         ) : null}
@@ -377,7 +378,6 @@ export const VideoPageHeader = memo(function VideoPageHeader({
             </div>
           </>
         )}
-        {presenceControl}
       </div>
     </div>
   );

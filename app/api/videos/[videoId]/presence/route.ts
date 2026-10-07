@@ -35,7 +35,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       typeof body.clientId !== 'string' ||
       !CLIENT_ID_PATTERN.test(body.clientId) ||
       (body.action !== 'heartbeat' && body.action !== 'leave') ||
-      typeof body.isPlaying !== 'boolean'
+      typeof body.isPlaying !== 'boolean' ||
+      (body.guestName !== undefined &&
+        (typeof body.guestName !== 'string' || body.guestName.length > 100))
     )
       return apiErrors.badRequest();
 
@@ -70,7 +72,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       viewer: {
         userId,
         guestIdentityId: guest?.identityId ?? null,
-        name: session?.user?.name?.trim().slice(0, 80) || 'Member',
+        name: userId
+          ? session?.user?.name?.trim().slice(0, 80) || 'Member'
+          : typeof body.guestName === 'string'
+            ? body.guestName.trim().slice(0, 80)
+            : '',
         shareToken: access.hasAccess ? null : shareSession!.token,
         sharePasswordHash: access.hasAccess ? null : (shareAccess?.link?.passwordHash ?? null),
       },

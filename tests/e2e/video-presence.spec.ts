@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 import { devices } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { db } from '@/lib/db';
+import { VIDEO_PRESENCE_TTL_MS } from '@/lib/video-presence-types';
 import { REPO_ROOT } from '../helpers/env';
 
 const peopleButton = (page: Page, count: number) =>
@@ -35,6 +36,9 @@ async function noOverflow(page: Page) {
   }
   const version = await page.getByRole('button', { name: /^v1/ }).boundingBox();
   expect(version).not.toBeNull();
+  if (trigger!.y < version!.y + version!.height && version!.y < trigger!.y + trigger!.height) {
+    expect(trigger!.x + trigger!.width).toBeLessThanOrEqual(version!.x);
+  }
   if (version!.y < back!.y + back!.height) {
     expect(version!.x).toBeGreaterThanOrEqual(back!.x + back!.width);
   }
@@ -55,7 +59,7 @@ for (const layout of ['desktop', 'mobile'] as const) {
         : { viewport: { width: 1440, height: 900 } }
     );
 
-    test('named and anonymous viewers appear without a live room, tabs merge and navigation removes viewers', async ({
+    test('account and named guests appear without a live room, tabs merge and navigation removes viewers', async ({
       page,
       browser,
       seed,
@@ -98,15 +102,10 @@ for (const layout of ['desktop', 'mobile'] as const) {
         await peopleButton(page, 3).click();
         await expect(roster(page).getByText(`${seededUser.name}`, { exact: false })).toBeVisible();
         await expect(roster(page).getByTestId('presence-person')).toHaveCount(3);
-        await expect(roster(page).getByText('· Anonymous', { exact: true })).toHaveCount(2);
-        await expect(roster(page).getByText(/Comment name/)).toHaveCount(0);
-        const guestNames = await roster(page)
-          .getByTestId('presence-person')
-          .filter({ hasText: 'Anonymous' })
-          .locator('p.font-medium')
-          .allTextContents();
-        expect(guestNames).toHaveLength(2);
-        for (const name of guestNames) expect(name).toMatch(/^[A-Za-z]+ [A-Za-z]+$/);
+        await expect(roster(page).getByText('· Guest', { exact: true })).toHaveCount(2);
+        await expect(roster(page).getByText('Comment name 0', { exact: true })).toBeVisible();
+        await expect(roster(page).getByText('Comment name 1', { exact: true })).toBeVisible();
+        await expect(roster(page).getByText('· Anonymous', { exact: true })).toHaveCount(0);
         await expect(page.getByRole('button', { name: /Room participants/ })).toHaveCount(0);
         await noOverflow(page);
         await page.screenshot({
@@ -244,14 +243,14 @@ test('a real player reports play and pause to another viewer', async ({
     await expect(
       roster(page)
         .getByTestId('presence-person')
-        .filter({ hasText: 'Anonymous' })
+        .filter({ hasText: 'Playback Reviewer' })
         .getByText('Playing video', { exact: true })
     ).toBeVisible();
     await video.evaluate((element) => (element as HTMLVideoElement).pause());
     await expect(
       roster(page)
         .getByTestId('presence-person')
-        .filter({ hasText: 'Anonymous' })
+        .filter({ hasText: 'Playback Reviewer' })
         .getByText('On page', { exact: true })
     ).toBeVisible();
     expect(
@@ -281,7 +280,7 @@ test('a non-editor with one version keeps Approvals reachable in a narrow dashbo
   await expect(page.getByRole('heading', { name: 'Approvals', exact: true })).toBeVisible();
 });
 
-test('an offline viewer expires and returns with the same anonymous identity', async ({
+test('an offline guest expires and returns with the same identity and entered name', async ({
   page,
   browser,
   seed,
@@ -302,11 +301,10 @@ test('an offline viewer expires and returns with the same anonymous identity', a
     await guest.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(peopleButton(page, 2)).toBeVisible();
     await peopleButton(page, 2).click();
-    const anonymousName = await roster(page)
-      .getByTestId('presence-person')
-      .filter({ hasText: 'Anonymous' })
-      .locator('p.font-medium')
-      .textContent();
+    await expect(roster(page).getByText('Offline Reviewer', { exact: true })).toBeVisible();
+    const before = await db.videoPresence.findFirstOrThrow({
+      where: { videoId: seeded.videoId, userId: null },
+    });
     await page.keyboard.press('Escape');
     await context.setOffline(true);
     await expect(peopleButton(page, 1)).toBeVisible({ timeout: 40_000 });
@@ -315,7 +313,16 @@ test('an offline viewer expires and returns with the same anonymous identity', a
     await context.setOffline(false);
     await expect(peopleButton(page, 2)).toBeVisible();
     await peopleButton(page, 2).click();
-    await expect(roster(page).getByText(anonymousName!, { exact: true })).toBeVisible();
+    await expect(roster(page).getByText('Offline Reviewer', { exact: true })).toBeVisible();
+    const after = await db.videoPresence.findFirstOrThrow({
+      where: {
+        videoId: seeded.videoId,
+        userId: null,
+        lastSeenAt: { gt: new Date(Date.now() - VIDEO_PRESENCE_TTL_MS) },
+      },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+    expect(after.identityKey).toBe(before.identityKey);
   } finally {
     await context.close();
   }

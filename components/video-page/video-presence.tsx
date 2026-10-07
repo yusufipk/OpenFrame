@@ -102,7 +102,9 @@ export function VideoPresence({
                         <span className="size-1.5 rounded-full bg-emerald-500" />
                       )}
                       <span>{person.isPlaying ? 'Playing video' : 'On page'}</span>
-                      {person.isAnonymous ? <span>· Anonymous</span> : null}
+                      {person.isAnonymous || person.isGuest ? (
+                        <span>· {person.isAnonymous ? 'Anonymous' : 'Guest'}</span>
+                      ) : null}
                     </p>
                   </div>
                 </li>

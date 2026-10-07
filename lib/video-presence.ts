@@ -131,7 +131,8 @@ export async function updateVideoPresence(input: {
   if (action === 'leave') {
     await db.videoPresence.deleteMany({ where: { videoId, identityKey, clientId } });
   } else {
-    const name = viewer.userId ? viewer.name : anonymousPresenceName(identityKey);
+    // Guest names are display labels; identity and access still use the signed cookie.
+    const name = viewer.name;
     await db.$executeRaw`
       INSERT INTO "video_presences" ("id", "videoId", "identityKey", "clientId", "userId", "shareToken", "sharePasswordHash", "name", "isPlaying", "lastSeenAt")
       VALUES (${randomUUID()}, ${videoId}, ${identityKey}, ${clientId}, ${viewer.userId}, ${viewer.shareToken}, ${viewer.sharePasswordHash}, ${name}, ${isPlaying}, CURRENT_TIMESTAMP)
@@ -156,12 +157,17 @@ export async function updateVideoPresence(input: {
     const existing = participants.get(row.identityKey);
     if (existing) {
       existing.isPlaying ||= row.isPlaying;
+      if (existing.isAnonymous && row.name) {
+        existing.name = row.name;
+        existing.isAnonymous = false;
+      }
       continue;
     }
     participants.set(row.identityKey, {
       id: row.identityKey,
-      name: row.name,
-      isAnonymous: !row.userId,
+      name: row.name || anonymousPresenceName(row.identityKey),
+      isAnonymous: !row.userId && !row.name,
+      isGuest: !row.userId,
       isPlaying: row.isPlaying,
       isSelf: row.identityKey === identityKey,
     });
