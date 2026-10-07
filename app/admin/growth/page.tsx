@@ -9,6 +9,7 @@ import {
   type FunnelRates,
 } from '@/lib/analytics/scoreboard';
 import { UPLOADER_WINDOW_DAYS } from '@/lib/uploader-stats';
+import { TeamUploaders } from '@/components/admin/team-uploaders';
 import { isProductAnalyticsEnabled } from '@/lib/feature-flags';
 import { AlertTriangle, CreditCard, TrendingUp, Users } from 'lucide-react';
 
@@ -401,9 +402,10 @@ export default async function AdminGrowthPage() {
           <p className="text-sm text-muted-foreground">
             Value events are videos, versions, comments, live reviews, share links, approvals and
             projects; versions, comments, live reviews and approval requests count once a day. Rows
-            marked at risk have produced none for {AT_RISK_SILENT_DAYS} days. Uploaders counts the
-            distinct people, owner included, who added a video or version in the last{' '}
-            {UPLOADER_WINDOW_DAYS} days; uploads from before this was recorded are not counted.
+            marked at risk have produced none for {AT_RISK_SILENT_DAYS} days. Team uploaders counts
+            distinct collaborators who added a video or version in the last {UPLOADER_WINDOW_DAYS}{' '}
+            days, excluding the workspace owner. Names reflect upload activity, not current
+            membership; uploads from before this was recorded are not counted.
             {scoreboard.paidAccountsTruncated && (
               <>
                 {' '}
@@ -422,7 +424,7 @@ export default async function AdminGrowthPage() {
                 <th className="py-2 pr-4 font-medium">Source</th>
                 <th className="py-2 pr-4 text-right font-medium">7d</th>
                 <th className="py-2 pr-4 text-right font-medium">30d</th>
-                <th className="py-2 pr-4 text-right font-medium">Uploaders</th>
+                <th className="py-2 pr-4 text-right font-medium">Team uploaders</th>
                 <th className="py-2 pr-4 font-medium">Last activity</th>
               </tr>
             </thead>
@@ -460,7 +462,9 @@ export default async function AdminGrowthPage() {
                     </td>
                     <td className="py-2 pr-4 text-right tabular-nums">{account.valueEvents7}</td>
                     <td className="py-2 pr-4 text-right tabular-nums">{account.valueEvents30}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums">{account.uploaders30}</td>
+                    <td className="py-2 pr-4 text-right">
+                      <TeamUploaders uploaders={account.teamUploaders30} />
+                    </td>
                     <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
                       {formatDate(account.lastValueEventAt)}
                     </td>

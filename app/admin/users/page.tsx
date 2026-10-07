@@ -21,7 +21,7 @@ import {
   getCachedUserMediaStorage,
 } from '@/lib/admin-stats';
 import {
-  getUploaderCountsByAccount,
+  getTeamUploadersByAccount,
   UPLOADER_WINDOW_DAYS,
   uploaderWindowStart,
 } from '@/lib/uploader-stats';
@@ -30,6 +30,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { StatsExclusionButton } from '@/components/admin/stats-exclusion-button';
+import { TeamUploaders } from '@/components/admin/team-uploaders';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -400,7 +401,7 @@ export default async function AdminUsersPage({
     userBunnyStorage,
     userDownloadEgress,
     bunnyStorageStats,
-    uploaderCounts,
+    uploadersByAccount,
   ] = await Promise.all([
     db.user.count(),
     db.user.count({ where }),
@@ -408,7 +409,7 @@ export default async function AdminUsersPage({
     getCachedUserBunnyStorage(),
     getCachedUserDownloadEgress(),
     getCachedBunnyStorageStats(),
-    getUploaderCountsByAccount(uploaderWindowStart(now)),
+    getTeamUploadersByAccount(uploaderWindowStart(now)),
   ]);
   const totalPages = Math.max(1, Math.ceil(matchingUsers / pageSize));
   const page = Math.min(Math.max(1, requestedPage), totalPages);
@@ -492,7 +493,7 @@ export default async function AdminUsersPage({
         (total, workspace) => total + workspace._count.members,
         0
       ),
-      uploadersCount: uploaderCounts[user.id] ?? 0,
+      uploadersCount: uploadersByAccount[user.id]?.length ?? 0,
       bunnyUploadBytes: userBunnyStorage[user.id] || 0,
       downloadEgressBytes: userDownloadEgress[user.id] || 0,
       mediaStorageBytes: userStorage[user.id]?.total || 0,
@@ -507,7 +508,7 @@ export default async function AdminUsersPage({
         (total, workspace) => total + workspace._count.members,
         0
       ),
-      uploadersCount: uploaderCounts[user.id] ?? 0,
+      uploadersCount: uploadersByAccount[user.id]?.length ?? 0,
       bunnyUploadBytes: userBunnyStorage[user.id] || 0,
       downloadEgressBytes: userDownloadEgress[user.id] || 0,
       mediaStorageBytes: userStorage[user.id]?.total || 0,
@@ -765,10 +766,10 @@ export default async function AdminUsersPage({
                   <TableHead className="text-center">
                     <Link
                       href={buildSortHref('uploaders')}
-                      title={`Distinct people, owner included, who added a video or version to this account's workspaces in the last ${UPLOADER_WINDOW_DAYS} days. Uploads from before this was recorded are not counted.`}
+                      title={`Distinct collaborators who added a video or version to this account's workspaces in the last ${UPLOADER_WINDOW_DAYS} days. The workspace owner is excluded. Names reflect upload activity, not current membership. Uploads from before this was recorded are not counted.`}
                       className="inline-flex items-center justify-center gap-1 hover:underline"
                     >
-                      Uploaders ({UPLOADER_WINDOW_DAYS}d)
+                      Team uploaders ({UPLOADER_WINDOW_DAYS}d)
                       <span className="text-xs">
                         {getSortIndicator('uploaders', sortBy, sortDirection)}
                       </span>
@@ -908,7 +909,9 @@ export default async function AdminUsersPage({
                       <TableCell>{format(new Date(user.createdAt), 'MMM dd, yyyy')}</TableCell>
                       <TableCell className="text-center">{user._count.ownedWorkspaces}</TableCell>
                       <TableCell className="text-center">{user.invitedMembersCount}</TableCell>
-                      <TableCell className="text-center">{user.uploadersCount}</TableCell>
+                      <TableCell className="text-center">
+                        <TeamUploaders uploaders={uploadersByAccount[user.id] ?? []} />
+                      </TableCell>
                       <TableCell className="text-center">{user._count.projects}</TableCell>
                       <TableCell className="text-center">{user._count.comments}</TableCell>
                       <TableCell className="text-right text-sm font-medium">
