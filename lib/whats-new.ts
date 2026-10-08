@@ -16,12 +16,6 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
-    date: '2026-10-08',
-    title: 'Open mentioned files from a comment',
-    description:
-      'Click a file mentioned in a comment and its preview opens right there, with download where you have access. The comment list keeps your place, also when you switch to Assets and back.',
-  },
-  {
     date: '2026-10-07',
     title: 'Simpler folder and video access',
     description:
