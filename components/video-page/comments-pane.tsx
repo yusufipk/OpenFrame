@@ -2,7 +2,7 @@
 
 import type { CommentExportFormat, NleExportOptions, NleFormat } from '@/lib/nle-comment-export';
 
-import { memo, useState, type ReactNode, type RefObject } from 'react';
+import { memo, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   ArrowUpRight,
   Clapperboard,
@@ -265,6 +265,18 @@ export const CommentsPane = memo(function CommentsPane({
     { id: 'resolve' as const, app: 'DaVinci Resolve', Icon: DavinciResolveIcon },
   ];
   const [isPaneDraggingOver, setIsPaneDraggingOver] = useState(false);
+  // Both panes share one scroll container, so each pane's offset is kept separately and
+  // put back on a switch; otherwise visiting Assets loses the reader's place in the comments.
+  const paneScrollRef = useRef<HTMLDivElement>(null);
+  const paneScrollTopRef = useRef<Record<'comments' | 'assets', number>>({
+    comments: 0,
+    assets: 0,
+  });
+  useLayoutEffect(() => {
+    if (paneScrollRef.current) {
+      paneScrollRef.current.scrollTop = paneScrollTopRef.current[activePane];
+    }
+  }, [activePane]);
   const formatCommentRange = (timestamp: number, timestampEnd: number | null) => {
     if (timestampEnd === null) return formatTime(timestamp);
     return `${formatTime(timestamp)} - ${formatTime(timestampEnd)}`;
@@ -499,7 +511,13 @@ export const CommentsPane = memo(function CommentsPane({
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div
+          ref={paneScrollRef}
+          className="flex-1 overflow-y-auto"
+          onScroll={(e) => {
+            paneScrollTopRef.current[activePane] = e.currentTarget.scrollTop;
+          }}
+        >
           <div
             className={cn(activePane === 'assets' ? 'block p-4' : 'hidden')}
             aria-hidden={activePane !== 'assets'}
