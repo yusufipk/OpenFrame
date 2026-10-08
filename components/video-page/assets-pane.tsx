@@ -116,6 +116,9 @@ interface AssetsPaneProps {
   loadMoreAssets: () => Promise<void>;
   highlightedAssetId: string | null;
   onHighlightedAssetHandled: () => void;
+  /** Opens this asset's preview dialog without switching to the Assets pane. */
+  assetToOpenId?: string | null;
+  onAssetOpenHandled?: () => void;
   directUploadProvider?: DirectUploadProvider;
   attachmentCommentCounts: Record<string, number>;
   onAttachmentCommentsChanged: () => void;
@@ -145,6 +148,8 @@ export const AssetsPane = memo(function AssetsPane({
   loadMoreAssets,
   highlightedAssetId,
   onHighlightedAssetHandled,
+  assetToOpenId = null,
+  onAssetOpenHandled,
   directUploadProvider = 'bunny',
   attachmentCommentCounts,
   onAttachmentCommentsChanged,
@@ -1145,19 +1150,29 @@ export const AssetsPane = memo(function AssetsPane({
     );
   };
 
-  const handleOpenAsset = (asset: VideoAsset) => {
-    youtubeTimeRef.current = null;
-    setYoutubeTime(null);
-    youtubePreviewStateRef.current = { currentTime: 0, isPlaying: false, isMuted: false };
-    stopVoice();
-    onAttachmentCommentsChanged();
-    if (asset.provider === 'BUNNY' && !bunnyReadyByAssetId[asset.id]) {
-      setBunnyProcessingByAssetId((prev) =>
-        prev[asset.id] ? prev : { ...prev, [asset.id]: true }
-      );
-    }
-    setSelectedAsset(asset);
-  };
+  const handleOpenAsset = useCallback(
+    (asset: VideoAsset) => {
+      youtubeTimeRef.current = null;
+      setYoutubeTime(null);
+      youtubePreviewStateRef.current = { currentTime: 0, isPlaying: false, isMuted: false };
+      stopVoice();
+      onAttachmentCommentsChanged();
+      if (asset.provider === 'BUNNY' && !bunnyReadyByAssetId[asset.id]) {
+        setBunnyProcessingByAssetId((prev) =>
+          prev[asset.id] ? prev : { ...prev, [asset.id]: true }
+        );
+      }
+      setSelectedAsset(asset);
+    },
+    [bunnyReadyByAssetId, onAttachmentCommentsChanged, stopVoice]
+  );
+
+  useEffect(() => {
+    if (!assetToOpenId) return;
+    const asset = assets.find((candidate) => candidate.id === assetToOpenId);
+    if (asset) handleOpenAsset(asset);
+    onAssetOpenHandled?.();
+  }, [assetToOpenId, assets, handleOpenAsset, onAssetOpenHandled]);
 
   const selectedBunnyAssetId = selectedAsset?.provider === 'BUNNY' ? selectedAsset.id : null;
   const isSelectedBunnyProcessing = selectedBunnyAssetId

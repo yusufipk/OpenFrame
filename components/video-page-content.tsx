@@ -144,6 +144,7 @@ export function VideoPageContent({
   const [showResolved, setShowResolved] = useState(false);
   const [activeSidePane, setActiveSidePane] = useState<'comments' | 'assets'>('comments');
   const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null);
+  const [assetToOpenId, setAssetToOpenId] = useState<string | null>(null);
   const [attachmentPreview, setAttachmentPreview] = useState<{
     kind: 'IMAGE' | 'AUDIO';
     src: string;
@@ -277,10 +278,19 @@ export function VideoPageContent({
     setShowResolved((prev) => !prev);
   }, []);
 
-  const handleAssetMentionClick = useCallback((assetId: string) => {
-    setActiveSidePane('assets');
-    setHighlightedAssetId(assetId);
-  }, []);
+  // A mention opens the asset's preview in place, so the comment list keeps its scroll
+  // position. An asset that is not loaded yet (a later page) falls back to the Assets pane.
+  const handleAssetMentionClick = useCallback(
+    (assetId: string) => {
+      if (assets.some((asset) => asset.id === assetId)) {
+        setAssetToOpenId(assetId);
+        return;
+      }
+      setActiveSidePane('assets');
+      setHighlightedAssetId(assetId);
+    },
+    [assets]
+  );
 
   const { isExportingCsv, isExportingPdf, isExportingNle, exportComments } = useCommentExport({
     activeVersionId,
@@ -1312,6 +1322,8 @@ export function VideoPageContent({
               loadMoreAssets={loadMoreAssets}
               highlightedAssetId={highlightedAssetId}
               onHighlightedAssetHandled={() => setHighlightedAssetId(null)}
+              assetToOpenId={assetToOpenId}
+              onAssetOpenHandled={() => setAssetToOpenId(null)}
               directUploadProvider={directUploadProvider}
               attachmentCommentCounts={attachmentCommentCounts}
               onAttachmentCommentsChanged={() => void refreshAttachmentCommentCounts()}
