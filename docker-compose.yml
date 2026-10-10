@@ -72,7 +72,28 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    # ---------------------------------------------------------------------------
+    # MinIO image source
+    #
+    # The official `minio/minio` image is no longer available on Docker Hub or
+    # Quay.io. MinIO stopped publishing free community edition images on
+    # October 23, 2025, and the Docker Hub repository has been deleted.
+    #
+    # The default below uses a community-maintained drop-in replacement.
+    # Other verified alternatives are listed for reference; uncomment one
+    # line and comment out the others if you prefer a different source.
+    #
+    #   coollabsio/minio:latest       (default, drop-in, no permission changes)
+    #   ghcr.io/golithus/minio:latest (multi-arch, GitHub Container Registry)
+    #   cgr.dev/chainguard/minio:latest (distroless, may need volume permission adjustments)
+    #
+    # After changing the image, run:
+    #   docker compose pull minio
+    #   docker compose up --build
+    # ---------------------------------------------------------------------------
+    image: coollabsio/minio:latest
+    # image: ghcr.io/golithus/minio:latest
+    # image: cgr.dev/chainguard/minio:latest
     command: server /data --console-address ":9001"
     env_file:
       - .env.docker
