@@ -68,6 +68,7 @@ const ALL_SCOPES = [
   'delete',
   'comments:read',
   'comments:write',
+  'comments:import',
   'approvals',
   'share',
   'download',

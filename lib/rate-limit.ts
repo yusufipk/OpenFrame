@@ -57,6 +57,9 @@ export const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
 
   // Content creation — moderate limits
   comment: { windowMs: 60 * 1000, maxRequests: 15 }, // 15 per minute
+  // One request carries a whole timeline of markers from an editor plugin.
+  'comment-import': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
+  'comment-import-user': { windowMs: 60 * 60 * 1000, maxRequests: 20 }, // per signed-in user, not per IP
   'image-upload': { windowMs: 60 * 1000, maxRequests: 20 }, // 20 per minute
   'voice-upload': { windowMs: 60 * 1000, maxRequests: 10 }, // 10 per minute
   'feedback-submit': { windowMs: 60 * 1000, maxRequests: 8 }, // 8 per minute

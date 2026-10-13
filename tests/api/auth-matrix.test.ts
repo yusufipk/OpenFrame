@@ -103,6 +103,7 @@ import * as uploadSubtitleFileRoute from '@/app/api/upload/subtitle/[filename]/r
 import * as uploadVideoFileRoute from '@/app/api/upload/video/[filename]/route';
 import * as versionApprovalsRoute from '@/app/api/versions/[versionId]/approvals/route';
 import * as commentsExportRoute from '@/app/api/versions/[versionId]/comments/export/route';
+import * as commentsImportRoute from '@/app/api/versions/[versionId]/comments/import/route';
 import * as versionCommentsRoute from '@/app/api/versions/[versionId]/comments/route';
 import * as versionDownloadRoute from '@/app/api/versions/[versionId]/download/route';
 import * as versionPlaybackRoute from '@/app/api/versions/[versionId]/playback/route';
@@ -171,7 +172,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 89;
+const EXPECTED_ROUTE_MODULE_COUNT = 90;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an
@@ -801,6 +802,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     module: commentsExportRoute,
     url: (f) => `/api/versions/${f.versionId}/comments/export`,
     params: (f) => ({ versionId: f.versionId }),
+  },
+  {
+    file: 'versions/[versionId]/comments/import/route.ts',
+    module: commentsImportRoute,
+    url: (f) => `/api/versions/${f.versionId}/comments/import`,
+    params: (f) => ({ versionId: f.versionId }),
+    body: { fps: '25', markers: [{ startFrame: 25, comments: 'anonymous marker' }] },
   },
   {
     file: 'versions/[versionId]/comments/route.ts',
