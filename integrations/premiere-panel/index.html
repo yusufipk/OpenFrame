@@ -44,7 +44,7 @@
     <label for="link">OpenFrame video link</label>
     <input id="link" type="text" placeholder="https://open-frame.net/projects/…/videos/…" />
     <div id="server"></div>
-    <label for="token">API token (Read and Read comments)</label>
+    <label for="token">API token (Read and Read comments, plus Send timeline markers)</label>
     <input id="token" type="password" />
     <div class="row">
       <button id="load">Load versions</button>
@@ -57,6 +57,9 @@
     </div>
     <div class="row">
       <button id="sync" disabled>Add comments to the active sequence</button>
+    </div>
+    <div class="row">
+      <button id="send" disabled>Send my markers to OpenFrame</button>
     </div>
     <div id="status"></div>
     <script src="panel.js"></script>

@@ -1,10 +1,20 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { Script } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import panel from '@/integrations/premiere-panel/markers.js';
 import { EDITOR_PLUGIN_VERSIONS } from '@/lib/editor-plugin-versions';
 
 describe('Premiere panel helpers', () => {
+  // Nothing else loads panel.js, and a syntax error there kills the whole panel.
+  it.each(['panel.js', 'markers.js'])('%s parses', (file) => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'integrations', 'premiere-panel', file),
+      'utf8'
+    );
+    expect(() => new Script(`(async function () {\n${source}\n})`)).not.toThrow();
+  });
+
   it.each([
     ['10594584000', '24000/1001'],
     ['10584000000', '24'],
@@ -83,6 +93,57 @@ describe('Premiere panel helpers', () => {
     expect(panel.ownsMarker('note\n[OpenFrame ver1]\nmore', 'ver1')).toBe(false);
     expect(panel.ownsMarker('[OpenFrame ver1]', 'ver1')).toBe(false);
     expect(panel.ownsMarker(undefined, 'ver1')).toBe(false);
+  });
+
+  it('recognises a synced marker of any version, and nothing the editor wrote', () => {
+    expect(panel.isOpenFrameMarker('Ann: fix it\n[OpenFrame ver1]')).toBe(true);
+    expect(panel.isOpenFrameMarker('Ann: fix it\r\n[OpenFrame other-version]')).toBe(true);
+    // A marker the panel marked as sent has an empty first line.
+    expect(panel.isOpenFrameMarker('\n[OpenFrame ver1]')).toBe(true);
+    expect(panel.isOpenFrameMarker('[OpenFrame ver1]')).toBe(false);
+    expect(panel.isOpenFrameMarker('Check [OpenFrame ver1]')).toBe(false);
+    expect(panel.isOpenFrameMarker('note\nCheck [OpenFrame ver1]')).toBe(false);
+    expect(panel.isOpenFrameMarker('note\n[OpenFrame ver1] extra')).toBe(false);
+    // Premiere may hand line breaks back as a bare CR.
+    expect(panel.isOpenFrameMarker('note\r[OpenFrame ver1]')).toBe(true);
+    expect(panel.isOpenFrameMarker('note\n[OpenFrame ver1]\nmore')).toBe(false);
+    expect(panel.isOpenFrameMarker('note\n[OpenFrame ]')).toBe(false);
+    expect(panel.isOpenFrameMarker('')).toBe(false);
+    expect(panel.isOpenFrameMarker(undefined)).toBe(false);
+  });
+
+  it('reads ticks back as the nearest frame', () => {
+    expect(panel.ticksToFrames('31783752000', '24000/1001')).toBe(3);
+    expect(panel.ticksToFrames(' 21946960453017600', '60000/1001')).toBe(5178816);
+    // Just under and just over half a frame at 25 fps (10,160,640,000 ticks a frame).
+    expect(panel.ticksToFrames('5080319999', '25')).toBe(0);
+    expect(panel.ticksToFrames('5080320000', '25')).toBe(1);
+    expect(panel.ticksToFrames('0', '25')).toBe(0);
+  });
+
+  it('maps the accepted indexes onto the batch that was sent, and nothing else', () => {
+    const batch = ['a', 'b', 'c'];
+    expect(panel.acceptedEntries(batch, [0, 2])).toEqual(['a', 'c']);
+    expect(panel.acceptedEntries(batch, [2, 2, -1, 3, 1.5, '1'])).toEqual(['c']);
+    expect(panel.acceptedEntries(batch, undefined)).toEqual([]);
+  });
+
+  it('summarises a send, mentioning only what happened', () => {
+    expect(panel.sendSummary({ created: 3, duplicates: 0, skipped: { empty: 0 } }, 3)).toEqual([
+      'Sent 3 marker(s): 3 new comment(s) on OpenFrame.',
+    ]);
+    expect(
+      panel.sendSummary(
+        { created: 1, duplicates: 2, skipped: { empty: 1, outOfRange: 4, tooLong: 5 } },
+        13
+      )
+    ).toEqual([
+      'Sent 13 marker(s): 1 new comment(s) on OpenFrame.',
+      '2 were already there.',
+      '1 had no name or comment and were left out.',
+      '4 start after the end of this version and were left out.',
+      '5 were longer than a comment can be.',
+    ]);
   });
 
   it('builds the same marker key from the API and from what Premiere reads back', () => {

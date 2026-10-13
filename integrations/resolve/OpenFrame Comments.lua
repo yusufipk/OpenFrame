@@ -1,14 +1,14 @@
 -- OpenFrame Comments for DaVinci Resolve.
 --
 -- Adds the comments of an OpenFrame video version as markers on the current
--- timeline. Install it in Resolve's Fusion/Scripts/Utility folder and run it from
+-- timeline, and sends the editor's own markers back to it as comments. Install it in Resolve's Fusion/Scripts/Utility folder and run it from
 -- Workspace > Scripts. It needs curl, which ships with Windows 10 and later,
 -- macOS and Linux.
 
 local M = {}
 
 -- This script's release. The OpenFrame server sends the newest one with every sync.
-M.VERSION = '0.1.0'
+M.VERSION = '0.2.0'
 
 -- ---------------------------------------------------------------------------
 -- Pure helpers. The unit tests load this file with OPENFRAME_TEST set and call
@@ -102,6 +102,39 @@ function M.marker_tag(version_id)
   return 'openframe:' .. version_id
 end
 
+function M.import_url(origin, version_id)
+  return origin .. '/api/versions/' .. M.url_encode(version_id) .. '/comments/import'
+end
+
+-- A marker a sync wrote, for whichever version. It is a comment already, so sending
+-- markers back leaves it out.
+function M.is_openframe_marker(marker)
+  return type(marker) == 'table' and type(marker.customData) == 'string'
+    and marker.customData:sub(1, 10) == 'openframe:'
+end
+
+-- The editor's own markers from timeline:GetMarkers(), in timeline order, each with
+-- the frame it sits on and what the import API takes.
+function M.own_markers(markers)
+  local list = {}
+  for key, marker in pairs(markers or {}) do
+    local frame = tonumber(key)
+    if frame and not M.is_openframe_marker(marker) then
+      list[#list + 1] = {
+        frame = frame,
+        payload = {
+          startFrame = math.floor(frame + 0.5),
+          durationFrames = math.floor((tonumber(marker.duration) or 0) + 0.5),
+          name = type(marker.name) == 'string' and marker.name or '',
+          comments = type(marker.note) == 'string' and marker.note or '',
+        },
+      }
+    end
+  end
+  table.sort(list, function(a, b) return a.frame < b.frame end)
+  return list
+end
+
 -- A whole number without the ".0" Lua 5.3 would add; other values as they are.
 local function number_text(value)
   if type(value) == 'number' and value == math.floor(value) then
@@ -139,6 +172,47 @@ function M.update_notice(plugin_versions)
   return 'A new version of this script (' .. latest .. ') is out. Download it again from the comments menu in OpenFrame and replace this file.'
 end
 
+-- The most markers the server takes in one request.
+M.SEND_BATCH = 500
+
+-- The entries of list[first .. first + count - 1], the batch just sent, that the
+-- server took, from the zero-based indexes it answered with. Anything that is not an
+-- index into that batch is ignored, so a marker the server left out is never tagged,
+-- and a later sync never deletes it.
+function M.accepted_entries(list, first, count, accepted)
+  local result, seen = {}, {}
+  for _, index in ipairs(type(accepted) == 'table' and accepted or {}) do
+    if type(index) == 'number' and index == math.floor(index) and index >= 0
+      and index < count and not seen[index] then
+      seen[index] = true
+      result[#result + 1] = list[first + index]
+    end
+  end
+  return result
+end
+
+-- What the script reports after sending markers to OpenFrame.
+function M.send_summary(data, sent)
+  local lines = {
+    'Sent ' .. number_text(sent) .. ' marker(s): ' .. number_text(data.created or 0) .. ' new comment(s) on OpenFrame.',
+  }
+  if (data.duplicates or 0) > 0 then
+    lines[#lines + 1] = number_text(data.duplicates) .. ' were already there.'
+  end
+  local skipped = type(data.skipped) == 'table' and data.skipped or {}
+  if (skipped.empty or 0) > 0 then
+    lines[#lines + 1] = number_text(skipped.empty) .. ' had no name or note and were left out.'
+  end
+  if (skipped.outOfRange or 0) > 0 then
+    lines[#lines + 1] = number_text(skipped.outOfRange)
+      .. ' start after the end of this version and were left out.'
+  end
+  if (skipped.tooLong or 0) > 0 then
+    lines[#lines + 1] = number_text(skipped.tooLong) .. ' were longer than a comment can be.'
+  end
+  return lines
+end
+
 function M.version_name(version)
   local label = version.versionLabel
   if type(label) == 'string' and label ~= '' then
@@ -152,6 +226,38 @@ function M.error_message(status, body)
   if type(err) == 'table' and type(err.message) == 'string' then return err.message end
   if type(err) == 'string' then return err end
   return 'HTTP ' .. number_text(status)
+end
+
+-- A small JSON writer for what the script sends: a table with keys 1..n (or an empty
+-- one) becomes an array, any other table an object, and whole numbers go out
+-- without a fraction.
+local JSON_ESCAPES = { ['"'] = '\\"', ['\\'] = '\\\\', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t' }
+
+local function json_string(value)
+  return '"' .. value:gsub('[%c"\\]', function(char)
+    return JSON_ESCAPES[char] or string.format('\\u%04x', string.byte(char))
+  end) .. '"'
+end
+
+function M.json_encode(value)
+  local kind = type(value)
+  if kind == 'string' then return json_string(value) end
+  if kind == 'number' then return number_text(value) end
+  if kind == 'boolean' then return tostring(value) end
+  if kind ~= 'table' then return 'null' end
+  if next(value) == nil or value[1] ~= nil then
+    local parts = {}
+    for index, item in ipairs(value) do parts[index] = M.json_encode(item) end
+    return '[' .. table.concat(parts, ',') .. ']'
+  end
+  local keys = {}
+  for key in pairs(value) do keys[#keys + 1] = tostring(key) end
+  table.sort(keys)
+  local parts = {}
+  for _, key in ipairs(keys) do
+    parts[#parts + 1] = json_string(key) .. ':' .. M.json_encode(value[key])
+  end
+  return '{' .. table.concat(parts, ',') .. '}'
 end
 
 -- A small JSON reader: objects, arrays, strings with escapes (including surrogate
@@ -312,14 +418,25 @@ local function write_file(file, data)
   handle:close()
 end
 
--- curl with the token in a header file, so it never shows on a command line.
-local function http_get(url, token)
+-- curl with the token in a header file, so it never shows on a command line. With a
+-- request body it POSTs that body as JSON, read from a file as well.
+local function http_request(url, token, request_body)
   if not M.is_safe_url(url) then error('Refusing an unexpected character in the address.', 0) end
   local headers = temp_path('headers')
   local body_file = temp_path('body')
-  write_file(headers, 'Authorization: Bearer ' .. token .. '\n')
+  local header_lines = 'Authorization: Bearer ' .. token .. '\n'
+  local post = ''
+  local request_file = nil
+  if request_body then
+    request_file = temp_path('request')
+    write_file(request_file, request_body)
+    header_lines = header_lines .. 'Content-Type: application/json\n'
+    post = string.format('-X POST --data-binary @"%s" ', request_file)
+  end
+  write_file(headers, header_lines)
   local command = string.format(
-    'curl -sS -m 60 -H @"%s" -o "%s" -w "%%{http_code}" "%s"',
+    'curl -sS -m 60 %s-H @"%s" -o "%s" -w "%%{http_code}" "%s"',
+    post,
     headers,
     body_file,
     url
@@ -328,6 +445,7 @@ local function http_get(url, token)
   local status = pipe and pipe:read('*a') or ''
   if pipe then pipe:close() end
   os.remove(headers)
+  if request_file then os.remove(request_file) end
   local raw = read_file(body_file) or ''
   os.remove(body_file)
   local code = tonumber(status:match('(%d%d%d)%s*$'))
@@ -388,18 +506,19 @@ local shown_origin = nil
 local window = dispatcher:AddWindow({
   ID = 'OpenFrameComments',
   WindowTitle = 'OpenFrame Comments',
-  Geometry = { 200, 200, 460, 420 },
+  Geometry = { 200, 200, 460, 460 },
 }, ui:VGroup({
   ui:Label({ Text = 'OpenFrame video link', Weight = 0 }),
   ui:LineEdit({ ID = 'Link', PlaceholderText = 'https://open-frame.net/projects/.../videos/...', Weight = 0 }),
   ui:Label({ ID = 'Server', Text = '', Weight = 0 }),
-  ui:Label({ Text = 'API token (Read and Read comments)', Weight = 0 }),
+  ui:Label({ Text = 'API token (Read and Read comments, plus Send timeline markers)', Weight = 0 }),
   ui:LineEdit({ ID = 'Token', EchoMode = 'Password', Weight = 0 }),
   ui:Button({ ID = 'Load', Text = 'Load versions', Weight = 0 }),
   ui:Label({ Text = 'Version', Weight = 0 }),
   ui:ComboBox({ ID = 'Version', Weight = 0 }),
   ui:CheckBox({ ID = 'Resolved', Text = 'Include resolved comments', Weight = 0 }),
   ui:Button({ ID = 'Sync', Text = 'Add comments to the current timeline', Weight = 0 }),
+  ui:Button({ ID = 'Send', Text = 'Send my markers to OpenFrame', Weight = 0 }),
   ui:TextEdit({ ID = 'Status', ReadOnly = true, Weight = 1 }),
 }))
 local items = window:GetItems()
@@ -413,6 +532,7 @@ local function on_link_change()
   items.Version:Clear()
   version_ids = {}
   items.Sync.Enabled = false
+  items.Send.Enabled = false
   local link = M.parse_video_link(items.Link.Text)
   local origin = link and link.origin or nil
   items.Server.Text = origin and ('Server: ' .. origin) or ''
@@ -439,7 +559,7 @@ local function load_versions()
   settings.tokens[link.origin] = token
   save_settings(settings)
   set_status('Loading versions...')
-  local video = http_get(M.versions_url(link), token)
+  local video = http_request(M.versions_url(link), token)
   items.Version:Clear()
   version_ids = {}
   for index, version in ipairs(video.versions or {}) do
@@ -447,10 +567,12 @@ local function load_versions()
     version_ids[index] = version.id
   end
   items.Sync.Enabled = #version_ids > 0
+  items.Send.Enabled = #version_ids > 0
   set_status(tostring(video.title) .. ': ' .. #version_ids .. ' version(s).')
 end
 
-local function sync_markers()
+-- The link, the picked version and the current timeline with its frame rate.
+local function target()
   local link, token = read_link()
   local version_id = version_ids[(items.Version.CurrentIndex or 0) + 1]
   if not version_id then error('Load the versions and pick one.', 0) end
@@ -461,11 +583,16 @@ local function sync_markers()
   if not setting or setting == '' then setting = project:GetSetting('timelineFrameRate') end
   local rate = M.rate_from_setting(setting)
   if not rate then error('This timeline frame rate (' .. tostring(setting) .. ') is not supported.', 0) end
+  return link, token, version_id, timeline, rate
+end
+
+local function sync_markers()
+  local link, token, version_id, timeline, rate = target()
 
   settings.include_resolved = items.Resolved.Checked
   save_settings(settings)
   set_status('Fetching comments...')
-  local data = http_get(M.markers_url(link.origin, version_id, rate, items.Resolved.Checked), token)
+  local data = http_request(M.markers_url(link.origin, version_id, rate, items.Resolved.Checked), token)
 
   -- A Resolve marker owns its frame, so what an earlier sync wrote goes first.
   local tag = M.marker_tag(version_id)
@@ -499,6 +626,52 @@ local function sync_markers()
   set_status(table.concat(lines, '\n'))
 end
 
+-- Sends the editor's own markers on the timeline to the picked version as comments.
+-- Every marker the server took then gets the sync tag in its custom data, so the next
+-- sync swaps it for the OpenFrame copy and the next send leaves it out.
+local function send_markers()
+  local link, token, version_id, timeline, rate = target()
+  local own = M.own_markers(timeline:GetMarkers())
+  if #own == 0 then error('This timeline has no markers of your own to send.', 0) end
+  set_status('Sending markers...')
+  local total = { created = 0, duplicates = 0, skipped = { empty = 0, outOfRange = 0, tooLong = 0 } }
+  local accepted_list, plugin_versions = {}, nil
+  for first = 1, #own, M.SEND_BATCH do
+    local count = math.min(M.SEND_BATCH, #own - first + 1)
+    local payload = {}
+    for offset = 0, count - 1 do payload[offset + 1] = own[first + offset].payload end
+    local data = http_request(
+      M.import_url(link.origin, version_id),
+      token,
+      M.json_encode({ fps = rate, markers = payload })
+    )
+    total.created = total.created + (tonumber(data.created) or 0)
+    total.duplicates = total.duplicates + (tonumber(data.duplicates) or 0)
+    local skipped = type(data.skipped) == 'table' and data.skipped or {}
+    for reason in pairs(total.skipped) do
+      total.skipped[reason] = total.skipped[reason] + (tonumber(skipped[reason]) or 0)
+    end
+    for _, entry in ipairs(M.accepted_entries(own, first, count, data.accepted)) do
+      accepted_list[#accepted_list + 1] = entry
+    end
+    plugin_versions = data.pluginVersions
+  end
+  local lines = M.send_summary(total, #own)
+  local tag = M.marker_tag(version_id)
+  local accepted, tagged = #accepted_list, 0
+  for _, entry in ipairs(accepted_list) do
+    if timeline:UpdateMarkerCustomData(entry.frame, tag) then tagged = tagged + 1 end
+  end
+  if tagged < accepted then
+    lines[#lines + 1] = (accepted - tagged) .. ' sent marker(s) could not be marked as sent. Delete them before the next sync to avoid doubles; sending again will not add them twice.'
+  elseif accepted > 0 then
+    lines[#lines + 1] = 'The next sync of this version replaces the sent markers with the OpenFrame comments.'
+  end
+  local notice = M.update_notice(plugin_versions)
+  if notice then lines[#lines + 1] = notice end
+  set_status(table.concat(lines, '\n'))
+end
+
 local function guarded(action)
   return function()
     local ok, err = pcall(action)
@@ -510,6 +683,7 @@ function window.On.OpenFrameComments.Close() dispatcher:ExitLoop() end
 function window.On.Link.TextChanged() on_link_change() end
 window.On.Load.Clicked = guarded(load_versions)
 window.On.Sync.Clicked = guarded(sync_markers)
+window.On.Send.Clicked = guarded(send_markers)
 
 items.Link.Text = settings.link
 items.Resolved.Checked = settings.include_resolved

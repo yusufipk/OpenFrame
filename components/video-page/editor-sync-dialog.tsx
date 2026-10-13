@@ -59,8 +59,10 @@ export function useCanCreateApiToken(enabled: boolean): boolean | null {
   return canCreate;
 }
 
-// The panel and the script need exactly these two permissions and nothing more.
-const PLUGIN_TOKEN_SCOPES = ['read', 'comments:read'];
+// The panel and the script need exactly these permissions and nothing more: reading
+// the review, and adding the editor's own markers back as comments, which cannot
+// edit or delete any comment.
+const PLUGIN_TOKEN_SCOPES = ['read', 'comments:read', 'comments:import'];
 
 const COPY: Record<
   EditorPlugin,

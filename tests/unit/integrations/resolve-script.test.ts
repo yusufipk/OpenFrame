@@ -141,6 +141,90 @@ describe('Resolve script helpers', () => {
     expect(call('version_name', { versionNumber: 2, versionLabel: null })).toBe('v2');
   });
 
+  it('builds the import address, encoding the version id', () => {
+    const url = call('import_url', 'https://open-frame.net', 'cm ver/1');
+    expect(url).toBe('https://open-frame.net/api/versions/cm%20ver%2F1/comments/import');
+    // An encoded id carries a %, which the shell guard refuses, so a real cuid must pass.
+    expect(call('is_safe_url', call('import_url', 'https://h', 'cmver1'))).toBe(true);
+  });
+
+  it('collects only the editor markers, in timeline order', () => {
+    const own = call('own_markers', {
+      '120': { name: 'Color', note: 'Too warm', duration: 1, customData: '' },
+      '9': { name: '', note: 'Flash frame', duration: 25 },
+      '30': { name: 'Synced', note: 'Ann: x', duration: 1, customData: 'openframe:ver1' },
+      '45': { name: 'Other version', note: '', duration: 1, customData: 'openframe:ver2' },
+      '60': { name: 'Mine', note: 7, duration: 1, customData: 'not openframe:x' },
+      '80.6': { name: 12, note: 'No duration' },
+      '90': { name: 'Long', note: '', duration: 2.6 },
+    });
+    expect(own).toEqual([
+      {
+        frame: 9,
+        payload: { startFrame: 9, durationFrames: 25, name: '', comments: 'Flash frame' },
+      },
+      { frame: 60, payload: { startFrame: 60, durationFrames: 1, name: 'Mine', comments: '' } },
+      {
+        frame: 80.6,
+        payload: { startFrame: 81, durationFrames: 0, name: '', comments: 'No duration' },
+      },
+      { frame: 90, payload: { startFrame: 90, durationFrames: 3, name: 'Long', comments: '' } },
+      {
+        frame: 120,
+        payload: { startFrame: 120, durationFrames: 1, name: 'Color', comments: 'Too warm' },
+      },
+    ]);
+    expect(call('own_markers', null)).toEqual({});
+  });
+
+  it('maps the accepted indexes onto the batch that was sent, and nothing else', () => {
+    const list = ['a', 'b', 'c', 'd', 'e'];
+    // The second batch: list[3 .. 5], of which the server took its first and third.
+    expect(call('accepted_entries', list, 3, 3, [0, 2])).toEqual(['c', 'e']);
+    expect(call('accepted_entries', list, 1, 2, [1, 1, -1, 2, 0.5, '0'])).toEqual(['b']);
+    expect(call('accepted_entries', list, 1, 5, null)).toEqual({});
+  });
+
+  it('encodes what it sends as JSON the server reads back unchanged', () => {
+    const body = {
+      fps: '30000/1001',
+      markers: [
+        {
+          startFrame: 0,
+          durationFrames: 1,
+          name: 'Ayşe "quote" \\ 中文 😀',
+          comments: 'a\nb\r\tc\u0001',
+        },
+        { startFrame: 5178816, durationFrames: 25, name: '', comments: '' },
+      ],
+    };
+    const text = call('json_encode', body) as string;
+    expect(JSON.parse(text)).toEqual(body);
+    // Whole frame numbers go out without the ".0" Lua 5.3 would add.
+    expect(text).toContain('"startFrame":5178816');
+    expect(call('json_encode', [])).toBe('[]');
+    expect(call('json_encode', [true, false, 1.5])).toBe('[true,false,1.5]');
+  });
+
+  it('summarises a send, mentioning only what happened', () => {
+    expect(call('send_summary', { created: 2, duplicates: 0, skipped: {} }, 2)).toEqual([
+      'Sent 2 marker(s): 2 new comment(s) on OpenFrame.',
+    ]);
+    expect(
+      call(
+        'send_summary',
+        { created: 0, duplicates: 3, skipped: { empty: 1, outOfRange: 2, tooLong: 4 } },
+        10
+      )
+    ).toEqual([
+      'Sent 10 marker(s): 0 new comment(s) on OpenFrame.',
+      '3 were already there.',
+      '1 had no name or note and were left out.',
+      '2 start after the end of this version and were left out.',
+      '4 were longer than a comment can be.',
+    ]);
+  });
+
   it('reads the error message from every response shape', () => {
     expect(call('error_message', 404, { error: { message: 'Version not found' } })).toBe(
       'Version not found'

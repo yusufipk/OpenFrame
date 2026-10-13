@@ -66,6 +66,7 @@ const TOKEN_SCOPES: Record<string, Record<string, string[]>> = {
   'versions/[versionId]/approvals': { GET: ['approvals'], POST: ['approvals'] },
   'versions/[versionId]/comments': { GET: ['comments:read'], POST: ['comments:write'] },
   'versions/[versionId]/comments/export': { GET: ['comments:read'] },
+  'versions/[versionId]/comments/import': { POST: ['comments:write', 'comments:import'] },
   'versions/[versionId]/download': { GET: ['download'] },
   'versions/[versionId]/playback': { GET: ['download'] },
   'videos/[videoId]/assets': { GET: ['read'], POST: ['upload'] },

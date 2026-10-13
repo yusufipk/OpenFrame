@@ -10,6 +10,7 @@ export const API_TOKEN_SCOPES = [
   'delete',
   'comments:read',
   'comments:write',
+  'comments:import',
   'approvals',
   'share',
   'download',
@@ -46,6 +47,11 @@ export const API_TOKEN_SCOPE_DETAILS: Record<
   'comments:write': {
     label: 'Write comments',
     description: 'Add, edit, resolve and delete comments and tags',
+  },
+  'comments:import': {
+    label: 'Send timeline markers',
+    description:
+      'Add markers from an editor timeline as your own comments. Cannot edit, resolve or delete anything',
   },
   approvals: {
     label: 'Approvals',

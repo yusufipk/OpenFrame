@@ -16,6 +16,12 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    date: '2026-10-12',
+    title: 'Send your timeline markers back as comments',
+    description:
+      'The Premiere Pro panel and the DaVinci Resolve script can now send the markers you placed on your timeline to a version as comments. Download the plugin again from the comments menu and create a new token in the same window.',
+  },
+  {
     date: '2026-10-07',
     title: 'Simpler folder and video access',
     description:

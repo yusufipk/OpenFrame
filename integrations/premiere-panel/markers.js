@@ -2,7 +2,7 @@
 // unit tests can load this file directly.
 
 // This panel's release; keep it equal to "version" in manifest.json.
-const PANEL_VERSION = '0.1.0';
+const PANEL_VERSION = '0.2.0';
 
 // Whether a dotted version such as 0.2.0 is newer than another. Anything that is
 // not a version reads as not newer, so a bad reply never nags the editor.
@@ -52,6 +52,13 @@ function ticksPerFrame(rate) {
 function rateFromTimebase(timebase) {
   const ticks = Number(timebase);
   return SUPPORTED_RATES.find((rate) => ticksPerFrame(rate) === ticks) ?? null;
+}
+
+// A tick count read back from Premiere as the nearest whole frame. Taken in BigInt
+// for the same reason as framesToTicks below.
+function ticksToFrames(ticks, rate) {
+  const perFrame = BigInt(ticksPerFrame(rate));
+  return Number((BigInt(String(ticks).trim()) * BigInt(2) + perFrame) / (perFrame * BigInt(2)));
 }
 
 // Ticks as the decimal string Premiere uses. A day at 60 fps passes 2^53 ticks, so
@@ -112,6 +119,14 @@ function ownsMarker(comments, versionId) {
   return lines.length > 1 && lines[lines.length - 1] === markerTag(versionId);
 }
 
+// Any marker an OpenFrame sync wrote, for whichever version. Those are comments
+// already, so sending markers back skips them.
+function isOpenFrameMarker(comments) {
+  if (typeof comments !== 'string') return false;
+  const lines = normalizeLines(comments).split('\n');
+  return lines.length > 1 && /^\[OpenFrame [^\]]+\]$/.test(lines[lines.length - 1]);
+}
+
 function markerComments(marker, versionId) {
   return `${marker.comments}\n${markerTag(versionId)}`;
 }
@@ -120,6 +135,33 @@ function markerComments(marker, versionId) {
 // values come from the API or are read back from Premiere.
 function markerKey(startTicks, comments) {
   return `${String(startTicks).trim()}|${normalizeLines(comments)}`;
+}
+
+// The entries of a sent batch the server took, from the indexes it answered with.
+// Anything that is not an index into this batch is ignored, so a marker the server
+// left out is never tagged, and a later sync never deletes it.
+function acceptedEntries(batch, accepted) {
+  const seen = new Set();
+  const result = [];
+  for (const index of Array.isArray(accepted) ? accepted : []) {
+    if (!Number.isInteger(index) || index < 0 || index >= batch.length || seen.has(index)) continue;
+    seen.add(index);
+    result.push(batch[index]);
+  }
+  return result;
+}
+
+// What the panel reports after sending markers to OpenFrame.
+function sendSummary(data, sent) {
+  const lines = [`Sent ${sent} marker(s): ${data.created} new comment(s) on OpenFrame.`];
+  if (data.duplicates) lines.push(`${data.duplicates} were already there.`);
+  const skipped = data.skipped || {};
+  if (skipped.empty) lines.push(`${skipped.empty} had no name or comment and were left out.`);
+  if (skipped.outOfRange) {
+    lines.push(`${skipped.outOfRange} start after the end of this version and were left out.`);
+  }
+  if (skipped.tooLong) lines.push(`${skipped.tooLong} were longer than a comment can be.`);
+  return lines;
 }
 
 function versionName(version) {
@@ -150,13 +192,17 @@ module.exports = {
   rateFromTimebase,
   ticksPerFrame,
   framesToTicks,
+  ticksToFrames,
   isLocalHost,
   parseVideoLink,
   tokenKey,
   markerTag,
   ownsMarker,
+  isOpenFrameMarker,
   markerComments,
   markerKey,
+  acceptedEntries,
+  sendSummary,
   versionName,
   errorMessage,
   chunks,
