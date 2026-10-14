@@ -16,10 +16,10 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
-    date: '2026-10-13',
-    title: 'Drag a file onto another to make it a new version',
+    date: '2026-10-14',
+    title: 'Drop a new cut onto a file to make it a new version',
     description:
-      'Upload the new cut into the project, then drag its card onto the original. It becomes the newest version, keeping its comments, and the original keeps its history and share links.',
+      'Drag the file from your computer onto its card, or onto the player while you watch, and it uploads as the newest version. The card menu takes a local file too, and a cut already in the project can be dragged onto the original.',
   },
   {
     date: '2026-10-07',

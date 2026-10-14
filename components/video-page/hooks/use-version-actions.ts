@@ -178,7 +178,11 @@ export function useVersionActions({
     };
   };
 
-  const handleCreateVersion = async () => {
+  const createVersion = async (
+    mode: 'url' | 'file',
+    versionFile: File | null,
+    versionLabel: string
+  ) => {
     if (!projectId) return;
     setIsCreatingVersion(true);
     setNewVersionUploadStatus('');
@@ -188,13 +192,13 @@ export function useVersionActions({
     try {
       if (mediaType === 'IMAGE') {
         if (!imageUploadsEnabled) throw new Error('Image uploads are unavailable on this host');
-        if (!newVersionFile || !isImageFile(newVersionFile)) {
+        if (!versionFile || !isImageFile(versionFile)) {
           throw new Error('Choose a PNG, JPEG, or WebP image.');
         }
         setNewVersionUploadStatus('Uploading image...');
-        await uploadProjectImage(projectId, newVersionFile, {
+        await uploadProjectImage(projectId, versionFile, {
           targetVideoId: videoId,
-          versionLabel: newVersionLabel.trim(),
+          versionLabel: versionLabel.trim(),
           onProgress: (progress) => {
             setNewVersionUploadProgress(progress);
             setNewVersionUploadStatus(`Uploading image... ${progress}%`);
@@ -212,7 +216,7 @@ export function useVersionActions({
       let objectKey: string | null = null;
       let reservationId: string | null = null;
 
-      if (newVersionMode === 'url') {
+      if (mode === 'url') {
         if (!newVersionSource) throw new Error('Invalid URL');
         const meta = await fetchVideoMetadata(newVersionSource);
         finalVideoUrl = newVersionSource.originalUrl;
@@ -222,15 +226,15 @@ export function useVersionActions({
         finalDuration = meta?.duration || null;
       } else {
         if (!directUploadsEnabled) throw new Error('Direct uploads are disabled by this host');
-        if (!newVersionFile) throw new Error('No file selected');
-        let title = newVersionFile.name;
-        if (newVersionLabel.trim()) {
-          title = newVersionLabel.trim();
+        if (!versionFile) throw new Error('No file selected');
+        let title = versionFile.name;
+        if (versionLabel.trim()) {
+          title = versionLabel.trim();
         } else {
           title = title.replace(/\.[^/.]+$/, '');
         }
 
-        const uploaded = await uploadNewVersionFile(newVersionFile, title, (cleanup) => {
+        const uploaded = await uploadNewVersionFile(versionFile, title, (cleanup) => {
           pendingCleanup = cleanup;
         });
         finalVideoUrl = uploaded.finalVideoUrl;
@@ -254,7 +258,7 @@ export function useVersionActions({
           uploadToken,
           objectKey,
           reservationId,
-          versionLabel: newVersionLabel.trim() || null,
+          versionLabel: versionLabel.trim() || null,
           thumbnailUrl: finalThumbnailUrl,
           duration: finalDuration,
           setActive: true,
@@ -311,6 +315,19 @@ export function useVersionActions({
     }
   };
 
+  const handleCreateVersion = () => createVersion(newVersionMode, newVersionFile, newVersionLabel);
+
+  /** A file dropped on the player: opens the dialog on it and starts the upload. */
+  const uploadDroppedVersionFile = (file: File) => {
+    if (isCreatingVersion) return;
+    // A label left over from an earlier, closed dialog would be saved unseen.
+    setNewVersionLabel('');
+    setNewVersionMode('file');
+    setNewVersionFile(file);
+    setShowVersionDialog(true);
+    void createVersion('file', file, '');
+  };
+
   const handleDeleteVersion = async () => {
     if (!versionToDelete || !projectId) return;
     setIsDeletingVersion(true);
@@ -363,6 +380,7 @@ export function useVersionActions({
     newVersionUploadStatus,
     handleNewVersionUrlChange,
     handleCreateVersion,
+    uploadDroppedVersionFile,
     showDeleteVersionDialog,
     setShowDeleteVersionDialog,
     setVersionToDelete,

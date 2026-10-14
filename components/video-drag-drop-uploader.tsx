@@ -31,12 +31,19 @@ import {
 import {
   cleanupPendingProjectUpload,
   getDefaultTitleFromFile,
+  isVideoFile,
   uploadProjectVideo,
   type ActiveTusUpload,
   type PendingProjectUploadCleanup,
 } from '@/lib/client/project-video-upload';
 import type { DirectUploadProvider } from '@/components/video-page/types';
-import { VERSION_STACK_DRAG_TYPE } from '@/lib/client/version-stack-drag';
+import {
+  findVersionDropTarget,
+  VERSION_DROP_OVER_ATTR,
+  VERSION_DROP_TARGET_ATTR,
+  VERSION_STACK_DRAG_TYPE,
+  type VersionDropTarget,
+} from '@/lib/client/version-stack-drag';
 
 type ProjectOption = {
   id: string;
@@ -70,8 +77,13 @@ interface VideoDragDropUploaderProps {
   directUploadProvider?: DirectUploadProvider;
 }
 
-function hasFileData(dataTransfer: DataTransfer | null): boolean {
+function hasFileData(event: DragEvent): boolean {
+  const { dataTransfer, target } = event;
   if (!dataTransfer) return false;
+  // An open dialog's own file input takes its drop; catching it here would
+  // upload the file as a new project file instead.
+  if (target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"]'))
+    return false;
   const types = Array.from(dataTransfer.types || []);
   return types.includes('Files') && !types.includes(VERSION_STACK_DRAG_TYPE);
 }
@@ -111,6 +123,13 @@ export function VideoDragDropUploader({
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(
     fixedProjectName ?? null
   );
+  /** The file under the pointer during a desktop drag, when the drop would add a version. */
+  const [hoveredVersionTarget, setHoveredVersionTarget] = useState<VersionDropTarget | null>(null);
+  /** The file the running upload adds a version to, or null for new files. */
+  const [uploadVersionTarget, setUploadVersionTarget] = useState<VersionDropTarget | null>(null);
+  const hoveredVersionElementRef = useRef<HTMLElement | null>(null);
+  /** The page has files that take a version drop, so the overlay must not hide them. */
+  const [pageHasVersionTargets, setPageHasVersionTargets] = useState(false);
 
   const activeTusUploadRef = useRef<ActiveTusUpload | null>(null);
   const activeImageUploadRef = useRef<AbortController | null>(null);
@@ -254,9 +273,15 @@ export function VideoDragDropUploader({
   }, [isUploading, resetUploadState]);
 
   const uploadQueueToProject = useCallback(
-    async (files: File[], projectId: string, projectName?: string) => {
+    async (
+      files: File[],
+      projectId: string,
+      projectName?: string,
+      versionTarget: VersionDropTarget | null = null
+    ) => {
       if (files.length === 0) return;
 
+      setUploadVersionTarget(versionTarget);
       setDialogOpen(true);
       cancelRequestedRef.current = false;
       setIsUploading(true);
@@ -291,6 +316,7 @@ export function VideoDragDropUploader({
             try {
               await uploadProjectImage(projectId, item.file, {
                 folderId,
+                targetVideoId: versionTarget?.videoId,
                 signal: controller.signal,
                 onProgress: (progress) => {
                   setUploadProgress(progress);
@@ -309,6 +335,7 @@ export function VideoDragDropUploader({
             await uploadProjectVideo(projectId, item.file, {
               provider: directUploadProvider,
               folderId,
+              targetVideoId: versionTarget?.videoId ?? null,
               onProgress: (progress) => {
                 setUploadProgress(progress);
                 setQueue((prev) =>
@@ -379,9 +406,11 @@ export function VideoDragDropUploader({
 
       if (successCount > 0 && failCount === 0) {
         toast.success(
-          successCount === 1
-            ? `File uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
-            : `${successCount} files uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
+          versionTarget
+            ? `Added as a new version of “${versionTarget.title}”`
+            : successCount === 1
+              ? `File uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
+              : `${successCount} files uploaded to ${projectName ?? projectsById.get(projectId) ?? 'project'}`
         );
         if (fixedProjectId) {
           setDialogOpen(false);
@@ -394,6 +423,41 @@ export function VideoDragDropUploader({
       }
     },
     [directUploadProvider, folderId, fixedProjectId, projectsById, resetUploadState, router]
+  );
+
+  const handleDropOnVersionTarget = useCallback(
+    (files: File[], target: VersionDropTarget) => {
+      if (!canUpload || !fixedProjectId) {
+        toast.error('You do not have permission to upload files here');
+        return;
+      }
+      if (files.length !== 1) {
+        toast.error('Drop a single file onto a file to add it as a new version');
+        return;
+      }
+      const [file] = files;
+      const matches =
+        target.mediaType === 'IMAGE'
+          ? isImageFile(file) && imageUploadsEnabled
+          : isVideoFile(file) && directUploadsEnabled;
+      if (!matches) {
+        toast.error(
+          target.mediaType === 'IMAGE'
+            ? 'Drop a PNG, JPEG, or WebP image to add a new version of an image'
+            : 'Drop a video file to add a new version of a video'
+        );
+        return;
+      }
+      void uploadQueueToProject([file], fixedProjectId, fixedProjectName, target);
+    },
+    [
+      canUpload,
+      directUploadsEnabled,
+      fixedProjectId,
+      fixedProjectName,
+      imageUploadsEnabled,
+      uploadQueueToProject,
+    ]
   );
 
   const handleDropFiles = useCallback(
@@ -440,40 +504,63 @@ export function VideoDragDropUploader({
   );
 
   useEffect(() => {
+    const setHoveredVersionElement = (element: HTMLElement | null) => {
+      if (hoveredVersionElementRef.current === element) return;
+      hoveredVersionElementRef.current?.removeAttribute(VERSION_DROP_OVER_ATTR);
+      element?.setAttribute(VERSION_DROP_OVER_ATTR, '');
+      hoveredVersionElementRef.current = element;
+    };
+
     const handleDragEnter = (event: DragEvent) => {
-      if (!hasFileData(event.dataTransfer)) return;
+      if (!hasFileData(event)) return;
       event.preventDefault();
       dragDepthRef.current += 1;
+      if (dragDepthRef.current === 1) {
+        setPageHasVersionTargets(
+          canUpload && document.querySelector(`[${VERSION_DROP_TARGET_ATTR}]`) !== null
+        );
+      }
       setIsDragActive(true);
     };
 
     const handleDragOver = (event: DragEvent) => {
-      if (!hasFileData(event.dataTransfer)) return;
+      if (!hasFileData(event)) return;
       event.preventDefault();
       if (event.dataTransfer) {
         event.dataTransfer.dropEffect = 'copy';
       }
+      const found = canUpload ? findVersionDropTarget(event.target) : null;
+      setHoveredVersionElement(found?.element ?? null);
+      setHoveredVersionTarget((current) =>
+        current?.videoId === found?.target.videoId ? current : (found?.target ?? null)
+      );
     };
 
     const handleDragLeave = (event: DragEvent) => {
-      if (!hasFileData(event.dataTransfer)) return;
+      if (!hasFileData(event)) return;
       event.preventDefault();
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
       if (dragDepthRef.current === 0) {
         setIsDragActive(false);
+        setHoveredVersionElement(null);
+        setHoveredVersionTarget(null);
       }
     };
 
     const handleDrop = (event: DragEvent) => {
-      if (!hasFileData(event.dataTransfer)) return;
+      if (!hasFileData(event)) return;
       event.preventDefault();
       dragDepthRef.current = 0;
       setIsDragActive(false);
+      setHoveredVersionElement(null);
+      setHoveredVersionTarget(null);
 
       const allFiles = Array.from(event.dataTransfer?.files ?? []);
       if (allFiles.length === 0) return;
 
-      handleDropFiles(allFiles);
+      const found = canUpload ? findVersionDropTarget(event.target) : null;
+      if (found) handleDropOnVersionTarget(allFiles, found.target);
+      else handleDropFiles(allFiles);
     };
 
     window.addEventListener('dragenter', handleDragEnter);
@@ -486,8 +573,9 @@ export function VideoDragDropUploader({
       window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('dragleave', handleDragLeave);
       window.removeEventListener('drop', handleDrop);
+      setHoveredVersionElement(null);
     };
-  }, [handleDropFiles]);
+  }, [canUpload, handleDropFiles, handleDropOnVersionTarget]);
 
   const closeDialog = useCallback(() => {
     setQueue([]);
@@ -499,7 +587,31 @@ export function VideoDragDropUploader({
 
   return (
     <>
-      {isDragActive && (
+      {isDragActive && hoveredVersionTarget && (
+        // The file under the pointer highlights itself; covering the page would hide it.
+        <div className="pointer-events-none fixed inset-x-0 bottom-8 z-[100] flex justify-center px-4">
+          <div className="flex max-w-xl items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg">
+            <UploadCloud className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              Drop to add a new version of “{hoveredVersionTarget.title}”
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isDragActive && !hoveredVersionTarget && pageHasVersionTargets && (
+        // The files stay visible so the user can aim at one of them.
+        <div className="pointer-events-none fixed inset-0 z-[100] border-4 border-dashed border-primary/60">
+          <div className="flex justify-center px-4 pt-6">
+            <div className="flex max-w-xl items-center gap-2 rounded-full bg-background px-4 py-2 text-sm font-medium shadow-lg ring-1 ring-border">
+              <UploadCloud className="h-4 w-4 shrink-0 text-primary" />
+              <span>Drop onto a file to add a new version, or anywhere else to upload</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDragActive && !hoveredVersionTarget && !pageHasVersionTargets && (
         <div className="pointer-events-none fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm">
           <div className="flex h-full items-center justify-center px-4">
             <div className="w-full max-w-2xl rounded-2xl border-2 border-dashed border-primary bg-background p-10 text-center shadow-2xl">
@@ -531,7 +643,11 @@ export function VideoDragDropUploader({
         <DialogContent className="border-2 border-border bg-background text-foreground sm:max-w-xl">
           <DialogHeader className="space-y-1">
             <DialogTitle className="text-2xl font-bold">
-              {needsProjectSelection ? 'Choose a project' : 'Uploading files'}
+              {needsProjectSelection
+                ? 'Choose a project'
+                : uploadVersionTarget
+                  ? 'Uploading new version'
+                  : 'Uploading files'}
             </DialogTitle>
             <DialogDescription>
               {hasQueue
@@ -654,9 +770,11 @@ export function VideoDragDropUploader({
               <p className="text-sm text-muted-foreground">
                 Target:{' '}
                 <span className="font-medium text-foreground">
-                  {selectedProjectName ??
-                    fixedProjectName ??
-                    projectsById.get(selectedProjectId ?? '')}
+                  {uploadVersionTarget
+                    ? `New version of “${uploadVersionTarget.title}”`
+                    : (selectedProjectName ??
+                      fixedProjectName ??
+                      projectsById.get(selectedProjectId ?? ''))}
                 </span>
               </p>
             )}

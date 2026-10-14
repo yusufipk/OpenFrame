@@ -60,6 +60,8 @@ import {
 import { MoveVideosDialog } from '@/components/move-videos-dialog';
 import { cn } from '@/lib/utils';
 import { isImageFile, uploadProjectImage } from '@/lib/client/project-image-upload';
+import { isVideoFile, uploadProjectVideo } from '@/lib/client/project-video-upload';
+import type { DirectUploadProvider } from '@/components/video-page/types';
 
 interface VideoCardProps {
   video: {
@@ -75,6 +77,8 @@ interface VideoCardProps {
   projectId: string;
   canManage: boolean;
   imageUploadsEnabled?: boolean;
+  directUploadsEnabled?: boolean;
+  directUploadProvider?: DirectUploadProvider;
   canSelect?: boolean;
   selectionMode?: boolean;
   selected?: boolean;
@@ -88,6 +92,8 @@ export function VideoCard({
   projectId,
   canManage,
   imageUploadsEnabled = false,
+  directUploadsEnabled = false,
+  directUploadProvider = 'bunny',
   canSelect = false,
   selectionMode = false,
   selected = false,
@@ -114,6 +120,7 @@ export function VideoCard({
   const [versionUrlError, setVersionUrlError] = useState('');
   const [isCreatingVersion, setIsCreatingVersion] = useState(false);
   const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [versionUploadProgress, setVersionUploadProgress] = useState(0);
 
   // Delete dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -188,6 +195,32 @@ export function VideoCard({
       }
       return;
     }
+    if (versionFile) {
+      if (!directUploadsEnabled) return;
+      setIsCreatingVersion(true);
+      setVersionUrlError('');
+      setVersionUploadProgress(0);
+      try {
+        await uploadProjectVideo(projectId, versionFile, {
+          provider: directUploadProvider,
+          targetVideoId: video.id,
+          versionLabel: versionLabel.trim() || null,
+          onProgress: setVersionUploadProgress,
+        });
+        setShowVersionDialog(false);
+        setVersionFile(null);
+        setVersionUrl('');
+        setVersionLabel('');
+        setVersionSource(null);
+        router.refresh();
+      } catch (error) {
+        setVersionUrlError(error instanceof Error ? error.message : 'Failed to upload video');
+      } finally {
+        setIsCreatingVersion(false);
+        setVersionUploadProgress(0);
+      }
+      return;
+    }
     if (!versionSource) return;
     setIsCreatingVersion(true);
     try {
@@ -213,9 +246,13 @@ export function VideoCard({
         setVersionLabel('');
         setVersionSource(null);
         router.refresh();
+      } else {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setVersionUrlError(data?.error || 'Failed to create version');
       }
     } catch (err) {
       console.error('Failed to create version:', err);
+      setVersionUrlError('Failed to create version');
     } finally {
       setIsCreatingVersion(false);
     }
@@ -416,6 +453,7 @@ export function VideoCard({
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 shrink-0"
+                      aria-label={`Actions for ${video.title}`}
                       onClick={(e) => e.stopPropagation()}
                       disabled={isDeleting}
                     >
@@ -534,7 +572,18 @@ export function VideoCard({
       </Dialog>
 
       {/* Add Version Dialog */}
-      <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
+      <Dialog
+        open={showVersionDialog}
+        onOpenChange={(open) => {
+          // Closing mid-upload would hide the progress of an upload that keeps running.
+          if (!open && isCreatingVersion) return;
+          setShowVersionDialog(open);
+          if (!open) {
+            setVersionFile(null);
+            setVersionUrlError('');
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add New Version</DialogTitle>
@@ -569,7 +618,28 @@ export function VideoCard({
                     value={versionUrl}
                     onChange={(e) => handleVersionUrlChange(e.target.value)}
                     className="pl-10"
+                    disabled={isCreatingVersion || !!versionFile}
+                  />
+                </div>
+              )}
+              {video.mediaType !== 'IMAGE' && directUploadsEnabled && (
+                <div className="space-y-2 pt-2">
+                  <Label htmlFor={`version-file-${video.id}`}>Or upload a file</Label>
+                  <Input
+                    id={`version-file-${video.id}`}
+                    type="file"
+                    accept="video/*,.mkv,.mov,.m4v"
                     disabled={isCreatingVersion}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      if (file && !isVideoFile(file)) {
+                        setVersionUrlError('Choose a video file');
+                        setVersionFile(null);
+                      } else {
+                        setVersionFile(file);
+                        setVersionUrlError('');
+                      }
+                    }}
                   />
                 </div>
               )}
@@ -579,7 +649,7 @@ export function VideoCard({
                   {versionUrlError}
                 </p>
               )}
-              {video.mediaType !== 'IMAGE' && versionSource && (
+              {video.mediaType !== 'IMAGE' && versionSource && !versionFile && (
                 <p className="text-sm text-green-600 flex items-center gap-1">
                   <CheckCircle2 className="h-4 w-4" />
                   {versionSource.providerId.charAt(0).toUpperCase() +
@@ -602,12 +672,14 @@ export function VideoCard({
               disabled={
                 (video.mediaType === 'IMAGE'
                   ? !versionFile || !imageUploadsEnabled
-                  : !versionSource) || isCreatingVersion
+                  : !versionSource && !versionFile) || isCreatingVersion
               }
               className="w-full"
             >
               {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Add Version {video.currentVersion + 1}
+              {isCreatingVersion && versionUploadProgress > 0
+                ? `Uploading… ${versionUploadProgress}%`
+                : `Add Version ${video.currentVersion + 1}`}
             </Button>
           </div>
         </DialogContent>

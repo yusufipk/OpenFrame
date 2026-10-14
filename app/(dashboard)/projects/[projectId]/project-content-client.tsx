@@ -66,7 +66,7 @@ import {
 import { downloadProgressPercent } from '@/lib/client/download-file';
 import { beginUnloadGuard } from '@/lib/client/unload-guard';
 import { ProjectBrandLogo } from '@/components/project-branding';
-import { VERSION_STACK_DRAG_TYPE } from '@/lib/client/version-stack-drag';
+import { VERSION_STACK_DRAG_TYPE, versionDropTargetProps } from '@/lib/client/version-stack-drag';
 import { cn } from '@/lib/utils';
 import { parseProjectContentSort, projectContentSortLabels } from '@/lib/project-content-sort';
 import {
@@ -313,6 +313,10 @@ export function ProjectContentClient({
   );
 
   const canStackVersions = canEdit && !selectionMode && localVideos.length > 1;
+  // A file dropped from the desktop onto a card becomes its new version; the
+  // page-wide uploader below does the upload.
+  const canDropVersionFiles =
+    canEdit && !all && !selectionMode && (directUploadsEnabled || imageUploadsEnabled);
 
   const requestStack = useCallback(
     async (source: SerializedVideo, target: SerializedVideo, confirmationToken?: string) => {
@@ -763,9 +767,11 @@ export function ProjectContentClient({
                 >
                   Files
                 </h2>
-                {canStackVersions && (
+                {(canStackVersions || canDropVersionFiles) && (
                   <p className="hidden text-xs text-muted-foreground md:block">
-                    Drag a file onto another to add it as a new version.
+                    {canStackVersions
+                      ? 'Drop a new cut onto a file, or drag one file onto another, to add a version.'
+                      : 'Drop a new cut onto a file to add it as a new version.'}
                   </p>
                 )}
               </div>
@@ -778,10 +784,20 @@ export function ProjectContentClient({
                     !!draggingVideo &&
                     draggingVideo.id !== video.id &&
                     draggingVideo.mediaType === video.mediaType;
+                  const acceptsVersionFile =
+                    canDropVersionFiles &&
+                    (video.mediaType === 'IMAGE' ? imageUploadsEnabled : directUploadsEnabled);
                   return (
                     <div
                       key={video.id}
                       data-testid="file-card"
+                      {...(acceptsVersionFile
+                        ? versionDropTargetProps({
+                            videoId: video.id,
+                            title: video.title,
+                            mediaType: video.mediaType,
+                          })
+                        : {})}
                       draggable={canStackVersions}
                       onDragStart={
                         canStackVersions
@@ -817,7 +833,8 @@ export function ProjectContentClient({
                         handleStackDrop(video.id);
                       }}
                       className={cn(
-                        'relative rounded-xl transition',
+                        'group/version-drop relative rounded-xl transition',
+                        'data-[file-drop-over]:ring-2 data-[file-drop-over]:ring-primary data-[file-drop-over]:ring-offset-2 data-[file-drop-over]:ring-offset-background',
                         stackDraggingId === video.id && 'opacity-50',
                         stackTargetId === video.id &&
                           'ring-2 ring-primary ring-offset-2 ring-offset-background'
@@ -828,6 +845,8 @@ export function ProjectContentClient({
                         projectId={projectId}
                         canManage={canEdit}
                         imageUploadsEnabled={imageUploadsEnabled}
+                        directUploadsEnabled={directUploadsEnabled}
+                        directUploadProvider={directUploadProvider}
                         canSelect={canSelectVideos}
                         selectionMode={selectionMode}
                         selected={selectedVideoIds.includes(video.id)}
@@ -835,6 +854,13 @@ export function ProjectContentClient({
                         onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
                         onDeleted={handleVideoDeleted}
                       />
+                      {acceptsVersionFile && (
+                        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 hidden justify-center group-data-[file-drop-over]/version-drop:flex">
+                          <span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow">
+                            Drop to add as a new version
+                          </span>
+                        </div>
+                      )}
                       {stackTargetId === video.id && (
                         <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
                           <span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow">
