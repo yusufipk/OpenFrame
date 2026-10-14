@@ -66,6 +66,8 @@ import {
 import { downloadProgressPercent } from '@/lib/client/download-file';
 import { beginUnloadGuard } from '@/lib/client/unload-guard';
 import { ProjectBrandLogo } from '@/components/project-branding';
+import { VERSION_STACK_DRAG_TYPE, versionDropTargetProps } from '@/lib/client/version-stack-drag';
+import { cn } from '@/lib/utils';
 import { parseProjectContentSort, projectContentSortLabels } from '@/lib/project-content-sort';
 import {
   createDownloadProgressToast,
@@ -153,6 +155,17 @@ export function ProjectContentClient({
   const [isDeletingSelected, setIsDeletingSelected] = useState(false);
   const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
   const [showMoveSelectedDialog, setShowMoveSelectedDialog] = useState(false);
+
+  // Dragging one card onto another stacks it as a new version of that file.
+  const [stackDraggingId, setStackDraggingId] = useState<string | null>(null);
+  const [stackTargetId, setStackTargetId] = useState<string | null>(null);
+  const [pendingStack, setPendingStack] = useState<{
+    source: SerializedVideo;
+    target: SerializedVideo;
+    message: string | null;
+    confirmationToken: string | null;
+  } | null>(null);
+  const [isStacking, setIsStacking] = useState(false);
 
   const childFolders = all ? [] : folders.filter((folder) => folder.parentId === folderId);
   const canSelectVideos = canDownloadProject || canEdit;
@@ -297,6 +310,85 @@ export function ProjectContentClient({
       }
     },
     [canDownloadProject, isDownloading, projectId]
+  );
+
+  const canStackVersions = canEdit && !selectionMode && localVideos.length > 1;
+  // A file dropped from the desktop onto a card becomes its new version; the
+  // page-wide uploader below does the upload.
+  const canDropVersionFiles =
+    canEdit && !all && !selectionMode && (directUploadsEnabled || imageUploadsEnabled);
+
+  const requestStack = useCallback(
+    async (source: SerializedVideo, target: SerializedVideo, confirmationToken?: string) => {
+      setIsStacking(true);
+      try {
+        const response = await fetch(
+          `/api/projects/${projectId}/videos/${target.id}/versions/merge`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceVideoId: source.id, confirmationToken }),
+          }
+        );
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          toast.error(
+            typeof body?.error === 'string' ? body.error : 'Failed to add the file as a version'
+          );
+          setPendingStack(null);
+          return;
+        }
+        if (body?.data?.needsConfirmation) {
+          // A second confirmation means access changed since the first one was shown.
+          if (confirmationToken) toast.message('Access changed. Review and confirm again.');
+          setPendingStack({
+            source,
+            target,
+            message: body.data.message,
+            confirmationToken: body.data.confirmationToken,
+          });
+          return;
+        }
+        // The card badge is the version count (see page.tsx), so mirror that here
+        // rather than the version number, or the badge changes on refresh.
+        const versionCount = Number(body?.data?.versionCount);
+        setLocalVideos((prev) =>
+          prev
+            .filter((video) => video.id !== source.id)
+            .map((video) =>
+              video.id === target.id && Number.isFinite(versionCount)
+                ? { ...video, currentVersion: versionCount }
+                : video
+            )
+        );
+        setPendingStack(null);
+        toast.success(`Added "${source.title}" as a new version of "${target.title}"`);
+        router.refresh();
+      } catch {
+        toast.error('Failed to add the file as a version');
+        setPendingStack(null);
+      } finally {
+        setIsStacking(false);
+      }
+    },
+    [projectId, router]
+  );
+
+  const handleStackDrop = useCallback(
+    (targetId: string) => {
+      const source = localVideos.find((video) => video.id === stackDraggingId);
+      const target = localVideos.find((video) => video.id === targetId);
+      setStackDraggingId(null);
+      setStackTargetId(null);
+      if (!source || !target || source.id === target.id) return;
+      if (source.mediaType !== target.mediaType) {
+        toast.error('Videos and images cannot be stacked together');
+        return;
+      }
+      setPendingStack({ source, target, message: null, confirmationToken: null });
+      void requestStack(source, target);
+    },
+    [localVideos, requestStack, stackDraggingId]
   );
 
   const handleDeleteSelected = useCallback(async () => {
@@ -668,28 +760,117 @@ export function ProjectContentClient({
           )}
           {localVideos.length > 0 && (
             <section aria-labelledby="project-videos-heading">
-              <h2
-                id="project-videos-heading"
-                className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground"
-              >
-                Files
-              </h2>
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2
+                  id="project-videos-heading"
+                  className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+                >
+                  Files
+                </h2>
+                {(canStackVersions || canDropVersionFiles) && (
+                  <p className="hidden text-xs text-muted-foreground md:block">
+                    {canStackVersions
+                      ? 'Drop a new cut onto a file, or drag one file onto another, to add a version.'
+                      : 'Drop a new cut onto a file to add it as a new version.'}
+                  </p>
+                )}
+              </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {localVideos.map((video) => (
-                  <VideoCard
-                    key={video.id}
-                    video={video}
-                    projectId={projectId}
-                    canManage={canEdit}
-                    imageUploadsEnabled={imageUploadsEnabled}
-                    canSelect={canSelectVideos}
-                    selectionMode={selectionMode}
-                    selected={selectedVideoIds.includes(video.id)}
-                    onEnterSelectionMode={handleEnterSelectionMode}
-                    onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
-                    onDeleted={handleVideoDeleted}
-                  />
-                ))}
+                {localVideos.map((video) => {
+                  const draggingVideo = stackDraggingId
+                    ? localVideos.find((candidate) => candidate.id === stackDraggingId)
+                    : undefined;
+                  const acceptsDrop =
+                    !!draggingVideo &&
+                    draggingVideo.id !== video.id &&
+                    draggingVideo.mediaType === video.mediaType;
+                  const acceptsVersionFile =
+                    canDropVersionFiles &&
+                    (video.mediaType === 'IMAGE' ? imageUploadsEnabled : directUploadsEnabled);
+                  return (
+                    <div
+                      key={video.id}
+                      data-testid="file-card"
+                      {...(acceptsVersionFile
+                        ? versionDropTargetProps({
+                            videoId: video.id,
+                            title: video.title,
+                            mediaType: video.mediaType,
+                          })
+                        : {})}
+                      draggable={canStackVersions}
+                      onDragStart={
+                        canStackVersions
+                          ? (event) => {
+                              // React bubbles events out of the card's portalled
+                              // dialogs too; only a drag that starts on the card counts.
+                              if (!event.currentTarget.contains(event.target as Node)) return;
+                              event.dataTransfer.setData(VERSION_STACK_DRAG_TYPE, video.id);
+                              event.dataTransfer.effectAllowed = 'move';
+                              setStackDraggingId(video.id);
+                            }
+                          : undefined
+                      }
+                      onDragEnd={() => {
+                        setStackDraggingId(null);
+                        setStackTargetId(null);
+                      }}
+                      onDragOver={(event) => {
+                        if (!acceptsDrop) return;
+                        if (!event.dataTransfer.types.includes(VERSION_STACK_DRAG_TYPE)) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                        if (stackTargetId !== video.id) setStackTargetId(video.id);
+                      }}
+                      onDragLeave={(event) => {
+                        if (event.currentTarget.contains(event.relatedTarget as Node | null))
+                          return;
+                        if (stackTargetId === video.id) setStackTargetId(null);
+                      }}
+                      onDrop={(event) => {
+                        if (!acceptsDrop) return;
+                        event.preventDefault();
+                        handleStackDrop(video.id);
+                      }}
+                      className={cn(
+                        'group/version-drop relative rounded-xl transition',
+                        'data-[file-drop-over]:ring-2 data-[file-drop-over]:ring-primary data-[file-drop-over]:ring-offset-2 data-[file-drop-over]:ring-offset-background',
+                        stackDraggingId === video.id && 'opacity-50',
+                        stackTargetId === video.id &&
+                          'ring-2 ring-primary ring-offset-2 ring-offset-background'
+                      )}
+                    >
+                      <VideoCard
+                        video={video}
+                        projectId={projectId}
+                        canManage={canEdit}
+                        imageUploadsEnabled={imageUploadsEnabled}
+                        directUploadsEnabled={directUploadsEnabled}
+                        directUploadProvider={directUploadProvider}
+                        canSelect={canSelectVideos}
+                        selectionMode={selectionMode}
+                        selected={selectedVideoIds.includes(video.id)}
+                        onEnterSelectionMode={handleEnterSelectionMode}
+                        onSelectedChange={(selected) => toggleVideoSelection(video.id, selected)}
+                        onDeleted={handleVideoDeleted}
+                      />
+                      {acceptsVersionFile && (
+                        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 hidden justify-center group-data-[file-drop-over]/version-drop:flex">
+                          <span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow">
+                            Drop to add as a new version
+                          </span>
+                        </div>
+                      )}
+                      {stackTargetId === video.id && (
+                        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+                          <span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow">
+                            Drop to add as a new version
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -765,6 +946,43 @@ export function ProjectContentClient({
             >
               {isDeletingSelected && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Delete selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={pendingStack !== null}
+        onOpenChange={(open) => {
+          if (!open && !isStacking) setPendingStack(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Add &quot;{pendingStack?.source.title}&quot; as a new version of &quot;
+              {pendingStack?.target.title}&quot;?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingStack?.message ?? 'Checking access…'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isStacking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (pendingStack?.confirmationToken)
+                  void requestStack(
+                    pendingStack.source,
+                    pendingStack.target,
+                    pendingStack.confirmationToken
+                  );
+              }}
+              disabled={isStacking || !pendingStack?.confirmationToken}
+            >
+              {isStacking && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Add as version
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

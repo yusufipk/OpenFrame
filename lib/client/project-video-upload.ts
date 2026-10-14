@@ -72,19 +72,53 @@ export async function cleanupPendingProjectUpload(
   }
 }
 
+/**
+ * Saves an uploaded file either as a new file in the project or, with
+ * `targetVideoId`, as the new active version of that file.
+ */
+async function saveUploadedVideo(
+  projectId: string,
+  targetVideoId: string | null,
+  newFile: Record<string, unknown>,
+  version: Record<string, unknown>
+): Promise<void> {
+  const response = await fetch(
+    targetVideoId
+      ? `/api/projects/${projectId}/videos/${targetVideoId}/versions`
+      : `/api/projects/${projectId}/videos`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(targetVideoId ? { ...version, setActive: true } : newFile),
+    }
+  );
+  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  if (!response.ok) {
+    throw apiRequestError(
+      payload,
+      targetVideoId ? 'Failed to create version' : 'Failed to create video'
+    );
+  }
+}
+
 export async function uploadProjectVideo(
   projectId: string,
   file: File,
   options: {
     provider: DirectUploadProvider;
     folderId?: string | null;
+    /** Adds the upload as the new active version of this file instead of a new file. */
+    targetVideoId?: string | null;
     title?: string;
     description?: string | null;
+    versionLabel?: string | null;
   } & ProjectVideoUploadProgress
 ): Promise<void> {
   const {
     provider,
     folderId = null,
+    targetVideoId = null,
+    versionLabel = null,
     title: titleOverride,
     description = null,
     onProgress,
@@ -102,6 +136,7 @@ export async function uploadProjectVideo(
       onStatus?.('Initializing upload...');
       const uploaded = await uploadVideoToR2(projectId, file, {
         folderId,
+        targetVideoId,
         onProgress: (progress) => {
           onProgress?.(progress);
           onStatus?.(`Uploading... ${progress}%`);
@@ -122,31 +157,21 @@ export async function uploadProjectVideo(
       }
 
       onStatus?.('Saving video...');
-      const createResponse = await fetch(`/api/projects/${projectId}/videos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folderId,
-          title,
-          description,
-          videoUrl: uploaded.proxyUrl,
-          providerId: 'r2',
-          videoId: uploaded.objectKey,
-          thumbnailUrl: uploaded.thumbnailUrl || '/placeholder-video-thumbnail.png',
-          duration: uploaded.duration,
-          uploadToken: uploaded.uploadToken,
-          objectKey: uploaded.objectKey,
-          reservationId: uploaded.reservationId,
-        }),
-      });
-
-      const createPayload = (await createResponse.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-
-      if (!createResponse.ok) {
-        throw apiRequestError(createPayload, 'Failed to create video');
-      }
+      const shared = {
+        videoUrl: uploaded.proxyUrl,
+        providerId: 'r2',
+        thumbnailUrl: uploaded.thumbnailUrl || '/placeholder-video-thumbnail.png',
+        duration: uploaded.duration,
+        uploadToken: uploaded.uploadToken,
+        objectKey: uploaded.objectKey,
+        reservationId: uploaded.reservationId,
+      };
+      await saveUploadedVideo(
+        projectId,
+        targetVideoId,
+        { ...shared, folderId, title, description, videoId: uploaded.objectKey },
+        { ...shared, providerVideoId: uploaded.objectKey, versionLabel }
+      );
 
       pendingCleanup = null;
       return;
@@ -158,7 +183,11 @@ export async function uploadProjectVideo(
       headers: { 'Content-Type': 'application/json' },
       // The server checks this against the quota and holds a reservation for it,
       // so an upload that cannot fit is turned away before any of it is sent.
-      body: JSON.stringify({ folderId, title, sizeBytes: file.size.toString() }),
+      body: JSON.stringify(
+        targetVideoId
+          ? { targetVideoId, title, sizeBytes: file.size.toString() }
+          : { folderId, title, sizeBytes: file.size.toString() }
+      ),
     });
 
     const initPayload = (await initResponse.json().catch(() => null)) as {
@@ -223,30 +252,20 @@ export async function uploadProjectVideo(
     }
 
     onStatus?.('Saving video...');
-    const createResponse = await fetch(`/api/projects/${projectId}/videos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        folderId,
-        title,
-        description,
-        videoUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`,
-        providerId: 'bunny',
-        videoId,
-        // The server derives a Bunny version's thumbnail itself.
-        thumbnailUrl: null,
-        duration: null,
-        uploadToken,
-      }),
-    });
-
-    const createPayload = (await createResponse.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-
-    if (!createResponse.ok) {
-      throw apiRequestError(createPayload, 'Failed to create video');
-    }
+    const shared = {
+      videoUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`,
+      providerId: 'bunny',
+      // The server derives a Bunny version's thumbnail itself.
+      thumbnailUrl: null,
+      duration: null,
+      uploadToken,
+    };
+    await saveUploadedVideo(
+      projectId,
+      targetVideoId,
+      { ...shared, folderId, title, description, videoId },
+      { ...shared, providerVideoId: videoId, versionLabel }
+    );
 
     pendingCleanup = null;
   } catch (error) {

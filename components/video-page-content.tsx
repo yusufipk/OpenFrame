@@ -1,9 +1,19 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, useMemo, type SetStateAction } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  type DragEvent,
+  type SetStateAction,
+} from 'react';
 import Hls from 'hls.js';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { isImageFile } from '@/lib/client/project-image-upload';
+import { isVideoFile } from '@/lib/client/project-video-upload';
 import { brandStyle } from '@/lib/project-branding';
 import { commentMarkerColor } from '@/lib/comment-tags';
 import { type AnnotationStroke, type AnnotationCanvasHandle } from '@/components/annotation-canvas';
@@ -67,7 +77,7 @@ import {
 import { getSpeedOptionsForProvider } from '@/components/video-page/hooks/video-player-utils';
 import type { AttachmentCommentTarget } from '@/lib/attachment-comment-target';
 import type { CommentImage } from '@/components/video-page/types';
-import { Download } from 'lucide-react';
+import { Download, UploadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -765,6 +775,7 @@ export function VideoPageContent({
     newVersionUploadStatus,
     handleNewVersionUrlChange,
     handleCreateVersion,
+    uploadDroppedVersionFile,
     showDeleteVersionDialog,
     setShowDeleteVersionDialog,
     setVersionToDelete,
@@ -781,6 +792,47 @@ export function VideoPageContent({
     activeVersionId,
     setActiveVersionId: setReviewVersionId,
   });
+
+  // A file dragged from the desktop onto the player column becomes a new version.
+  // The side panes have drop zones of their own (attachments, assets) and are not
+  // inside the column, so they keep working.
+  // Same conditions as the New Version button: only the dashboard renders its
+  // dialog, and a live room locks the version.
+  const canDropVersionFile =
+    mode === 'dashboard' &&
+    !liveReview.isJoined &&
+    (canShareVideo || canRequestApproval) &&
+    (isImage ? imageUploadsEnabled : directUploadsEnabled) &&
+    !isCreatingVersion;
+  const [isVersionFileDragOver, setIsVersionFileDragOver] = useState(false);
+  const versionFileDragDepthRef = useRef(0);
+  const acceptsVersionFileDrag = (event: DragEvent<HTMLDivElement>) =>
+    canDropVersionFile &&
+    event.dataTransfer.types.includes('Files') &&
+    // React bubbles drags out of the portalled New Version dialog too, whose own
+    // file input must keep receiving its drop.
+    event.currentTarget.contains(event.target as Node);
+  const handleVersionFileDrop = (event: DragEvent<HTMLDivElement>) => {
+    versionFileDragDepthRef.current = 0;
+    setIsVersionFileDragOver(false);
+    if (!acceptsVersionFileDrag(event)) return;
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length !== 1) {
+      toast.error('Drop a single file to add it as a new version');
+      return;
+    }
+    const [file] = files;
+    if (isImage ? !isImageFile(file) : !isVideoFile(file)) {
+      toast.error(
+        isImage
+          ? 'Drop a PNG, JPEG, or WebP image to add a new version'
+          : 'Drop a video file to add a new version'
+      );
+      return;
+    }
+    uploadDroppedVersionFile(file);
+  };
 
   const handleVersionSelect = useCallback(
     (versionId: string) => {
@@ -1009,9 +1061,37 @@ export function VideoPageContent({
             isFullscreenMode || !showComments
               ? 'flex-1 min-h-0'
               : 'shrink-0 wide:flex-1 wide:min-h-0',
-            isFullscreenMode && 'relative'
+            (isFullscreenMode || isVersionFileDragOver) && 'relative'
           )}
+          onDragEnter={(event) => {
+            if (!acceptsVersionFileDrag(event)) return;
+            event.preventDefault();
+            versionFileDragDepthRef.current += 1;
+            setIsVersionFileDragOver(true);
+          }}
+          onDragOver={(event) => {
+            if (!acceptsVersionFileDrag(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+          }}
+          onDragLeave={(event) => {
+            if (!acceptsVersionFileDrag(event)) return;
+            versionFileDragDepthRef.current = Math.max(0, versionFileDragDepthRef.current - 1);
+            if (versionFileDragDepthRef.current === 0) setIsVersionFileDragOver(false);
+          }}
+          onDrop={handleVersionFileDrop}
         >
+          {isVersionFileDragOver && (
+            <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border-2 border-dashed border-primary bg-background/70 backdrop-blur-sm">
+              <div className="text-center">
+                <UploadCloud className="mx-auto mb-3 h-10 w-10 text-primary" />
+                <p className="text-lg font-semibold">Drop to add a new version</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  It becomes the current version of {video.title}.
+                </p>
+              </div>
+            </div>
+          )}
           <VideoPageHeader
             mode={mode}
             mediaType={isImage ? 'IMAGE' : 'VIDEO'}

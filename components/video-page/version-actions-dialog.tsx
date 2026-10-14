@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { VideoSource } from '@/lib/video-providers';
 import { isImageFile } from '@/lib/client/project-image-upload';
+import { isVideoFile } from '@/lib/client/project-video-upload';
 import { DriveImportButton } from '@/components/drive-import/drive-import-button';
 
 interface VersionActionsDialogProps {
@@ -193,10 +194,7 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (
-                        file &&
-                        (mediaType === 'IMAGE' ? isImageFile(file) : file.type.startsWith('video/'))
-                      ) {
+                      if (file && (mediaType === 'IMAGE' ? isImageFile(file) : isVideoFile(file))) {
                         onNewVersionFileChange(file);
                       } else {
                         toast.error(
