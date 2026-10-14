@@ -52,6 +52,7 @@ const TOKEN_SCOPES: Record<string, Record<string, string[]>> = {
     DELETE: ['share'],
   },
   'projects/[projectId]/videos/[videoId]/versions': { GET: ['read'], POST: ['upload'] },
+  'projects/[projectId]/videos/[videoId]/versions/merge': { POST: ['manage'] },
   'projects/[projectId]/videos/[videoId]/versions/[versionId]': {
     PATCH: ['manage'],
     DELETE: ['delete'],

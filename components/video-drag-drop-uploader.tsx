@@ -36,6 +36,7 @@ import {
   type PendingProjectUploadCleanup,
 } from '@/lib/client/project-video-upload';
 import type { DirectUploadProvider } from '@/components/video-page/types';
+import { VERSION_STACK_DRAG_TYPE } from '@/lib/client/version-stack-drag';
 
 type ProjectOption = {
   id: string;
@@ -71,7 +72,8 @@ interface VideoDragDropUploaderProps {
 
 function hasFileData(dataTransfer: DataTransfer | null): boolean {
   if (!dataTransfer) return false;
-  return Array.from(dataTransfer.types || []).includes('Files');
+  const types = Array.from(dataTransfer.types || []);
+  return types.includes('Files') && !types.includes(VERSION_STACK_DRAG_TYPE);
 }
 
 function createQueueItem(file: File): QueueItem {

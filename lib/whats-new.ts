@@ -16,6 +16,12 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    date: '2026-10-13',
+    title: 'Drag a file onto another to make it a new version',
+    description:
+      'Upload the new cut into the project, then drag its card onto the original. It becomes the newest version, keeping its comments, and the original keeps its history and share links.',
+  },
+  {
     date: '2026-10-07',
     title: 'Simpler folder and video access',
     description:
