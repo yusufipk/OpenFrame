@@ -68,7 +68,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-window": "^2.2.7",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.5",
     "sonner": "^2.0.7",
     "stripe": "^20.4.1",
     "tailwind-merge": "^3.4.0",
@@ -118,7 +118,7 @@
     ]
   },
   "overrides": {
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.5"
   },
   "ignoreScripts": [
     "sharp",
