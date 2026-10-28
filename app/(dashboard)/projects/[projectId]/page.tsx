@@ -1,4 +1,10 @@
-import { checkFolderAccess, visibleVideoWhere, visibleFolderWhere } from '@/lib/content-access';
+import {
+  checkFolderAccess,
+  listedFolderWhere,
+  listedVideoWhere,
+  visibleFolderWhere,
+} from '@/lib/content-access';
+import { folderSubtree } from '@/lib/content-mutations';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
@@ -98,13 +104,14 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   const projectAccess = await checkProjectAccess(project, session?.user?.id);
   const access = await checkFolderAccess(projectId, folderId, session?.user?.id);
   if (!access) notFound();
+  const openedSubtree = folderId ? await folderSubtree(db, projectId, folderId) : [];
   const folders = await db.projectFolder.findMany({
-    where: { projectId, AND: visibleFolderWhere(session?.user?.id) },
+    where: { projectId, AND: listedFolderWhere(session?.user?.id, openedSubtree) },
     orderBy: projectFolderOrderBy(sortOrder),
     include: {
       _count: {
         // Count direct children using the same visibility rules as the video list.
-        select: { videos: { where: visibleVideoWhere(session?.user?.id) } },
+        select: { videos: { where: listedVideoWhere(session?.user?.id, openedSubtree) } },
       },
     },
   });
@@ -124,7 +131,7 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   }));
   const videoWhere = {
     projectId,
-    AND: visibleVideoWhere(session?.user?.id),
+    AND: listedVideoWhere(session?.user?.id, openedSubtree),
     ...(!all ? { folderId } : {}),
   };
 

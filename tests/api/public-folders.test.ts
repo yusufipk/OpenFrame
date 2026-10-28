@@ -3,13 +3,20 @@ import { db } from '@/lib/db';
 import {
   checkFolderAccess,
   checkVideoAccess,
+  listedFolderWhere,
+  listedVideoWhere,
   visibleFolderWhere,
   visibleVideoWhere,
 } from '@/lib/content-access';
+import { folderSubtree } from '@/lib/content-mutations';
 import * as foldersRoute from '@/app/api/projects/[projectId]/folders/route';
 import * as videosRoute from '@/app/api/projects/[projectId]/videos/route';
 import * as watchRoute from '@/app/api/watch/[videoId]/route';
 import { POST as createComment } from '@/app/api/versions/[versionId]/comments/route';
+import {
+  DELETE as deleteComment,
+  PATCH as patchComment,
+} from '@/app/api/comments/[commentId]/route';
 import {
   createUser,
   createWorkspace,
@@ -53,7 +60,20 @@ async function fixture() {
     createVideo({ projectId: project.id, title: 'Root cut' }),
   ]);
   const version = await createVersion({ videoParentId: cut.id });
-  return { owner, outsider, project, shared, child, locked, sibling, cut, secret, other, root, version };
+  return {
+    owner,
+    outsider,
+    project,
+    shared,
+    child,
+    locked,
+    sibling,
+    cut,
+    secret,
+    other,
+    root,
+    version,
+  };
 }
 
 async function action(projectId: string, body: object) {
@@ -133,6 +153,114 @@ describe('public folders', () => {
     expect(stored.guestName).toBe('Client');
   });
 
+  it('lets a guest edit and delete their own comment, and nobody else’s', async () => {
+    const f = await fixture();
+    signedOut();
+    const posted = await callRoute(
+      createComment,
+      apiRequest(`/api/versions/${f.version.id}/comments`, {
+        body: { content: 'First take', timestamp: 1, guestName: 'Client' },
+      }),
+      { versionId: f.version.id }
+    );
+    expect(posted.status).toBe(201);
+    const identity = /openframe_guest_identity=([^;]+)/.exec(
+      posted.headers.get('set-cookie') ?? ''
+    )?.[1];
+    expect(identity).toBeTruthy();
+    const comment = await db.comment.findFirstOrThrow({ where: { versionId: f.version.id } });
+    const asAuthor = { openframe_guest_identity: identity! };
+    const edit = (cookies: Record<string, string>) =>
+      callRoute(
+        patchComment,
+        apiRequest(`/api/comments/${comment.id}`, {
+          method: 'PATCH',
+          body: { content: 'Second take' },
+          cookies,
+        }),
+        { commentId: comment.id }
+      );
+    const remove = (cookies: Record<string, string>) =>
+      callRoute(
+        deleteComment,
+        apiRequest(`/api/comments/${comment.id}`, { method: 'DELETE', cookies }),
+        { commentId: comment.id }
+      );
+    expect((await edit({})).status).toBe(403);
+    expect((await remove({})).status).toBe(403);
+    expect(await db.comment.findUnique({ where: { id: comment.id } })).not.toBeNull();
+    expect((await edit(asAuthor)).status).toBe(200);
+    expect((await db.comment.findUniqueOrThrow({ where: { id: comment.id } })).content).toBe(
+      'Second take'
+    );
+    expect((await remove(asAuthor)).status).toBe(200);
+    expect(await db.comment.findUnique({ where: { id: comment.id } })).toBeNull();
+  });
+
+  it('does not list a public folder to someone who opened a different one', async () => {
+    const f = await fixture();
+    await db.projectFolder.update({ where: { id: f.sibling.id }, data: { accessMode: 'PUBLIC' } });
+    const opened = await folderSubtree(db, f.project.id, f.shared.id);
+    for (const viewer of [undefined, f.outsider.id]) {
+      const folders = await db.projectFolder.findMany({
+        where: { projectId: f.project.id, AND: listedFolderWhere(viewer, opened) },
+        select: { name: true },
+        orderBy: { name: 'asc' },
+      });
+      expect(folders.map((folder) => folder.name)).toEqual(['Client review', 'Round 2']);
+      const videos = await db.video.findMany({
+        where: { projectId: f.project.id, AND: listedVideoWhere(viewer, opened) },
+        select: { title: true },
+      });
+      expect(videos.map((video) => video.title)).toEqual(['Client cut']);
+    }
+    signedInAs(f.outsider);
+    const response = await callRoute(
+      foldersRoute.GET,
+      apiRequest(`/api/projects/${f.project.id}/folders`),
+      { projectId: f.project.id }
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.folders).toEqual([]);
+    signedInAs(f.owner);
+    const owned = await (
+      await callRoute(foldersRoute.GET, apiRequest(`/api/projects/${f.project.id}/folders`), {
+        projectId: f.project.id,
+      })
+    ).json();
+    expect(owned.data.folders).toHaveLength(4);
+  });
+
+  it('stops public reach at a restricted folder above it', async () => {
+    const f = await fixture();
+    const nested = await db.projectFolder.create({
+      data: { projectId: f.project.id, parentId: f.locked.id, name: 'Drafts' },
+    });
+    const draft = await db.video.create({
+      data: { projectId: f.project.id, folderId: nested.id, title: 'Draft cut' },
+    });
+    const freelancer = await createUser();
+    await db.projectFolderMember.create({
+      data: { folderId: nested.id, userId: freelancer.id, role: 'ADMIN' },
+    });
+    signedInAs(freelancer);
+    const refused = await action(f.project.id, {
+      action: 'access',
+      folderId: nested.id,
+      accessMode: 'PUBLIC',
+    });
+    expect(refused.status).toBe(400);
+    expect(await modeOf(nested.id)).toBe('INHERIT');
+    // A folder that was public before its parent got restricted stays closed.
+    await db.projectFolder.update({ where: { id: nested.id }, data: { accessMode: 'PUBLIC' } });
+    expect((await checkVideoAccess(draft.id)).hasAccess).toBe(false);
+    expect(await db.video.count({ where: { id: draft.id, AND: visibleVideoWhere() } })).toBe(0);
+    expect(
+      await db.projectFolder.count({ where: { id: nested.id, AND: visibleFolderWhere() } })
+    ).toBe(0);
+    expect((await checkVideoAccess(draft.id, freelancer.id)).canEdit).toBe(true);
+  });
+
   it('closes the folder again the moment it stops being public', async () => {
     const f = await fixture();
     await db.projectFolder.update({ where: { id: f.shared.id }, data: { accessMode: 'INHERIT' } });
@@ -153,9 +281,7 @@ describe('public folders', () => {
 
   it('leaves public content out of approval candidates and search', async () => {
     const f = await fixture();
-    expect(await db.video.count({ where: visibleVideoWhere(f.outsider.id, false, false) })).toBe(
-      0
-    );
+    expect(await db.video.count({ where: visibleVideoWhere(f.outsider.id, false, false) })).toBe(0);
     expect(await db.video.count({ where: visibleVideoWhere(f.outsider.id, true) })).toBe(0);
   });
 });
@@ -215,6 +341,34 @@ describe('making a folder public', () => {
       await action(f.project.id, { action: 'members', folderId: f.sibling.id })
     ).json();
     expect(members.data.accessMode).toBe('PUBLIC');
+  });
+
+  it('keeps video links when a public folder goes back to inherited access', async () => {
+    const f = await fixture();
+    const link = await createShareLink({ projectId: f.project.id, videoId: f.cut.id });
+    signedInAs(f.owner);
+    const body = { action: 'access', folderId: f.shared.id, accessMode: 'INHERIT' };
+    const preview = await (await action(f.project.id, body)).json();
+    expect(preview.data.message).toBe('Anyone who can open its folder or project gets access.');
+    await action(f.project.id, { ...body, confirmationToken: preview.data.confirmationToken });
+    expect(await modeOf(f.shared.id)).toBe('INHERIT');
+    expect(await db.shareLink.findUnique({ where: { id: link.id } })).not.toBeNull();
+    expect((await checkVideoAccess(f.cut.id)).hasAccess).toBe(false);
+  });
+
+  it('revokes video links when a restricted folder becomes public', async () => {
+    const f = await fixture();
+    const link = await createShareLink({ projectId: f.project.id, videoId: f.secret.id });
+    signedInAs(f.owner);
+    const body = { action: 'access', folderId: f.locked.id, accessMode: 'PUBLIC' };
+    const preview = await (await action(f.project.id, body)).json();
+    expect(preview.data.message).toBe(
+      'Anyone with the link can view and comment, without an account. 1 existing video link will be revoked.'
+    );
+    await action(f.project.id, { ...body, confirmationToken: preview.data.confirmationToken });
+    expect(await modeOf(f.locked.id)).toBe('PUBLIC');
+    expect(await db.shareLink.findUnique({ where: { id: link.id } })).toBeNull();
+    expect((await checkVideoAccess(f.secret.id)).hasAccess).toBe(true);
   });
 
   it('still revokes video links when a public folder becomes restricted', async () => {

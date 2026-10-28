@@ -3,7 +3,12 @@ import type { ApiTokenScope } from '@/lib/api-token-scopes';
 import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { checkFolderAccess, checkVideoAccess, visibleFolderWhere } from '@/lib/content-access';
+import {
+  checkFolderAccess,
+  checkVideoAccess,
+  hasRestrictedAncestor,
+  visibleFolderWhere,
+} from '@/lib/content-access';
 import { accessChangeMessage } from '@/lib/content-access-copy';
 import {
   ContentError,
@@ -54,8 +59,9 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
     const { projectId } = await params;
+    // Public reach is left out: holding one public folder's link must not list the others.
     const folders = await db.projectFolder.findMany({
-      where: { projectId, AND: visibleFolderWhere(session.user.id) },
+      where: { projectId, AND: visibleFolderWhere(session.user.id, false, false) },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, parentId: true, accessMode: true },
     });
@@ -258,6 +264,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         const modes = videoId ? ['INHERIT', 'RESTRICTED'] : ['INHERIT', 'RESTRICTED', 'PUBLIC'];
         if (action === 'access' && !modes.includes(body.accessMode))
           throw new ContentError(400, 'Invalid access mode');
+        if (
+          action === 'access' &&
+          body.accessMode === 'PUBLIC' &&
+          (await hasRestrictedAncestor(folderId!, tx))
+        )
+          throw new ContentError(400, 'A folder inside a restricted folder cannot be public');
         const currentMode =
           'video' in access ? access.video?.accessMode : access.folder?.accessMode;
         // Video links are revoked when access changes. Going between INHERIT and PUBLIC

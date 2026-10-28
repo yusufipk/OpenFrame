@@ -320,8 +320,17 @@ test('a public folder link opens that folder to a signed-out guest and nothing e
   const folder = await db.projectFolder.create({
     data: { projectId: project.id, name: 'Client review' },
   });
-  await db.video.create({ data: { projectId: project.id, folderId: folder.id, title: 'Client cut' } });
+  await db.video.create({
+    data: { projectId: project.id, folderId: folder.id, title: 'Client cut' },
+  });
   await db.video.create({ data: { projectId: project.id, title: 'Internal root cut' } });
+  // A second client's folder, public too: the first client's link must not reveal it.
+  const otherClient = await db.projectFolder.create({
+    data: { projectId: project.id, name: 'Other client', accessMode: 'PUBLIC' },
+  });
+  await db.video.create({
+    data: { projectId: project.id, folderId: otherClient.id, title: 'Other client cut' },
+  });
   await page.goto(`/projects/${project.id}?folderId=${folder.id}`);
   await page
     .getByRole('group', { name: 'Project actions' })
@@ -347,7 +356,9 @@ test('a public folder link opens that folder to a signed-out guest and nothing e
     dialog.getByRole('checkbox', { name: 'Only invited people', exact: true })
   ).not.toBeChecked();
   const folderLink = dialog.getByLabel('Folder link');
-  await expect(folderLink).toHaveValue(new RegExp(`/projects/${project.id}\\?folderId=${folder.id}$`));
+  await expect(folderLink).toHaveValue(
+    new RegExp(`/projects/${project.id}\\?folderId=${folder.id}$`)
+  );
   const url = await folderLink.inputValue();
 
   const guest = await browser.newContext({ storageState: { cookies: [], origins: [] } });
@@ -355,11 +366,19 @@ test('a public folder link opens that folder to a signed-out guest and nothing e
     const guestPage = await guest.newPage();
     await guestPage.goto(url);
     await expect(guestPage).toHaveURL(new RegExp(`folderId=${folder.id}`));
+    // Wait out the streamed render, which briefly holds a second copy of the gate.
+    await expect(guestPage.getByPlaceholder('Your name')).toHaveCount(1);
     await guestPage.getByPlaceholder('Your name').fill('Client');
     await guestPage.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(guestPage.getByText('Client cut', { exact: true })).toBeVisible();
-    await expect(guestPage.getByText('Internal root cut', { exact: true })).toHaveCount(0);
     await expect(guestPage.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0);
+    // "All project videos" drops the folder filter, so this is where a leak would show.
+    await guestPage.getByRole('link', { name: 'All project videos', exact: true }).click();
+    await expect(guestPage).toHaveURL(/view=all/);
+    await expect(guestPage.getByText('Client cut', { exact: true })).toBeVisible();
+    await expect(guestPage.getByText('Other client cut', { exact: true })).toHaveCount(0);
+    await expect(guestPage.getByText('Internal root cut', { exact: true })).toHaveCount(0);
+    await expect(guestPage.getByText('Other client', { exact: true })).toHaveCount(0);
     await guestPage.goto(`/projects/${project.id}`);
     await expect(guestPage).toHaveURL(/\/login/);
   } finally {
