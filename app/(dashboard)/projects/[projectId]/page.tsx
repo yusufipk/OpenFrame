@@ -2,7 +2,9 @@ import {
   checkFolderAccess,
   listedFolderWhere,
   listedVideoWhere,
+  publicListingRoot,
   visibleFolderWhere,
+  visibleVideoWhere,
 } from '@/lib/content-access';
 import { folderSubtree } from '@/lib/content-mutations';
 import Link from 'next/link';
@@ -104,14 +106,25 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   const projectAccess = await checkProjectAccess(project, session?.user?.id);
   const access = await checkFolderAccess(projectId, folderId, session?.user?.id);
   if (!access) notFound();
-  const openedSubtree = folderId ? await folderSubtree(db, projectId, folderId) : [];
+  // Public folder reach adds nothing for a viewer with project access, so only a viewer
+  // without it pays for working out which public subtree they opened.
+  const openedSubtree =
+    folderId && !projectAccess.hasAccess
+      ? await folderSubtree(db, projectId, await publicListingRoot(folderId))
+      : [];
+  const listedFolders = projectAccess.hasAccess
+    ? visibleFolderWhere(session?.user?.id)
+    : listedFolderWhere(session?.user?.id, openedSubtree);
+  const listedVideos = projectAccess.hasAccess
+    ? visibleVideoWhere(session?.user?.id)
+    : listedVideoWhere(session?.user?.id, openedSubtree);
   const folders = await db.projectFolder.findMany({
-    where: { projectId, AND: listedFolderWhere(session?.user?.id, openedSubtree) },
+    where: { projectId, AND: listedFolders },
     orderBy: projectFolderOrderBy(sortOrder),
     include: {
       _count: {
         // Count direct children using the same visibility rules as the video list.
-        select: { videos: { where: listedVideoWhere(session?.user?.id, openedSubtree) } },
+        select: { videos: { where: listedVideos } },
       },
     },
   });
@@ -131,7 +144,7 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   }));
   const videoWhere = {
     projectId,
-    AND: listedVideoWhere(session?.user?.id, openedSubtree),
+    AND: listedVideos,
     ...(!all ? { folderId } : {}),
   };
 

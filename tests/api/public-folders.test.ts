@@ -5,6 +5,7 @@ import {
   checkVideoAccess,
   listedFolderWhere,
   listedVideoWhere,
+  publicListingRoot,
   visibleFolderWhere,
   visibleVideoWhere,
 } from '@/lib/content-access';
@@ -186,8 +187,24 @@ describe('public folders', () => {
         apiRequest(`/api/comments/${comment.id}`, { method: 'DELETE', cookies }),
         { commentId: comment.id }
       );
-    expect((await edit({})).status).toBe(403);
-    expect((await remove({})).status).toBe(403);
+    // A second guest gets an identity of their own by commenting too.
+    const other = await callRoute(
+      createComment,
+      apiRequest(`/api/versions/${f.version.id}/comments`, {
+        body: { content: 'Me too', timestamp: 2, guestName: 'Someone else' },
+      }),
+      { versionId: f.version.id }
+    );
+    const otherIdentity = /openframe_guest_identity=([^;]+)/.exec(
+      other.headers.get('set-cookie') ?? ''
+    )?.[1];
+    expect(otherIdentity).toBeTruthy();
+    expect(otherIdentity).not.toBe(identity);
+    const strangers: Record<string, string>[] = [{}, { openframe_guest_identity: otherIdentity! }];
+    for (const cookies of strangers) {
+      expect((await edit(cookies)).status).toBe(403);
+      expect((await remove(cookies)).status).toBe(403);
+    }
     expect(await db.comment.findUnique({ where: { id: comment.id } })).not.toBeNull();
     expect((await edit(asAuthor)).status).toBe(200);
     expect((await db.comment.findUniqueOrThrow({ where: { id: comment.id } })).content).toBe(
@@ -214,6 +231,11 @@ describe('public folders', () => {
       });
       expect(videos.map((video) => video.title)).toEqual(['Client cut']);
     }
+    // Inside a subfolder the listing still opens from the public folder, so the way back up
+    // stays visible; a restricted folder lists only itself.
+    expect(await publicListingRoot(f.child.id)).toBe(f.shared.id);
+    expect(await publicListingRoot(f.shared.id)).toBe(f.shared.id);
+    expect(await publicListingRoot(f.locked.id)).toBe(f.locked.id);
     signedInAs(f.outsider);
     const response = await callRoute(
       foldersRoute.GET,
@@ -259,6 +281,39 @@ describe('public folders', () => {
       await db.projectFolder.count({ where: { id: nested.id, AND: visibleFolderWhere() } })
     ).toBe(0);
     expect((await checkVideoAccess(draft.id, freelancer.id)).canEdit).toBe(true);
+  });
+
+  it('switches public folders back to inherited access when they end up below a restricted one', async () => {
+    const f = await fixture();
+    const agency = await db.projectFolder.create({
+      data: { projectId: f.project.id, name: 'Agency' },
+    });
+    const pub = await db.projectFolder.create({
+      data: { projectId: f.project.id, parentId: agency.id, name: 'Pub', accessMode: 'PUBLIC' },
+    });
+    const vault = await db.projectFolder.create({
+      data: { projectId: f.project.id, name: 'Vault', accessMode: 'RESTRICTED' },
+    });
+    signedInAs(f.owner);
+    const restrict = { action: 'access', folderId: agency.id, accessMode: 'RESTRICTED' };
+    const preview = await (await action(f.project.id, restrict)).json();
+    expect(preview.data.message).toBe(
+      'Owners and admins keep access. 1 public folder link will stop working.'
+    );
+    expect(await modeOf(pub.id)).toBe('PUBLIC');
+    await action(f.project.id, { ...restrict, confirmationToken: preview.data.confirmationToken });
+    expect(await modeOf(agency.id)).toBe('RESTRICTED');
+    expect(await modeOf(pub.id)).toBe('INHERIT');
+    const move = { action: 'move', folderId: f.shared.id, parentId: vault.id };
+    const movePreview = await (await action(f.project.id, move)).json();
+    expect(movePreview.data.message).toContain('1 public folder link will stop working.');
+    await action(f.project.id, { ...move, confirmationToken: movePreview.data.confirmationToken });
+    expect(await modeOf(f.shared.id)).toBe('INHERIT');
+    expect(await modeOf(f.locked.id)).toBe('RESTRICTED');
+    const members = async (folderId: string) =>
+      (await (await action(f.project.id, { action: 'members', folderId })).json()).data;
+    expect((await members(pub.id)).publicAllowed).toBe(false);
+    expect((await members(f.sibling.id)).publicAllowed).toBe(true);
   });
 
   it('closes the folder again the moment it stops being public', async () => {

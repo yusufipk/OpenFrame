@@ -323,6 +323,9 @@ test('a public folder link opens that folder to a signed-out guest and nothing e
   await db.video.create({
     data: { projectId: project.id, folderId: folder.id, title: 'Client cut' },
   });
+  const round = await db.projectFolder.create({
+    data: { projectId: project.id, parentId: folder.id, name: 'Round 2' },
+  });
   await db.video.create({ data: { projectId: project.id, title: 'Internal root cut' } });
   // A second client's folder, public too: the first client's link must not reveal it.
   const otherClient = await db.projectFolder.create({
@@ -372,6 +375,14 @@ test('a public folder link opens that folder to a signed-out guest and nothing e
     await guestPage.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(guestPage.getByText('Client cut', { exact: true })).toBeVisible();
     await expect(guestPage.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0);
+    // A subfolder keeps the way back to the public folder the link opened.
+    await guestPage.getByRole('link', { name: 'Round 2', exact: true }).click();
+    await expect(guestPage).toHaveURL(new RegExp(`folderId=${round.id}`));
+    await guestPage
+      .getByRole('navigation', { name: 'Folder breadcrumb' })
+      .getByRole('link', { name: 'Client review', exact: true })
+      .click();
+    await expect(guestPage).toHaveURL(new RegExp(`folderId=${folder.id}$`));
     // "All project videos" drops the folder filter, so this is where a leak would show.
     await guestPage.getByRole('link', { name: 'All project videos', exact: true }).click();
     await expect(guestPage).toHaveURL(/view=all/);

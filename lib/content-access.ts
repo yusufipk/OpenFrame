@@ -297,6 +297,30 @@ export async function videoIsRestricted(
   return folderId !== null;
 }
 
+/**
+ * The folder whose subtree a listing opens public reach in: the topmost public folder at or
+ * above `folderId`, so a guest who walks into a subfolder still sees the way back up.
+ */
+export async function publicListingRoot(
+  folderId: string,
+  client: ContentClient = db
+): Promise<string> {
+  let root = folderId;
+  let current: string | null = folderId;
+  for (let depth = 0; current && depth < MAX_FOLDER_DEPTH; depth++) {
+    const folder: { accessMode: ContentMode; parentId: string | null } | null =
+      await client.projectFolder.findUnique({
+        where: { id: current },
+        select: { accessMode: true, parentId: true },
+      });
+    // Public reach ends at a restricted folder, so nothing above it can widen the listing.
+    if (!folder || folder.accessMode === 'RESTRICTED') break;
+    if (folder.accessMode === 'PUBLIC') root = current;
+    current = folder.parentId;
+  }
+  return root;
+}
+
 /** Whether any folder above `folderId` is restricted, which keeps the folder from being public. */
 export async function hasRestrictedAncestor(
   folderId: string,

@@ -61,6 +61,7 @@ export function ContentAccessControls({
   const [busy, setBusy] = useState(false);
   const editorLimit = useEditorLimitDialog();
   const [accessMode, setAccessMode] = useState<string | null>(null);
+  const [publicAllowed, setPublicAllowed] = useState(false);
   const [confirmation, setConfirmation] = useState<{
     message: string;
     confirmationToken: string;
@@ -86,6 +87,7 @@ export function ContentAccessControls({
       }
       setConfirmation(null);
       if (payload.data.accessMode) setAccessMode(payload.data.accessMode);
+      if (payload.data.publicAllowed !== undefined) setPublicAllowed(payload.data.publicAllowed);
       if (payload.data.members) {
         setMembers(payload.data.members);
         setInvitations(payload.data.invitations);
@@ -201,7 +203,7 @@ export function ContentAccessControls({
                   />
                   Only invited people
                 </label>
-                {!videoId && folderId && (
+                {!videoId && folderId && (publicAllowed || accessMode === 'PUBLIC') && (
                   <label className="flex items-center gap-2 text-sm font-medium">
                     <input
                       type="checkbox"

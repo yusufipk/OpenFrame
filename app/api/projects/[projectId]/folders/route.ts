@@ -180,7 +180,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           select: { id: true, email: true, role: true, token: true },
         });
         const accessMode = 'video' in access ? access.video?.accessMode : access.folder?.accessMode;
+        const publicAllowed = !videoId && !(await hasRestrictedAncestor(folderId!, tx));
         return {
+          publicAllowed,
           members,
           invitations: invitations.map(({ token, ...invitation }) => ({
             ...invitation,
@@ -289,6 +291,29 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             throw new ContentError(403, 'Destination management access required');
         }
         const operation = { action, folderId, videoId, parentId, accessMode: body.accessMode };
+        // Public reach ends at a restricted folder. Public folders that end up below one go
+        // back to INHERIT instead of lying dormant until the restriction is lifted.
+        const endsBelowRestricted =
+          !videoId &&
+          (action === 'access'
+            ? body.accessMode === 'RESTRICTED'
+            : !!parentId &&
+              ((
+                await tx.projectFolder.findUnique({
+                  where: { id: parentId },
+                  select: { accessMode: true },
+                })
+              )?.accessMode === 'RESTRICTED' ||
+                (await hasRestrictedAncestor(parentId, tx))));
+        const closedPublic = endsBelowRestricted
+          ? await tx.projectFolder.findMany({
+              where: {
+                id: { in: subtree.filter((id) => action === 'move' || id !== folderId) },
+                accessMode: 'PUBLIC',
+              },
+              select: { id: true },
+            })
+          : [];
         const linkCount = keepsLinks
           ? 0
           : await tx.shareLink.count({
@@ -301,6 +326,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             : 'Inherited content will use the destination’s access. Restricted content keeps its invited members.') +
           (linkCount > 0
             ? ` ${linkCount} existing video link${linkCount === 1 ? '' : 's'} will be revoked.`
+            : '') +
+          (closedPublic.length > 0
+            ? ` ${closedPublic.length} public folder link${closedPublic.length === 1 ? '' : 's'} will stop working.`
             : '');
         const confirmation = await confirmContentChange(
           tx,
@@ -311,6 +339,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           message
         );
         if (confirmation) return confirmation;
+        if (closedPublic.length > 0)
+          await tx.projectFolder.updateMany({
+            where: { id: { in: closedPublic.map((folder) => folder.id) } },
+            data: { accessMode: 'INHERIT' },
+          });
         if (!keepsLinks)
           await tx.shareLink.deleteMany({
             where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
