@@ -169,6 +169,7 @@ export function ContentAccessControls({
           setOpen(true);
           setConfirmation(null);
           setAccessMode(null);
+          setPublicAllowed(false);
           void run({ action: 'members' });
         }}
       >

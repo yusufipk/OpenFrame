@@ -251,6 +251,20 @@ describe('public folders', () => {
       })
     ).json();
     expect(owned.data.folders).toHaveLength(4);
+    // A public folder nested in another lists from itself, never from the outer one.
+    const nested = await db.projectFolder.create({
+      data: {
+        projectId: f.project.id,
+        parentId: f.shared.id,
+        name: 'Client A',
+        accessMode: 'PUBLIC',
+      },
+    });
+    const inside = await db.projectFolder.create({
+      data: { projectId: f.project.id, parentId: nested.id, name: 'Cuts' },
+    });
+    expect(await publicListingRoot(nested.id)).toBe(nested.id);
+    expect(await publicListingRoot(inside.id)).toBe(nested.id);
   });
 
   it('stops public reach at a restricted folder above it', async () => {
