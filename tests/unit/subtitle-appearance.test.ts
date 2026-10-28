@@ -7,9 +7,9 @@ import {
 } from '@/components/video-page/hooks/subtitle-appearance';
 
 describe('parseSubtitleAppearance', () => {
-  it('falls back to medium on a translucent box when nothing is stored', () => {
-    expect(parseSubtitleAppearance(null)).toEqual({ size: 'medium', background: 'box' });
-    expect(parseSubtitleAppearance('')).toEqual({ size: 'medium', background: 'box' });
+  it('falls back to small on a translucent box when nothing is stored', () => {
+    expect(parseSubtitleAppearance(null)).toEqual({ size: 'small', background: 'box' });
+    expect(parseSubtitleAppearance('')).toEqual({ size: 'small', background: 'box' });
   });
 
   it('reads back a stored choice', () => {
@@ -25,7 +25,7 @@ describe('parseSubtitleAppearance', () => {
 
   it('keeps the valid field when only the other one is unknown', () => {
     expect(parseSubtitleAppearance('{"size":"huge","background":"solid"}')).toEqual({
-      size: 'medium',
+      size: 'small',
       background: 'solid',
     });
     expect(parseSubtitleAppearance('{"size":"large","background":42}')).toEqual({
@@ -35,9 +35,9 @@ describe('parseSubtitleAppearance', () => {
   });
 
   it('survives storage that is not JSON or not an object', () => {
-    expect(parseSubtitleAppearance('large')).toEqual({ size: 'medium', background: 'box' });
-    expect(parseSubtitleAppearance('null')).toEqual({ size: 'medium', background: 'box' });
-    expect(parseSubtitleAppearance('"large"')).toEqual({ size: 'medium', background: 'box' });
+    expect(parseSubtitleAppearance('large')).toEqual({ size: 'small', background: 'box' });
+    expect(parseSubtitleAppearance('null')).toEqual({ size: 'small', background: 'box' });
+    expect(parseSubtitleAppearance('"large"')).toEqual({ size: 'small', background: 'box' });
   });
 });
 

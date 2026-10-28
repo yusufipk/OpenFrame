@@ -6,6 +6,7 @@ import {
   writeStoredSubtitleLanguage,
 } from '@/components/video-page/hooks/subtitle-preference';
 import type { Subtitle } from '@/components/video-page/types';
+import { balanceCueLines } from '@/lib/subtitle-line-breaks';
 
 interface UseSubtitlesParams {
   videoId: string;
@@ -129,7 +130,8 @@ export function useSubtitles({
         if (!shouldShow) continue;
 
         // The control bar sits over the bottom of the frame in fullscreen, so cues are
-        // lifted clear of it instead of landing underneath.
+        // lifted clear of it instead of landing underneath. A long one-line cue is also
+        // broken into short lines, which the browser would otherwise draw edge to edge.
         const cues = track.cues;
         if (!cues) continue;
         for (let cueIndex = 0; cueIndex < cues.length; cueIndex += 1) {
@@ -137,6 +139,10 @@ export function useSubtitles({
           if (typeof cue.line !== 'undefined') {
             cue.snapToLines = true;
             cue.line = -3;
+          }
+          if (typeof cue.text === 'string') {
+            const balanced = balanceCueLines(cue.text);
+            if (balanced !== cue.text) cue.text = balanced;
           }
         }
       }

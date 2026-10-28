@@ -24,7 +24,7 @@ export interface SubtitleAppearance {
 }
 
 export const DEFAULT_SUBTITLE_APPEARANCE: SubtitleAppearance = {
-  size: 'medium',
+  size: 'small',
   background: 'box',
 };
 
