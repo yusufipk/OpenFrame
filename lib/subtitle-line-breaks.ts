@@ -7,12 +7,36 @@
  */
 export const MAX_CUE_LINE_LENGTH = 42;
 
-const TAG = /<[^>]*>/g;
-const CHARACTER_REFERENCE = /&(?:#x[0-9a-f]+|#[0-9]+|[a-z][a-z0-9]*);/gi;
+const CHARACTER_REFERENCE = /&(?:#x[0-9a-f]+|#[0-9]+|[a-z][a-z0-9]*);/iy;
 
-/** What the viewer sees: no markup, `&amp;` as one character, an emoji as one. */
+/**
+ * What the viewer sees: no markup, `&amp;` as one character, an emoji as one. The text is
+ * measured in place, not stripped, because only its length is needed.
+ */
 function visibleLength(text: string): number {
-  return Array.from(text.replace(TAG, '').replace(CHARACTER_REFERENCE, '_')).length;
+  let length = 0;
+  let index = 0;
+  while (index < text.length) {
+    if (text[index] === '<') {
+      const close = text.indexOf('>', index);
+      if (close !== -1) {
+        index = close + 1;
+        continue;
+      }
+    }
+    if (text[index] === '&') {
+      CHARACTER_REFERENCE.lastIndex = index;
+      if (CHARACTER_REFERENCE.test(text)) {
+        length += 1;
+        index = CHARACTER_REFERENCE.lastIndex;
+        continue;
+      }
+    }
+    const codePoint = text.codePointAt(index) ?? 0;
+    index += codePoint > 0xffff ? 2 : 1;
+    length += 1;
+  }
+  return length;
 }
 
 /**
