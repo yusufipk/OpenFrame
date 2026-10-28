@@ -151,7 +151,7 @@ describe('useSubtitleAppearance', () => {
     act(() => menu.result.current.setSubtitleAppearance({ background: 'solid' }));
 
     expect(player.result.current.subtitleAppearance).toEqual({
-      size: 'medium',
+      size: 'small',
       background: 'solid',
     });
   });

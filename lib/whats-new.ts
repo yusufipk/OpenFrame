@@ -16,6 +16,12 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    date: '2026-10-28',
+    title: 'Subtitles that are easier to follow',
+    description:
+      'Long subtitle lines now break into short, even lines instead of running across the whole picture, and subtitles start at the small size. Pick another size from the subtitles menu.',
+  },
+  {
     date: '2026-10-14',
     title: 'Drop a new cut onto a file to make it a new version',
     description:
