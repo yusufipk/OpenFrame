@@ -6,7 +6,7 @@ import type { ContentMode } from '@/lib/content-access';
  * promises the whole project.
  */
 export function accessChangeMessage(mode: ContentMode) {
-  return mode === 'RESTRICTED'
-    ? 'Owners and admins keep access.'
-    : 'Anyone who can open its folder or project gets access.';
+  if (mode === 'RESTRICTED') return 'Owners and admins keep access.';
+  if (mode === 'PUBLIC') return 'Anyone with the link can view and comment, without an account.';
+  return 'Anyone who can open its folder or project gets access.';
 }

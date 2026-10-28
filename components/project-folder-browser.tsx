@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import { ChevronRight, Folder, FolderPlus, Lock, MoreHorizontal } from 'lucide-react';
+import { ChevronRight, Folder, FolderPlus, Globe, Lock, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -67,6 +67,11 @@ export function ProjectFolderCard({
               {folder.accessMode === 'RESTRICTED' && (
                 <span className="inline-flex items-center gap-1">
                   <Lock className="h-3 w-3" /> Restricted
+                </span>
+              )}
+              {folder.accessMode === 'PUBLIC' && (
+                <span className="inline-flex items-center gap-1">
+                  <Globe className="h-3 w-3" /> Public
                 </span>
               )}
             </div>

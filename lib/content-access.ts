@@ -5,7 +5,7 @@ import { buildBillingAccessWhereInput } from '@/lib/billing';
 
 export type ContentClient = Prisma.TransactionClient;
 export type ContentRole = 'ADMIN' | 'COMMENTATOR';
-export type ContentMode = 'INHERIT' | 'RESTRICTED';
+export type ContentMode = 'INHERIT' | 'RESTRICTED' | 'PUBLIC';
 export const MAX_FOLDER_DEPTH = 10;
 
 function projectAudience(
@@ -45,8 +45,12 @@ function folderAudience(
       ...(userId
         ? [{ members: { some: { userId, ...(manage ? { role: 'ADMIN' as const } : {}) } } }]
         : []),
+      // A public folder opens to everyone the way a public project does, so it follows the
+      // same `includePublic` switch and never grants management.
+      ...(!manage && includePublic ? [{ accessMode: 'PUBLIC' as const }] : []),
       {
-        accessMode: 'INHERIT',
+        // PUBLIC widens INHERIT, so the people the parent admits keep their access.
+        accessMode: { in: ['INHERIT' as const, 'PUBLIC' as const] },
         OR: [
           { parentId: null, project: projectAudience(userId, manage, includePublic) },
           { parent: folderAudience(userId, manage, depth - 1, includePublic) },
@@ -166,6 +170,8 @@ export async function checkVideoAccess(
             break;
           }
           if (folder.accessMode === 'RESTRICTED') break;
+          // Keep walking: an admin role further up still grants management.
+          if (folder.accessMode === 'PUBLIC') hasAccess = true;
           if (!folder.parentId) {
             hasAccess ||= access.hasAccess;
             break;

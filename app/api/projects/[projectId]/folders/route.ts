@@ -254,8 +254,19 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         return { deleted: true };
       }
       if (action === 'access' || (action === 'move' && folderId && !videoId)) {
-        if (action === 'access' && !['INHERIT', 'RESTRICTED'].includes(body.accessMode))
+        // Only a folder can be public: a single video is shared with a share link instead.
+        const modes = videoId ? ['INHERIT', 'RESTRICTED'] : ['INHERIT', 'RESTRICTED', 'PUBLIC'];
+        if (action === 'access' && !modes.includes(body.accessMode))
           throw new ContentError(400, 'Invalid access mode');
+        const currentMode =
+          'video' in access ? access.video?.accessMode : access.folder?.accessMode;
+        // Video links are revoked when access changes. Going between INHERIT and PUBLIC
+        // leaves the subtree just as unrestricted as before, so the links keep working.
+        const keepsLinks =
+          action === 'access' &&
+          !videoId &&
+          body.accessMode !== 'RESTRICTED' &&
+          currentMode !== 'RESTRICTED';
         const parentId = contentId(body.parentId);
         const subtree = folderId ? await folderSubtree(tx, projectId, folderId) : [];
         if (action === 'move') {
@@ -266,12 +277,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             throw new ContentError(403, 'Destination management access required');
         }
         const operation = { action, folderId, videoId, parentId, accessMode: body.accessMode };
-        const linkCount = await tx.shareLink.count({
-          where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
-        });
-        const accessMessage = accessChangeMessage(
-          body.accessMode === 'RESTRICTED' ? 'RESTRICTED' : 'INHERIT'
-        );
+        const linkCount = keepsLinks
+          ? 0
+          : await tx.shareLink.count({
+              where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
+            });
+        const accessMessage = accessChangeMessage(body.accessMode);
         const message =
           (action === 'access'
             ? accessMessage
@@ -288,9 +299,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           message
         );
         if (confirmation) return confirmation;
-        await tx.shareLink.deleteMany({
-          where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
-        });
+        if (!keepsLinks)
+          await tx.shareLink.deleteMany({
+            where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
+          });
         if (videoId)
           return tx.video.update({ where: { id: videoId }, data: { accessMode: body.accessMode } });
         return tx.projectFolder.update({

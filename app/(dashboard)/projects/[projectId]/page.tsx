@@ -130,7 +130,6 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
 
   // Check access
   const isOwner = session?.user?.id === project.ownerId;
-  const isPublic = project.visibility === 'PUBLIC';
 
   // Check workspace membership
   let workspaceRole: string | null = null;
@@ -235,8 +234,9 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
     projectAccess.hasAccess ? {} : { folderId }
   );
 
-  // Guest name gate for unauthenticated users on public projects
-  if (!isAuthenticated && isPublic) {
+  // Guest name gate. A signed-out visitor only gets this far through a public project or a
+  // public folder, since anyone else was sent to the login page above.
+  if (!isAuthenticated) {
     return (
       <GuestGate>
         <div className="px-6 lg:px-8 py-8 w-full" style={brandStyle(branding?.color)}>

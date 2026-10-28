@@ -309,3 +309,60 @@ test('folder Members lists and cancels its pending invitations', async ({
     await db.projectMember.count({ where: { projectId: project.id, userId: invited.id } })
   ).toBe(0);
 });
+
+test('a public folder link opens that folder to a signed-out guest and nothing else', async ({
+  page,
+  seed,
+  seededUser,
+  browser,
+}) => {
+  const { project } = await seed.project(seededUser);
+  const folder = await db.projectFolder.create({
+    data: { projectId: project.id, name: 'Client review' },
+  });
+  await db.video.create({ data: { projectId: project.id, folderId: folder.id, title: 'Client cut' } });
+  await db.video.create({ data: { projectId: project.id, title: 'Internal root cut' } });
+  await page.goto(`/projects/${project.id}?folderId=${folder.id}`);
+  await page
+    .getByRole('group', { name: 'Project actions' })
+    .getByRole('button', { name: 'Share', exact: true })
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Share folder: Client review', exact: true });
+  const anyone = dialog.getByRole('checkbox', { name: 'Anyone with the link', exact: true });
+  await expect(anyone).not.toBeChecked();
+  await expect(dialog.getByLabel('Folder link')).toHaveCount(0);
+  await anyone.click();
+  await expect(dialog.getByRole('status')).toHaveText(
+    'Anyone with the link can view and comment, without an account.'
+  );
+  await dialog.getByRole('button', { name: 'Confirm access change' }).click();
+  await expect
+    .poll(
+      async () =>
+        (await db.projectFolder.findUniqueOrThrow({ where: { id: folder.id } })).accessMode
+    )
+    .toBe('PUBLIC');
+  await expect(anyone).toBeChecked();
+  await expect(
+    dialog.getByRole('checkbox', { name: 'Only invited people', exact: true })
+  ).not.toBeChecked();
+  const folderLink = dialog.getByLabel('Folder link');
+  await expect(folderLink).toHaveValue(new RegExp(`/projects/${project.id}\\?folderId=${folder.id}$`));
+  const url = await folderLink.inputValue();
+
+  const guest = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  try {
+    const guestPage = await guest.newPage();
+    await guestPage.goto(url);
+    await expect(guestPage).toHaveURL(new RegExp(`folderId=${folder.id}`));
+    await guestPage.getByPlaceholder('Your name').fill('Client');
+    await guestPage.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(guestPage.getByText('Client cut', { exact: true })).toBeVisible();
+    await expect(guestPage.getByText('Internal root cut', { exact: true })).toHaveCount(0);
+    await expect(guestPage.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0);
+    await guestPage.goto(`/projects/${project.id}`);
+    await expect(guestPage).toHaveURL(/\/login/);
+  } finally {
+    await guest.close();
+  }
+});

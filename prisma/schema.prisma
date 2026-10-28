@@ -410,6 +410,8 @@ model Invitation {
 enum ContentAccessMode {
   INHERIT
   RESTRICTED
+  // Folders only: INHERIT plus anyone who opens the folder's URL, signed in or not.
+  PUBLIC
 }
 
 model ProjectFolder {
