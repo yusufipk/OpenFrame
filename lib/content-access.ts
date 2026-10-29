@@ -5,7 +5,7 @@ import { buildBillingAccessWhereInput } from '@/lib/billing';
 
 export type ContentClient = Prisma.TransactionClient;
 export type ContentRole = 'ADMIN' | 'COMMENTATOR';
-export type ContentMode = 'INHERIT' | 'RESTRICTED';
+export type ContentMode = 'INHERIT' | 'RESTRICTED' | 'PUBLIC';
 export const MAX_FOLDER_DEPTH = 10;
 
 function projectAudience(
@@ -33,11 +33,26 @@ function projectAudience(
   };
 }
 
+/**
+ * No folder above this one is restricted. Public reach stops at a restricted folder, the
+ * same boundary guest share links keep (see `videoIsRestricted`).
+ */
+function openToRoot(depth: number): Prisma.ProjectFolderWhereInput {
+  if (depth <= 0) return { id: { in: [] } };
+  return {
+    OR: [
+      { parentId: null },
+      { parent: { accessMode: { not: 'RESTRICTED' }, ...openToRoot(depth - 1) } },
+    ],
+  };
+}
+
 function folderAudience(
   userId: string | undefined,
   manage: boolean,
   depth: number,
-  includePublic = true
+  includePublic = true,
+  publicFolders = true
 ): Prisma.ProjectFolderWhereInput {
   if (depth <= 0) return { id: { in: [] } };
   return {
@@ -45,11 +60,17 @@ function folderAudience(
       ...(userId
         ? [{ members: { some: { userId, ...(manage ? { role: 'ADMIN' as const } : {}) } } }]
         : []),
+      // A public folder opens to everyone the way a public project does, so it follows the
+      // same `includePublic` switch and never grants management.
+      ...(!manage && includePublic && publicFolders
+        ? [{ accessMode: 'PUBLIC' as const, ...openToRoot(depth) }]
+        : []),
       {
-        accessMode: 'INHERIT',
+        // PUBLIC widens INHERIT, so the people the parent admits keep their access.
+        accessMode: { in: ['INHERIT' as const, 'PUBLIC' as const] },
         OR: [
           { parentId: null, project: projectAudience(userId, manage, includePublic) },
-          { parent: folderAudience(userId, manage, depth - 1, includePublic) },
+          { parent: folderAudience(userId, manage, depth - 1, includePublic, publicFolders) },
         ],
       },
     ],
@@ -60,7 +81,8 @@ function folderAudience(
 export function visibleVideoWhere(
   userId?: string,
   manage = false,
-  includePublic = true
+  includePublic = true,
+  publicFolders = true
 ): Prisma.VideoWhereInput {
   return {
     project: { workspace: { owner: buildBillingAccessWhereInput() } },
@@ -73,7 +95,9 @@ export function visibleVideoWhere(
         accessMode: 'INHERIT',
         OR: [
           { folderId: null, project: projectAudience(userId, manage, includePublic) },
-          { folder: folderAudience(userId, manage, MAX_FOLDER_DEPTH, includePublic) },
+          {
+            folder: folderAudience(userId, manage, MAX_FOLDER_DEPTH, includePublic, publicFolders),
+          },
         ],
       },
     ],
@@ -82,13 +106,44 @@ export function visibleVideoWhere(
 
 export function visibleFolderWhere(
   userId?: string,
-  manage = false
+  manage = false,
+  publicFolders = true
 ): Prisma.ProjectFolderWhereInput {
   return {
     project: { workspace: { owner: buildBillingAccessWhereInput() } },
     OR: [
       { project: projectAudience(userId, true) },
-      folderAudience(userId, manage, MAX_FOLDER_DEPTH),
+      folderAudience(userId, manage, MAX_FOLDER_DEPTH, true, publicFolders),
+    ],
+  };
+}
+
+/**
+ * Filters for listing a project's contents. A public folder is opened by its URL, so in a
+ * list its reach only counts inside `openedSubtree`, the folder the visitor opened and its
+ * descendants. Otherwise the link to one public folder would list every other public
+ * folder in the project.
+ */
+export function listedVideoWhere(
+  userId: string | undefined,
+  openedSubtree: string[]
+): Prisma.VideoWhereInput {
+  return {
+    OR: [
+      visibleVideoWhere(userId, false, true, false),
+      { folderId: { in: openedSubtree }, AND: visibleVideoWhere(userId) },
+    ],
+  };
+}
+
+export function listedFolderWhere(
+  userId: string | undefined,
+  openedSubtree: string[]
+): Prisma.ProjectFolderWhereInput {
+  return {
+    OR: [
+      visibleFolderWhere(userId, false, false),
+      { id: { in: openedSubtree }, AND: visibleFolderWhere(userId) },
     ],
   };
 }
@@ -127,6 +182,7 @@ export async function checkVideoAccess(
     };
   let hasAccess = false;
   let canEdit = false;
+  let publicReach = false;
   if (access.ownerBillingActive) {
     const videoMember = userId
       ? await client.videoMember.findUnique({
@@ -166,8 +222,10 @@ export async function checkVideoAccess(
             break;
           }
           if (folder.accessMode === 'RESTRICTED') break;
+          // Counts only once the walk reaches the root without passing a restricted folder.
+          if (folder.accessMode === 'PUBLIC') publicReach = true;
           if (!folder.parentId) {
-            hasAccess ||= access.hasAccess;
+            hasAccess ||= access.hasAccess || publicReach;
             break;
           }
           folderId = folder.parentId;
@@ -237,6 +295,49 @@ export async function videoIsRestricted(
     folderId = folder.parentId;
   }
   return folderId !== null;
+}
+
+/**
+ * The folder whose subtree a listing opens public reach in: the nearest public folder at or
+ * above `folderId`, so a guest who walks into a subfolder still sees the way back up. Not the
+ * topmost one: the link to a public folder nested in another must not list the outer one.
+ */
+export async function publicListingRoot(
+  folderId: string,
+  client: ContentClient = db
+): Promise<string> {
+  let current: string | null = folderId;
+  for (let depth = 0; current && depth < MAX_FOLDER_DEPTH; depth++) {
+    const folder: { accessMode: ContentMode; parentId: string | null } | null =
+      await client.projectFolder.findUnique({
+        where: { id: current },
+        select: { accessMode: true, parentId: true },
+      });
+    // Public reach ends at a restricted folder, so nothing above it can widen the listing.
+    if (!folder || folder.accessMode === 'RESTRICTED') break;
+    if (folder.accessMode === 'PUBLIC') return current;
+    current = folder.parentId;
+  }
+  return folderId;
+}
+
+/** Whether any folder above `folderId` is restricted, which keeps the folder from being public. */
+export async function hasRestrictedAncestor(
+  folderId: string,
+  client: ContentClient = db
+): Promise<boolean> {
+  let parentId = (
+    await client.projectFolder.findUnique({ where: { id: folderId }, select: { parentId: true } })
+  )?.parentId;
+  for (let depth = 0; parentId && depth < MAX_FOLDER_DEPTH; depth++) {
+    const parent = await client.projectFolder.findUnique({
+      where: { id: parentId },
+      select: { accessMode: true, parentId: true },
+    });
+    if (!parent || parent.accessMode === 'RESTRICTED') return true;
+    parentId = parent.parentId;
+  }
+  return parentId != null;
 }
 
 export async function checkUploadDestination(

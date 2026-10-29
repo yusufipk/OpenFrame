@@ -17,6 +17,12 @@ export interface WhatsNewEntry {
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
     date: '2026-10-28',
+    title: 'Share a whole folder with one link',
+    description:
+      'Open a folder’s Share dialog and turn on "Anyone with the link" to send the folder to people without inviting them by email. They can watch and comment on everything in it without an account.',
+  },
+  {
+    date: '2026-10-28',
     title: 'Subtitles that are easier to follow',
     description:
       'Long subtitle lines now break into short, even lines instead of running across the whole picture, and subtitles start at the small size. Pick another size from the subtitles menu.',

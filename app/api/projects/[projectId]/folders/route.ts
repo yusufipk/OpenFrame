@@ -3,7 +3,12 @@ import type { ApiTokenScope } from '@/lib/api-token-scopes';
 import { NextRequest } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { checkFolderAccess, checkVideoAccess, visibleFolderWhere } from '@/lib/content-access';
+import {
+  checkFolderAccess,
+  checkVideoAccess,
+  hasRestrictedAncestor,
+  visibleFolderWhere,
+} from '@/lib/content-access';
 import { accessChangeMessage } from '@/lib/content-access-copy';
 import {
   ContentError,
@@ -54,8 +59,9 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const session = await getSession();
     if (!session?.user?.id) return apiErrors.unauthorized();
     const { projectId } = await params;
+    // Public reach is left out: holding one public folder's link must not list the others.
     const folders = await db.projectFolder.findMany({
-      where: { projectId, AND: visibleFolderWhere(session.user.id) },
+      where: { projectId, AND: visibleFolderWhere(session.user.id, false, false) },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, parentId: true, accessMode: true },
     });
@@ -174,7 +180,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           select: { id: true, email: true, role: true, token: true },
         });
         const accessMode = 'video' in access ? access.video?.accessMode : access.folder?.accessMode;
+        const publicAllowed = !videoId && !(await hasRestrictedAncestor(folderId!, tx));
         return {
+          publicAllowed,
           members,
           invitations: invitations.map(({ token, ...invitation }) => ({
             ...invitation,
@@ -254,8 +262,25 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         return { deleted: true };
       }
       if (action === 'access' || (action === 'move' && folderId && !videoId)) {
-        if (action === 'access' && !['INHERIT', 'RESTRICTED'].includes(body.accessMode))
+        // Only a folder can be public: a single video is shared with a share link instead.
+        const modes = videoId ? ['INHERIT', 'RESTRICTED'] : ['INHERIT', 'RESTRICTED', 'PUBLIC'];
+        if (action === 'access' && !modes.includes(body.accessMode))
           throw new ContentError(400, 'Invalid access mode');
+        if (
+          action === 'access' &&
+          body.accessMode === 'PUBLIC' &&
+          (await hasRestrictedAncestor(folderId!, tx))
+        )
+          throw new ContentError(400, 'A folder inside a restricted folder cannot be public');
+        const currentMode =
+          'video' in access ? access.video?.accessMode : access.folder?.accessMode;
+        // Video links are revoked when access changes. Going between INHERIT and PUBLIC
+        // leaves the subtree just as unrestricted as before, so the links keep working.
+        const keepsLinks =
+          action === 'access' &&
+          !videoId &&
+          body.accessMode !== 'RESTRICTED' &&
+          currentMode !== 'RESTRICTED';
         const parentId = contentId(body.parentId);
         const subtree = folderId ? await folderSubtree(tx, projectId, folderId) : [];
         if (action === 'move') {
@@ -266,18 +291,44 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             throw new ContentError(403, 'Destination management access required');
         }
         const operation = { action, folderId, videoId, parentId, accessMode: body.accessMode };
-        const linkCount = await tx.shareLink.count({
-          where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
-        });
-        const accessMessage = accessChangeMessage(
-          body.accessMode === 'RESTRICTED' ? 'RESTRICTED' : 'INHERIT'
-        );
+        // Public reach ends at a restricted folder. Public folders that end up below one go
+        // back to INHERIT instead of lying dormant until the restriction is lifted.
+        const endsBelowRestricted =
+          !videoId &&
+          (action === 'access'
+            ? body.accessMode === 'RESTRICTED'
+            : !!parentId &&
+              ((
+                await tx.projectFolder.findUnique({
+                  where: { id: parentId },
+                  select: { accessMode: true },
+                })
+              )?.accessMode === 'RESTRICTED' ||
+                (await hasRestrictedAncestor(parentId, tx))));
+        const closedPublic = endsBelowRestricted
+          ? await tx.projectFolder.findMany({
+              where: {
+                id: { in: subtree.filter((id) => action === 'move' || id !== folderId) },
+                accessMode: 'PUBLIC',
+              },
+              select: { id: true },
+            })
+          : [];
+        const linkCount = keepsLinks
+          ? 0
+          : await tx.shareLink.count({
+              where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
+            });
+        const accessMessage = accessChangeMessage(body.accessMode);
         const message =
           (action === 'access'
             ? accessMessage
             : 'Inherited content will use the destination’s access. Restricted content keeps its invited members.') +
           (linkCount > 0
             ? ` ${linkCount} existing video link${linkCount === 1 ? '' : 's'} will be revoked.`
+            : '') +
+          (closedPublic.length > 0
+            ? ` ${closedPublic.length} public folder link${closedPublic.length === 1 ? '' : 's'} will stop working.`
             : '');
         const confirmation = await confirmContentChange(
           tx,
@@ -288,9 +339,15 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           message
         );
         if (confirmation) return confirmation;
-        await tx.shareLink.deleteMany({
-          where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
-        });
+        if (closedPublic.length > 0)
+          await tx.projectFolder.updateMany({
+            where: { id: { in: closedPublic.map((folder) => folder.id) } },
+            data: { accessMode: 'INHERIT' },
+          });
+        if (!keepsLinks)
+          await tx.shareLink.deleteMany({
+            where: videoId ? { videoId } : { video: { folderId: { in: subtree } } },
+          });
         if (videoId)
           return tx.video.update({ where: { id: videoId }, data: { accessMode: body.accessMode } });
         return tx.projectFolder.update({
