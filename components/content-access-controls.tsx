@@ -61,6 +61,7 @@ export function ContentAccessControls({
   const [busy, setBusy] = useState(false);
   const editorLimit = useEditorLimitDialog();
   const [accessMode, setAccessMode] = useState<string | null>(null);
+  const [publicAllowed, setPublicAllowed] = useState(false);
   const [confirmation, setConfirmation] = useState<{
     message: string;
     confirmationToken: string;
@@ -86,6 +87,7 @@ export function ContentAccessControls({
       }
       setConfirmation(null);
       if (payload.data.accessMode) setAccessMode(payload.data.accessMode);
+      if (payload.data.publicAllowed !== undefined) setPublicAllowed(payload.data.publicAllowed);
       if (payload.data.members) {
         setMembers(payload.data.members);
         setInvitations(payload.data.invitations);
@@ -139,14 +141,24 @@ export function ContentAccessControls({
       setBusy(false);
     }
   }
-  async function copyLink(url: string) {
+  async function copyLink(url: string, kind = 'invitation') {
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Invitation link copied');
+      toast.success(`${kind === 'folder' ? 'Folder' : 'Invitation'} link copied`);
     } catch {
-      toast.error('Could not copy. Select the invitation link and copy it manually.');
+      toast.error(`Could not copy. Select the ${kind} link and copy it manually.`);
     }
   }
+  function changeMode(mode: string) {
+    // Stays enabled while a request runs so keyboard focus is kept.
+    if (busy) return;
+    if (accessMode === mode) setConfirmation(null);
+    else void run({ action: 'access', accessMode: mode });
+  }
+  const folderUrl =
+    folderId && typeof window !== 'undefined'
+      ? `${window.location.origin}/projects/${projectId}?${new URLSearchParams({ folderId })}`
+      : '';
   return (
     <>
       {editorLimit.dialog}
@@ -157,6 +169,7 @@ export function ContentAccessControls({
           setOpen(true);
           setConfirmation(null);
           setAccessMode(null);
+          setPublicAllowed(false);
           void run({ action: 'members' });
         }}
       >
@@ -179,21 +192,43 @@ export function ContentAccessControls({
           </DialogHeader>
           <div className="min-h-0 space-y-4 overflow-y-auto">
             {accessMode ? (
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-primary"
-                  checked={selectedMode === 'RESTRICTED'}
-                  onChange={(event) => {
-                    // Stays enabled while a request runs so keyboard focus is kept.
-                    if (busy) return;
-                    const mode = event.target.checked ? 'RESTRICTED' : 'INHERIT';
-                    if (accessMode === mode) setConfirmation(null);
-                    else void run({ action: 'access', accessMode: mode });
-                  }}
-                />
-                Only invited people
-              </label>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-primary"
+                    checked={selectedMode === 'RESTRICTED'}
+                    onChange={(event) =>
+                      changeMode(event.target.checked ? 'RESTRICTED' : 'INHERIT')
+                    }
+                  />
+                  Only invited people
+                </label>
+                {!videoId && folderId && (publicAllowed || accessMode === 'PUBLIC') && (
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={selectedMode === 'PUBLIC'}
+                      onChange={(event) => changeMode(event.target.checked ? 'PUBLIC' : 'INHERIT')}
+                    />
+                    Anyone with the link
+                  </label>
+                )}
+                {!videoId && accessMode === 'PUBLIC' && !confirmation && folderUrl && (
+                  <div className="flex gap-2">
+                    <Input readOnly aria-label="Folder link" value={folderUrl} />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => void copyLink(folderUrl, 'folder')}
+                    >
+                      Copy link
+                    </Button>
+                  </div>
+                )}
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">Loading access...</p>
             )}

@@ -465,7 +465,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const isAuthor = !!userId && comment.authorId === userId;
 
     // Project owners/admins and workspace admins can delete any comment
-    const access = userId ? await checkVideoAccess(comment.version.video.id, userId) : null;
+    const access = await checkVideoAccess(comment.version.video.id, userId ?? undefined);
     const currentShare = getShareSessionFromRequest(request, comment.version.video.id);
     const currentLinkAccess = currentShare
       ? await validateShareLinkAccess({
@@ -476,9 +476,9 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
           passwordVerified: currentShare.passwordVerified,
         })
       : null;
-    if (!access?.hasAccess && !currentLinkAccess?.canComment)
+    if (!access.hasAccess && !currentLinkAccess?.canComment)
       return apiErrors.forbidden('Access denied');
-    const isPrivilegedUser = !!access?.canEdit;
+    const isPrivilegedUser = access.canEdit;
 
     let canDelete = isAuthor || isPrivilegedUser;
     if (!canDelete && !userId) {
@@ -505,8 +505,9 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
               allowGuests: false,
               requiresPassword: false,
             };
+        // A signed-out caller only has video access through a public project or folder.
         const hasGuestAccess =
-          project.visibility === 'PUBLIC' || (shareAccess.canComment && shareAccess.allowGuests);
+          access.hasAccess || (shareAccess.canComment && shareAccess.allowGuests);
         if (!hasGuestAccess) {
           return apiErrors.forbidden('Access denied');
         }

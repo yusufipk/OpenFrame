@@ -1,4 +1,12 @@
-import { checkFolderAccess, visibleVideoWhere, visibleFolderWhere } from '@/lib/content-access';
+import {
+  checkFolderAccess,
+  listedFolderWhere,
+  listedVideoWhere,
+  publicListingRoot,
+  visibleFolderWhere,
+  visibleVideoWhere,
+} from '@/lib/content-access';
+import { folderSubtree } from '@/lib/content-mutations';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
@@ -98,13 +106,25 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   const projectAccess = await checkProjectAccess(project, session?.user?.id);
   const access = await checkFolderAccess(projectId, folderId, session?.user?.id);
   if (!access) notFound();
+  // Public folder reach adds nothing for a viewer with project access, so only a viewer
+  // without it pays for working out which public subtree they opened.
+  const openedSubtree =
+    folderId && !projectAccess.hasAccess
+      ? await folderSubtree(db, projectId, await publicListingRoot(folderId))
+      : [];
+  const listedFolders = projectAccess.hasAccess
+    ? visibleFolderWhere(session?.user?.id)
+    : listedFolderWhere(session?.user?.id, openedSubtree);
+  const listedVideos = projectAccess.hasAccess
+    ? visibleVideoWhere(session?.user?.id)
+    : listedVideoWhere(session?.user?.id, openedSubtree);
   const folders = await db.projectFolder.findMany({
-    where: { projectId, AND: visibleFolderWhere(session?.user?.id) },
+    where: { projectId, AND: listedFolders },
     orderBy: projectFolderOrderBy(sortOrder),
     include: {
       _count: {
         // Count direct children using the same visibility rules as the video list.
-        select: { videos: { where: visibleVideoWhere(session?.user?.id) } },
+        select: { videos: { where: listedVideos } },
       },
     },
   });
@@ -124,13 +144,12 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
   }));
   const videoWhere = {
     projectId,
-    AND: visibleVideoWhere(session?.user?.id),
+    AND: listedVideos,
     ...(!all ? { folderId } : {}),
   };
 
   // Check access
   const isOwner = session?.user?.id === project.ownerId;
-  const isPublic = project.visibility === 'PUBLIC';
 
   // Check workspace membership
   let workspaceRole: string | null = null;
@@ -235,8 +254,9 @@ async function ProjectContent({ params, searchParams }: ProjectPageProps) {
     projectAccess.hasAccess ? {} : { folderId }
   );
 
-  // Guest name gate for unauthenticated users on public projects
-  if (!isAuthenticated && isPublic) {
+  // Guest name gate. A signed-out visitor only gets this far through a public project or a
+  // public folder, since anyone else was sent to the login page above.
+  if (!isAuthenticated) {
     return (
       <GuestGate>
         <div className="px-6 lg:px-8 py-8 w-full" style={brandStyle(branding?.color)}>

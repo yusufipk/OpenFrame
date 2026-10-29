@@ -88,6 +88,7 @@ import * as projectVideoRoute from '@/app/api/projects/[projectId]/videos/[video
 import * as videoShareRoute from '@/app/api/projects/[projectId]/videos/[videoId]/share/route';
 import * as videoVersionsRoute from '@/app/api/projects/[projectId]/videos/[videoId]/versions/route';
 import * as videoVersionRoute from '@/app/api/projects/[projectId]/videos/[videoId]/versions/[versionId]/route';
+import * as videoVersionsMergeRoute from '@/app/api/projects/[projectId]/videos/[videoId]/versions/merge/route';
 import * as projectsRoute from '@/app/api/projects/route';
 import * as searchRoute from '@/app/api/search/route';
 import * as settingsNotificationsRoute from '@/app/api/settings/notifications/route';
@@ -690,6 +691,13 @@ const ROUTE_CASES: readonly RouteCase[] = [
     url: (f) => `/api/projects/${f.projectId}/videos/${f.videoId}`,
     params: (f) => ({ projectId: f.projectId, videoId: f.videoId }),
     body: { title: 'renamed by an anonymous caller' },
+  },
+  {
+    file: 'projects/[projectId]/videos/[videoId]/versions/merge/route.ts',
+    module: videoVersionsMergeRoute,
+    url: (f) => `/api/projects/${f.projectId}/videos/${f.videoId}/versions/merge`,
+    params: (f) => ({ projectId: f.projectId, videoId: f.videoId }),
+    body: { sourceVideoId: 'does-not-matter' },
   },
   {
     file: 'projects/[projectId]/videos/[videoId]/share/route.ts',
