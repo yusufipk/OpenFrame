@@ -173,7 +173,7 @@ vi.mock('@/lib/r2', async (importOriginal) => {
 // The count guard
 // ---------------------------------------------------------------------------
 // Bump this only together with a new entry in ROUTE_CASES or in PUBLIC_ROUTES.
-const EXPECTED_ROUTE_MODULE_COUNT = 90;
+const EXPECTED_ROUTE_MODULE_COUNT = 91;
 
 /**
  * Routes that are public by design, and why. Everything else must reject an

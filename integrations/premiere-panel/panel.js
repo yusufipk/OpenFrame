@@ -253,12 +253,22 @@ async function sendMarkers() {
     const total = { created: 0, duplicates: 0, skipped: { empty: 0, outOfRange: 0, tooLong: 0 } };
     const accepted = [];
     let pluginVersions;
+    // A failed batch stops the send, but the batches before it are already comments,
+    // so their markers are still tagged below rather than left to double on the next sync.
+    let sendError = null;
+    let sent = 0;
     for (const batch of chunks(own, SEND_BATCH)) {
-      const data = await api(
-        link.origin,
-        `/api/versions/${encodeURIComponent(versionId)}/comments/import`,
-        { fps: rate, markers: batch.map((entry) => entry.payload) }
-      );
+      let data;
+      try {
+        data = await api(
+          link.origin,
+          `/api/versions/${encodeURIComponent(versionId)}/comments/import`,
+          { fps: rate, markers: batch.map((entry) => entry.payload) }
+        );
+      } catch (error) {
+        sendError = error;
+        break;
+      }
       total.created += data.created;
       total.duplicates += data.duplicates;
       for (const reason of Object.keys(total.skipped)) {
@@ -266,9 +276,11 @@ async function sendMarkers() {
       }
       accepted.push(...acceptedEntries(batch, data.accepted));
       pluginVersions = data.pluginVersions;
+      sent += batch.length;
     }
+    if (sendError && accepted.length === 0) throw sendError;
 
-    const lines = sendSummary(total, own.length);
+    const lines = sendSummary(total, sent);
     const taggable = accepted.filter(
       (entry) => typeof entry.marker.createSetCommentsAction === 'function'
     );
@@ -287,7 +299,11 @@ async function sendMarkers() {
       }
     } catch (error) {
       tagged = false;
-      lines.push(`${error.message} Sending again will not add the comments twice.`);
+      lines.push(
+        sendError
+          ? error.message
+          : `${error.message} Sending again will not add the comments twice.`
+      );
     }
     if (tagged && taggable.length < accepted.length) {
       lines.push(
@@ -298,9 +314,14 @@ async function sendMarkers() {
         'The next sync of this version replaces the sent markers with the OpenFrame comments.'
       );
     }
+    if (sendError) {
+      lines.push(
+        `${sendError.message} The rest was not sent; sending again will not add the comments twice.`
+      );
+    }
     const notice = updateNotice(pluginVersions);
     if (notice) lines.push(notice);
-    setStatus(lines.join('\n'), !tagged);
+    setStatus(lines.join('\n'), !tagged || Boolean(sendError));
   } catch (error) {
     setStatus(error.message, true);
   } finally {

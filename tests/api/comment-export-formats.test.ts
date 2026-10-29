@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
+import { EDITOR_PLUGIN_VERSIONS } from '@/lib/editor-plugin-versions';
 import { GET } from '@/app/api/versions/[versionId]/comments/export/route';
 import { addProjectMember, createComment, createUser, seedVersion } from '../factories';
 import { apiRequest, callRoute } from '../helpers/request';
@@ -108,7 +109,7 @@ describe('comment export formats through the route', () => {
     expect(response.headers.get('cache-control')).toContain('no-store');
     const { data } = await response.json();
     expect(data).toMatchObject({ versionNumber: scenario.version.versionNumber, fps: '25' });
-    expect(data.pluginVersions).toEqual({ premiere: '0.1.0', resolve: '0.1.0' });
+    expect(data.pluginVersions).toEqual(EDITOR_PLUGIN_VERSIONS);
     expect(data.markers).toHaveLength(1);
     expect(data.markers[0]).toMatchObject({
       startFrame: 300,

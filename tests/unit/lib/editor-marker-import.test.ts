@@ -34,8 +34,6 @@ describe('parseImportRequest', () => {
     ['a frame as text', { fps: '25', markers: [{ startFrame: '10' }] }],
     ['a fractional duration', { fps: '25', markers: [{ startFrame: 0, durationFrames: 0.5 }] }],
     ['a name that is not text', { fps: '25', markers: [{ startFrame: 0, name: 5 }] }],
-    ['a huge note', { fps: '25', markers: [{ startFrame: 0, comments: 'x'.repeat(50_001) }] }],
-    ['a huge name', { fps: '25', markers: [{ startFrame: 0, name: 'x'.repeat(50_001) }] }],
     ['a marker that is not an object', { fps: '25', markers: ['x'] }],
   ])('refuses %s', (_label, body) => {
     expect(parseImportRequest(body)).toHaveProperty('error');
@@ -74,6 +72,7 @@ describe('markerCommentContent', () => {
     expect(markerCommentContent({ name: 'Color', comments: '' })).toBe('Color');
     expect(markerCommentContent({ name: '', comments: 'a\r\nb\rc' })).toBe('a\nb\nc');
     expect(markerCommentContent({ name: '', comments: ' \n ' })).toBe('');
+    expect(markerCommentContent({ name: 'A\u0000B', comments: '\u0000' })).toBe('AB');
   });
 });
 
@@ -112,11 +111,16 @@ describe('planMarkerImport', () => {
     expect(plan.create).toHaveLength(1);
   });
 
-  it('places markers and ranges anywhere when the version length is unknown', () => {
+  it('places markers and ranges up to just under a day when the version length is unknown', () => {
     const plan = planMarkerImport(
       {
         fps: '25',
-        markers: [marker(90000, 'Late'), marker(90000, 'Late range', { durationFrames: 50 })],
+        markers: [
+          marker(90000, 'Late'),
+          marker(90000, 'Late range', { durationFrames: 50 }),
+          marker(2_159_975, 'Runs into the last second', { durationFrames: 50 }),
+          marker(2_159_976, 'Past the last second'),
+        ],
       },
       new Set(),
       null
@@ -124,7 +128,24 @@ describe('planMarkerImport', () => {
     expect(plan.create).toEqual([
       { index: 0, content: 'Late', timestamp: 3600, timestampEnd: null },
       { index: 1, content: 'Late range', timestamp: 3600, timestampEnd: 3602 },
+      { index: 2, content: 'Runs into the last second', timestamp: 86_399, timestampEnd: null },
     ]);
+    expect(plan.skipped.outOfRange).toBe(1);
+  });
+
+  it('skips a marker with a huge field as too long and keeps the rest', () => {
+    const parsed = parseImportRequest({
+      fps: '25',
+      markers: [
+        { startFrame: 0, comments: 'x'.repeat(50_001) },
+        { startFrame: 0, name: 'x'.repeat(50_001) },
+        { startFrame: 25, comments: 'Fine' },
+      ],
+    });
+    if ('error' in parsed) throw new Error(parsed.error);
+    const plan = planMarkerImport(parsed, new Set(), null);
+    expect(plan.skipped.tooLong).toBe(2);
+    expect(plan.create.map((comment) => comment.content)).toEqual(['Fine']);
   });
 
   it('keeps a two-frame marker as a range', () => {

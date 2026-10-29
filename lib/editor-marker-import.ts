@@ -5,8 +5,12 @@ import { NLE_FRAME_RATES } from '@/lib/nle-comment-export';
 
 export const MAX_IMPORT_MARKERS = 500;
 export const MAX_MARKER_COMMENT_LENGTH = 10_000;
-// A field this long is no marker anyone typed, so the whole request is refused
-// rather than read.
+// The comment export refuses a marker that ends at or past one day, so one there
+// would break the next sync of the version for everyone. A second of margin keeps
+// the last frame below that line at every supported rate.
+export const MAX_MARKER_SECONDS = 86_399;
+// A field this long is no marker anyone typed. It is not read, and the marker is
+// skipped as too long.
 const MAX_MARKER_FIELD_LENGTH = 50_000;
 
 export interface ImportMarker {
@@ -28,11 +32,14 @@ function isFrame(value: unknown): value is number {
 }
 
 function isField(value: unknown): value is string | undefined | null {
-  return (
-    value === undefined ||
-    value === null ||
-    (typeof value === 'string' && value.length <= MAX_MARKER_FIELD_LENGTH)
-  );
+  return value === undefined || value === null || typeof value === 'string';
+}
+
+// An oversized field is replaced by text just past the comment limit, so the plan
+// counts the marker as too long without reading the rest of it.
+function boundedField(value: string | undefined | null): string {
+  const text = value ?? '';
+  return text.length > MAX_MARKER_FIELD_LENGTH ? 'x'.repeat(MAX_MARKER_COMMENT_LENGTH + 1) : text;
 }
 
 /** The request body, or an error message for a 400. */
@@ -64,8 +71,8 @@ export function parseImportRequest(body: unknown): ImportRequest | { error: stri
     parsed.push({
       startFrame,
       durationFrames: durationFrames ?? 0,
-      name: name ?? '',
-      comments: comments ?? '',
+      name: boundedField(name),
+      comments: boundedField(comments),
     });
   }
   return { fps, markers: parsed };
@@ -82,10 +89,18 @@ export function framesToSeconds(frames: number, fps: string): number {
  * whichever of them the editor filled in.
  */
 export function markerCommentContent(marker: Pick<ImportMarker, 'name' | 'comments'>): string {
-  return [marker.name, marker.comments]
-    .map((part) => part.replace(/\r\n?/g, '\n').trim())
-    .filter((part) => part !== '')
-    .join('\n');
+  return (
+    [marker.name, marker.comments]
+      // Postgres text cannot hold a NUL, which would fail the whole send.
+      .map((part) =>
+        part
+          .replace(/\r\n?/g, '\n')
+          .replace(/\u0000/g, '')
+          .trim()
+      )
+      .filter((part) => part !== '')
+      .join('\n')
+  );
 }
 
 /**
@@ -137,7 +152,7 @@ export function planMarkerImport(
       return;
     }
     const timestamp = framesToSeconds(marker.startFrame, request.fps);
-    if (maxSeconds !== null && timestamp > maxSeconds) {
+    if (timestamp > (maxSeconds ?? MAX_MARKER_SECONDS)) {
       plan.skipped.outOfRange += 1;
       return;
     }
@@ -151,7 +166,7 @@ export function planMarkerImport(
     let timestampEnd: number | null = null;
     if (marker.durationFrames > 1) {
       timestampEnd = framesToSeconds(marker.startFrame + marker.durationFrames, request.fps);
-      if (maxSeconds !== null) timestampEnd = Math.min(timestampEnd, maxSeconds);
+      timestampEnd = Math.min(timestampEnd, maxSeconds ?? MAX_MARKER_SECONDS);
       // Clamped down to its own start, a range is a point.
       if (timestampEnd <= timestamp) timestampEnd = null;
     }

@@ -9,15 +9,10 @@ import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response
 import { recordAccountActivity } from '@/lib/analytics/record';
 import { logError } from '@/lib/logger';
 import { EDITOR_PLUGIN_VERSIONS } from '@/lib/editor-plugin-versions';
+import { formatTimestamp } from '@/lib/comment-export';
 import { importDedupeKey, parseImportRequest, planMarkerImport } from '@/lib/editor-marker-import';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
-
-function clockTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
 // POST /api/versions/[versionId]/comments/import
 // Body: { fps, markers: [{ startFrame, durationFrames, name, comments }] }
@@ -34,17 +29,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (!userId) {
       return apiErrors.unauthorized('Authentication required to send markers');
     }
-    // One request can add hundreds of comments, so the limit also follows the
-    // account, which cannot change IPs to get around it.
-    const userLimit = RATE_LIMIT_CONFIGS['comment-import-user']!;
-    const perUser = await checkRateLimit(userId, 'comment-import-user', userLimit);
-    if (!perUser.allowed) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429, headers: rateLimitHeaders(perUser, userLimit.maxRequests) }
-      );
-    }
-
     const { versionId } = await params;
     const version = await db.videoVersion.findUnique({
       where: { id: versionId },
@@ -79,6 +63,18 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const parsed = parseImportRequest(body);
     if ('error' in parsed) {
       return apiErrors.badRequest(parsed.error);
+    }
+
+    // One request can add hundreds of comments, so the limit also follows the
+    // account, which cannot change IPs to get around it. It counts only requests
+    // that got this far, so retrying a refused one does not lock the editor out.
+    const userLimit = RATE_LIMIT_CONFIGS['comment-import-user']!;
+    const perUser = await checkRateLimit(userId, 'comment-import-user', userLimit);
+    if (!perUser.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: rateLimitHeaders(perUser, userLimit.maxRequests) }
+      );
     }
 
     const maxSeconds =
@@ -126,7 +122,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             plan.create.length === 1
               ? first.content
               : `${plan.create.length} comments from their editing timeline, starting with: ${first.content}`,
-          timestamp: clockTime(first.timestamp),
+          timestamp: formatTimestamp(first.timestamp),
           mediaType: version.video.mediaType,
           url: `${baseUrl}/watch/${version.video.id}`,
         }).catch((err) => logError('Notification failed:', err));

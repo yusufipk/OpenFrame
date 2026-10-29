@@ -636,15 +636,23 @@ local function send_markers()
   set_status('Sending markers...')
   local total = { created = 0, duplicates = 0, skipped = { empty = 0, outOfRange = 0, tooLong = 0 } }
   local accepted_list, plugin_versions = {}, nil
+  -- A failed batch stops the send, but the batches before it are already comments,
+  -- so their markers are still tagged below rather than left to double on the next sync.
+  local send_error, sent = nil, 0
   for first = 1, #own, M.SEND_BATCH do
     local count = math.min(M.SEND_BATCH, #own - first + 1)
     local payload = {}
     for offset = 0, count - 1 do payload[offset + 1] = own[first + offset].payload end
-    local data = http_request(
+    local ok, data = pcall(
+      http_request,
       M.import_url(link.origin, version_id),
       token,
       M.json_encode({ fps = rate, markers = payload })
     )
+    if not ok then
+      send_error = data
+      break
+    end
     total.created = total.created + (tonumber(data.created) or 0)
     total.duplicates = total.duplicates + (tonumber(data.duplicates) or 0)
     local skipped = type(data.skipped) == 'table' and data.skipped or {}
@@ -655,8 +663,10 @@ local function send_markers()
       accepted_list[#accepted_list + 1] = entry
     end
     plugin_versions = data.pluginVersions
+    sent = sent + count
   end
-  local lines = M.send_summary(total, #own)
+  if send_error and #accepted_list == 0 then error(send_error, 0) end
+  local lines = M.send_summary(total, sent)
   local tag = M.marker_tag(version_id)
   local accepted, tagged = #accepted_list, 0
   for _, entry in ipairs(accepted_list) do
@@ -666,6 +676,9 @@ local function send_markers()
     lines[#lines + 1] = (accepted - tagged) .. ' sent marker(s) could not be marked as sent. Delete them before the next sync to avoid doubles; sending again will not add them twice.'
   elseif accepted > 0 then
     lines[#lines + 1] = 'The next sync of this version replaces the sent markers with the OpenFrame comments.'
+  end
+  if send_error then
+    lines[#lines + 1] = tostring(send_error) .. ' The rest was not sent; sending again will not add the comments twice.'
   end
   local notice = M.update_notice(plugin_versions)
   if notice then lines[#lines + 1] = notice end
