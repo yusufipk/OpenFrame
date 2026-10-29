@@ -67,14 +67,29 @@ Two plugins write the markers straight into the timeline the editor has open, at
 own frame rate, with no file and no separate sequence: a UXP panel for Premiere and a
 Lua script for Resolve. On a project's video page the comments menu offers **Premiere
 Pro: add to timeline** and **DaVinci Resolve: add to timeline**; the dialog downloads
-the plugin, copies the video link and creates a token with only the **Read** and
-**Read comments** permissions. `/guides/editor-markers` is the public setup guide with
+the plugin, copies the video link and creates a token with only the **Read**, **Read
+comments** and **Send timeline markers** permissions. The last one (`comments:import`)
+opens only the import route below, so the token can add comments but not edit, resolve
+or delete any. `/guides/editor-markers` is the public setup guide with
 screenshots. `GET /api/integrations/premiere-panel` (a `.ccx`, built as a stored ZIP of
 the folder) and `GET /api/integrations/resolve-script` serve the files to anyone; they
 hold no secrets. Both plugins leave resolved comments out unless asked and remember
 the choice, so a re-sync also clears markers of comments resolved since. Their markers
 are named Marker 1, Marker 2 and so on in timeline order, and the comments go in the
 marker note, which both editors show wider than the name.
+
+Both also send the editor's own markers back: `POST
+/api/versions/{versionId}/comments/import` takes `{ fps, markers: [{ startFrame,
+durationFrames, name, comments }] }`, at most 500 a request and 20 requests an hour per user, and adds each as a root
+comment by the token's owner, with the name and note on separate lines. A marker with
+neither, or one starting after the version's duration, is left out and counted; one
+whose start (to the millisecond) and text match a root comment the same user already
+has on the version counts as a duplicate, so sending twice adds nothing. The answer
+lists the indexes of the markers that are now comments, and the plugin tags exactly
+those like its own synced markers, so the next sync swaps them for the OpenFrame copy
+and the next send skips them. Markers a sync wrote, for any version, are never sent.
+The project owner gets one notification for the whole send.
+Sending has not been tried by hand in Premiere or Resolve yet; only the helpers and the API are tested. The Premiere side assumes `Marker.getType()` and `Marker.createSetCommentsAction()`, and the Resolve side `Timeline:UpdateMarkerCustomData()`.
 
 ### Premiere panel
 
@@ -84,7 +99,7 @@ then sits under **Window → UXP Plugins → OpenFrame Comments**. Creative Clou
 it when Premiere was not installed through Creative Cloud.
 
 Paste a video page address and an API token with the **Read** and **Read comments**
-permissions, load the versions, pick one and add the comments. Running it again for the
+permissions (plus **Send timeline markers** to send markers), load the versions, pick one and add the comments. Running it again for the
 same version replaces the markers it wrote before and leaves every other marker alone;
 it recognizes its own by the `[OpenFrame <version id>]` line at the end of the marker
 comment. Colors use Premiere's seven named marker colors: violet and pink tags become

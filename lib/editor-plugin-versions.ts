@@ -3,6 +3,6 @@
 // again. Raise an entry together with the plugin's own version: the unit tests check
 // that the Premiere manifest and the Resolve script match.
 export const EDITOR_PLUGIN_VERSIONS = {
-  premiere: '0.1.0',
-  resolve: '0.1.0',
+  premiere: '0.2.0',
+  resolve: '0.2.0',
 } as const;

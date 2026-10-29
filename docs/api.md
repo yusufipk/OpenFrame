@@ -12,17 +12,18 @@ The API is the one the web app itself calls, so the routes under `app/api` are t
 
 ## Permissions
 
-| Permission       | Opens                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------- |
-| `read`           | workspaces, projects, folders, videos, versions, subtitles, assets, search, and streaming the media they show |
-| `upload`         | new videos and versions (including image reviews), assets, subtitles                                          |
-| `manage`         | creating and editing workspaces, private projects and folders, project branding, renaming                     |
-| `delete`         | deleting workspaces, projects, videos, versions, assets and subtitles                                         |
-| `comments:read`  | comments, replies, attachment comments, tags, comment export                                                  |
-| `comments:write` | adding, editing, resolving and deleting comments and tags                                                     |
-| `approvals`      | approval candidates, requesting, deciding and cancelling approvals                                            |
-| `share`          | share links, members, invitations and roles, project visibility and downloads, moving content                 |
-| `download`       | the download endpoints: a version's file, an asset, a whole project                                           |
+| Permission        | Opens                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `read`            | workspaces, projects, folders, videos, versions, subtitles, assets, search, and streaming the media they show |
+| `upload`          | new videos and versions (including image reviews), assets, subtitles                                          |
+| `manage`          | creating and editing workspaces, private projects and folders, project branding, renaming                     |
+| `delete`          | deleting workspaces, projects, videos, versions, assets and subtitles                                         |
+| `comments:read`   | comments, replies, attachment comments, tags, comment export                                                  |
+| `comments:write`  | adding, editing, resolving and deleting comments and tags                                                     |
+| `comments:import` | sending editor timeline markers as your own new comments; nothing can be edited or deleted with it            |
+| `approvals`       | approval candidates, requesting, deciding and cancelling approvals                                            |
+| `share`           | share links, members, invitations and roles, project visibility and downloads, moving content                 |
+| `download`        | the download endpoints: a version's file, an asset, a whole project                                           |
 
 A token never goes beyond what you can do yourself: every call runs the same access checks as the browser, so a token of someone who can only comment on a project cannot delete its videos whatever permissions it carries, and removing you from a project takes it away from your tokens too. Anything that changes who can see content needs `share` even when it also looks like organising: making a project public or downloadable, and moving videos or folders, since what moves takes on the access of where it lands. `share` can invite someone as an admin or turn on downloads for a share link, which gives that person everything the other permissions guard, so treat a token with `share` like one with all of them. `approvals` lists the people who can approve, with their email addresses. A `read` token can already play and stream the media it shows, assets included, so leaving `download` off withholds the download endpoints, not the bytes. A `read` token gets videos without their comments; comments come with `comments:read`. Billing, settings, admin pages and token management are never reachable with a token. A wrong or revoked token gets a 401 and a token without the permission a route needs gets a 403; neither falls back to a signed-in browser session on the same machine. Uploads count against the workspace owner's storage exactly as browser uploads do.
 

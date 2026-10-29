@@ -73,7 +73,7 @@ OpenFrame is built for video teams that want one system for review, revision, ap
 
 - Approval requests can be sent to specific reviewers.
 - Approval decisions are tracked per request with pending, approved, rejected, and canceled states.
-- Comments can be exported as CSV or PDF for offline review and handoff, or brought into Premiere Pro and DaVinci Resolve as timeline markers that update on the next round.
+- Comments can be exported as CSV or PDF for offline review and handoff, or brought into Premiere Pro and DaVinci Resolve as timeline markers that update on the next round, and the editor's own markers can go back as comments.
 
 ### Assets, Notifications, And Integrations
 

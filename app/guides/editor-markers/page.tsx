@@ -74,7 +74,8 @@ export default function EditorMarkersGuidePage() {
         <p className="text-sm text-muted-foreground mb-10 max-w-2xl">
           Bring a video&apos;s review comments into Premiere Pro or DaVinci Resolve as colored
           markers, each at the moment it was made, with the replies inside. After the next round of
-          feedback, run it again: the markers are updated and the ones you added yourself stay.
+          feedback, run it again: the markers are updated and the ones you added yourself stay. Your
+          own markers can go the other way too, as comments on the video.
         </p>
 
         <div className="space-y-12 text-sm leading-relaxed text-foreground/80">
@@ -86,7 +87,7 @@ export default function EditorMarkersGuidePage() {
               <strong className="text-foreground">DaVinci Resolve: add to timeline</strong>. The
               window that opens has everything you need: the download, the video&apos;s link and a
               button that creates a token. A token is a key that lets the plugin read your projects
-              and comments; it can&apos;t change anything.
+              and comments and add your markers as comments; it can&apos;t edit or delete anything.
             </p>
           </section>
 
@@ -332,6 +333,13 @@ export default function EditorMarkersGuidePage() {
               <li>
                 Comments made at the same moment share one marker; its name shows how many more
                 there are.
+              </li>
+              <li>
+                <strong className="text-foreground">Send my markers to OpenFrame</strong> adds the
+                markers you placed yourself to the picked version as comments, with each
+                marker&apos;s name and note as the text. The next sync replaces them with those
+                comments, and sending again adds nothing twice. A token made before this button
+                existed can&apos;t send; create a new one in the same window.
               </li>
               <li>Works with timelines at 23.976, 24, 25, 29.97, 30, 48, 50, 59.94 and 60 fps.</li>
               <li>Lost a computer? Remove its token in OpenFrame under Settings → API Tokens.</li>
