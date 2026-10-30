@@ -3,9 +3,9 @@ version: 2
 updates:
   - package-ecosystem: docker
     directories:
-      - "/"
-      - "/scripts/minio-test"
-      - "/tests/build"
+      - '/'
+      - '/scripts/minio-test'
+      - '/tests/build'
     schedule:
       interval: weekly
     # wait a few days after a release before proposing it, so a hijacked release can be pulled first
