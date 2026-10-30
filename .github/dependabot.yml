@@ -8,8 +8,7 @@ updates:
       - "/tests/build"
     schedule:
       interval: weekly
-    # wait a few days after a release before proposing it (supply chain); security fixes are
-    # handled by the alerts and the triage agent instead
+    # wait a few days after a release before proposing it, so a hijacked release can be pulled first
     cooldown:
       default-days: 3
     open-pull-requests-limit: 3
