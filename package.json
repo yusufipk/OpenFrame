@@ -43,7 +43,8 @@
     "stripe:resync": "bun run scripts/resync-stripe-subscriptions.ts"
   },
   "engines": {
-    "bun": "1.4.4"
+    "bun": "1.4.4",
+    "node": "24.22.1"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

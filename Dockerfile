@@ -1,4 +1,4 @@
-FROM docker.io/oven/bun:1 AS base
+FROM docker.io/oven/bun:1.4.4 AS base
 WORKDIR /app
 
 FROM base AS deps
@@ -33,7 +33,7 @@ ENV NODE_ENV=production
 RUN bun run db:generate
 RUN bun run build
 
-FROM docker.io/oven/bun:1 AS runner
+FROM docker.io/oven/bun:1.4.4 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
