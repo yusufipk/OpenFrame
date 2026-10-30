@@ -1,5 +1,4 @@
-# Version updates for base images pinned to a version or digest. Floating tags (node:22-alpine)
-# get no PRs.
+# Weekly PRs for newer Docker base images (tags and digests), a few days after each release.
 version: 2
 updates:
   - package-ecosystem: docker
