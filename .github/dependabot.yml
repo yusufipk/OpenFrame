@@ -12,3 +12,15 @@ updates:
     cooldown:
       default-days: 3
     open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 3
+    groups:
+      compatible-updates:
+        update-types:
+          - patch
+          - minor
