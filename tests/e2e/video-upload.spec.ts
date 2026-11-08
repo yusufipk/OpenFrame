@@ -38,7 +38,8 @@ test('a video file is uploaded to object storage and a second version is added',
   // Present only when the app resolved a direct upload provider.
   const directUploadTab = page.getByRole('tab', { name: 'Direct Upload' });
   await expect(directUploadTab).toBeVisible();
-  await directUploadTab.click();
+  // The form opens on Direct Upload, so no click is needed to reach the file input.
+  await expect(directUploadTab).toHaveAttribute('aria-selected', 'true');
 
   await page.getByLabel('Files').setInputFiles(SAMPLE_VIDEO);
   await expect(page.getByText('sample.mp4')).toBeVisible();
