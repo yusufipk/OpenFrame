@@ -64,7 +64,11 @@ export default function NewVideoPageClient({
   const [videoSource, setVideoSource] = useState<VideoSource | null>(null);
   const [urlError, setUrlError] = useState('');
 
-  const [uploadMode, setUploadMode] = useState<'url' | 'file'>('url');
+  // Direct upload is the common case, so it opens first; the URL tab is the
+  // only option when neither direct nor image uploads are configured.
+  const [uploadMode, setUploadMode] = useState<'url' | 'file'>(
+    directUploadsEnabled || imageUploadsEnabled ? 'file' : 'url'
+  );
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
@@ -549,10 +553,9 @@ export default function NewVideoPageClient({
         <CardHeader>
           <CardTitle>Add File</CardTitle>
           <CardDescription>
-            Paste a video link
             {directUploadsEnabled || imageUploadsEnabled
-              ? ' or upload files to your project.'
-              : ' to add it to your project.'}
+              ? 'Upload files or paste a video link to add them to your project.'
+              : 'Paste a video link to add it to your project.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
