@@ -1,4 +1,4 @@
-FROM docker.io/library/alpine:3.22
+FROM docker.io/library/alpine:3.24
 WORKDIR /context
 COPY . .
 # Exercise the actual build context, not a second implementation of ignore rules.
