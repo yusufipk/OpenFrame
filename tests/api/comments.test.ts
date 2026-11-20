@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
-import { notifyProjectOwner } from '@/lib/notifications';
+import { getVideoNotificationRecipients, notifyProjectTeam } from '@/lib/notifications';
 import { createShareSessionValue, getShareSessionCookieName } from '@/lib/share-session';
 import {
   GET as listComments,
@@ -311,17 +311,18 @@ describe('POST /api/versions/[versionId]/comments', () => {
     expect(await db.comment.count()).toBe(0);
   });
 
-  // The "do not email somebody about their own comment" rule lives in the route
-  // (`const isOwnProject = session?.user?.id === project.ownerId`), not in
-  // lib/notifications.ts: notifyUsers() takes no actor argument and has no way
-  // to know. So it cannot be covered by a unit test of the notification module,
-  // and until these two it was covered nowhere: deleting the guard turned
-  // nothing red. They are written as a pair on purpose, because the negative one
-  // alone would also pass if notifications stopped firing altogether.
-  it('does not notify the project owner about the owner’s own comment', async () => {
+  // The route hands the video and the author to notifyProjectTeam(), which
+  // works out the audience. These resolve that audience against the real rows,
+  // so they cover both halves: the author is left out, and a teammate who is
+  // not the owner is in. The owner-commenting case is the one that used to
+  // reach nobody, because only the owner was ever a recipient.
+  it('notifies the owner’s teammates about the owner’s own comment, not the owner', async () => {
     const scenario = await seedVersion();
+    const editor = await createUser();
+    await addProjectMember({ projectId: scenario.project.id, userId: editor.id, role: 'ADMIN' });
+    await db.notificationSetting.create({ data: { userId: editor.id, emailEnabled: true } });
     signedInAs(scenario.owner);
-    vi.mocked(notifyProjectOwner).mockClear();
+    vi.mocked(notifyProjectTeam).mockClear();
 
     const response = await callRoute(
       createCommentRoute,
@@ -330,15 +331,25 @@ describe('POST /api/versions/[versionId]/comments', () => {
     );
 
     expect(response.status).toBe(201);
-    expect(notifyProjectOwner).not.toHaveBeenCalled();
+    expect(notifyProjectTeam).toHaveBeenCalledTimes(1);
+    const [target, actorId, event] = vi.mocked(notifyProjectTeam).mock.calls[0];
+    expect(target).toEqual({ projectId: scenario.project.id, videoId: scenario.video.id });
+    expect(actorId).toBe(scenario.owner.id);
+    expect(event).toMatchObject({ type: 'new_comment', commentText: 'hi' });
+    expect(await getVideoNotificationRecipients(target.projectId, target.videoId, actorId)).toEqual(
+      [editor.id]
+    );
   });
 
-  it('notifies the project owner about a collaborator’s comment', async () => {
+  it('notifies the project owner about a collaborator’s comment, not the collaborator', async () => {
     const scenario = await seedVersion();
     const collaborator = await createUser();
     await addProjectMember({ projectId: scenario.project.id, userId: collaborator.id });
+    await db.notificationSetting.create({
+      data: { userId: scenario.owner.id, emailEnabled: true },
+    });
     signedInAs(collaborator);
-    vi.mocked(notifyProjectOwner).mockClear();
+    vi.mocked(notifyProjectTeam).mockClear();
 
     const response = await callRoute(
       createCommentRoute,
@@ -347,8 +358,12 @@ describe('POST /api/versions/[versionId]/comments', () => {
     );
 
     expect(response.status).toBe(201);
-    expect(notifyProjectOwner).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(notifyProjectOwner).mock.calls[0][0]).toBe(scenario.owner.id);
+    expect(notifyProjectTeam).toHaveBeenCalledTimes(1);
+    const [target, actorId] = vi.mocked(notifyProjectTeam).mock.calls[0];
+    expect(actorId).toBe(collaborator.id);
+    expect(await getVideoNotificationRecipients(target.projectId, target.videoId, actorId)).toEqual(
+      [scenario.owner.id]
+    );
   });
 
   it('accepts a timestamp exactly equal to the duration', async () => {

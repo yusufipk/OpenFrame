@@ -4,7 +4,7 @@ import { notifyLiveReviewComments } from '@/lib/live-review/notify';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { checkRateLimit, rateLimit, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '@/lib/rate-limit';
-import { notifyProjectOwner } from '@/lib/notifications';
+import { notifyProjectTeam } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { recordAccountActivity } from '@/lib/analytics/record';
 import { logError } from '@/lib/logger';
@@ -41,7 +41,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             title: true,
             mediaType: true,
             project: {
-              select: { name: true, ownerId: true, workspace: { select: { ownerId: true } } },
+              select: {
+                id: true,
+                name: true,
+                ownerId: true,
+                workspace: { select: { ownerId: true } },
+              },
             },
           },
         },
@@ -110,23 +115,21 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const project = version.video.project;
     if (plan.create.length > 0) {
       // One notification for the whole timeline rather than one per marker.
-      if (userId !== project.ownerId) {
-        const first = plan.create[0];
-        const baseUrl = process.env.NEXTAUTH_URL || '';
-        notifyProjectOwner(project.ownerId, {
-          type: 'new_comment',
-          projectName: project.name,
-          videoTitle: version.video.title || 'Untitled Video',
-          commentAuthor: session.user.name || 'Someone',
-          commentText:
-            plan.create.length === 1
-              ? first.content
-              : `${plan.create.length} comments from their editing timeline, starting with: ${first.content}`,
-          timestamp: formatTimestamp(first.timestamp),
-          mediaType: version.video.mediaType,
-          url: `${baseUrl}/watch/${version.video.id}`,
-        }).catch((err) => logError('Notification failed:', err));
-      }
+      const first = plan.create[0];
+      const baseUrl = process.env.NEXTAUTH_URL || '';
+      notifyProjectTeam({ projectId: project.id, videoId: version.video.id }, userId, {
+        type: 'new_comment',
+        projectName: project.name,
+        videoTitle: version.video.title || 'Untitled Video',
+        commentAuthor: session.user.name || 'Someone',
+        commentText:
+          plan.create.length === 1
+            ? first.content
+            : `${plan.create.length} comments from their editing timeline, starting with: ${first.content}`,
+        timestamp: formatTimestamp(first.timestamp),
+        mediaType: version.video.mediaType,
+        url: `${baseUrl}/watch/${version.video.id}`,
+      }).catch((err) => logError('Notification failed:', err));
       await recordAccountActivity({
         name: 'COMMENT_ADDED',
         accountId: project.workspace.ownerId,

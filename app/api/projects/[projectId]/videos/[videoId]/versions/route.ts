@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { validateUrl, validateOptionalUrlOrAppPath } from '@/lib/validation';
 import { rateLimit } from '@/lib/rate-limit';
-import { notifyProjectOwner } from '@/lib/notifications';
+import { notifyProjectTeam } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import {
   canonicalBunnyThumbnailUrl,
@@ -316,18 +316,16 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       });
     });
 
-    // Notify project owner (fire-and-forget, skip if they added it themselves)
-    if (video.project.ownerId !== session.user.id) {
-      const baseUrl = process.env.NEXTAUTH_URL || '';
-      notifyProjectOwner(video.project.ownerId, {
-        type: 'new_version',
-        projectName: video.project.name,
-        videoTitle: video.title,
-        versionLabel: version.versionLabel || `Version ${version.versionNumber}`,
-        addedBy: session.user.name || 'A team member',
-        url: `${baseUrl}/watch/${video.id}`,
-      }).catch((err) => logError('Notification failed:', err));
-    }
+    // Notify everyone who can see the video (fire-and-forget, skips the uploader)
+    const baseUrl = process.env.NEXTAUTH_URL || '';
+    notifyProjectTeam({ projectId, videoId }, session.user.id, {
+      type: 'new_version',
+      projectName: video.project.name,
+      videoTitle: video.title,
+      versionLabel: version.versionLabel || `Version ${version.versionNumber}`,
+      addedBy: session.user.name || 'A team member',
+      url: `${baseUrl}/watch/${video.id}`,
+    }).catch((err) => logError('Notification failed:', err));
 
     await recordAccountActivity({
       name: 'VERSION_ADDED',

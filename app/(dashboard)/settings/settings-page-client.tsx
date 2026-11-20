@@ -897,7 +897,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 enabled={settings.onNewVideo}
                 onToggle={() => setSettings((s) => ({ ...s, onNewVideo: !s.onNewVideo }))}
                 label="New Video Added"
-                description="When a new video is added to one of your projects"
+                description="When a new video is added where you have access"
               />
               <ToggleButton
                 enabled={settings.onNewVersion}
@@ -909,7 +909,7 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
                 enabled={settings.onNewComment}
                 onToggle={() => setSettings((s) => ({ ...s, onNewComment: !s.onNewComment }))}
                 label="New Comment"
-                description="When someone leaves a comment on your videos"
+                description="When someone comments on a video you have access to"
               />
               <ToggleButton
                 enabled={settings.onNewReply}

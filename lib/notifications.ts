@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { visibleVideoWhere } from '@/lib/content-access';
 import nodemailer from 'nodemailer';
 import {
   EMAIL_COLORS,
@@ -476,11 +477,6 @@ export function testEmailHtml(): string {
 // MAIN DISPATCH
 // ============================================
 
-/**
- * Notify the project owner about an event.
- * Looks up the owner's notification settings and dispatches to enabled channels.
- * Best-effort — never throws, logs errors.
- */
 function isApprovalEvent(event: NotificationEvent): boolean {
   return (
     event.type === 'approval_requested' ||
@@ -552,9 +548,93 @@ export async function notifyUsers(userIds: string[], event: NotificationEvent): 
   }
 }
 
-export async function notifyProjectOwner(ownerId: string, event: NotificationEvent): Promise<void> {
+/**
+ * Who should hear about activity on a video: everyone who can open it and has
+ * a notification channel switched on, minus the person who caused the event.
+ * The pool is the people any access path could reach (owners, project and
+ * workspace members, folder and video members); the visibility check then
+ * drops whoever a restricted folder or video keeps out, so a notification
+ * never carries a title or comment its reader could not see. Channels are
+ * checked first because most accounts have none on, and the visibility check
+ * is the expensive part. Per-event toggles are applied later by notifyUsers.
+ */
+export async function getVideoNotificationRecipients(
+  projectId: string,
+  videoId: string,
+  actorId: string | null | undefined
+): Promise<string[]> {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: {
+      ownerId: true,
+      members: { select: { userId: true } },
+      workspace: { select: { ownerId: true, members: { select: { userId: true } } } },
+    },
+  });
+  if (!project) return [];
+
+  const [folderMembers, videoMembers] = await Promise.all([
+    db.projectFolderMember.findMany({
+      where: { folder: { projectId } },
+      select: { userId: true },
+    }),
+    db.videoMember.findMany({ where: { videoId }, select: { userId: true } }),
+  ]);
+
+  const pool = new Set<string>([
+    project.ownerId,
+    project.workspace.ownerId,
+    ...project.members.map((m) => m.userId),
+    ...project.workspace.members.map((m) => m.userId),
+    ...folderMembers.map((m) => m.userId),
+    ...videoMembers.map((m) => m.userId),
+  ]);
+  if (actorId) pool.delete(actorId);
+  if (pool.size === 0) return [];
+
+  const reachable = await db.notificationSetting.findMany({
+    where: {
+      userId: { in: Array.from(pool) },
+      OR: [{ emailEnabled: true }, { telegramEnabled: true, telegramChatId: { not: null } }],
+    },
+    select: { userId: true },
+  });
+
+  const recipients: string[] = [];
+  for (let i = 0; i < reachable.length; i += 16) {
+    const batch = reachable.slice(i, i + 16);
+    const visible = await Promise.all(
+      batch.map(
+        async ({ userId }) =>
+          (await db.video.count({
+            where: { id: videoId, projectId, AND: visibleVideoWhere(userId, false, false) },
+          })) > 0
+      )
+    );
+    batch.forEach(({ userId }, index) => {
+      if (visible[index]) recipients.push(userId);
+    });
+  }
+  return recipients;
+}
+
+/**
+ * Notify everyone who can see the video about an event, skipping whoever
+ * caused it.
+ * Best-effort: never throws, logs errors.
+ */
+export async function notifyProjectTeam(
+  target: { projectId: string; videoId: string },
+  actorId: string | null | undefined,
+  event: NotificationEvent
+): Promise<void> {
   try {
-    await notifyUsers([ownerId], event);
+    const recipients = await getVideoNotificationRecipients(
+      target.projectId,
+      target.videoId,
+      actorId
+    );
+    await notifyUsers(recipients, event);
   } catch (err) {
     logError('Notification dispatch failed:', err);
   }

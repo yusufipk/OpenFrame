@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { projectAccessInclude } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
-import { notifyProjectOwner } from '@/lib/notifications';
+import { notifyProjectTeam } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { validateShareLinkAccess } from '@/lib/share-links';
 import { getShareSessionFromRequest } from '@/lib/share-session';
@@ -524,45 +524,44 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const comment = result;
 
-    // Notify project owner (fire-and-forget, skip self-notifications)
+    // Notify everyone who can see the video (fire-and-forget, skips the author)
     const commentAuthorName = session?.user?.name || guestName || 'Someone';
-    const isOwnProject = session?.user?.id === project.ownerId;
-    if (!isOwnProject) {
-      const baseUrl = process.env.NEXTAUTH_URL || '';
-      const videoTitle = version.video.title || (isImage ? 'Untitled Image' : 'Untitled Video');
-      const mins = Math.floor(parsedTimestamp / 60);
-      const secs = Math.floor(parsedTimestamp % 60);
-      const ts = isImage ? null : `${mins}:${secs.toString().padStart(2, '0')}`;
+    const notifyTarget = { projectId: project.id, videoId: version.video.id };
+    const commentActorId = session?.user?.id ?? null;
+    const baseUrl = process.env.NEXTAUTH_URL || '';
+    const videoTitle = version.video.title || (isImage ? 'Untitled Image' : 'Untitled Video');
+    const mins = Math.floor(parsedTimestamp / 60);
+    const secs = Math.floor(parsedTimestamp % 60);
+    const ts = isImage ? null : `${mins}:${secs.toString().padStart(2, '0')}`;
 
-      if (parentId) {
-        // It's a reply — look up parent author
-        const parentComment = await db.comment.findUnique({
-          where: { id: parentId },
-          include: { author: { select: { name: true } } },
-        });
-        notifyProjectOwner(project.ownerId, {
-          type: 'new_reply',
-          projectName: project.name,
-          videoTitle,
-          replyAuthor: commentAuthorName,
-          replyText: content?.trim() || (primaryImageUrl ? '(image attachment)' : '(voice note)'),
-          parentAuthor: parentComment?.author?.name || parentComment?.guestName || 'Someone',
-          timestamp: ts,
-          mediaType: version.video.mediaType,
-          url: `${baseUrl}/watch/${version.video.id}`,
-        }).catch((err) => logError('Notification failed:', err));
-      } else {
-        notifyProjectOwner(project.ownerId, {
-          type: 'new_comment',
-          projectName: project.name,
-          videoTitle,
-          commentAuthor: commentAuthorName,
-          commentText: content?.trim() || (primaryImageUrl ? '(image attachment)' : '(voice note)'),
-          timestamp: ts,
-          mediaType: version.video.mediaType,
-          url: `${baseUrl}/watch/${version.video.id}`,
-        }).catch((err) => logError('Notification failed:', err));
-      }
+    if (parentId) {
+      // It's a reply — look up parent author
+      const parentComment = await db.comment.findUnique({
+        where: { id: parentId },
+        include: { author: { select: { name: true } } },
+      });
+      notifyProjectTeam(notifyTarget, commentActorId, {
+        type: 'new_reply',
+        projectName: project.name,
+        videoTitle,
+        replyAuthor: commentAuthorName,
+        replyText: content?.trim() || (primaryImageUrl ? '(image attachment)' : '(voice note)'),
+        parentAuthor: parentComment?.author?.name || parentComment?.guestName || 'Someone',
+        timestamp: ts,
+        mediaType: version.video.mediaType,
+        url: `${baseUrl}/watch/${version.video.id}`,
+      }).catch((err) => logError('Notification failed:', err));
+    } else {
+      notifyProjectTeam(notifyTarget, commentActorId, {
+        type: 'new_comment',
+        projectName: project.name,
+        videoTitle,
+        commentAuthor: commentAuthorName,
+        commentText: content?.trim() || (primaryImageUrl ? '(image attachment)' : '(voice note)'),
+        timestamp: ts,
+        mediaType: version.video.mediaType,
+        url: `${baseUrl}/watch/${version.video.id}`,
+      }).catch((err) => logError('Notification failed:', err));
     }
 
     // Feedback arriving from outside the team is the moment this product
