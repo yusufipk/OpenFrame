@@ -1,7 +1,7 @@
 # Test-only image. The official MinIO registries no longer allow anonymous pulls.
 # Release assets and their SHA256 digests come from the minio/minio and minio/mc
 # GitHub releases. Keep the server and client available in the same image.
-FROM docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS download
+FROM docker.io/library/debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS download
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
@@ -24,7 +24,7 @@ RUN set -eu; \
     printf '%s  %s\n' "$minio_sha" /usr/local/bin/minio "$mc_sha" /usr/local/bin/mc | sha256sum --check; \
     chmod 0755 /usr/local/bin/minio /usr/local/bin/mc
 
-FROM docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+FROM docker.io/library/debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 COPY --from=download /usr/local/bin/minio /usr/local/bin/mc /usr/local/bin/
 COPY --from=download /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 ENTRYPOINT ["minio"]
