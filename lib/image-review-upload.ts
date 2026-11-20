@@ -21,7 +21,7 @@ import {
   releaseStorageReservation,
   UPLOAD_RESERVATION_PURPOSES,
 } from '@/lib/storage-quota';
-import { notifyProjectOwner } from '@/lib/notifications';
+import { notifyProjectTeam } from '@/lib/notifications';
 import { eventKey, recordAccountActivity, recordEvent } from '@/lib/analytics/record';
 
 export const MAX_IMAGE_REVIEW_BYTES = 20 * 1024 * 1024;
@@ -221,7 +221,7 @@ export async function storeImageReview(
         where: { id: projectId },
         select: { ownerId: true, name: true },
       });
-      if (project && project.ownerId !== input.userId) {
+      if (project) {
         const notification = targetVideoId
           ? {
               type: 'new_version' as const,
@@ -240,8 +240,8 @@ export async function storeImageReview(
               addedBy: input.userName || 'A team member',
               url: `${process.env.NEXTAUTH_URL || ''}/watch/${result.id}`,
             };
-        notifyProjectOwner(project.ownerId, notification).catch((error) =>
-          logError('Image review notification failed:', error)
+        notifyProjectTeam({ projectId, videoId: result.id }, input.userId, notification).catch(
+          (error) => logError('Image review notification failed:', error)
         );
       }
       if (!targetVideoId && project) {

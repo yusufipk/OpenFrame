@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
-import { notifyProjectOwner } from '@/lib/notifications';
+import { notifyProjectTeam } from '@/lib/notifications';
 import { POST } from '@/app/api/versions/[versionId]/comments/import/route';
 import { apiRequest, callRoute, readData } from '../helpers/request';
 import { signedInAs, signedOut } from '../helpers/session';
@@ -271,21 +271,18 @@ describe('POST /api/versions/[versionId]/comments/import', () => {
     expect(await db.comment.count({ where: { versionId: scenario.version.id } })).toBe(2);
   });
 
-  it('notifies the owner once for a collaborator’s whole timeline, and not for their own', async () => {
+  it('notifies the team once for a whole timeline, naming the importer as the actor', async () => {
     const scenario = await seedVersion();
     const editor = await createUser({ name: 'Editor' });
     await addProjectMember({ projectId: scenario.project.id, userId: editor.id });
 
-    signedInAs(scenario.owner);
-    vi.mocked(notifyProjectOwner).mockClear();
-    await send(scenario.version.id, timeline);
-    expect(notifyProjectOwner).not.toHaveBeenCalled();
-
     signedInAs(editor);
+    vi.mocked(notifyProjectTeam).mockClear();
     await send(scenario.version.id, timeline);
-    expect(notifyProjectOwner).toHaveBeenCalledTimes(1);
-    const [ownerId, event] = vi.mocked(notifyProjectOwner).mock.calls[0];
-    expect(ownerId).toBe(scenario.owner.id);
+    expect(notifyProjectTeam).toHaveBeenCalledTimes(1);
+    const [target, actorId, event] = vi.mocked(notifyProjectTeam).mock.calls[0];
+    expect(target).toEqual({ projectId: scenario.project.id, videoId: scenario.video.id });
+    expect(actorId).toBe(editor.id);
     expect(event).toMatchObject({
       type: 'new_comment',
       commentAuthor: 'Editor',
@@ -296,7 +293,7 @@ describe('POST /api/versions/[versionId]/comments/import', () => {
     // Sending the unchanged timeline again adds nothing and tells nobody.
     const again = await send(scenario.version.id, timeline);
     expect(again.status).toBe(200);
-    expect(notifyProjectOwner).toHaveBeenCalledTimes(1);
+    expect(notifyProjectTeam).toHaveBeenCalledTimes(1);
   });
 
   it('quotes a single marker as it is in the notification', async () => {
@@ -304,9 +301,9 @@ describe('POST /api/versions/[versionId]/comments/import', () => {
     const editor = await createUser();
     await addProjectMember({ projectId: scenario.project.id, userId: editor.id });
     signedInAs(editor);
-    vi.mocked(notifyProjectOwner).mockClear();
+    vi.mocked(notifyProjectTeam).mockClear();
     await send(scenario.version.id, { fps: '25', markers: [timeline.markers[1]] });
-    expect(vi.mocked(notifyProjectOwner).mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(notifyProjectTeam).mock.calls[0][2]).toMatchObject({
       commentText: 'Trim this',
       timestamp: '0:20',
     });

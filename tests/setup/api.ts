@@ -176,14 +176,14 @@ vi.mock('@/lib/admin-stats', async (importOriginal) => {
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
-// notifyUsers()/notifyProjectOwner() fan out to Telegram over fetch() and to
+// notifyUsers()/notifyProjectTeam() fan out to Telegram over fetch() and to
 // SMTP. Tests assert on the rows a route writes, not on delivery.
 vi.mock('@/lib/notifications', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/notifications')>();
   return {
     ...actual,
     notifyUsers: vi.fn(async () => undefined),
-    notifyProjectOwner: vi.fn(async () => undefined),
+    notifyProjectTeam: vi.fn(async () => undefined),
   };
 });
 

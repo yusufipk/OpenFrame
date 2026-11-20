@@ -33,7 +33,7 @@ import { eventKey, recordAccountActivity, recordEvent } from '@/lib/analytics/re
 import { getR2MultipartPartSizeBytes } from '@/lib/feature-flags';
 import { driveDownloadUrl, isGoogleThumbnailUrl, type DriveFileMetadata } from '@/lib/google-drive';
 import { logError } from '@/lib/logger';
-import { notifyProjectOwner } from '@/lib/notifications';
+import { notifyProjectTeam } from '@/lib/notifications';
 import {
   abortMultipartVideoUpload,
   completeMultipartVideoUpload,
@@ -907,11 +907,11 @@ async function announceImport(row: DriveImport, created: FinalizedImport): Promi
     });
   }
 
-  if (project.ownerId === row.userId) return;
   const url = `${process.env.NEXTAUTH_URL || ''}/watch/${created.videoId}`;
   const addedBy = actor?.name || 'A team member';
-  await notifyProjectOwner(
-    project.ownerId,
+  await notifyProjectTeam(
+    { projectId: row.projectId, videoId: created.videoId },
+    row.userId,
     row.targetVideoId
       ? {
           type: 'new_version',

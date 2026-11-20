@@ -4,7 +4,7 @@
 // module actually owns: who receives a notification and who does not.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type NotificationEvent, notifyProjectOwner, notifyUsers } from '@/lib/notifications';
+import { type NotificationEvent, notifyUsers } from '@/lib/notifications';
 
 const dbMock = vi.hoisted(() => ({
   notificationSetting: { findMany: vi.fn() },
@@ -636,30 +636,10 @@ describe('timestamp rendering', () => {
   });
 });
 
-describe('notifyProjectOwner', () => {
-  it('fans out to the single owner id', async () => {
-    recipients(settingsRow({ userId: 'owner-1' }));
-
-    await notifyProjectOwner('owner-1', VIDEO_EVENT);
-
-    expect(dbMock.notificationSetting.findMany).toHaveBeenCalledWith({
-      where: { userId: { in: ['owner-1'] } },
-      include: { user: { select: { email: true } } },
-    });
-    expect(mail.sendMail).toHaveBeenCalledTimes(1);
-  });
-
-  it('does nothing when the owner id is empty', async () => {
-    await notifyProjectOwner('', VIDEO_EVENT);
-
-    expect(dbMock.notificationSetting.findMany).not.toHaveBeenCalled();
-  });
-});
-
 describe('still image notifications', () => {
   it('uses an image label and omits playback time from email and Telegram', async () => {
     dbMock.notificationSetting.findMany.mockResolvedValue([settingsRow({ userId: 'owner' })]);
-    await notifyProjectOwner('owner', { ...COMMENT_EVENT, mediaType: 'IMAGE', timestamp: null });
+    await notifyUsers(['owner'], { ...COMMENT_EVENT, mediaType: 'IMAGE', timestamp: null });
     expect(mail.sendMail).toHaveBeenCalledTimes(1);
     expect(sentMail().html).toContain('Image');
     expect(sentMail().html).not.toContain('>At<');
